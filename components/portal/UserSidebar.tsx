@@ -16,6 +16,9 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
   const pathname = usePathname();
   const router = useRouter();
 
+  // Extract slug from URL: "/{slug}/portal/..."
+  const slug = pathname.split("/")[1] ?? "";
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -63,11 +66,11 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           Portal
         </p>
         <Link
-          href="/portal/overview"
+          href={`/${slug}/portal/overview`}
           onClick={onClose}
           className={cn(
             "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
-            (pathname === "/portal/overview" || pathname === "/portal") && "active"
+            pathname.endsWith("/portal/overview") && "active"
           )}
         >
           <LayoutDashboard className="h-4 w-4 shrink-0" />

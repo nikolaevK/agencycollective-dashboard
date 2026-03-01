@@ -38,7 +38,7 @@ export async function loginAction(
     path: "/",
   });
 
-  redirect("/portal/overview");
+  redirect(`/${user.slug}/portal/overview`);
 }
 
 export async function setPasswordAction(
@@ -69,5 +69,5 @@ export async function setPasswordAction(
     path: "/",
   });
 
-  redirect("/portal/overview");
+  redirect(`/${users[idx].slug}/portal/overview`);
 }

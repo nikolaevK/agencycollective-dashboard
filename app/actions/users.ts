@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
-import { readUsers, writeUsers, normalizeAccountId } from "@/lib/users";
+import { readUsers, writeUsers, normalizeAccountId, slugify, uniqueSlug } from "@/lib/users";
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
@@ -61,8 +61,11 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     logoPath = result.logoPath;
   }
 
+  const slug = uniqueSlug(slugify(displayName) || slugify(id), users);
+
   users.push({
     id,
+    slug,
     accountId: normalizeAccountId(accountId),
     displayName,
     logoPath,

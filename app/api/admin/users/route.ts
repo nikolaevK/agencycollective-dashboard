@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readUsers, writeUsers, normalizeAccountId } from "@/lib/users";
+import { readUsers, writeUsers, normalizeAccountId, slugify, uniqueSlug } from "@/lib/users";
 
 export async function GET() {
   const users = readUsers();
@@ -30,10 +30,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User ID already exists" }, { status: 409 });
     }
 
+    const trimmedDisplay = String(displayName).trim();
+    const trimmedId = String(id).trim();
+    const slug = uniqueSlug(slugify(trimmedDisplay) || slugify(trimmedId), users);
+
     const newUser = {
-      id: String(id).trim(),
+      id: trimmedId,
+      slug,
       accountId: normalizeAccountId(accountId),
-      displayName: String(displayName).trim(),
+      displayName: trimmedDisplay,
       logoPath: logoPath ?? null,
       passwordHash: null,
     };

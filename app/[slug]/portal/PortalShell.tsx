@@ -6,7 +6,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { UserSidebar } from "@/components/portal/UserSidebar";
 import { UserTopBar } from "@/components/portal/UserTopBar";
 
-function PortalShell({ children }: { children: React.ReactNode }) {
+function Shell({ children }: { children: React.ReactNode }) {
   const { dateRange } = useDateRange();
   const { data } = useUserOverview(dateRange);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -40,7 +40,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function PortalLayout({ children }: { children: React.ReactNode }) {
+export function PortalShell({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
       fallback={
@@ -48,12 +48,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           <div className="hidden md:flex md:w-64 border-r bg-card" />
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="h-16 border-b bg-card" />
-            {children}
           </div>
         </div>
       }
     >
-      <PortalShell>{children}</PortalShell>
+      <Shell>{children}</Shell>
     </Suspense>
   );
 }
