@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTheme } from "@/components/providers/ThemeProvider";
 import {
   createUserAction,
   updateUserAction,
@@ -63,6 +64,8 @@ function EditRow({
 }) {
   const queryClient = useQueryClient();
   const [isPending, startTransition] = useTransition();
+  const { theme } = useTheme();
+  const logoStyle = theme === "dark" ? { filter: "invert(1)" } : undefined;
   const [accountId, setAccountId] = useState(user.accountId.replace(/^act_/, ""));
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(user.logoPath);
@@ -143,7 +146,8 @@ function EditRow({
                   <img
                     src={logoPreview}
                     alt="Logo"
-                    className="h-12 w-20 rounded-md border border-border object-contain bg-muted/30 p-1"
+                    className="h-12 w-20 rounded-md border border-border object-contain bg-muted/30 p-1 transition-[filter] duration-200"
+                    style={logoStyle}
                   />
                   <div className="flex flex-col gap-1">
                     <label
@@ -224,6 +228,8 @@ function EditRow({
 // ---- Main page ----
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const { theme } = useTheme();
+  const logoStyle = theme === "dark" ? { filter: "invert(1)" } : undefined;
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin-users"],
     queryFn: fetchUsers,
@@ -357,7 +363,8 @@ export default function UsersPage() {
                               <img
                                 src={user.logoPath}
                                 alt={user.displayName}
-                                className="h-8 w-8 rounded-md object-contain border border-border bg-muted/30"
+                                className="h-8 w-8 rounded-md object-contain border border-border bg-muted/30 transition-[filter] duration-200"
+                                style={logoStyle}
                               />
                             ) : (
                               <div className="h-8 w-8 rounded-md border border-border bg-muted/30 flex items-center justify-center text-[10px] text-muted-foreground font-bold">
@@ -490,7 +497,8 @@ export default function UsersPage() {
                       <img
                         src={logoPreview}
                         alt="Logo preview"
-                        className="h-12 w-20 rounded-md border border-border object-contain bg-muted/30 p-1"
+                        className="h-12 w-20 rounded-md border border-border object-contain bg-muted/30 p-1 transition-[filter] duration-200"
+                        style={logoStyle}
                       />
                       <button
                         type="button"
