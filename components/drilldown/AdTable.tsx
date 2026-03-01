@@ -61,6 +61,7 @@ export function AdTable({ ads, isLoading }: AdTableProps) {
   }
 
   return (
+    <div className="overflow-x-auto -mx-2 px-2">
     <Table>
       <TableHeader>
         <TableRow>
@@ -110,5 +111,6 @@ export function AdTable({ ads, isLoading }: AdTableProps) {
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

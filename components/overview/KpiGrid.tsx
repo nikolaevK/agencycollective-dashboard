@@ -43,10 +43,10 @@ interface KpiGridProps {
 export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
         {Array.from({ length: 6 }).map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-4">
+            <CardContent className="p-3 md:p-4">
               <Skeleton className="h-4 w-20 mb-3" />
               <Skeleton className="h-8 w-24 mb-2" />
               <Skeleton className="h-3 w-16" />
@@ -60,7 +60,7 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
   if (!metrics) return null;
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {KPI_CARDS.map((card) => {
         const value = metrics[card.metricKey] as number;
         const deltaValue = card.deltaKey && delta ? delta[card.deltaKey] : null;
@@ -73,11 +73,11 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
 
         return (
           <Card key={card.label}>
-            <CardContent className="p-4">
+            <CardContent className="p-3 md:p-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
                 {card.label}
               </p>
-              <p className="text-2xl font-bold tracking-tight">{formattedValue}</p>
+              <p className="text-xl md:text-2xl font-bold tracking-tight">{formattedValue}</p>
               {deltaValue !== null && (
                 <div
                   className={cn(

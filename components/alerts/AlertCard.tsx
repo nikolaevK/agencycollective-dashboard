@@ -4,20 +4,20 @@ import type { Alert } from "@/types/alerts";
 
 const SEVERITY_STYLES = {
   critical: {
-    border: "border-red-200 bg-red-50",
-    badge: "bg-red-100 text-red-700",
+    border: "border-red-500/30 bg-red-500/10 dark:bg-red-500/10 dark:border-red-500/30",
+    badge: "bg-red-500/20 text-red-400 dark:bg-red-500/20 dark:text-red-400",
     icon: AlertTriangle,
     iconColor: "text-red-500",
   },
   warning: {
-    border: "border-yellow-200 bg-yellow-50",
-    badge: "bg-yellow-100 text-yellow-700",
+    border: "border-amber-500/30 bg-amber-500/10 dark:bg-amber-500/10 dark:border-amber-500/30",
+    badge: "bg-amber-500/20 text-amber-500 dark:bg-amber-500/20 dark:text-amber-400",
     icon: AlertCircle,
-    iconColor: "text-yellow-500",
+    iconColor: "text-amber-500",
   },
   info: {
-    border: "border-blue-200 bg-blue-50",
-    badge: "bg-blue-100 text-blue-700",
+    border: "border-blue-500/30 bg-blue-500/10 dark:bg-blue-500/10 dark:border-blue-500/30",
+    badge: "bg-blue-500/20 text-blue-500 dark:bg-blue-500/20 dark:text-blue-400",
     icon: Info,
     iconColor: "text-blue-500",
   },

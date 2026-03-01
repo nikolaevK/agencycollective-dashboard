@@ -70,6 +70,7 @@ export function CampaignTable({ campaigns, isLoading, accountId }: CampaignTable
   }
 
   return (
+    <div className="overflow-x-auto -mx-2 px-2">
     <Table>
       <TableHeader>
         <TableRow>
@@ -120,5 +121,6 @@ export function CampaignTable({ campaigns, isLoading, accountId }: CampaignTable
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

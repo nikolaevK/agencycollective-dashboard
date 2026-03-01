@@ -4,48 +4,86 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Agency Collective — Light Mode */
+    --background: 240 10% 97%;
+    --foreground: 240 15% 9%;
+
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 240 15% 9%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --popover-foreground: 240 15% 9%;
+
+    /* Violet primary — Agency Collective accent */
+    --primary: 263 70% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 5% 92%;
+    --secondary-foreground: 240 15% 20%;
+
+    --muted: 240 5% 93%;
+    --muted-foreground: 240 6% 46%;
+
+    --accent: 240 5% 90%;
+    --accent-foreground: 240 15% 12%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 6% 88%;
+    --input: 240 6% 88%;
+    --ring: 263 70% 52%;
+
+    --radius: 0.625rem;
+
+    /* Sidebar — Light Mode */
+    --sidebar-bg: 0 0% 100%;
+    --sidebar-fg: 240 10% 35%;
+    --sidebar-border: 240 6% 88%;
+    --sidebar-active-bg: 263 70% 95%;
+    --sidebar-active-fg: 263 70% 40%;
+    --sidebar-hover-bg: 240 5% 93%;
+    --sidebar-hover-fg: 240 15% 10%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Agency Collective — Dark Mode */
+    --background: 240 14% 7%;
+    --foreground: 240 10% 93%;
+
+    --card: 240 12% 10%;
+    --card-foreground: 240 10% 93%;
+
+    --popover: 240 12% 10%;
+    --popover-foreground: 240 10% 93%;
+
+    --primary: 263 80% 68%;
+    --primary-foreground: 240 14% 7%;
+
+    --secondary: 240 10% 16%;
+    --secondary-foreground: 240 10% 85%;
+
+    --muted: 240 10% 16%;
+    --muted-foreground: 240 6% 56%;
+
+    --accent: 240 10% 18%;
+    --accent-foreground: 240 10% 90%;
+
+    --destructive: 0 63% 42%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 10% 18%;
+    --input: 240 10% 18%;
+    --ring: 263 80% 68%;
+
+    /* Sidebar — Dark Mode */
+    --sidebar-bg: 240 16% 5%;
+    --sidebar-fg: 240 8% 68%;
+    --sidebar-border: 240 10% 13%;
+    --sidebar-active-bg: 263 55% 22%;
+    --sidebar-active-fg: 263 75% 82%;
+    --sidebar-hover-bg: 240 12% 12%;
+    --sidebar-hover-fg: 0 0% 92%;
   }
 }
 
@@ -55,5 +93,48 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
+  /* Smooth theme transitions */
+  html {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Sidebar uses its own CSS variables that adapt to the current theme */
+.ac-sidebar {
+  background-color: hsl(var(--sidebar-bg));
+  color: hsl(var(--sidebar-fg));
+  border-color: hsl(var(--sidebar-border));
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.ac-sidebar-link {
+  color: hsl(var(--sidebar-fg));
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.ac-sidebar-link:hover {
+  background-color: hsl(var(--sidebar-hover-bg));
+  color: hsl(var(--sidebar-hover-fg));
+}
+
+.ac-sidebar-link.active {
+  background-color: hsl(var(--sidebar-active-bg));
+  color: hsl(var(--sidebar-active-fg));
+}
+
+/* Primary gradient for hero/accent elements */
+.ac-gradient {
+  background: linear-gradient(135deg, hsl(263 70% 52%), hsl(210 100% 56%));
+}
+
+.dark .ac-gradient {
+  background: linear-gradient(135deg, hsl(263 80% 68%), hsl(210 100% 70%));
+}
+
+/* Glass card effect for login */
+.ac-glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

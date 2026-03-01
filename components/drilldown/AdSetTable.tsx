@@ -63,6 +63,7 @@ export function AdSetTable({ adsets, isLoading, accountId, campaignId }: AdSetTa
   }
 
   return (
+    <div className="overflow-x-auto -mx-2 px-2">
     <Table>
       <TableHeader>
         <TableRow>
@@ -105,5 +106,6 @@ export function AdSetTable({ adsets, isLoading, accountId, campaignId }: AdSetTa
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

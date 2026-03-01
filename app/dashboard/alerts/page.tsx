@@ -51,7 +51,7 @@ function AlertsContent() {
             onClick={handleRefresh}
             disabled={refreshing}
             className={cn(
-              "flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-accent",
+              "flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium hover:bg-accent transition-colors",
               refreshing && "opacity-50 cursor-not-allowed"
             )}
           >
@@ -63,20 +63,20 @@ function AlertsContent() {
         {/* Summary cards */}
         {!isLoading && alerts && alerts.length > 0 && (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-lg border bg-red-50 border-red-200 p-4">
-              <p className="text-xs font-semibold uppercase text-red-600">Critical</p>
-              <p className="text-3xl font-bold text-red-700">{criticalCount}</p>
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-500">Critical</p>
+              <p className="text-3xl font-bold text-red-500">{criticalCount}</p>
             </div>
-            <div className="rounded-lg border bg-yellow-50 border-yellow-200 p-4">
-              <p className="text-xs font-semibold uppercase text-yellow-600">Warning</p>
-              <p className="text-3xl font-bold text-yellow-700">{warningCount}</p>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-500">Warning</p>
+              <p className="text-3xl font-bold text-amber-500">{warningCount}</p>
             </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Total</p>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</p>
               <p className="text-3xl font-bold">{alerts.length}</p>
             </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Entities</p>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Entities</p>
               <p className="text-3xl font-bold">
                 {new Set(alerts.map((a) => a.entityId)).size}
               </p>

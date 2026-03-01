@@ -61,5 +61,10 @@ export function ChartContainer({
     );
   }
 
-  return <div className={cn("w-full", className)}>{children}</div>;
+  // overflow:hidden prevents Recharts from bleeding outside the card
+  return (
+    <div className={cn("w-full overflow-hidden", className)}>
+      {children}
+    </div>
+  );
 }

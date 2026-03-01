@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TrendingUp } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
+import { useTheme } from "@/components/providers/ThemeProvider";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { theme } = useTheme();
   const [userId, setUserId] = useState("");
   const [accountId, setAccountId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,69 +39,146 @@ export default function LoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-md mx-4">
-      <CardHeader className="text-center">
-        <div className="flex justify-center mb-2">
-          <TrendingUp className="h-8 w-8 text-primary" />
-        </div>
-        <CardTitle className="text-2xl">Client Portal</CardTitle>
-        <p className="text-sm text-muted-foreground mt-1">
-          Sign in to view your account performance
-        </p>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label
-              htmlFor="userId"
-              className="text-sm font-medium text-foreground"
-            >
-              User ID
-            </label>
-            <input
-              id="userId"
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="Enter your User ID"
-              required
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden">
+      {/* Background gradient orbs */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full opacity-20 blur-3xl"
+        style={{
+          background:
+            "radial-gradient(ellipse, hsl(263 70% 55%), hsl(210 100% 56%) 60%, transparent)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 left-1/4 h-[400px] w-[600px] rounded-full opacity-10 blur-3xl"
+        style={{
+          background: "radial-gradient(ellipse, hsl(210 100% 56%), transparent)",
+        }}
+      />
+
+      {/* Theme toggle — top right */}
+      <div className="absolute right-6 top-6">
+        <ThemeToggle />
+      </div>
+
+      {/* Card */}
+      <div className="relative z-10 w-full max-w-md px-4">
+        <div className="rounded-2xl border border-border bg-card shadow-2xl">
+          {/* Header with logo */}
+          <div className="flex flex-col items-center gap-5 border-b border-border px-8 py-8">
+            <div className="relative h-12 w-48">
+              <Image
+                src="/images/ac-logo.png"
+                alt="Agency Collective"
+                fill
+                className={theme === "light" ? "object-contain invert" : "object-contain"}
+                priority
+              />
+            </div>
+            <div className="space-y-1 text-center">
+              <h1 className="text-xl font-bold tracking-tight text-foreground">
+                Client Portal
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Sign in to view your campaign performance
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <label
-              htmlFor="accountId"
-              className="text-sm font-medium text-foreground"
-            >
-              Account Number
-            </label>
-            <input
-              id="accountId"
-              type="text"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              placeholder="Enter your Meta Account Number"
-              required
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
+          {/* Form */}
+          <div className="px-8 py-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="userId"
+                  className="text-sm font-medium text-foreground"
+                >
+                  User ID
+                </label>
+                <input
+                  id="userId"
+                  type="text"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="Enter your User ID"
+                  required
+                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 transition-shadow"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="accountId"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Account Number
+                </label>
+                <input
+                  id="accountId"
+                  type="text"
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  placeholder="Enter your Meta Account Number"
+                  required
+                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 transition-shadow"
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isLoading || !userId || !accountId}
+                className="relative mt-2 inline-flex h-10 w-full items-center justify-center overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{
+                  background:
+                    "linear-gradient(135deg, hsl(263 70% 52%), hsl(210 100% 56%))",
+                }}
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"
+                      />
+                    </svg>
+                    Signing in...
+                  </span>
+                ) : (
+                  "Sign In"
+                )}
+              </button>
+            </form>
           </div>
 
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2 border border-red-200">
-              {error}
+          {/* Footer */}
+          <div className="border-t border-border px-8 py-4 text-center">
+            <p className="text-xs text-muted-foreground">
+              Powered by{" "}
+              <span className="font-medium text-foreground">Agency Collective</span>
             </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading || !userId || !accountId}
-            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-          >
-            {isLoading ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
-      </CardContent>
-    </Card>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -104,69 +104,71 @@ export function AccountsTable({ accounts, isLoading, dateRange }: AccountsTableP
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead><SortHeader label="Account" column="name" /></TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right"><SortHeader label="Spend" column="spend" /></TableHead>
-          <TableHead className="text-right"><SortHeader label="Impressions" column="impressions" /></TableHead>
-          <TableHead className="text-right"><SortHeader label="CTR" column="ctr" /></TableHead>
-          <TableHead className="text-right"><SortHeader label="CPC" column="cpc" /></TableHead>
-          <TableHead className="text-right"><SortHeader label="ROAS" column="roas" /></TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sorted.length === 0 && (
+    <div className="overflow-x-auto -mx-2 px-2">
+      <Table>
+        <TableHeader>
           <TableRow>
-            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-              No accounts found
-            </TableCell>
+            <TableHead><SortHeader label="Account" column="name" /></TableHead>
+            <TableHead className="hidden sm:table-cell">Status</TableHead>
+            <TableHead className="text-right"><SortHeader label="Spend" column="spend" /></TableHead>
+            <TableHead className="text-right hidden md:table-cell"><SortHeader label="Impressions" column="impressions" /></TableHead>
+            <TableHead className="text-right hidden sm:table-cell"><SortHeader label="CTR" column="ctr" /></TableHead>
+            <TableHead className="text-right hidden md:table-cell"><SortHeader label="CPC" column="cpc" /></TableHead>
+            <TableHead className="text-right"><SortHeader label="ROAS" column="roas" /></TableHead>
+            <TableHead />
           </TableRow>
-        )}
-        {sorted.map((account) => (
-          <TableRow key={account.id}>
-            <TableCell className="font-medium">
-              <Link
-                href={`/dashboard/accounts/${account.id}${dateRange ? `?${dateRange}` : ""}`}
-                className="hover:text-primary hover:underline"
-              >
-                {account.name}
-              </Link>
-              <p className="text-xs text-muted-foreground">{account.currency} · {account.timezone}</p>
-            </TableCell>
-            <TableCell>
-              <Badge variant={STATUS_STYLES[account.status] as "success" | "warning" | "destructive" ?? "secondary"}>
-                {account.status}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatCurrency(account.insights.spend, account.currency)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatNumber(account.insights.impressions)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatPercent(account.insights.ctr)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatCurrency(account.insights.cpc, account.currency)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatRoas(account.insights.roas)}
-            </TableCell>
-            <TableCell>
-              <Link
-                href={`/dashboard/accounts/${account.id}`}
-                className="text-muted-foreground hover:text-primary"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Link>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {sorted.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                No accounts found
+              </TableCell>
+            </TableRow>
+          )}
+          {sorted.map((account) => (
+            <TableRow key={account.id}>
+              <TableCell className="font-medium">
+                <Link
+                  href={`/dashboard/accounts/${account.id}${dateRange ? `?${dateRange}` : ""}`}
+                  className="hover:text-primary hover:underline"
+                >
+                  {account.name}
+                </Link>
+                <p className="text-xs text-muted-foreground">{account.currency} · {account.timezone}</p>
+              </TableCell>
+              <TableCell className="hidden sm:table-cell">
+                <Badge variant={STATUS_STYLES[account.status] as "success" | "warning" | "destructive" ?? "secondary"}>
+                  {account.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {formatCurrency(account.insights.spend, account.currency)}
+              </TableCell>
+              <TableCell className="text-right font-mono hidden md:table-cell">
+                {formatNumber(account.insights.impressions)}
+              </TableCell>
+              <TableCell className="text-right font-mono hidden sm:table-cell">
+                {formatPercent(account.insights.ctr)}
+              </TableCell>
+              <TableCell className="text-right font-mono hidden md:table-cell">
+                {formatCurrency(account.insights.cpc, account.currency)}
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {formatRoas(account.insights.roas)}
+              </TableCell>
+              <TableCell>
+                <Link
+                  href={`/dashboard/accounts/${account.id}`}
+                  className="text-muted-foreground hover:text-primary"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
