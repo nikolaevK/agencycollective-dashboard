@@ -32,6 +32,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
         <UserTopBar
           accountName={data?.accountName}
           currency={data?.currency}
+          logoPath={data?.logoPath}
           onMenuClick={() => setSidebarOpen(true)}
         />
         {children}
