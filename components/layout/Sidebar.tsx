@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Bell, Settings, Users, UserCog, LogOut, X } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -18,7 +18,7 @@ const baseNavItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/alerts", label: "Alerts", icon: Bell },
   { href: "/dashboard/users", label: "Users", icon: Users },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard/settings", label: "Documentation", icon: BookOpen },
 ];
 
 const superAdminNavItems = [
