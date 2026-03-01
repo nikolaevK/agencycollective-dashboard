@@ -260,6 +260,8 @@ export function transformTimeSeries(
         cpm: m.cpm,
         roas: m.roas,
         conversions: m.conversions,
+        conversionValue: m.conversionValue,
+        costPerPurchase: m.costPerPurchase,
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));

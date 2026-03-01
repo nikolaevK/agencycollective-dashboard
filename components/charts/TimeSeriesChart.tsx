@@ -14,22 +14,30 @@ import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { TimeSeriesDataPoint } from "@/types/dashboard";
 
-type MetricKey = "spend" | "impressions" | "reach" | "clicks" | "ctr" | "cpc" | "roas";
+type MetricKey =
+  | "spend" | "roas" | "conversions" | "conversionValue" | "costPerPurchase"
+  | "impressions" | "reach" | "clicks" | "ctr" | "cpc";
 
 interface MetricConfig {
   label: string;
   color: string;
   formatter: (v: number) => string;
+  primary?: boolean;
 }
 
 const METRICS: Record<MetricKey, MetricConfig> = {
-  spend:       { label: "Spend ($)",    color: "#3b82f6", formatter: (v) => `$${v.toFixed(2)}` },
-  impressions: { label: "Impressions",  color: "#8b5cf6", formatter: (v) => v.toLocaleString() },
-  reach:       { label: "Reach",        color: "#ec4899", formatter: (v) => v.toLocaleString() },
-  clicks:      { label: "Clicks",       color: "#f59e0b", formatter: (v) => v.toLocaleString() },
-  ctr:         { label: "CTR (%)",      color: "#10b981", formatter: (v) => `${v.toFixed(2)}%` },
-  cpc:         { label: "CPC ($)",      color: "#f97316", formatter: (v) => `$${v.toFixed(2)}` },
-  roas:        { label: "ROAS",         color: "#06b6d4", formatter: (v) => `${v.toFixed(2)}x` },
+  // Primary — matches KpiGrid order
+  spend:           { label: "Amount Spent",    color: "#7c3aed", formatter: (v) => `$${v.toFixed(2)}`,   primary: true },
+  roas:            { label: "ROAS",            color: "#2563eb", formatter: (v) => `${v.toFixed(2)}x`,   primary: true },
+  conversions:     { label: "Purchases",       color: "#059669", formatter: (v) => v.toLocaleString(),   primary: true },
+  conversionValue: { label: "Purchase Value",  color: "#0891b2", formatter: (v) => `$${v.toFixed(2)}`,   primary: true },
+  costPerPurchase: { label: "Cost/Purchase",   color: "#d97706", formatter: (v) => `$${v.toFixed(2)}`,   primary: true },
+  // Secondary
+  impressions:     { label: "Impressions",     color: "#8b5cf6", formatter: (v) => v.toLocaleString() },
+  reach:           { label: "Reach",           color: "#ec4899", formatter: (v) => v.toLocaleString() },
+  clicks:          { label: "Clicks",          color: "#f59e0b", formatter: (v) => v.toLocaleString() },
+  ctr:             { label: "CTR (%)",         color: "#10b981", formatter: (v) => `${v.toFixed(2)}%` },
+  cpc:             { label: "CPC ($)",         color: "#f97316", formatter: (v) => `$${v.toFixed(2)}` },
 };
 
 interface TimeSeriesChartProps {
@@ -41,7 +49,7 @@ interface TimeSeriesChartProps {
 export function TimeSeriesChart({
   data,
   height = 300,
-  defaultMetrics = ["spend", "impressions"],
+  defaultMetrics = ["spend", "roas", "conversions", "conversionValue", "costPerPurchase"],
 }: TimeSeriesChartProps) {
   const [activeMetrics, setActiveMetrics] = useState<Set<MetricKey>>(
     new Set(defaultMetrics)
@@ -69,28 +77,36 @@ export function TimeSeriesChart({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Metric toggles — scrollable on mobile */}
-      <div className="flex flex-wrap gap-1.5">
-        {(Object.entries(METRICS) as [MetricKey, MetricConfig][]).map(([key, config]) => (
-          <button
-            key={key}
-            onClick={() => toggleMetric(key)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap",
-              activeMetrics.has(key)
-                ? "border-transparent text-white"
-                : "border-border text-muted-foreground hover:border-foreground/50"
-            )}
-            style={
-              activeMetrics.has(key)
-                ? { backgroundColor: config.color, borderColor: config.color }
-                : undefined
-            }
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: config.color }} />
-            {config.label}
-          </button>
-        ))}
+      {/* Metric toggles — primary group then secondary */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {(Object.entries(METRICS) as [MetricKey, MetricConfig][]).map(([key, config], i, arr) => {
+          const prevPrimary = i > 0 && arr[i - 1][1].primary;
+          const showDivider = !config.primary && prevPrimary;
+          return (
+            <span key={key} className="contents">
+              {showDivider && (
+                <span className="h-4 w-px bg-border mx-0.5 self-center" />
+              )}
+              <button
+                onClick={() => toggleMetric(key)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap",
+                  activeMetrics.has(key)
+                    ? "border-transparent text-white"
+                    : "border-border text-muted-foreground hover:border-foreground/50"
+                )}
+                style={
+                  activeMetrics.has(key)
+                    ? { backgroundColor: config.color, borderColor: config.color }
+                    : undefined
+                }
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: config.color }} />
+                {config.label}
+              </button>
+            </span>
+          );
+        })}
       </div>
 
       {/* Chart — explicit height wrapper prevents ResponsiveContainer from blowing out */}

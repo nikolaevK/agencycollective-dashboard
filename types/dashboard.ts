@@ -88,6 +88,8 @@ export interface TimeSeriesDataPoint {
   cpm: number;
   roas: number;
   conversions: number;
+  conversionValue: number;
+  costPerPurchase: number;
 }
 
 export interface InsightRow {
