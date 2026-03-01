@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 interface UserTopBarProps {
   accountName?: string;
@@ -14,6 +15,7 @@ interface UserTopBarProps {
 
 export function UserTopBar({ accountName, currency, logoPath, onMenuClick }: UserTopBarProps) {
   const { dateRange, setDateRange } = useDateRange();
+  const { theme } = useTheme();
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b bg-card px-4 md:px-6 gap-2">
@@ -31,7 +33,8 @@ export function UserTopBar({ accountName, currency, logoPath, onMenuClick }: Use
           <img
             src={logoPath}
             alt={accountName ?? "Brand logo"}
-            className="h-8 max-w-[140px] object-contain object-left"
+            className="h-8 max-w-[140px] object-contain object-left transition-[filter] duration-200"
+            style={theme === "dark" ? { filter: "invert(1)" } : undefined}
           />
         ) : accountName ? (
           <span className="text-sm font-semibold text-foreground truncate">{accountName}</span>

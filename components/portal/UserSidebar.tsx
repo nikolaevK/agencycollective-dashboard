@@ -4,15 +4,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface UserSidebarProps {
   displayName?: string;
-  logoPath?: string | null;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-export function UserSidebar({ displayName, logoPath, isOpen = false, onClose }: UserSidebarProps) {
+export function UserSidebar({ displayName, isOpen = false, onClose }: UserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -25,44 +25,35 @@ export function UserSidebar({ displayName, logoPath, isOpen = false, onClose }: 
     <aside
       className={cn(
         "ac-sidebar flex h-full w-64 shrink-0 flex-col border-r",
-        // Mobile: fixed overlay
         "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-in-out",
-        // Desktop: static in normal flow
         "md:relative md:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}
     >
-      {/* Mobile close button */}
-      <div className="flex h-16 items-center justify-end border-b px-5 md:hidden"
+      {/* Logo row — AC logo always visible, close button on mobile */}
+      <div
+        className="flex h-16 items-center justify-between border-b px-5"
         style={{ borderColor: "hsl(var(--sidebar-border))" }}
       >
+        <AgencyLogo />
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
+          className="md:hidden rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
           aria-label="Close menu"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Client brand section */}
-      {(displayName || logoPath) && (
+      {/* Account badge — name only */}
+      {displayName && (
         <div className="px-5 py-3 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-          <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40 mb-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40 mb-0.5">
             Account
           </p>
-          {logoPath && (
-            <img
-              src={logoPath}
-              alt={displayName ?? "Brand logo"}
-              className="mb-2 h-8 max-w-[120px] object-contain object-left"
-            />
-          )}
-          {displayName && (
-            <p className="text-sm font-medium truncate" style={{ color: "hsl(var(--sidebar-hover-fg))" }}>
-              {displayName}
-            </p>
-          )}
+          <p className="text-sm font-medium truncate" style={{ color: "hsl(var(--sidebar-hover-fg))" }}>
+            {displayName}
+          </p>
         </div>
       )}
 
