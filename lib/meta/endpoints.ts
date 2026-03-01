@@ -49,7 +49,7 @@ export async function fetchOwnedAccounts(): Promise<MetaAdAccount[]> {
 }
 
 /**
- * Fetch insights for a single account
+ * Fetch insights for a single account, following pagination so all days are returned.
  */
 export async function fetchAccountInsights(
   accountId: string,
@@ -62,6 +62,7 @@ export async function fetchAccountInsights(
   const params: Record<string, string | number | boolean | undefined> = {
     fields: INSIGHT_FIELDS_WITH_DATE,
     level: "account",
+    limit: 100, // fetch up to 100 rows per page
     ...metaParams,
   };
 
@@ -69,13 +70,23 @@ export async function fetchAccountInsights(
     params.time_increment = timeIncrement;
   }
 
-  const response = await metaFetch(
-    `/act_${cleanId}/insights`,
-    MetaInsightsPaginatedSchema,
-    { params }
-  );
+  let allInsights: MetaInsight[] = [];
+  let afterCursor: string | undefined;
 
-  return response.data as MetaInsight[];
+  do {
+    const pageParams = { ...params, after: afterCursor };
+    const page = await metaFetch(
+      `/act_${cleanId}/insights`,
+      MetaInsightsPaginatedSchema,
+      { params: pageParams }
+    );
+
+    allInsights = allInsights.concat(page.data as MetaInsight[]);
+    afterCursor = page.paging?.cursors?.after;
+    if (!page.paging?.next) break;
+  } while (afterCursor);
+
+  return allInsights;
 }
 
 /**
