@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
-import { readUsers, writeUsers, normalizeAccountId, slugify, uniqueSlug } from "@/lib/users";
+import {
+  findUser,
+  insertUser,
+  updateUser,
+  deleteUser,
+  normalizeAccountId,
+  slugify,
+  generateUniqueSlug,
+} from "@/lib/users";
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
@@ -49,8 +57,8 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     return { error: "User ID, display name, and account ID are required" };
   }
 
-  const users = readUsers();
-  if (users.find((u) => u.id === id)) {
+  const existing = await findUser(id);
+  if (existing) {
     return { error: "User ID already exists" };
   }
 
@@ -61,9 +69,9 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     logoPath = result.logoPath;
   }
 
-  const slug = uniqueSlug(slugify(displayName) || slugify(id), users);
+  const slug = await generateUniqueSlug(slugify(displayName) || slugify(id));
 
-  users.push({
+  await insertUser({
     id,
     slug,
     accountId: normalizeAccountId(accountId),
@@ -72,7 +80,6 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     passwordHash: null,
   });
 
-  writeUsers(users);
   revalidatePath("/dashboard/users");
   return {};
 }
@@ -88,21 +95,22 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 
   if (!id) return { error: "User ID is required" };
 
-  const users = readUsers();
-  const idx = users.findIndex((u) => u.id === id);
-  if (idx === -1) return { error: "User not found" };
+  const user = await findUser(id);
+  if (!user) return { error: "User not found" };
+
+  const changes: Parameters<typeof updateUser>[1] = {};
 
   if (rawAccountId && rawAccountId.trim()) {
-    users[idx].accountId = normalizeAccountId(rawAccountId.trim());
+    changes.accountId = normalizeAccountId(rawAccountId.trim());
   }
 
   if (logoFile && logoFile.size > 0) {
     const result = await saveLogo(id, logoFile);
     if ("error" in result) return result;
-    users[idx].logoPath = result.logoPath;
+    changes.logoPath = result.logoPath;
   }
 
-  writeUsers(users);
+  await updateUser(id, changes);
   revalidatePath("/dashboard/users");
   return {};
 }
@@ -112,12 +120,10 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 // ---------------------------------------------------------------------------
 
 export async function removeUserLogoAction(id: string): Promise<{ error?: string }> {
-  const users = readUsers();
-  const idx = users.findIndex((u) => u.id === id);
-  if (idx === -1) return { error: "User not found" };
+  const user = await findUser(id);
+  if (!user) return { error: "User not found" };
 
-  users[idx].logoPath = null;
-  writeUsers(users);
+  await updateUser(id, { logoPath: null });
   revalidatePath("/dashboard/users");
   return {};
 }
@@ -127,11 +133,9 @@ export async function removeUserLogoAction(id: string): Promise<{ error?: string
 // ---------------------------------------------------------------------------
 
 export async function deleteUserAction(id: string): Promise<{ error?: string }> {
-  const users = readUsers();
-  const filtered = users.filter((u) => u.id !== id);
-  if (filtered.length === users.length) return { error: "User not found" };
+  const deleted = await deleteUser(id);
+  if (!deleted) return { error: "User not found" };
 
-  writeUsers(filtered);
   revalidatePath("/dashboard/users");
   return {};
 }

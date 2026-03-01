@@ -2,15 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { readUsers, writeUsers } from "@/lib/users";
+import { findUser, updateUser } from "@/lib/users";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { createSession, SESSION_COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/session";
 
 export async function checkUserAction(
   userId: string
 ): Promise<{ exists: boolean; hasPassword: boolean }> {
-  const users = readUsers();
-  const user = users.find((u) => u.id === userId.trim());
+  const user = await findUser(userId.trim());
   if (!user) return { exists: false, hasPassword: false };
   return { exists: true, hasPassword: Boolean(user.passwordHash) };
 }
@@ -19,8 +18,7 @@ export async function loginAction(
   userId: string,
   password: string
 ): Promise<{ error: string } | undefined> {
-  const users = readUsers();
-  const user = users.find((u) => u.id === userId.trim());
+  const user = await findUser(userId.trim());
 
   if (!user || !user.passwordHash) {
     return { error: "Invalid credentials" };
@@ -49,19 +47,13 @@ export async function setPasswordAction(
     return { error: "Password must be at least 8 characters" };
   }
 
-  const users = readUsers();
-  const idx = users.findIndex((u) => u.id === userId.trim());
-  if (idx === -1) return { error: "User not found" };
-  if (users[idx].passwordHash) return { error: "Password already set" };
+  const user = await findUser(userId.trim());
+  if (!user) return { error: "User not found" };
+  if (user.passwordHash) return { error: "Password already set" };
 
-  users[idx].passwordHash = hashPassword(password);
-  writeUsers(users);
+  await updateUser(user.id, { passwordHash: hashPassword(password) });
 
-  const token = createSession({
-    userId: users[idx].id,
-    accountId: users[idx].accountId,
-  });
-
+  const token = createSession({ userId: user.id, accountId: user.accountId });
   cookies().set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -69,5 +61,5 @@ export async function setPasswordAction(
     path: "/",
   });
 
-  redirect(`/${users[idx].slug}/portal/overview`);
+  redirect(`/${user.slug}/portal/overview`);
 }

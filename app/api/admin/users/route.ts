@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
-import { readUsers, writeUsers, normalizeAccountId, slugify, uniqueSlug } from "@/lib/users";
+import {
+  readUsers,
+  findUser,
+  insertUser,
+  deleteUser,
+  normalizeAccountId,
+  slugify,
+  generateUniqueSlug,
+} from "@/lib/users";
 
 export async function GET() {
-  const users = readUsers();
+  const users = await readUsers();
   // Never expose passwordHash to the client
   const safe = users.map(({ passwordHash: _, ...rest }) => rest);
   return NextResponse.json({ data: safe });
@@ -25,14 +33,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const users = readUsers();
-    if (users.find((u) => u.id === String(id).trim())) {
+    const trimmedId = String(id).trim();
+    const trimmedDisplay = String(displayName).trim();
+
+    const existing = await findUser(trimmedId);
+    if (existing) {
       return NextResponse.json({ error: "User ID already exists" }, { status: 409 });
     }
 
-    const trimmedDisplay = String(displayName).trim();
-    const trimmedId = String(id).trim();
-    const slug = uniqueSlug(slugify(trimmedDisplay) || slugify(trimmedId), users);
+    const slug = await generateUniqueSlug(
+      slugify(trimmedDisplay) || slugify(trimmedId)
+    );
 
     const newUser = {
       id: trimmedId,
@@ -43,8 +54,7 @@ export async function POST(request: Request) {
       passwordHash: null,
     };
 
-    users.push(newUser);
-    writeUsers(users);
+    await insertUser(newUser);
 
     const { passwordHash: _, ...safe } = newUser;
     return NextResponse.json({ data: safe }, { status: 201 });
@@ -52,7 +62,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-
 
 export async function DELETE(request: Request) {
   try {
@@ -63,14 +72,11 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "id query param is required" }, { status: 400 });
     }
 
-    const users = readUsers();
-    const filtered = users.filter((u) => u.id !== id);
-
-    if (filtered.length === users.length) {
+    const deleted = await deleteUser(id);
+    if (!deleted) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    writeUsers(filtered);
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
