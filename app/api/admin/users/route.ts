@@ -48,30 +48,6 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json();
-    const { id, logoPath } = body as { id?: string; logoPath?: string };
-
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
-    }
-
-    const users = readUsers();
-    const idx = users.findIndex((u) => u.id === String(id).trim());
-    if (idx === -1) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    if (logoPath !== undefined) users[idx].logoPath = logoPath;
-    writeUsers(users);
-
-    const { passwordHash: _, ...safe } = users[idx];
-    return NextResponse.json({ data: safe });
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
 
 export async function DELETE(request: Request) {
   try {
