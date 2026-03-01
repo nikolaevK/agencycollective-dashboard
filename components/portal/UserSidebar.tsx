@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface UserSidebarProps {
   displayName?: string;
@@ -33,15 +32,13 @@ export function UserSidebar({ displayName, logoPath, isOpen = false, onClose }: 
         isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}
     >
-      {/* Logo row */}
-      <div
-        className="flex h-16 items-center justify-between border-b px-5"
+      {/* Mobile close button */}
+      <div className="flex h-16 items-center justify-end border-b px-5 md:hidden"
         style={{ borderColor: "hsl(var(--sidebar-border))" }}
       >
-        <AgencyLogo />
         <button
           onClick={onClose}
-          className="md:hidden rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
+          className="rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
           aria-label="Close menu"
         >
           <X className="h-5 w-5" />
