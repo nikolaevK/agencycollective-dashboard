@@ -5,7 +5,12 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { Suspense } from "react";
 
-export function DashboardClientShell({ children }: { children: React.ReactNode }) {
+interface DashboardClientShellProps {
+  children: React.ReactNode;
+  isSuperAdmin?: boolean;
+}
+
+export function DashboardClientShell({ children, isSuperAdmin = false }: DashboardClientShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -19,7 +24,11 @@ export function DashboardClientShell({ children }: { children: React.ReactNode }
       )}
 
       <Suspense fallback={<div className="hidden md:flex md:w-64 border-r bg-card" />}>
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          isSuperAdmin={isSuperAdmin}
+        />
       </Suspense>
 
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">

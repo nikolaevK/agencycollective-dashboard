@@ -8,8 +8,19 @@ import {
   slugify,
   generateUniqueSlug,
 } from "@/lib/users";
+import { getAdminSession } from "@/lib/adminSession";
+import { findAdmin } from "@/lib/admins";
+
+async function requireAdminSession() {
+  const session = getAdminSession();
+  if (!session) return null;
+  return findAdmin(session.adminId);
+}
 
 export async function GET() {
+  if (!(await requireAdminSession()))
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const users = await readUsers();
   // Never expose passwordHash to the client
   const safe = users.map(({ passwordHash: _, ...rest }) => rest);
@@ -17,6 +28,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!(await requireAdminSession()))
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const body = await request.json();
     const { id, accountId, displayName, logoPath } = body as {
@@ -64,6 +78,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  if (!(await requireAdminSession()))
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

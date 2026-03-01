@@ -25,6 +25,7 @@ export function getDb(): Client {
 
 export async function migrate(): Promise<void> {
   const db = getDb();
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id           TEXT PRIMARY KEY,
@@ -34,5 +35,20 @@ export async function migrate(): Promise<void> {
       logo_path    TEXT,
       password_hash TEXT
     )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS admins (
+      id            TEXT PRIMARY KEY,
+      username      TEXT NOT NULL UNIQUE,
+      password_hash TEXT,
+      is_super      INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Seed the super admin on first run (no-op if already exists)
+  await db.execute(`
+    INSERT OR IGNORE INTO admins (id, username, password_hash, is_super)
+    VALUES ('agencycollective', 'agencycollective', NULL, 1)
   `);
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Bell, Settings, Users, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Bell, Settings, Users, UserCog, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -11,31 +11,43 @@ import { AgencyLogo } from "@/components/layout/AgencyLogo";
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  isSuperAdmin?: boolean;
 }
 
-const navItems = [
+const baseNavItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/alerts", label: "Alerts", icon: Bell },
   { href: "/dashboard/users", label: "Users", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+const superAdminNavItems = [
+  { href: "/dashboard/admins", label: "Admins", icon: UserCog, exact: false },
+];
+
+export function Sidebar({ isOpen = false, onClose, isSuperAdmin = false }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { dateRange } = useDateRange();
   const { data: alerts } = useAlerts(dateRange);
   const criticalCount = alerts?.filter((a) => a.severity === "critical").length ?? 0;
   const totalCount = alerts?.length ?? 0;
 
+  const navItems = isSuperAdmin
+    ? [...baseNavItems, ...superAdminNavItems]
+    : baseNavItems;
+
+  async function handleLogout() {
+    await fetch("/api/auth/admin/logout", { method: "POST" });
+    router.push("/admin/login");
+  }
+
   return (
     <aside
       className={cn(
         "ac-sidebar flex h-full w-64 shrink-0 flex-col border-r",
-        // Mobile: fixed overlay, slides in/out
         "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-in-out",
-        // Desktop: static in normal flow
         "md:relative md:translate-x-0",
-        // Mobile open/closed
         isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}
     >
@@ -88,9 +100,15 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t px-5 py-3" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-        <p className="text-xs opacity-40">Agency Collective v1.0</p>
+      {/* Footer — logout */}
+      <div className="border-t p-3" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
+        <button
+          onClick={handleLogout}
+          className="ac-sidebar-link flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span>Log out</span>
+        </button>
       </div>
     </aside>
   );
