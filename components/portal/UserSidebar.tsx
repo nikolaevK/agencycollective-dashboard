@@ -8,11 +8,12 @@ import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface UserSidebarProps {
   displayName?: string;
+  logoPath?: string | null;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-export function UserSidebar({ displayName, isOpen = false, onClose }: UserSidebarProps) {
+export function UserSidebar({ displayName, logoPath, isOpen = false, onClose }: UserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -47,15 +48,24 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
         </button>
       </div>
 
-      {/* Account badge */}
-      {displayName && (
+      {/* Client brand section */}
+      {(displayName || logoPath) && (
         <div className="px-5 py-3 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-          <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40 mb-0.5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40 mb-2">
             Account
           </p>
-          <p className="text-sm font-medium truncate" style={{ color: "hsl(var(--sidebar-hover-fg))" }}>
-            {displayName}
-          </p>
+          {logoPath && (
+            <img
+              src={logoPath}
+              alt={displayName ?? "Brand logo"}
+              className="mb-2 h-8 max-w-[120px] object-contain object-left"
+            />
+          )}
+          {displayName && (
+            <p className="text-sm font-medium truncate" style={{ color: "hsl(var(--sidebar-hover-fg))" }}>
+              {displayName}
+            </p>
+          )}
         </div>
       )}
 

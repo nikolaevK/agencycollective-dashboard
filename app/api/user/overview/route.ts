@@ -9,6 +9,7 @@ import {
 import cache, { CacheKeys, TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
+import { readUsers } from "@/lib/users";
 
 export async function GET(request: Request) {
   const session = getSession();
@@ -53,11 +54,17 @@ export async function GET(request: Request) {
 
     const account = accounts.find((a) => a.id === accountId);
 
+    // Fetch brand logo path from user record
+    const users = readUsers();
+    const userRecord = users.find((u) => u.id === session.userId);
+    const logoPath = userRecord?.logoPath ?? null;
+
     return NextResponse.json({
       data: {
         accountId,
         accountName: account?.name ?? accountId,
         currency: account?.currency ?? "USD",
+        logoPath,
         metrics,
         timeSeries,
       },

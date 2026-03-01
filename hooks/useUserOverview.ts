@@ -8,6 +8,7 @@ interface UserOverviewData {
   accountId: string;
   accountName: string;
   currency: string;
+  logoPath: string | null;
   metrics: InsightMetrics;
   timeSeries: TimeSeriesDataPoint[];
 }

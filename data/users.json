@@ -2,6 +2,8 @@
   {
     "id": "InnerGlow",
     "accountId": "act_1572583670559433",
-    "displayName": "Inner Glow"
+    "displayName": "Inner Glow",
+    "logoPath": null,
+    "passwordHash": null
   }
 ]

@@ -1,45 +1,28 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-
-interface UserRecord {
-  id: string;
-  accountId: string;
-  displayName: string;
-}
-
-const USERS_FILE = path.join(process.cwd(), "data", "users.json");
-
-function readUsers(): UserRecord[] {
-  try {
-    const raw = fs.readFileSync(USERS_FILE, "utf8");
-    return JSON.parse(raw) as UserRecord[];
-  } catch {
-    return [];
-  }
-}
-
-function writeUsers(users: UserRecord[]): void {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), "utf8");
-}
-
-function normalizeAccountId(raw: string): string {
-  const stripped = String(raw).trim().replace(/^act_/, "");
-  return `act_${stripped}`;
-}
+import { readUsers, writeUsers, normalizeAccountId } from "@/lib/users";
 
 export async function GET() {
   const users = readUsers();
-  return NextResponse.json({ data: users });
+  // Never expose passwordHash to the client
+  const safe = users.map(({ passwordHash: _, ...rest }) => rest);
+  return NextResponse.json({ data: safe });
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { id, accountId, displayName } = body as Partial<UserRecord>;
+    const { id, accountId, displayName, logoPath } = body as {
+      id?: string;
+      accountId?: string;
+      displayName?: string;
+      logoPath?: string | null;
+    };
 
     if (!id || !accountId || !displayName) {
-      return NextResponse.json({ error: "id, accountId, and displayName are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "id, accountId, and displayName are required" },
+        { status: 400 }
+      );
     }
 
     const users = readUsers();
@@ -47,16 +30,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User ID already exists" }, { status: 409 });
     }
 
-    const newUser: UserRecord = {
+    const newUser = {
       id: String(id).trim(),
       accountId: normalizeAccountId(accountId),
       displayName: String(displayName).trim(),
+      logoPath: logoPath ?? null,
+      passwordHash: null,
     };
 
     users.push(newUser);
     writeUsers(users);
 
-    return NextResponse.json({ data: newUser }, { status: 201 });
+    const { passwordHash: _, ...safe } = newUser;
+    return NextResponse.json({ data: safe }, { status: 201 });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, logoPath } = body as { id?: string; logoPath?: string };
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const users = readUsers();
+    const idx = users.findIndex((u) => u.id === String(id).trim());
+    if (idx === -1) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    if (logoPath !== undefined) users[idx].logoPath = logoPath;
+    writeUsers(users);
+
+    const { passwordHash: _, ...safe } = users[idx];
+    return NextResponse.json({ data: safe });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

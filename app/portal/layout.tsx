@@ -23,6 +23,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
 
       <UserSidebar
         displayName={data?.accountName}
+        logoPath={data?.logoPath}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
