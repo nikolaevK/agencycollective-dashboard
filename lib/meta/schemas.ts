@@ -106,6 +106,87 @@ export const MetaAdSchema = z.object({
     .optional(),
 });
 
+export const MetaCreativeDetailSchema = z
+  .object({
+    id: z.string(),
+    image_url: z.string().optional(),
+    thumbnail_url: z.string().optional(),
+    image_hash: z.string().optional(),
+    video_data: z
+      .object({ thumbnail_url: z.string().optional() })
+      .passthrough()
+      .optional(),
+    object_story_spec: z
+      .object({
+        link_data: z
+          .object({
+            picture: z.string().optional(),
+            image_url: z.string().optional(),
+            image_hash: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+        photo_data: z
+          .object({
+            images: z.record(z.object({ url: z.string().optional() }).passthrough()).optional(),
+          })
+          .passthrough()
+          .optional(),
+        video_data: z
+          .object({ image_url: z.string().optional() })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+/**
+ * Standalone schema for top-ads response.
+ * Uses passthrough() at every level so unexpected Meta fields don't fail validation.
+ * Makes adset_id/campaign_id optional since some ad types may omit them.
+ */
+export const MetaAdWithCreativeSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    status: z.string(),
+    effective_status: z.string(),
+    adset_id: z.string().optional(),
+    campaign_id: z.string().optional(),
+    campaign: z.object({ name: z.string() }).passthrough().optional(),
+    preview_shareable_link: z.string().optional(),
+    creative: z
+      .object({
+        id: z.string(),
+        image_url: z.string().optional(),
+        thumbnail_url: z.string().optional(),
+        video_data: z
+          .object({ thumbnail_url: z.string().optional() })
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
+    insights: z
+      .object({
+        data: z.array(
+          z
+            .object({
+              spend: numericString,
+              impressions: numericString.optional(),
+              clicks: numericString.optional(),
+              ctr: numericString.optional(),
+              cpc: numericString.optional(),
+            })
+            .passthrough()
+        ),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 export const MetaPaginatedResponseSchema = <T extends z.ZodTypeAny>(
   itemSchema: T
 ) =>
@@ -131,3 +212,5 @@ export const MetaAdSetsPaginatedSchema =
   MetaPaginatedResponseSchema(MetaAdSetSchema);
 export const MetaAdsPaginatedSchema =
   MetaPaginatedResponseSchema(MetaAdSchema);
+export const MetaAdsWithCreativePaginatedSchema =
+  MetaPaginatedResponseSchema(MetaAdWithCreativeSchema);

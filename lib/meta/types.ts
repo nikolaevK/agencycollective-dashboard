@@ -88,6 +88,26 @@ export interface MetaAd {
   insights?: { data: MetaInsight[] };
 }
 
+export interface MetaCreativeDetail {
+  id: string;
+  image_url?: string;
+  thumbnail_url?: string;
+  image_hash?: string;
+  /** Populated server-side from /adimages — the original full-resolution asset URL. */
+  full_res_url?: string;
+  video_data?: { thumbnail_url?: string };
+  object_story_spec?: {
+    link_data?: { picture?: string; image_url?: string; image_hash?: string };
+    photo_data?: { images?: Record<string, { url?: string }> };
+    video_data?: { image_url?: string };
+  };
+}
+
+export interface MetaAdWithCreative extends Omit<MetaAd, "creative"> {
+  creative?: MetaCreativeDetail;
+  campaign?: { name: string };
+}
+
 export interface MetaApiError {
   message: string;
   type: string;

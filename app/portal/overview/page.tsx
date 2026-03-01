@@ -3,15 +3,18 @@
 import { Suspense } from "react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useUserOverview } from "@/hooks/useUserOverview";
+import { useTopAds } from "@/hooks/useTopAds";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { KpiGrid } from "@/components/overview/KpiGrid";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
+import { TopAdsCard } from "@/components/portal/TopAdsCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function OverviewContent() {
   const { dateRange } = useDateRange();
   const { data, isLoading, error } = useUserOverview(dateRange);
+  const { data: topAds, isLoading: topAdsLoading } = useTopAds(dateRange);
 
   return (
     <DashboardShell>
@@ -46,6 +49,12 @@ function OverviewContent() {
             </ChartContainer>
           </CardContent>
         </Card>
+
+        <TopAdsCard
+          ads={topAds}
+          isLoading={topAdsLoading}
+          currency={data?.currency}
+        />
       </div>
     </DashboardShell>
   );

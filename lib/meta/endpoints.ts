@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { metaFetch, metaBatchFetch } from "./client";
 import {
   MetaAccountsPaginatedSchema,
@@ -5,8 +6,10 @@ import {
   MetaAdSetsPaginatedSchema,
   MetaAdsPaginatedSchema,
   MetaInsightsPaginatedSchema,
+  MetaAdsWithCreativePaginatedSchema,
+  MetaCreativeDetailSchema,
 } from "./schemas";
-import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse } from "./types";
+import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse, MetaAdWithCreative, MetaCreativeDetail } from "./types";
 import { fetchWithConcurrency, getConcurrencyLimit } from "@/lib/concurrency";
 import { dateRangeToMetaParams } from "@/lib/utils";
 import type { DateRangeInput } from "@/types/api";
@@ -322,4 +325,91 @@ export async function fetchAds(
   } while (afterCursor);
 
   return allAds;
+}
+
+/**
+ * Fetch top N ads for an account by spend, including creative images.
+ *
+ * Step 1: Fetch all ads with nested spend insights (simple fields).
+ * Step 2: Sort by spend, take top N.
+ * Step 3: Fetch creative thumbnail for each top ad individually.
+ */
+export async function fetchTopAdsForAccount(
+  accountId: string,
+  dateRange: DateRangeInput,
+  limit = 3
+): Promise<MetaAdWithCreative[]> {
+  const cleanId = accountId.replace(/^act_/, "");
+  const metaParams = dateRangeToMetaParams(dateRange);
+
+  const dateParam = metaParams.date_preset
+    ? `date_preset(${metaParams.date_preset})`
+    : `time_range(${metaParams.time_range})`;
+
+  // Step 1: Fetch ads with spend + key metrics insights (no creative expansion here)
+  const adFields = [
+    "id",
+    "name",
+    "status",
+    "effective_status",
+    "adset_id",
+    "campaign_id",
+    "campaign{name}",
+    "creative",
+    `insights.${dateParam}{spend,impressions,clicks,ctr,cpc}`,
+  ].join(",");
+
+  const params: Record<string, string | number | boolean | undefined> = {
+    fields: adFields,
+    limit: 200,
+  };
+
+  let allAds: MetaAdWithCreative[] = [];
+  let afterCursor: string | undefined;
+
+  do {
+    const pageParams = { ...params, after: afterCursor };
+    const page = await metaFetch(
+      `/act_${cleanId}/ads`,
+      MetaAdsWithCreativePaginatedSchema,
+      { params: pageParams }
+    );
+
+    allAds = allAds.concat(page.data as MetaAdWithCreative[]);
+    afterCursor = page.paging?.cursors?.after;
+    if (!page.paging?.next) break;
+  } while (afterCursor);
+
+  // Step 2: Sort by spend and take top N
+  allAds.sort((a, b) => {
+    const spendA = (a.insights?.data?.[0]?.spend as number | undefined) ?? 0;
+    const spendB = (b.insights?.data?.[0]?.spend as number | undefined) ?? 0;
+    return spendB - spendA;
+  });
+
+  const topAds = allAds.slice(0, limit);
+
+  // Step 3: Fetch creative details for top ads individually.
+  // image_hash lets us resolve the full-res URL via /adimages in step 4.
+  const creativeFields =
+    "id,image_url,thumbnail_url,image_hash,object_story_spec{link_data{picture,image_url,image_hash},photo_data{images},video_data{image_url}}";
+
+  await Promise.allSettled(
+    topAds.map(async (ad, idx) => {
+      const creativeId = (ad.creative as { id?: string } | undefined)?.id;
+      if (!creativeId) return;
+      try {
+        const raw = await metaFetch(
+          `/${creativeId}`,
+          MetaCreativeDetailSchema,
+          { params: { fields: creativeFields } }
+        );
+        topAds[idx] = { ...ad, creative: raw };
+      } catch {
+        // Creative fetch failed — leave ad without thumbnail
+      }
+    })
+  );
+
+  return topAds;
 }
