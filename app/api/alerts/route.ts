@@ -5,11 +5,18 @@ import { evaluateAlerts, DEFAULT_ALERT_CONFIG } from "@/lib/alerts";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, getPreviousPeriod, dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
+import { getAdminSession } from "@/lib/adminSession";
+import { findAdmin } from "@/lib/admins";
 import type { ApiResponse } from "@/types/api";
 import type { Alert } from "@/types/alerts";
 import type { AlertEvaluationInput } from "@/types/alerts";
 
 export async function GET(request: Request) {
+  const session = getAdminSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const admin = await findAdmin(session.adminId);
+  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const { searchParams } = new URL(request.url);
     const dateRange = parseDateRangeFromParams(searchParams);

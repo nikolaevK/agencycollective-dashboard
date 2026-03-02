@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { findUser } from "@/lib/users";
 import { fetchTopAdsForAccount } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
@@ -11,11 +12,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Re-validate user and get accountId from DB (not just from session token)
+  const userRecord = await findUser(session.userId);
+  if (!userRecord) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
-    const { accountId } = session;
+    const accountId = userRecord.accountId;
 
     const cacheKey = `top_ads:${accountId}:${dateKey}`;
     let topAds = cache.get<Awaited<ReturnType<typeof fetchTopAdsForAccount>>>(cacheKey);

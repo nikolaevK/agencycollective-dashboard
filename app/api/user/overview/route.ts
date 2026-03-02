@@ -18,10 +18,16 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Re-validate user and get accountId from DB (not just from session token)
+    const userRecord = await findUser(session.userId);
+    if (!userRecord) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
-    const { accountId } = session;
+    const accountId = userRecord.accountId;
 
     // Time series (daily breakdown)
     const tsCacheKey = CacheKeys.timeSeries(accountId, dateKey);
@@ -54,9 +60,7 @@ export async function GET(request: Request) {
 
     const account = accounts.find((a) => a.id === accountId);
 
-    // Fetch brand logo path from user record
-    const userRecord = await findUser(session.userId);
-    const logoPath = userRecord?.logoPath ?? null;
+    const logoPath = userRecord.logoPath ?? null;
 
     return NextResponse.json({
       data: {

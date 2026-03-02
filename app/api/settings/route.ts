@@ -2,47 +2,37 @@ import { NextResponse } from "next/server";
 import { fetchOwnedAccounts } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";
 import { TokenExpiredError, RateLimitError } from "@/lib/meta/client";
+import { getAdminSession } from "@/lib/adminSession";
+import { findAdmin } from "@/lib/admins";
 
 export interface SettingsResponse {
   tokenConfigured: boolean;
-  tokenMasked: string;
   accountCount: number;
   accounts: { id: string; name: string; status: number; currency: string }[];
 }
 
-const SETTINGS_CACHE_KEY = "settings:token_accounts";
+const SETTINGS_CACHE_KEY = "settings:accounts";
 
 export async function GET() {
-  const rawToken = process.env.META_ACCESS_TOKEN ?? "";
-  const isPlaceholder =
-    !rawToken ||
-    rawToken.startsWith("EAAxxxxx") ||
-    rawToken.length < 20;
+  const session = getAdminSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const admin = await findAdmin(session.adminId);
+  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const tokenMasked = rawToken.length >= 10
-    ? `${rawToken.slice(0, 6)}...${rawToken.slice(-4)}`
-    : rawToken || "not set";
+  const rawToken = process.env.META_ACCESS_TOKEN ?? "";
+  const isPlaceholder = !rawToken || rawToken.startsWith("EAAxxxxx") || rawToken.length < 20;
 
   if (isPlaceholder) {
-    const body: SettingsResponse = {
-      tokenConfigured: false,
-      tokenMasked,
-      accountCount: 0,
-      accounts: [],
-    };
-    return NextResponse.json({ data: body });
+    return NextResponse.json({ data: { tokenConfigured: false, accountCount: 0, accounts: [] } });
   }
 
   const cached = cache.get<SettingsResponse>(SETTINGS_CACHE_KEY);
-  if (cached) {
-    return NextResponse.json({ data: cached });
-  }
+  if (cached) return NextResponse.json({ data: cached });
 
   try {
     const accounts = await fetchOwnedAccounts();
     const body: SettingsResponse = {
       tokenConfigured: true,
-      tokenMasked,
       accountCount: accounts.length,
       accounts: accounts.map((a) => ({
         id: a.id,
@@ -55,13 +45,7 @@ export async function GET() {
     return NextResponse.json({ data: body });
   } catch (err) {
     if (err instanceof TokenExpiredError) {
-      const body: SettingsResponse = {
-        tokenConfigured: false,
-        tokenMasked,
-        accountCount: 0,
-        accounts: [],
-      };
-      return NextResponse.json({ data: body });
+      return NextResponse.json({ data: { tokenConfigured: false, accountCount: 0, accounts: [] } });
     }
     if (err instanceof RateLimitError) {
       return NextResponse.json(
