@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { fetchOwnedAccounts } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";

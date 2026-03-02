@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { fetchOwnedAccounts, fetchAllAccountInsightsBatch } from "@/lib/meta/endpoints";
 import { transformAccount, transformInsight, aggregateInsights } from "@/lib/meta/transformers";

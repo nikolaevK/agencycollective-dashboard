@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { fetchCampaigns } from "@/lib/meta/endpoints";
 import { transformCampaign } from "@/lib/meta/transformers";
