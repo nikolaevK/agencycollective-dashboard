@@ -11,11 +11,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+type SeverityFilter = "all" | "critical" | "warning";
+
+const SEVERITY_OPTIONS: { value: SeverityFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "critical", label: "Critical" },
+  { value: "warning", label: "Warning" },
+];
+
 function AlertsContent() {
   const { dateRange } = useDateRange();
   const { data: alerts, isLoading, error, dataUpdatedAt } = useAlerts(dateRange);
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -86,8 +95,35 @@ function AlertsContent() {
 
         {/* Alert feed */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">All Alerts</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">
+              All Alerts
+              {alerts && severityFilter !== "all" && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({alerts.filter((a) => a.severity === severityFilter).length})
+                </span>
+              )}
+            </CardTitle>
+            <div className="flex items-center rounded-lg border border-input bg-background p-0.5 gap-0.5">
+              {SEVERITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSeverityFilter(opt.value)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    severityFilter === opt.value
+                      ? opt.value === "critical"
+                        ? "bg-red-500 text-white shadow-sm"
+                        : opt.value === "warning"
+                        ? "bg-amber-500 text-white shadow-sm"
+                        : "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             {error ? (
@@ -96,9 +132,9 @@ function AlertsContent() {
               </div>
             ) : (
               <AlertFeed
-                alerts={alerts}
+                alerts={severityFilter === "all" ? alerts : alerts?.filter((a) => a.severity === severityFilter)}
                 isLoading={isLoading}
-                groupBySeverity
+                groupBySeverity={severityFilter === "all"}
                 compact={false}
               />
             )}
