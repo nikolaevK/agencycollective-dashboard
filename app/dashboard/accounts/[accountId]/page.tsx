@@ -45,7 +45,10 @@ function AccountContent({ accountId }: { accountId: string }) {
           <h1 className="text-2xl font-bold">{accountName}</h1>
           {account && (
             <p className="text-sm text-muted-foreground">
-              {account.currency} · {account.timezone} · {account.status}
+              <span className="font-mono">{account.id}</span> · {account.currency} · {account.timezone} ·{" "}
+              <span className={`font-mono font-medium ${account.status === "ACTIVE" ? "text-green-500" : "text-red-500"}`}>
+                {account.status}
+              </span>
             </p>
           )}
         </div>
