@@ -160,12 +160,30 @@ export async function fetchAllAccountInsightsBatch(
 
     for (let j = 0; j < chunk.length; j++) {
       const item = batchResults[j];
-      if (!item || item.code !== 200) continue;
+      if (!item || item.code !== 200) {
+        console.warn(
+          `[batch] Sub-request failed for account ${chunk[j]}: code=${item?.code ?? "null"} body=${item?.body ?? ""}`
+        );
+        continue;
+      }
 
-      const parsed = MetaInsightsPaginatedSchema.safeParse(
-        JSON.parse(item.body)
-      );
-      if (parsed.success && parsed.data.data.length > 0) {
+      let rawBody: unknown;
+      try {
+        rawBody = JSON.parse(item.body);
+      } catch (e) {
+        console.warn(`[batch] Failed to parse JSON for account ${chunk[j]}:`, e);
+        continue;
+      }
+
+      const parsed = MetaInsightsPaginatedSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        console.warn(
+          `[batch] Zod parse failed for account ${chunk[j]}:`,
+          parsed.error.flatten()
+        );
+        continue;
+      }
+      if (parsed.data.data.length > 0) {
         map.set(chunk[j], parsed.data.data[0] as unknown as MetaInsight);
       }
     }

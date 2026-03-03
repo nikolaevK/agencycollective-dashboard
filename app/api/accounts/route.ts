@@ -37,6 +37,15 @@ export async function GET(request: Request) {
       fetchAllAccountInsightsBatch(accountIds, prevDateRange),
     ]);
 
+    // Log accounts that returned no insights (likely a batch sub-request failure)
+    const missingCurrent = accounts.filter((a) => !currentInsightsMap.has(a.id));
+    if (missingCurrent.length > 0) {
+      console.warn(
+        `[accounts] ${missingCurrent.length} account(s) returned no current insights (showing $0):`,
+        missingCurrent.map((a) => `${a.name} (${a.id})`).join(", ")
+      );
+    }
+
     // Transform accounts
     const summaries: AccountSummary[] = accounts.map((account) => {
       const rawCurrent = currentInsightsMap.get(account.id);

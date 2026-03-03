@@ -1,17 +1,20 @@
 import { z } from "zod";
 
 /**
- * Transform a numeric string (as returned by Meta API) to a number
+ * Transform a numeric string (as returned by Meta API) to a number.
+ * Also handles null (Meta omits or nulls fields when value is 0).
  */
 const numericString = z
-  .string()
-  .transform((val) => {
-    const n = parseFloat(val);
-    return isNaN(n) ? 0 : n;
-  })
-  .or(z.number());
+  .union([
+    z.string().transform((val) => {
+      const n = parseFloat(val);
+      return isNaN(n) ? 0 : n;
+    }),
+    z.number(),
+    z.null().transform(() => 0),
+  ]);
 
-const optionalNumericString = numericString.optional().default("0");
+const optionalNumericString = numericString.optional().default(0);
 
 export const MetaActionValueSchema = z.object({
   action_type: z.string(),
@@ -34,17 +37,17 @@ export const MetaInsightSchema = z.object({
   ad_name: z.string().optional(),
   date_start: z.string().optional(),
   date_stop: z.string().optional(),
-  spend: numericString,
-  impressions: numericString,
-  reach: numericString,
-  clicks: numericString,
+  spend: optionalNumericString,
+  impressions: optionalNumericString,
+  reach: optionalNumericString,
+  clicks: optionalNumericString,
   ctr: optionalNumericString,
   cpc: optionalNumericString,
   cpm: optionalNumericString,
-  actions: z.array(MetaActionSchema).optional(),
-  action_values: z.array(MetaActionValueSchema).optional(),
-  outbound_clicks: z.array(MetaActionSchema).optional(),
-  website_purchase_roas: z.array(MetaActionValueSchema).optional(),
+  actions: z.array(MetaActionSchema).nullish(),
+  action_values: z.array(MetaActionValueSchema).nullish(),
+  outbound_clicks: z.array(MetaActionSchema).nullish(),
+  website_purchase_roas: z.array(MetaActionValueSchema).nullish(),
 });
 
 export type MetaInsightParsed = z.infer<typeof MetaInsightSchema>;

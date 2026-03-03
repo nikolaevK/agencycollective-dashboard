@@ -225,7 +225,7 @@ export function AccountsTable({ accounts, isLoading, dateRange }: AccountsTableP
                 </TableCell>
                 <TableCell>
                   <Link
-                    href={`/dashboard/accounts/${account.id}`}
+                    href={`/dashboard/accounts/${account.id}${dateRange ? `?${dateRange}` : ""}`}
                     className="text-muted-foreground hover:text-primary"
                   >
                     <ExternalLink className="h-4 w-4" />

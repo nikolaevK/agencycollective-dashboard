@@ -40,7 +40,11 @@ function OverviewContent() {
       }
     : undefined;
 
-  const dateRangeStr = currentPreset ? `preset=${currentPreset}` : undefined;
+  const dateRangeStr = currentPreset
+    ? `preset=${currentPreset}`
+    : dateRange.since && dateRange.until
+    ? `since=${dateRange.since}&until=${dateRange.until}`
+    : undefined;
 
   return (
     <DashboardShell>
