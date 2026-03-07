@@ -68,7 +68,6 @@ export async function metaFetch<T>(
   const token = getAccessToken();
 
   const url = new URL(`${API_BASE}/${version}${path}`);
-  url.searchParams.set("access_token", token);
 
   for (const [key, val] of Object.entries(params)) {
     if (val !== undefined) {
@@ -79,7 +78,10 @@ export async function metaFetch<T>(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url.toString(), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         // Next.js cache: no-store for fresh data from API routes
         cache: "no-store",
       });
@@ -176,13 +178,15 @@ export async function metaBatchFetch(
 
   const url = `${API_BASE}/${version}`;
   const body = new URLSearchParams({
-    access_token: token,
     batch: JSON.stringify(requests),
   });
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Bearer ${token}`,
+    },
     body: body.toString(),
     cache: "no-store",
   });

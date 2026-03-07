@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { getAdminSession } from "@/lib/adminSession";
 import { fetchCampaigns } from "@/lib/meta/endpoints";
 import { transformCampaign } from "@/lib/meta/transformers";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
@@ -10,12 +11,17 @@ import type { ApiResponse } from "@/types/api";
 import type { CampaignRow } from "@/types/dashboard";
 
 export async function GET(request: Request) {
+  const session = getAdminSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get("accountId");
 
-    if (!accountId) {
-      return NextResponse.json({ error: "accountId is required" }, { status: 400 });
+    if (!accountId || !/^act_\d+$/.test(accountId)) {
+      return NextResponse.json({ error: "Invalid accountId" }, { status: 400 });
     }
 
     const dateRange = parseDateRangeFromParams(searchParams);
