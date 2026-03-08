@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { GEMINI_IMAGE_MODELS, ALLOWED_GEMINI_MODELS, ALLOWED_MODES, type GeminiImageModelId, type GenerateMode } from "@/lib/geminiModels";
 
+export type GenerateResolution = "2K" | "4K";
+const ALLOWED_RESOLUTIONS_CLIENT: readonly GenerateResolution[] = ["2K", "4K"];
+
 const SESSION_KEY = "ac-image-gen";
 const MAX_STORED_MESSAGES = 40;
 const KEEP_IMAGES_COUNT = 4; // keep imageBase64 on the last N assistant messages
@@ -20,6 +23,7 @@ interface SessionState {
   conversationId: string | null;
   mode: GenerateMode;
   model: GeminiImageModelId;
+  resolution: GenerateResolution;
 }
 
 const DEFAULTS: SessionState = {
@@ -27,6 +31,7 @@ const DEFAULTS: SessionState = {
   conversationId: null,
   mode: "multi-turn",
   model: GEMINI_IMAGE_MODELS[0].id,
+  resolution: "4K",
 };
 
 function readSession(): SessionState {
@@ -44,6 +49,9 @@ function readSession(): SessionState {
       model: (ALLOWED_GEMINI_MODELS as readonly string[]).includes(parsed.model as string)
         ? (parsed.model as GeminiImageModelId)
         : DEFAULTS.model,
+      resolution: (ALLOWED_RESOLUTIONS_CLIENT as readonly string[]).includes((parsed as Partial<SessionState>).resolution as string)
+        ? ((parsed as Partial<SessionState>).resolution as GenerateResolution)
+        : DEFAULTS.resolution,
     };
   } catch {
     return DEFAULTS;
@@ -98,7 +106,7 @@ function tryWrite(data: SessionState): void {
   try {
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ messages: [], conversationId: data.conversationId, mode: data.mode, model: data.model })
+      JSON.stringify({ messages: [], conversationId: data.conversationId, mode: data.mode, model: data.model, resolution: data.resolution })
     );
     return;
   } catch {
@@ -116,6 +124,7 @@ export function useImageGeneratorSession() {
   const [conversationId, setConversationIdRaw] = useState<string | null>(() => readSession().conversationId);
   const [mode, setModeRaw] = useState<GenerateMode>(() => readSession().mode);
   const [model, setModelRaw] = useState<GeminiImageModelId>(() => readSession().model);
+  const [resolution, setResolutionRaw] = useState<GenerateResolution>(() => readSession().resolution);
 
   // Persist to sessionStorage on every state change (except the initial mount read)
   useEffect(() => {
@@ -123,8 +132,8 @@ export function useImageGeneratorSession() {
       isMounted.current = true;
       return;
     }
-    tryWrite({ messages, conversationId, mode, model });
-  }, [messages, conversationId, mode, model]);
+    tryWrite({ messages, conversationId, mode, model, resolution });
+  }, [messages, conversationId, mode, model, resolution]);
 
   const setMessages = useCallback((val: Setter<GenerateMessage[]>) => {
     setMessagesRaw(val);
@@ -142,6 +151,10 @@ export function useImageGeneratorSession() {
     setModelRaw(val);
   }, []);
 
+  const setResolution = useCallback((val: Setter<GenerateResolution>) => {
+    setResolutionRaw(val);
+  }, []);
+
   const clearSession = useCallback(() => {
     setMessagesRaw([]);
     setConversationIdRaw(null);
@@ -157,6 +170,8 @@ export function useImageGeneratorSession() {
     setMode,
     model,
     setModel,
+    resolution,
+    setResolution,
     clearSession,
   };
 }

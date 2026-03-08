@@ -31,9 +31,7 @@ const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "i
 const ALLOWED_ASPECT_RATIOS = new Set([
   "1:1", "3:4", "4:3", "9:16", "16:9",
 ]);
-const ALLOWED_RESOLUTIONS = new Set([
-  "256", "512", "1024", "2048", "4096",
-]);
+const ALLOWED_RESOLUTIONS = new Set(["1K", "2K", "4K"]);
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
 const RATE_LIMIT_WINDOW_MS    = 60_000;
@@ -110,7 +108,7 @@ export async function POST(request: Request) {
     // Imagen 3 sizes are determined by aspectRatio; imageSize is Gemini-only.
     // Default to 4K for all Gemini models when no resolution is explicitly passed.
     const isImagenModel = model.startsWith("imagen");
-    const effectiveResolution = resolution ?? (isImagenModel ? undefined : "4096");
+    const effectiveResolution = isImagenModel ? undefined : (resolution ?? "4K");
 
     // ── Uploaded reference images ─────────────────────────────────────────────
     type ImagePart = { inlineData: { mimeType: string; data: string } };
@@ -230,8 +228,6 @@ export async function POST(request: Request) {
     }
 
     // ── Single-turn: ai.models.generateContent() ─────────────────────────────
-    if (imageParts.length === 0) return badRequest("Single-turn mode requires at least one uploaded image");
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const singleTurnConfig: Record<string, any> = {
       responseModalities: ["TEXT", "IMAGE"],
@@ -245,9 +241,13 @@ export async function POST(request: Request) {
       singleTurnConfig.imageConfig = imgCfg;
     }
 
+    const singleTurnParts = imageParts.length > 0
+      ? [...imageParts, { text: prompt }]
+      : [{ text: prompt }];
+
     const result = await ai.models.generateContent({
       model,
-      contents: [{ role: "user", parts: [...imageParts, { text: prompt }] }],
+      contents: [{ role: "user", parts: singleTurnParts }],
       config: singleTurnConfig,
     });
 

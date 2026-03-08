@@ -247,7 +247,7 @@ function UploadGrid({
   mode: GenerateMode;
 }) {
   const canAdd = files.length < MAX_UPLOAD_FILES;
-  const required = mode === "single-turn";
+  const required = false;
 
   return (
     <div className="space-y-2">
@@ -306,6 +306,7 @@ export function ImageGenerator() {
     conversationId, setConversationId,
     mode, setMode,
     model, setModel,
+    resolution, setResolution,
     clearSession,
   } = useImageGeneratorSession();
   const [input, setInput]     = useState("");
@@ -376,11 +377,6 @@ export function ImageGenerator() {
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
-    if (mode === "single-turn" && uploadedFiles.length === 0) {
-      setError("Please upload at least one image for single-turn mode.");
-      return;
-    }
-
     setError(null);
     setIsLoading(true);
 
@@ -401,6 +397,7 @@ export function ImageGenerator() {
       formData.set("model", model);
       formData.set("mode", mode);
       formData.set("prompt", trimmed);
+      formData.set("resolution", resolution);
 
       // For multi-turn, pass the conversationId so the server can resume
       // the same chat object (which holds full history + image context internally).
@@ -446,7 +443,7 @@ export function ImageGenerator() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, mode, model, uploadedFiles, conversationId]);
+  }, [input, isLoading, mode, model, resolution, uploadedFiles, conversationId]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -461,7 +458,7 @@ export function ImageGenerator() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   }
 
-  const canSubmit = !!input.trim() && !isLoading && (mode === "multi-turn" || uploadedFiles.length > 0);
+  const canSubmit = !!input.trim() && !isLoading;
 
   return (
     <div className="flex h-full w-full">
@@ -501,10 +498,35 @@ export function ImageGenerator() {
           </p>
         </div>
 
+        {/* Resolution toggle */}
+        <div className="p-4 border-b border-border">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Resolution</p>
+          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+            {(["2K", "4K"] as const).map((r, i) => (
+              <button
+                key={r}
+                onClick={() => setResolution(r)}
+                className={cn(
+                  "flex-1 py-1.5 transition-colors",
+                  i > 0 && "border-l border-border",
+                  resolution === r
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+            Applies to Gemini models only. Imagen 3 uses aspect ratio sizing.
+          </p>
+        </div>
+
         {/* Image upload */}
         <div className="p-4 border-b border-border">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            {mode === "single-turn" ? "Reference Images (required)" : "Reference Images (optional)"}
+            Reference Images (optional)
           </p>
           <UploadGrid
             files={uploadedFiles}
