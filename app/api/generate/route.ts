@@ -32,7 +32,7 @@ const ALLOWED_ASPECT_RATIOS = new Set([
   "1:1", "3:4", "4:3", "9:16", "16:9",
 ]);
 const ALLOWED_RESOLUTIONS = new Set([
-  "256", "512", "1024", "2048",
+  "256", "512", "1024", "2048", "4096",
 ]);
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
@@ -107,6 +107,11 @@ export async function POST(request: Request) {
       ? resolutionRaw
       : undefined;
 
+    // Imagen 3 sizes are determined by aspectRatio; imageSize is Gemini-only.
+    // Default to 4K for all Gemini models when no resolution is explicitly passed.
+    const isImagenModel = model.startsWith("imagen");
+    const effectiveResolution = resolution ?? (isImagenModel ? undefined : "4096");
+
     // ── Uploaded reference images ─────────────────────────────────────────────
     type ImagePart = { inlineData: { mimeType: string; data: string } };
     const imageParts: ImagePart[] = [];
@@ -145,7 +150,7 @@ export async function POST(request: Request) {
       let chat: ChatSession["chat"];
       let convId: string;
 
-      const hasImageConfig = !!(aspectRatio || resolution);
+      const hasImageConfig = !!(aspectRatio || effectiveResolution);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let response: any;
@@ -168,7 +173,7 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const imgCfg: Record<string, any> = {};
           if (aspectRatio) imgCfg.aspectRatio = aspectRatio;
-          if (resolution) imgCfg.imageSize = resolution;
+          if (effectiveResolution) imgCfg.imageSize = effectiveResolution;
           perTurnConfig.imageConfig = imgCfg;
         }
 
@@ -191,7 +196,7 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const imgCfg: Record<string, any> = {};
           if (aspectRatio) imgCfg.aspectRatio = aspectRatio;
-          if (resolution) imgCfg.imageSize = resolution;
+          if (effectiveResolution) imgCfg.imageSize = effectiveResolution;
           response = await chat.sendMessage({
             message,
             config: {
@@ -232,11 +237,11 @@ export async function POST(request: Request) {
       responseModalities: ["TEXT", "IMAGE"],
       tools: [{ googleSearch: {} }],
     };
-    if (aspectRatio || resolution) {
+    if (aspectRatio || effectiveResolution) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imgCfg: Record<string, any> = {};
       if (aspectRatio) imgCfg.aspectRatio = aspectRatio;
-      if (resolution) imgCfg.imageSize = resolution;
+      if (effectiveResolution) imgCfg.imageSize = effectiveResolution;
       singleTurnConfig.imageConfig = imgCfg;
     }
 
