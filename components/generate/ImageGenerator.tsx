@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GEMINI_IMAGE_MODELS, type GeminiImageModelId, type GenerateMode } from "@/lib/geminiModels";
+import { useImageGeneratorSession } from "@/hooks/useImageGeneratorSession";
 
 const MAX_UPLOAD_FILES = 4;
 const ALLOWED_TYPES    = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -300,10 +301,13 @@ function UploadGrid({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ImageGenerator() {
-  const [mode, setMode]       = useState<GenerateMode>("multi-turn");
-  const [model, setModel]     = useState<GeminiImageModelId>(GEMINI_IMAGE_MODELS[0].id);
-  const [messages, setMessages] = useState<GenerateMessage[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const {
+    messages, setMessages,
+    conversationId, setConversationId,
+    mode, setMode,
+    model, setModel,
+    clearSession,
+  } = useImageGeneratorSession();
   const [input, setInput]     = useState("");
   const [uploadedFiles, setUploadedFiles]     = useState<File[]>([]);
   const [uploadedPreviews, setUploadedPreviews] = useState<string[]>([]);
@@ -442,7 +446,7 @@ export function ImageGenerator() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, mode, model, messages, uploadedFiles, conversationId]);
+  }, [input, isLoading, mode, model, uploadedFiles, conversationId]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -529,7 +533,7 @@ export function ImageGenerator() {
         {mode === "multi-turn" && messages.length > 0 && (
           <div className="p-4 border-t border-border">
             <button
-              onClick={() => { if (confirm("Clear all messages?")) { setMessages([]); setConversationId(null); setUploadedFiles([]); } }}
+              onClick={() => { if (confirm("Clear all messages?")) { clearSession(); setUploadedFiles([]); } }}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2 text-xs text-muted-foreground hover:border-destructive/50 hover:text-destructive transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
