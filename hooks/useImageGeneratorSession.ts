@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { GEMINI_IMAGE_MODELS, type GeminiImageModelId, type GenerateMode } from "@/lib/geminiModels";
+import { GEMINI_IMAGE_MODELS, ALLOWED_GEMINI_MODELS, ALLOWED_MODES, type GeminiImageModelId, type GenerateMode } from "@/lib/geminiModels";
 
 const SESSION_KEY = "ac-image-gen";
 const MAX_STORED_MESSAGES = 40;
@@ -38,8 +38,12 @@ function readSession(): SessionState {
     return {
       messages: Array.isArray(parsed.messages) ? parsed.messages : DEFAULTS.messages,
       conversationId: parsed.conversationId ?? DEFAULTS.conversationId,
-      mode: parsed.mode ?? DEFAULTS.mode,
-      model: parsed.model ?? DEFAULTS.model,
+      mode: (ALLOWED_MODES as readonly string[]).includes(parsed.mode as string)
+        ? (parsed.mode as GenerateMode)
+        : DEFAULTS.mode,
+      model: (ALLOWED_GEMINI_MODELS as readonly string[]).includes(parsed.model as string)
+        ? (parsed.model as GeminiImageModelId)
+        : DEFAULTS.model,
     };
   } catch {
     return DEFAULTS;
@@ -139,11 +143,9 @@ export function useImageGeneratorSession() {
   }, []);
 
   const clearSession = useCallback(() => {
-    if (typeof window !== "undefined") sessionStorage.removeItem(SESSION_KEY);
-    setMessagesRaw(DEFAULTS.messages);
-    setConversationIdRaw(DEFAULTS.conversationId);
-    setModeRaw(DEFAULTS.mode);
-    setModelRaw(DEFAULTS.model);
+    setMessagesRaw([]);
+    setConversationIdRaw(null);
+    // mode and model are intentionally preserved
   }, []);
 
   return {
