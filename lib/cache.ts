@@ -76,6 +76,8 @@ export const TTL = {
   ADSETS: 300,      // 5 minutes
   ADS: 300,         // 5 minutes
   ALERTS: 180,      // 3 minutes
+  CREATIVES: 300,   // 5 minutes
+  PAGES: 300,       // 5 minutes
 } as const;
 
 // Cache key builders
@@ -92,6 +94,9 @@ export const CacheKeys = {
     `adset_insights:${adsetId}:${dateRange}`,
   ads: (adsetId: string) => `ads:${adsetId}`,
   alerts: (dateRange: string) => `alerts:${dateRange}`,
+  campaignCreatives: (campaignId: string, dateRange: string) =>
+    `campaign_creatives:${campaignId}:${dateRange}`,
   timeSeries: (accountId: string, dateRange: string) =>
     `timeseries:${accountId}:${dateRange}`,
+  accountPages: (accountId: string) => `account_pages:${accountId}`,
 } as const;

@@ -99,3 +99,34 @@ export interface InsightRow {
   metrics: InsightMetrics;
   timeSeries?: TimeSeriesDataPoint[];
 }
+
+export interface CampaignCreative {
+  adId: string;
+  adName: string;
+  creativeId: string;
+  adsetId: string | null;
+  pageId: string | null;
+  imageHash: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+  existingPrimaryText: string | null;
+  existingHeadline: string | null;
+  existingDescription: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+}
+
+export interface UploadedImage {
+  id: string;
+  name: string;
+  preview: string;
+  base64: string;
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+}
+
+export interface CopyVariation {
+  title: string;
+  body: string;
+}

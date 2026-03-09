@@ -121,11 +121,15 @@ export const MetaCreativeDetailSchema = z
       .optional(),
     object_story_spec: z
       .object({
+        page_id: z.string().optional(),
         link_data: z
           .object({
             picture: z.string().optional(),
             image_url: z.string().optional(),
             image_hash: z.string().optional(),
+            message: z.string().optional(),
+            name: z.string().optional(),
+            description: z.string().optional(),
           })
           .passthrough()
           .optional(),
@@ -204,6 +208,24 @@ export const MetaPaginatedResponseSchema = <T extends z.ZodTypeAny>(
       })
       .optional(),
   });
+
+export const MetaPageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+}).passthrough();
+
+export const MetaPagesPaginatedSchema = MetaPaginatedResponseSchema(MetaPageSchema);
+
+export const MetaAdImageUploadResponseSchema = z.object({
+  images: z.record(z.object({
+    hash: z.string(),
+    url: z.string().optional(),
+  }).passthrough()),
+}).passthrough();
+
+export const MetaCreateResponseSchema = z.object({
+  id: z.string(),
+}).passthrough();
 
 export const MetaInsightsPaginatedSchema =
   MetaPaginatedResponseSchema(MetaInsightSchema);

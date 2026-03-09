@@ -93,11 +93,10 @@ export interface MetaCreativeDetail {
   image_url?: string;
   thumbnail_url?: string;
   image_hash?: string;
-  /** Populated server-side from /adimages — the original full-resolution asset URL. */
-  full_res_url?: string;
   video_data?: { thumbnail_url?: string };
   object_story_spec?: {
-    link_data?: { picture?: string; image_url?: string; image_hash?: string };
+    page_id?: string;
+    link_data?: { picture?: string; image_url?: string; image_hash?: string; message?: string; name?: string; description?: string };
     photo_data?: { images?: Record<string, { url?: string }> };
     video_data?: { image_url?: string };
   };
@@ -106,6 +105,15 @@ export interface MetaCreativeDetail {
 export interface MetaAdWithCreative extends Omit<MetaAd, "creative"> {
   creative?: MetaCreativeDetail;
   campaign?: { name: string };
+}
+
+export interface MetaPage {
+  id: string;
+  name: string;
+}
+
+export interface MetaCreateResponse {
+  id: string;
 }
 
 export interface MetaApiError {

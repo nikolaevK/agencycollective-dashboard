@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { metaFetch, metaBatchFetch } from "./client";
+import { metaFetch, metaFetchPost, metaFetchMultipart, metaBatchFetch } from "./client";
 import {
   MetaAccountsPaginatedSchema,
   MetaCampaignsPaginatedSchema,
@@ -8,8 +7,11 @@ import {
   MetaInsightsPaginatedSchema,
   MetaAdsWithCreativePaginatedSchema,
   MetaCreativeDetailSchema,
+  MetaPagesPaginatedSchema,
+  MetaAdImageUploadResponseSchema,
+  MetaCreateResponseSchema,
 } from "./schemas";
-import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse, MetaAdWithCreative, MetaCreativeDetail } from "./types";
+import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse, MetaAdWithCreative, MetaCreativeDetail, MetaPage } from "./types";
 import { fetchWithConcurrency, getConcurrencyLimit } from "@/lib/concurrency";
 import { dateRangeToMetaParams } from "@/lib/utils";
 import type { DateRangeInput } from "@/types/api";
@@ -430,4 +432,220 @@ export async function fetchTopAdsForAccount(
   );
 
   return topAds;
+}
+
+/**
+ * Fetch all ads for a specific campaign with creative details.
+ *
+ * Uses the account-level /ads endpoint with a campaign.id filter
+ * to avoid the N+1 query of fetching ad sets first.
+ * Then fetches creative details (including existing ad copy text) for each ad.
+ */
+export async function fetchCampaignAdsWithCreatives(
+  accountId: string,
+  campaignId: string,
+  dateRange: DateRangeInput
+): Promise<MetaAdWithCreative[]> {
+  const cleanId = accountId.replace(/^act_/, "");
+  const metaParams = dateRangeToMetaParams(dateRange);
+
+  const dateParam = metaParams.date_preset
+    ? `date_preset(${metaParams.date_preset})`
+    : `time_range(${metaParams.time_range})`;
+
+  const adFields = [
+    "id",
+    "name",
+    "status",
+    "effective_status",
+    "adset_id",
+    "campaign_id",
+    "campaign{name}",
+    "creative",
+    `insights.${dateParam}{spend,impressions,clicks,ctr,cpc}`,
+  ].join(",");
+
+  const filtering = JSON.stringify([
+    { field: "campaign.id", operator: "EQUAL", value: campaignId },
+  ]);
+
+  const params: Record<string, string | number | boolean | undefined> = {
+    fields: adFields,
+    filtering,
+    limit: 200,
+  };
+
+  let allAds: MetaAdWithCreative[] = [];
+  let afterCursor: string | undefined;
+
+  do {
+    const pageParams = { ...params, after: afterCursor };
+    const page = await metaFetch(
+      `/act_${cleanId}/ads`,
+      MetaAdsWithCreativePaginatedSchema,
+      { params: pageParams }
+    );
+
+    allAds = allAds.concat(page.data as MetaAdWithCreative[]);
+    afterCursor = page.paging?.cursors?.after;
+    if (!page.paging?.next) break;
+  } while (afterCursor);
+
+  // Fetch creative details for each ad (full-res image + ad copy text + page_id)
+  const creativeFields =
+    "id,image_url,image_hash,thumbnail_url,object_story_spec{page_id,link_data{picture,image_url,image_hash,message,name,description},video_data{image_url}}";
+
+  const concurrency = getConcurrencyLimit();
+  await fetchWithConcurrency(
+    allAds.map((ad, idx) => ({ ad, idx })),
+    async ({ ad, idx }) => {
+      const creativeId = (ad.creative as { id?: string } | undefined)?.id;
+      if (!creativeId) return;
+      try {
+        const raw = await metaFetch(
+          `/${creativeId}`,
+          MetaCreativeDetailSchema,
+          { params: { fields: creativeFields } }
+        );
+        allAds[idx] = { ...ad, creative: raw };
+      } catch {
+        // Creative fetch failed — leave ad with initial data
+      }
+    },
+    concurrency
+  );
+
+  return allAds;
+}
+
+/**
+ * Fetch Facebook Pages available for an ad account.
+ * Tries /promote_pages first (works for most ad accounts),
+ * falls back to /me/accounts (pages the token user manages).
+ */
+export async function fetchAccountPages(accountId: string): Promise<MetaPage[]> {
+  const cleanId = accountId.replace(/^act_/, "");
+
+  // Try promote_pages — lists pages eligible for ads under this account
+  try {
+    const page = await metaFetch(
+      `/act_${cleanId}/promote_pages`,
+      MetaPagesPaginatedSchema,
+      { params: { fields: "id,name", limit: 100 }, retries: 1 }
+    );
+    if (page.data.length > 0) return page.data as MetaPage[];
+  } catch {
+    // Fall through to fallback
+  }
+
+  // Fallback: pages the token user manages
+  const page = await metaFetch(
+    `/me/accounts`,
+    MetaPagesPaginatedSchema,
+    { params: { fields: "id,name", limit: 100 } }
+  );
+
+  return page.data as MetaPage[];
+}
+
+/**
+ * Upload an image to an ad account. Returns the image hash.
+ *
+ * Two modes:
+ * - `source.url` — Meta downloads the image itself (form-encoded POST)
+ * - `source.base64` + `source.filename` — we upload the file (multipart POST)
+ */
+export async function uploadAdImage(
+  accountId: string,
+  source: { url: string } | { base64: string; filename: string }
+): Promise<string> {
+  const cleanId = accountId.replace(/^act_/, "");
+  const path = `/act_${cleanId}/adimages`;
+
+  if ("url" in source) {
+    // Let Meta fetch the image from the URL
+    const result = await metaFetchPost(
+      path,
+      MetaAdImageUploadResponseSchema,
+      { url: source.url }
+    );
+    const firstEntry = Object.values(result.images)[0];
+    if (!firstEntry?.hash) throw new Error("No image hash returned from upload");
+    return firstEntry.hash;
+  }
+
+  // Upload file as multipart/form-data
+  const buffer = Buffer.from(source.base64, "base64");
+  const blob = new Blob([buffer]);
+  const formData = new FormData();
+  formData.append("filename", blob, source.filename);
+
+  const result = await metaFetchMultipart(
+    path,
+    MetaAdImageUploadResponseSchema,
+    formData
+  );
+  const firstEntry = Object.values(result.images)[0];
+  if (!firstEntry?.hash) throw new Error("No image hash returned from upload");
+  return firstEntry.hash;
+}
+
+/**
+ * Create an ad creative with an unpublished page post.
+ */
+export async function createAdCreative(
+  accountId: string,
+  params: {
+    name: string;
+    pageId: string;
+    imageHash: string;
+    message: string;
+    headline: string;
+    description: string;
+    link?: string;
+  }
+): Promise<string> {
+  const cleanId = accountId.replace(/^act_/, "");
+
+  const objectStorySpec = JSON.stringify({
+    page_id: params.pageId,
+    link_data: {
+      image_hash: params.imageHash,
+      message: params.message,
+      name: params.headline,
+      description: params.description,
+      ...(params.link ? { link: params.link } : {}),
+    },
+  });
+
+  const result = await metaFetchPost(
+    `/act_${cleanId}/adcreatives`,
+    MetaCreateResponseSchema,
+    { name: params.name, object_story_spec: objectStorySpec }
+  );
+
+  return result.id;
+}
+
+/**
+ * Create a PAUSED ad under a given ad set.
+ */
+export async function createDraftAd(
+  accountId: string,
+  params: { name: string; adsetId: string; creativeId: string }
+): Promise<string> {
+  const cleanId = accountId.replace(/^act_/, "");
+
+  const result = await metaFetchPost(
+    `/act_${cleanId}/ads`,
+    MetaCreateResponseSchema,
+    {
+      name: params.name,
+      adset_id: params.adsetId,
+      creative: JSON.stringify({ creative_id: params.creativeId }),
+      status: "PAUSED",
+    }
+  );
+
+  return result.id;
 }

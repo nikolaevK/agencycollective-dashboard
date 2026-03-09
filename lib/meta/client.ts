@@ -152,6 +152,173 @@ export async function metaFetch<T>(
   throw new MetaApiError("Max retries exceeded", 0);
 }
 
+/**
+ * Meta API POST function for mutations (create ads, upload images, etc.).
+ * Uses application/x-www-form-urlencoded body (Meta Graph API standard for mutations).
+ * Same auth, error handling, and retry logic as metaFetch().
+ */
+export async function metaFetchPost<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  body: Record<string, string>,
+  options: { retries?: number } = {}
+): Promise<T> {
+  const { retries = 3 } = options;
+  const version = getApiVersion();
+  const token = getAccessToken();
+
+  const url = `${API_BASE}/${version}${path}`;
+  const formBody = new URLSearchParams(body);
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: formBody.toString(),
+        cache: "no-store",
+      });
+
+      const parsed = await response.json();
+      console.log(`[metaFetchPost] ${path} response:`, JSON.stringify(parsed).slice(0, 500));
+
+      if (parsed.error) {
+        const { code, message, error_subcode } = parsed.error;
+        console.error(`[metaFetchPost] ${path} error:`, parsed.error);
+        if (code === 80000 || code === 17 || code === 4) {
+          throw new RateLimitError(60);
+        }
+        if (code === 190 || code === 102 || code === 10) {
+          throw new TokenExpiredError(message);
+        }
+        throw new MetaApiError(message, code, error_subcode);
+      }
+
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < retries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await sleep(delay);
+          continue;
+        }
+        throw new MetaApiError(`HTTP ${response.status}`, response.status);
+      }
+
+      const validated = schema.safeParse(parsed);
+      if (!validated.success) {
+        console.error("Zod validation error (POST):", validated.error.flatten());
+        throw new MetaApiError(
+          `API response validation failed: ${validated.error.message}`,
+          0
+        );
+      }
+
+      return validated.data;
+    } catch (err) {
+      // Don't retry on auth, rate limit, or API-level errors (e.g. code 3 capability)
+      if (
+        err instanceof RateLimitError ||
+        err instanceof TokenExpiredError ||
+        err instanceof MetaApiError
+      ) {
+        throw err;
+      }
+      if (attempt < retries) {
+        const delay = Math.pow(2, attempt) * 1000;
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new MetaApiError("Max retries exceeded", 0);
+}
+
+/**
+ * Meta API POST with multipart/form-data body (for file uploads like adimages).
+ * Same auth and error handling as metaFetchPost().
+ */
+export async function metaFetchMultipart<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  formData: FormData,
+  options: { retries?: number } = {}
+): Promise<T> {
+  const { retries = 3 } = options;
+  const version = getApiVersion();
+  const token = getAccessToken();
+
+  const url = `${API_BASE}/${version}${path}`;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          // Do NOT set Content-Type — fetch sets it with the boundary for multipart
+        },
+        body: formData,
+        cache: "no-store",
+      });
+
+      const parsed = await response.json();
+      console.log(`[metaFetchMultipart] ${path} response:`, JSON.stringify(parsed).slice(0, 500));
+
+      if (parsed.error) {
+        const { code, message, error_subcode } = parsed.error;
+        console.error(`[metaFetchMultipart] ${path} error:`, parsed.error);
+        if (code === 80000 || code === 17 || code === 4) {
+          throw new RateLimitError(60);
+        }
+        if (code === 190 || code === 102 || code === 10) {
+          throw new TokenExpiredError(message);
+        }
+        throw new MetaApiError(message, code, error_subcode);
+      }
+
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < retries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await sleep(delay);
+          continue;
+        }
+        throw new MetaApiError(`HTTP ${response.status}`, response.status);
+      }
+
+      const validated = schema.safeParse(parsed);
+      if (!validated.success) {
+        console.error("Zod validation error (multipart):", validated.error.flatten());
+        throw new MetaApiError(
+          `API response validation failed: ${validated.error.message}`,
+          0
+        );
+      }
+
+      return validated.data;
+    } catch (err) {
+      if (
+        err instanceof RateLimitError ||
+        err instanceof TokenExpiredError ||
+        err instanceof MetaApiError
+      ) {
+        throw err;
+      }
+      if (attempt < retries) {
+        const delay = Math.pow(2, attempt) * 1000;
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new MetaApiError("Max retries exceeded", 0);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

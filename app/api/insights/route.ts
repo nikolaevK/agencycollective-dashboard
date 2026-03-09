@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { getAdminSession } from "@/lib/adminSession";
 import { fetchAccountInsights } from "@/lib/meta/endpoints";
 import { transformInsight, transformTimeSeries, aggregateInsights } from "@/lib/meta/transformers";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
@@ -15,6 +16,11 @@ export interface InsightsResponseData {
 }
 
 export async function GET(request: Request) {
+  const session = getAdminSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get("accountId");
