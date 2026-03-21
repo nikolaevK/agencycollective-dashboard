@@ -9,7 +9,6 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb";
 import { AdSetTable } from "@/components/drilldown/AdSetTable";
 import { KpiGrid } from "@/components/overview/KpiGrid";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 
 interface CampaignPageProps {
@@ -29,7 +28,7 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      <div className="space-y-8">
         <DrilldownBreadcrumb
           items={[
             { label: accountName, href: `/dashboard/accounts/${accountId}` },
@@ -37,14 +36,30 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
           ]}
         />
 
+        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold line-clamp-1">{campaignName}</h1>
-          {campaign && (
-            <p className="text-sm text-muted-foreground">
-              {campaign.objective} · {campaign.status}
-              {campaign.budget > 0 && ` · ${campaign.budgetType === "daily" ? "Daily" : "Lifetime"} budget`}
-            </p>
-          )}
+          {/* Mobile */}
+          <div className="lg:hidden">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Campaign</p>
+            <h1 className="text-xl font-bold text-foreground truncate">{campaignName}</h1>
+            {campaign && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {campaign.objective} · {campaign.status}
+              </p>
+            )}
+          </div>
+          {/* Desktop */}
+          <div className="hidden lg:block">
+            <h2 className="text-3xl font-light text-foreground">
+              Campaign <span className="font-bold text-primary line-clamp-1">{campaignName}</span>
+            </h2>
+            {campaign && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {campaign.objective} · {campaign.status}
+                {campaign.budget > 0 && ` · ${campaign.budgetType === "daily" ? "Daily" : "Lifetime"} budget`}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Campaign KPIs */}
@@ -57,33 +72,31 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
         )}
 
         {/* Ad sets table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
+        <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden px-4 py-5 lg:px-8 lg:py-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-xl lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
               Ad Sets
-              {adsets && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({adsets.length})
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {adsetsError ? (
-              <div className="flex items-center gap-2 text-destructive text-sm">
-                <AlertTriangle className="h-4 w-4" />
-                Failed to load ad sets: {(adsetsError as Error).message}
-              </div>
-            ) : (
-              <AdSetTable
-                adsets={adsets}
-                isLoading={adsetsLoading}
-                accountId={accountId}
-                campaignId={campaignId}
-              />
+            </h4>
+            {adsets && (
+              <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-bold">
+                {adsets.length}
+              </span>
             )}
-          </CardContent>
-        </Card>
+          </div>
+          {adsetsError ? (
+            <div className="flex items-center gap-2 text-destructive text-sm">
+              <AlertTriangle className="h-4 w-4" />
+              Failed to load ad sets: {(adsetsError as Error).message}
+            </div>
+          ) : (
+            <AdSetTable
+              adsets={adsets}
+              isLoading={adsetsLoading}
+              accountId={accountId}
+              campaignId={campaignId}
+            />
+          )}
+        </div>
       </div>
     </DashboardShell>
   );

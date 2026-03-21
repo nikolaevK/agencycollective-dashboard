@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { Suspense } from "react";
+import { BottomNav } from "@/components/layout/BottomNav";
+import { MobileHeader } from "@/components/layout/MobileHeader";
 
 interface DashboardClientShellProps {
   children: React.ReactNode;
@@ -32,10 +34,14 @@ export function DashboardClientShell({ children, isSuperAdmin = false }: Dashboa
       </Suspense>
 
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        <Suspense fallback={<div className="h-16 border-b bg-card" />}>
-          <TopBar onMenuClick={() => setSidebarOpen(true)} />
-        </Suspense>
+        <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
+        <div className="hidden md:block">
+          <Suspense fallback={<div className="h-16 border-b bg-card" />}>
+            <TopBar onMenuClick={() => setSidebarOpen(true)} />
+          </Suspense>
+        </div>
         {children}
+        <BottomNav onMenuClick={() => setSidebarOpen(true)} />
       </div>
     </div>
   );

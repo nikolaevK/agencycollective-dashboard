@@ -8,12 +8,24 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(value: number, currency = "USD"): string {
+  const decimals = Math.abs(value) >= 1_000 ? 0 : 2;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value);
+}
+
+/** Compact currency: drops cents for values >= 10K, uses K/M suffix for >= 1M */
+export function formatCurrencyCompact(value: number, currency = "USD"): string {
+  const sym = new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 })
+    .formatToParts(0)
+    .find((p) => p.type === "currency")?.value ?? "$";
+
+  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `${sym}${Math.round(value).toLocaleString()}`;
+  return formatCurrency(value, currency);
 }
 
 export function formatPercent(value: number, decimals = 2): string {
@@ -39,8 +51,8 @@ export function formatDelta(value: number | null): string {
 // Returns true if the delta is "good" for the metric
 export function isDeltaPositive(metric: string, delta: number | null): boolean | null {
   if (delta === null) return null;
-  // Lower is better for CPC
-  if (metric === "cpc") return delta <= 0;
+  // Lower is better for cost metrics
+  if (metric === "cpc" || metric === "costPerPurchase") return delta <= 0;
   return delta >= 0;
 }
 

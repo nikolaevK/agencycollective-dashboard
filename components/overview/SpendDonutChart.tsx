@@ -7,13 +7,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/utils";
 import type { AccountSummary } from "@/types/dashboard";
 import { Skeleton } from "@/components/ui/skeleton";
-
 const COLORS = [
-  "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b",
-  "#10b981", "#f97316", "#06b6d4", "#84cc16",
+  "hsl(var(--primary))",       // primary purple
+  "#b28cff",                   // primary-container
+  "#9eaec7",                   // outline-variant / secondary
+  "#6411d5",                   // primary-dim
+  "#ff8eac",                   // tertiary-fixed / pink
+  "#06b6d4",                   // cyan
+  "#f59e0b",                   // amber
+  "#10b981",                   // emerald
 ];
 
 interface SpendDonutChartProps {
@@ -23,12 +28,27 @@ interface SpendDonutChartProps {
 
 export function SpendDonutChart({ accounts, isLoading }: SpendDonutChartProps) {
   if (isLoading) {
-    return <Skeleton className="h-64 w-full rounded-lg" />;
+    return (
+      <div className="flex flex-col lg:flex-row items-center justify-around gap-8">
+        <Skeleton className="h-56 w-56 rounded-full shrink-0" />
+        <div className="flex-1 max-w-xs space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-3 w-3 rounded-full" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+              <Skeleton className="h-4 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (!accounts || accounts.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
         No data available
       </div>
     );
@@ -39,33 +59,37 @@ export function SpendDonutChart({ accounts, isLoading }: SpendDonutChartProps) {
     .sort((a, b) => b.insights.spend - a.insights.spend)
     .slice(0, 8)
     .map((a) => ({
-      name: a.name.length > 22 ? a.name.slice(0, 22) + "…" : a.name,
+      name: a.name.length > 22 ? a.name.slice(0, 22) + "\u2026" : a.name,
       value: a.insights.spend,
       currency: a.currency,
     }));
 
   if (data.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
         No spend data
       </div>
     );
   }
 
+  const totalSpend = data.reduce((sum, d) => sum + d.value, 0);
+  const primaryCurrency = data[0]?.currency ?? "USD";
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Pie — fixed height container so ResponsiveContainer works reliably */}
-      <div style={{ width: "100%", height: 200, overflow: "hidden" }}>
+    <div className="flex flex-col lg:flex-row items-center justify-around gap-8">
+      {/* Donut chart with center value */}
+      <div className="max-w-[240px] mx-auto lg:max-w-none lg:mx-0 lg:shrink-0 relative hover:scale-105 transition-transform duration-500" style={{ width: 224, height: 224 }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={55}
-              outerRadius={85}
-              paddingAngle={2}
+              innerRadius={65}
+              outerRadius={100}
+              paddingAngle={1}
               dataKey="value"
+              strokeWidth={0}
             >
               {data.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -77,27 +101,55 @@ export function SpendDonutChart({ accounts, isLoading }: SpendDonutChartProps) {
               }
               contentStyle={{
                 backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: "8px",
+                border: "none",
+                borderRadius: "12px",
                 fontSize: "12px",
+                boxShadow: "0 4px 24px rgba(32, 48, 68, 0.12)",
               }}
             />
           </PieChart>
         </ResponsiveContainer>
+        {/* Center value overlay */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground">
+            <span className="lg:hidden">Total</span>
+            <span className="hidden lg:inline">Total Portfolio</span>
+          </span>
+          <span className="text-lg font-black text-foreground">
+            {formatCurrencyCompact(totalSpend, primaryCurrency)}
+          </span>
+        </div>
       </div>
 
-      {/* Custom legend — HTML, no Recharts magic */}
-      <div className="flex flex-col gap-1.5">
+      {/* Mobile / tablet legend — 2-column grid, dot+name only */}
+      <div className="grid grid-cols-2 gap-4 mt-8 lg:hidden">
         {data.map((item, index) => (
-          <div key={index} className="flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
+          <div key={index} className="flex items-center gap-2">
+            <div
+              className="w-3 h-3 shrink-0 rounded-full"
+              style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            />
+            <span className="text-sm font-medium text-foreground truncate">
+              {item.name}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop legend — vertical list with amounts */}
+      <div className="hidden lg:flex lg:flex-col flex-1 max-w-xs space-y-4">
+        {data.map((item, index) => (
+          <div key={index} className="flex items-center justify-between group cursor-default">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-3 h-3 shrink-0 rounded-full"
                 style={{ backgroundColor: COLORS[index % COLORS.length] }}
               />
-              <span className="truncate text-muted-foreground">{item.name}</span>
+              <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                {item.name}
+              </span>
             </div>
-            <span className="shrink-0 font-medium tabular-nums">
+            <span className="text-sm font-bold text-foreground tabular-nums">
               {formatCurrency(item.value, item.currency)}
             </span>
           </div>

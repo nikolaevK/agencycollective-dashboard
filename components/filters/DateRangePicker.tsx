@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { format } from "date-fns";
 import { Calendar, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRangeInput, DatePreset } from "@/types/api";
@@ -57,13 +56,13 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        className="flex w-full md:w-auto items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
       >
-        <Calendar className="h-4 w-4 text-muted-foreground" />
-        <span>{rangeLabel(value)}</span>
+        <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="truncate">{rangeLabel(value)}</span>
         <ChevronDown
           className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform",
+            "h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-auto",
             open && "rotate-180"
           )}
         />
@@ -78,7 +77,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
           />
 
           {/* Dropdown */}
-          <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-lg border bg-popover shadow-lg">
+          <div className="absolute left-0 right-0 md:left-auto md:right-0 md:w-72 top-full z-20 mt-2 rounded-lg border bg-popover shadow-lg">
             <div className="p-2">
               <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Presets

@@ -138,3 +138,18 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* Ambient card shadow — used for elevated cards that need extra prominence */
+.ac-card-elevated {
+  box-shadow: 0 4px 24px rgba(32, 48, 68, 0.06);
+}
+
+.dark .ac-card-elevated {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* Ghost border — subtle separator for dense data areas */
+.ac-ghost-border {
+  border-color: hsl(var(--border) / 0.2);
+}
+

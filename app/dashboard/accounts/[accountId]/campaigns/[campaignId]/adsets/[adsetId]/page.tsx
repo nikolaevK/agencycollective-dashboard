@@ -10,7 +10,6 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb";
 import { AdTable } from "@/components/drilldown/AdTable";
 import { KpiGrid } from "@/components/overview/KpiGrid";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 
 interface AdSetPageProps {
@@ -42,7 +41,7 @@ function AdSetContent({
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      <div className="space-y-8">
         <DrilldownBreadcrumb
           items={[
             { label: accountName, href: `/dashboard/accounts/${accountId}` },
@@ -54,13 +53,29 @@ function AdSetContent({
           ]}
         />
 
+        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold line-clamp-1">{adsetName}</h1>
-          {adset && (
-            <p className="text-sm text-muted-foreground">
-              {adset.optimizationGoal} · {adset.billingEvent} · {adset.status}
-            </p>
-          )}
+          {/* Mobile */}
+          <div className="lg:hidden">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Ad Set</p>
+            <h1 className="text-xl font-bold text-foreground truncate">{adsetName}</h1>
+            {adset && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {adset.optimizationGoal} · {adset.status}
+              </p>
+            )}
+          </div>
+          {/* Desktop */}
+          <div className="hidden lg:block">
+            <h2 className="text-3xl font-light text-foreground">
+              Ad Set <span className="font-bold text-primary line-clamp-1">{adsetName}</span>
+            </h2>
+            {adset && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {adset.optimizationGoal} · {adset.billingEvent} · {adset.status}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Ad set KPIs */}
@@ -73,28 +88,26 @@ function AdSetContent({
         )}
 
         {/* Ads table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
+        <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden px-4 py-5 lg:px-8 lg:py-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-xl lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
               Ads
-              {ads && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({ads.length})
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {adsError ? (
-              <div className="flex items-center gap-2 text-destructive text-sm">
-                <AlertTriangle className="h-4 w-4" />
-                Failed to load ads: {(adsError as Error).message}
-              </div>
-            ) : (
-              <AdTable ads={ads} isLoading={adsLoading} />
+            </h4>
+            {ads && (
+              <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-bold">
+                {ads.length}
+              </span>
             )}
-          </CardContent>
-        </Card>
+          </div>
+          {adsError ? (
+            <div className="flex items-center gap-2 text-destructive text-sm">
+              <AlertTriangle className="h-4 w-4" />
+              Failed to load ads: {(adsError as Error).message}
+            </div>
+          ) : (
+            <AdTable ads={ads} isLoading={adsLoading} />
+          )}
+        </div>
       </div>
     </DashboardShell>
   );
