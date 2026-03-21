@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
+import type { AdminPermissions } from "./permissions";
 
 const ADMIN_SESSION_COOKIE = "a_sess";
 
@@ -14,6 +15,10 @@ function getSecret(): string {
 export interface AdminSessionData {
   adminId: string;
   username: string;
+  displayName: string | null;
+  avatarPath: string | null;
+  isSuper: boolean;
+  permissions: AdminPermissions;
 }
 
 export function createAdminSession(data: AdminSessionData): string {
@@ -45,7 +50,23 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     // Enforce token expiration
     if (data.exp && Math.floor(Date.now() / 1000) > data.exp) return null;
-    return data as AdminSessionData;
+    // Backwards compatibility: older tokens without permissions still work
+    return {
+      adminId: data.adminId,
+      username: data.username,
+      displayName: data.displayName ?? null,
+      avatarPath: data.avatarPath ?? null,
+      isSuper: data.isSuper ?? false,
+      permissions: data.permissions ?? {
+        dashboard: false,
+        analyst: false,
+        studio: false,
+        adcopy: false,
+        users: false,
+        closers: false,
+        admin: false,
+      },
+    };
   } catch {
     return null;
   }

@@ -7,6 +7,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Extract up to 2 initials from a display name or username. */
+export function getInitials(displayName: string | null, username: string): string {
+  const name = displayName || username || "?";
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
 export function formatCurrency(value: number, currency = "USD"): string {
   const decimals = Math.abs(value) >= 1_000 ? 0 : 2;
   return new Intl.NumberFormat("en-US", {

@@ -8,7 +8,12 @@ export default async function AdminsPage() {
   if (!session) redirect("/admin/login");
 
   const admin = await findAdmin(session.adminId);
-  if (!admin?.isSuper) redirect("/dashboard");
+  if (!admin) redirect("/admin/login");
+
+  // Require admin permission or super admin
+  if (!admin.isSuper && !admin.permissions.admin) {
+    redirect("/dashboard/unauthorized");
+  }
 
   return <AdminsPanel />;
 }

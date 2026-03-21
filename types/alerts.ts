@@ -46,8 +46,9 @@ export interface CpcSpikeRule extends AlertRule {
 }
 
 export interface RoasThresholdRule extends AlertRule {
-  minRoas: number;              // e.g. 1.5
-  minSpend: number;             // ignore if < this
+  minRoas: number;              // e.g. 1.0
+  warningMinSpend: number;      // warning if spend >= this and ROAS < minRoas
+  criticalMinSpend: number;     // critical if spend >= this and ROAS < minRoas
 }
 
 export interface AlertConfig {

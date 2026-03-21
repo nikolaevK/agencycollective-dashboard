@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Users, UserCog, Handshake, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import type { PermissionKey } from "@/lib/permissions";
 
-const tabs = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/users", label: "Users", icon: Users, exact: false },
-  { href: "/dashboard/admins", label: "Admins", icon: UserCog, exact: false },
-  { href: "/dashboard/closers", label: "Closers", icon: Handshake, exact: false },
+const allTabs: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true, perm: "dashboard" },
+  { href: "/dashboard/users", label: "Users", icon: Users, exact: false, perm: "users" },
+  { href: "/dashboard/admins", label: "Admins", icon: UserCog, exact: false, perm: "admin" },
+  { href: "/dashboard/closers", label: "Closers", icon: Handshake, exact: false, perm: "closers" },
 ];
 
 interface BottomNavProps {
@@ -18,6 +20,12 @@ interface BottomNavProps {
 
 export function BottomNav({ onMenuClick }: BottomNavProps) {
   const pathname = usePathname();
+  const admin = useAdmin();
+
+  // Filter tabs by permission
+  const tabs = allTabs.filter(
+    (tab) => admin.isSuper || admin.permissions[tab.perm]
+  );
 
   // Check if current page is one not in the bottom tabs (i.e. a "More" page)
   const isMoreActive = !tabs.some((tab) =>

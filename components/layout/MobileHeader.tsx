@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, Menu } from "lucide-react";
+import Image from "next/image";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import { getInitials } from "@/lib/utils";
 
 const DATE_PICKER_ROUTES = ["/dashboard", "/dashboard/chat"];
 
@@ -16,11 +19,14 @@ interface MobileHeaderProps {
 
 export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
   const pathname = usePathname();
+  const admin = useAdmin();
   const { dateRange, setDateRange } = useDateRange();
 
   const showDatePicker = DATE_PICKER_ROUTES.some((route) =>
     route === "/dashboard" ? pathname === route : pathname.startsWith(route)
   );
+
+  const initials = getInitials(admin.displayName, admin.username);
 
   return (
     <header className="md:hidden space-y-2 bg-background px-4 pt-3 pb-2">
@@ -45,6 +51,20 @@ export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
           >
             <Bell className="h-4 w-4" />
           </Link>
+          {/* Admin avatar */}
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-semibold overflow-hidden">
+            {admin.avatarPath ? (
+              <Image
+                src={admin.avatarPath}
+                alt=""
+                width={28}
+                height={28}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              initials
+            )}
+          </div>
         </div>
       </div>
       {/* Date picker — only on dashboard & AI analyst */}

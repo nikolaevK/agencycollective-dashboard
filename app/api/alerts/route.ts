@@ -37,8 +37,13 @@ export async function GET(request: Request) {
 
     const prevDateRange = getPreviousPeriod(dateRange);
 
-    // Fetch accounts
-    const accounts = await fetchOwnedAccounts();
+    // Fetch accounts — only evaluate active ones, exclude specific accounts
+    const EXCLUDED_ACCOUNT_NAMES = ["foreignpipes", "grounding"];
+    const allAccounts = await fetchOwnedAccounts();
+    const accounts = allAccounts.filter(
+      (a) => a.account_status === 1 &&
+        !EXCLUDED_ACCOUNT_NAMES.some((ex) => a.name.toLowerCase().includes(ex))
+    );
     const accountIds = accounts.map((a) => a.id);
 
     // Fetch current and previous period insights for all accounts via Batch API
@@ -101,18 +106,20 @@ export async function GET(request: Request) {
           name: account.name,
           currentInsights,
           previousInsights,
-          campaigns: rawCampaigns.map((campaign) => {
-            const transformed = transformCampaign(campaign);
-            const prevInsight = prevCampaignInsights.get(campaign.id) ?? emptyInsights();
-            return {
-              id: transformed.id,
-              name: transformed.name,
-              budget: transformed.budget,
-              budgetType: transformed.budgetType,
-              currentInsights: transformed.insights,
-              previousInsights: prevInsight,
-            };
-          }),
+          campaigns: rawCampaigns
+            .filter((c) => c.effective_status === "ACTIVE")
+            .map((campaign) => {
+              const transformed = transformCampaign(campaign);
+              const prevInsight = prevCampaignInsights.get(campaign.id) ?? emptyInsights();
+              return {
+                id: transformed.id,
+                name: transformed.name,
+                budget: transformed.budget,
+                budgetType: transformed.budgetType,
+                currentInsights: transformed.insights,
+                previousInsights: prevInsight,
+              };
+            }),
         };
       }),
       evaluatedAt: new Date().toISOString(),

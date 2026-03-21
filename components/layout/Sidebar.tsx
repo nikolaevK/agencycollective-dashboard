@@ -7,39 +7,41 @@ import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import type { PermissionKey } from "@/lib/permissions";
 
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  /** @deprecated permissions now come from AdminProvider */
   isSuperAdmin?: boolean;
 }
 
-const baseNavItems = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/alerts", label: "Alerts", icon: Bell },
-  { href: "/dashboard/chat", label: "AI Analyst", icon: Sparkles },
-  { href: "/dashboard/generate", label: "Image Generator", icon: ImageIcon },
-  { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool },
-  { href: "/dashboard/users", label: "Users", icon: Users },
-  { href: "/dashboard/closers", label: "Closers", icon: Handshake },
-  { href: "/dashboard/settings", label: "Documentation", icon: BookOpen },
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; superOnly?: boolean }[] = [
+  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true, perm: "dashboard" },
+  { href: "/dashboard/alerts", label: "Alerts", icon: Bell, perm: "dashboard" },
+  { href: "/dashboard/chat", label: "AI Analyst", icon: Sparkles, perm: "analyst" },
+  { href: "/dashboard/generate", label: "Image Generator", icon: ImageIcon, perm: "studio" },
+  { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool, perm: "adcopy" },
+  { href: "/dashboard/users", label: "Users", icon: Users, perm: "users" },
+  { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
+  { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
+  { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
 ];
 
-const superAdminNavItems = [
-  { href: "/dashboard/admins", label: "Admins", icon: UserCog, exact: false },
-];
-
-export function Sidebar({ isOpen = false, onClose, isSuperAdmin = false }: SidebarProps) {
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const admin = useAdmin();
   const { dateRange } = useDateRange();
   const { data: alerts } = useAlerts(dateRange);
   const criticalCount = alerts?.filter((a) => a.severity === "critical").length ?? 0;
   const totalCount = alerts?.length ?? 0;
 
-  const navItems = isSuperAdmin
-    ? [...baseNavItems, ...superAdminNavItems]
-    : baseNavItems;
+  // Filter nav items by permissions (superOnly items only visible to super admins)
+  const visibleItems = navItems.filter(
+    (item) => item.superOnly ? admin.isSuper : (admin.isSuper || admin.permissions[item.perm])
+  );
 
   async function handleLogout() {
     await fetch("/api/auth/admin/logout", { method: "POST" });
@@ -75,7 +77,7 @@ export function Sidebar({ isOpen = false, onClose, isSuperAdmin = false }: Sideb
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40">
           Admin
         </p>
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);

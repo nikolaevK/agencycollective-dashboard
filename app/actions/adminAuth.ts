@@ -2,13 +2,32 @@
 
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { findAdminByUsername, updateAdmin } from "@/lib/admins";
+import { type AdminRecord, findAdminByUsername, updateAdmin, getEffectivePermissions } from "@/lib/admins";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   createAdminSession,
   ADMIN_SESSION_COOKIE_NAME,
   ADMIN_SESSION_MAX_AGE,
 } from "@/lib/adminSession";
+import { logAuditEvent } from "@/lib/auditLog";
+
+function buildSessionAndSetCookie(admin: AdminRecord) {
+  const permissions = getEffectivePermissions(admin);
+  const token = createAdminSession({
+    adminId: admin.id,
+    username: admin.username,
+    displayName: admin.displayName,
+    avatarPath: admin.avatarPath,
+    isSuper: admin.isSuper,
+    permissions,
+  });
+  cookies().set(ADMIN_SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: ADMIN_SESSION_MAX_AGE,
+    path: "/",
+  });
+}
 
 export async function checkAdminAction(
   username: string
@@ -26,13 +45,15 @@ export async function adminLoginAction(
   if (!admin || !admin.passwordHash) return { error: "Invalid credentials" };
   if (!verifyPassword(password, admin.passwordHash)) return { error: "Invalid credentials" };
 
-  const token = createAdminSession({ adminId: admin.id, username: admin.username });
-  cookies().set(ADMIN_SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: ADMIN_SESSION_MAX_AGE,
-    path: "/",
-  });
+  buildSessionAndSetCookie(admin);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent({
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: "admin.login",
+  }).catch(() => {});
+
   redirect("/dashboard");
 }
 
@@ -48,12 +69,9 @@ export async function adminSetPasswordAction(
 
   await updateAdmin(admin.id, { passwordHash: hashPassword(password) });
 
-  const token = createAdminSession({ adminId: admin.id, username: admin.username });
-  cookies().set(ADMIN_SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: ADMIN_SESSION_MAX_AGE,
-    path: "/",
-  });
+  // Re-fetch to get updated record
+  const updated = await findAdminByUsername(username.trim().toLowerCase());
+  if (updated) buildSessionAndSetCookie(updated);
+
   redirect("/dashboard");
 }

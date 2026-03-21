@@ -43,12 +43,75 @@ async function verifyToken(token: string, secret: string): Promise<boolean> {
   }
 }
 
+/**
+ * Decode the base64url payload without signature verification (caller must verify first).
+ * Returns null if the token is expired.
+ */
+function decodePayload(token: string): Record<string, unknown> | null {
+  const dot = token.lastIndexOf(".");
+  if (dot === -1) return null;
+  try {
+    const payload = token.slice(0, dot);
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const data = JSON.parse(json);
+    // Enforce token expiration at the middleware level
+    if (data.exp && Math.floor(Date.now() / 1000) > data.exp) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Map route patterns to required permission keys. */
+type PermKey = "dashboard" | "analyst" | "studio" | "adcopy" | "users" | "closers" | "admin";
+
+const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
+  { match: (p) => p === "/dashboard/chat", perm: "analyst" },
+  { match: (p) => p.startsWith("/dashboard/generate"), perm: "studio" },
+  { match: (p) => p.startsWith("/dashboard/ad-copy"), perm: "adcopy" },
+  { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
+  { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
+  { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
+  // Dashboard overview, accounts, alerts, settings need 'dashboard'
+  { match: (p) => p === "/dashboard" || p.startsWith("/dashboard/accounts") || p === "/dashboard/alerts" || p === "/dashboard/settings", perm: "dashboard" },
+];
+
+/** Map API routes to required permissions (defense in depth). */
+const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
+  { match: (p) => p.startsWith("/api/chat"), perm: "analyst" },
+  { match: (p) => p.startsWith("/api/generate"), perm: "studio" },
+  { match: (p) => p.startsWith("/api/ad-copy"), perm: "adcopy" },
+  { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
+  { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
+  { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
+  { match: (p) => p.startsWith("/api/accounts"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/ads"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/adsets"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/campaigns"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/insights"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/alerts"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/settings"), perm: "dashboard" },
+];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const secret = process.env.SESSION_SECRET ?? "";
 
   // ── Admin dashboard (/dashboard and /dashboard/*) ────────────────────────
   if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    // Allow the unauthorized page without further permission checks
+    if (pathname === "/dashboard/unauthorized") {
+      const token = request.cookies.get(ADMIN_COOKIE)?.value;
+      if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
+      const valid = secret ? await verifyToken(token, secret) : false;
+      if (!valid) {
+        const res = NextResponse.redirect(new URL("/admin/login", request.url));
+        res.cookies.delete(ADMIN_COOKIE);
+        return res;
+      }
+      return NextResponse.next();
+    }
+
     const token = request.cookies.get(ADMIN_COOKIE)?.value;
     if (!token) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
@@ -58,6 +121,39 @@ export async function middleware(request: NextRequest) {
       const res = NextResponse.redirect(new URL("/admin/login", request.url));
       res.cookies.delete(ADMIN_COOKIE);
       return res;
+    }
+
+    // ── Per-route permission enforcement ──────────────────────────────────
+    const data = decodePayload(token);
+    if (data) {
+      const isSuper = Boolean(data.isSuper);
+      if (!isSuper) {
+        const perms = (data.permissions ?? {}) as Record<string, boolean>;
+        for (const route of ROUTE_PERMISSIONS) {
+          if (route.match(pathname) && !perms[route.perm]) {
+            return NextResponse.redirect(new URL("/dashboard/unauthorized", request.url));
+          }
+        }
+      }
+    }
+  }
+
+  // ── Admin API routes — permission enforcement ────────────────────────────
+  if (pathname.startsWith("/api/")) {
+    const token = request.cookies.get(ADMIN_COOKIE)?.value;
+    if (token && secret) {
+      const valid = await verifyToken(token, secret);
+      if (valid) {
+        const data = decodePayload(token);
+        if (data && !Boolean(data.isSuper)) {
+          const perms = (data.permissions ?? {}) as Record<string, boolean>;
+          for (const route of API_PERMISSIONS) {
+            if (route.match(pathname) && !perms[route.perm]) {
+              return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -80,5 +176,22 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/:slug/portal/:path*", "/dashboard", "/dashboard/:path*"],
+  matcher: [
+    "/:slug/portal/:path*",
+    "/dashboard",
+    "/dashboard/:path*",
+    "/api/chat/:path*",
+    "/api/generate/:path*",
+    "/api/ad-copy/:path*",
+    "/api/admin/users/:path*",
+    "/api/admin/audit-log/:path*",
+    "/api/admin/admins/:path*",
+    "/api/accounts/:path*",
+    "/api/ads/:path*",
+    "/api/adsets/:path*",
+    "/api/campaigns/:path*",
+    "/api/insights/:path*",
+    "/api/alerts/:path*",
+    "/api/settings/:path*",
+  ],
 };

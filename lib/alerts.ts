@@ -3,19 +3,19 @@ import type { InsightMetrics } from "@/types/dashboard";
 
 export const DEFAULT_ALERT_CONFIG: AlertConfig = {
   budgetPacing: {
-    enabled: true,
+    enabled: false,
     severity: "warning",
     warningThresholdPct: 80,
     criticalThresholdPct: 50,
   },
   ctrDrop: {
-    enabled: true,
+    enabled: false,
     severity: "warning",
     dropPct: 30,
     minImpressions: 1000,
   },
   cpcSpike: {
-    enabled: true,
+    enabled: false,
     severity: "warning",
     spikePct: 50,
     minClicks: 50,
@@ -24,7 +24,8 @@ export const DEFAULT_ALERT_CONFIG: AlertConfig = {
     enabled: true,
     severity: "critical",
     minRoas: 1.0,
-    minSpend: 50,
+    warningMinSpend: 100,
+    criticalMinSpend: 150,
   },
 };
 
@@ -179,22 +180,25 @@ function checkRoasThreshold(
   config: AlertConfig
 ): Alert | null {
   if (!config.roasThreshold.enabled) return null;
-  if (current.spend < config.roasThreshold.minSpend) return null;
+  if (current.spend < config.roasThreshold.warningMinSpend) return null;
   if (current.roas >= config.roasThreshold.minRoas) return null;
+
+  const severity: AlertSeverity =
+    current.spend >= config.roasThreshold.criticalMinSpend ? "critical" : "warning";
 
   const now = new Date();
 
   return {
     id: `roas_threshold_${entityId}_${formatDateKey(now)}`,
     type: "roas_below_threshold",
-    severity: config.roasThreshold.severity,
+    severity,
     entityId,
     entityName,
     entityType,
     accountId,
     accountName,
-    title: "ROAS Below Threshold",
-    description: `ROAS of ${current.roas.toFixed(2)}x is below the minimum threshold of ${config.roasThreshold.minRoas}x (spend: $${current.spend.toFixed(2)}).`,
+    title: "Campaign ROAS Below Threshold",
+    description: `Campaign "${entityName}" in account "${accountName}" has ROAS of ${current.roas.toFixed(2)}x, below the ${config.roasThreshold.minRoas}x minimum (spend: $${current.spend.toFixed(2)}).`,
     currentValue: current.roas,
     threshold: config.roasThreshold.minRoas,
     detectedAt: now.toISOString(),
@@ -219,33 +223,7 @@ export function evaluateAlerts(
   }
 
   for (const account of input.accounts) {
-    // Account-level checks
-    addAlert(
-      checkCtrDrop(
-        account.id, account.name, "account",
-        account.id, account.name,
-        account.currentInsights, account.previousInsights,
-        config
-      )
-    );
-    addAlert(
-      checkCpcSpike(
-        account.id, account.name, "account",
-        account.id, account.name,
-        account.currentInsights, account.previousInsights,
-        config
-      )
-    );
-    addAlert(
-      checkRoasThreshold(
-        account.id, account.name, "account",
-        account.id, account.name,
-        account.currentInsights,
-        config
-      )
-    );
-
-    // Campaign-level checks
+    // Campaign-level checks only
     for (const campaign of account.campaigns) {
       addAlert(
         checkBudgetPacing(
