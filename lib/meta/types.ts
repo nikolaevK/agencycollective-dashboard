@@ -116,6 +116,36 @@ export interface MetaCreateResponse {
   id: string;
 }
 
+export interface MetaPixel {
+  id: string;
+  name: string;
+  creation_time?: string;
+  last_fired_time?: string;
+  is_unavailable?: boolean;
+  data_use_setting?: string;
+}
+
+export interface MetaPixelStatEntry {
+  event: string;
+  count: number;
+}
+
+export interface MetaPixelDaCheck {
+  description?: string;
+  key?: string;
+  result?: string;
+  title?: string;
+}
+
+export interface MetaActivity {
+  event_type: string;
+  event_time: string;
+  object_name?: string;
+  translated_event_type?: string;
+  extra_data?: unknown;
+  actor_name?: string;
+}
+
 export interface MetaApiError {
   message: string;
   type: string;

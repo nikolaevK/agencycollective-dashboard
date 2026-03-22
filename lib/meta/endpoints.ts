@@ -10,8 +10,12 @@ import {
   MetaPagesPaginatedSchema,
   MetaAdImageUploadResponseSchema,
   MetaCreateResponseSchema,
+  MetaPixelsPaginatedSchema,
+  MetaPixelStatsResponseSchema,
+  MetaPixelDaChecksResponseSchema,
+  MetaActivitiesPaginatedSchema,
 } from "./schemas";
-import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse, MetaAdWithCreative, MetaCreativeDetail, MetaPage } from "./types";
+import type { MetaAdAccount, MetaCampaign, MetaAdSet, MetaAd, MetaInsight, MetaPaginatedResponse, MetaAdWithCreative, MetaCreativeDetail, MetaPage, MetaPixel, MetaPixelStatEntry, MetaPixelDaCheck, MetaActivity } from "./types";
 import { fetchWithConcurrency, getConcurrencyLimit } from "@/lib/concurrency";
 import { dateRangeToMetaParams } from "@/lib/utils";
 import type { DateRangeInput } from "@/types/api";
@@ -648,4 +652,83 @@ export async function createDraftAd(
   );
 
   return result.id;
+}
+
+/**
+ * Fetch pixels associated with an ad account.
+ */
+export async function fetchAccountPixels(accountId: string): Promise<MetaPixel[]> {
+  const cleanId = accountId.replace(/^act_/, "");
+  const fields = "id,name,creation_time,last_fired_time,is_unavailable,data_use_setting";
+
+  const page = await metaFetch(
+    `/act_${cleanId}/adspixels`,
+    MetaPixelsPaginatedSchema,
+    { params: { fields, limit: 50 } }
+  );
+  return page.data as MetaPixel[];
+}
+
+/**
+ * Fetch event stats for a pixel (aggregated by event type).
+ */
+export async function fetchPixelStats(
+  pixelId: string,
+  since?: string,
+  until?: string
+): Promise<MetaPixelStatEntry[]> {
+  const params: Record<string, string | number> = { aggregation: "event" };
+  if (since) params.start_time = since;
+  if (until) params.end_time = until;
+
+  const response = await metaFetch(
+    `/${pixelId}/stats`,
+    MetaPixelStatsResponseSchema,
+    { params }
+  );
+  // Response is time-bucketed; aggregate event counts across all buckets
+  const totals = new Map<string, number>();
+  for (const bucket of response.data) {
+    if (bucket.data) {
+      for (const entry of bucket.data) {
+        totals.set(entry.value, (totals.get(entry.value) ?? 0) + (entry.count ?? 0));
+      }
+    }
+  }
+  return Array.from(totals, ([event, count]) => ({ event, count }));
+}
+
+/**
+ * Fetch data availability checks for a pixel.
+ * May require business_management permission; fails gracefully.
+ */
+export async function fetchPixelDaChecks(pixelId: string): Promise<MetaPixelDaCheck[]> {
+  try {
+    const response = await metaFetch(
+      `/${pixelId}/da_checks`,
+      MetaPixelDaChecksResponseSchema,
+      { retries: 1 }
+    );
+    return response.data as MetaPixelDaCheck[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch recent activities for an ad account.
+ */
+export async function fetchAccountActivities(
+  accountId: string,
+  limit = 25
+): Promise<MetaActivity[]> {
+  const cleanId = accountId.replace(/^act_/, "");
+  const fields = "event_type,event_time,object_name,translated_event_type,extra_data,actor_name";
+
+  const response = await metaFetch(
+    `/act_${cleanId}/activities`,
+    MetaActivitiesPaginatedSchema,
+    { params: { fields, limit } }
+  );
+  return response.data as MetaActivity[];
 }

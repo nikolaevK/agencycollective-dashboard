@@ -5,17 +5,23 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useUserOverview } from "@/hooks/useUserOverview";
 import { useTopAds } from "@/hooks/useTopAds";
 import { useAllAccountsOverview } from "@/hooks/useAllAccountsOverview";
+import { usePixelHealth } from "@/hooks/usePixelHealth";
+import { useActivityFeed } from "@/hooks/useActivityFeed";
+import type { PixelStatsPeriod } from "@/types/dashboard";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { KpiGrid } from "@/components/overview/KpiGrid";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { TopAdsCard } from "@/components/portal/TopAdsCard";
 import { AccountsOverviewGrid } from "@/components/portal/AccountsOverviewGrid";
+import { PixelHealthCard } from "@/components/drilldown/PixelHealthCard";
+import { ActivityFeedCard } from "@/components/drilldown/ActivityFeedCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function OverviewContent() {
   const { dateRange } = useDateRange();
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
+  const [pixelPeriod, setPixelPeriod] = useState<PixelStatsPeriod>("last_7d");
 
   // Fetch all accounts with metrics (for the grid)
   const { data: allAccounts, isLoading: allAccountsLoading } = useAllAccountsOverview(dateRange);
@@ -32,6 +38,10 @@ function OverviewContent() {
   // Fetch detail data for the selected account
   const { data, isLoading, error } = useUserOverview(dateRange, effectiveAccountId);
   const { data: topAds, isLoading: topAdsLoading } = useTopAds(dateRange, effectiveAccountId);
+  const { pixels, periodLabel: pixelPeriodLabel, isLoading: pixelsLoading, error: pixelsError } =
+    usePixelHealth(effectiveAccountId, "/api/user/pixel-health", pixelPeriod);
+  const { data: activities, isLoading: activitiesLoading, error: activitiesError } =
+    useActivityFeed(effectiveAccountId, dateRange, "/api/user/activities");
 
   const hasMultipleAccounts = allAccounts && allAccounts.length > 1;
 
@@ -86,6 +96,23 @@ function OverviewContent() {
             </ChartContainer>
           </CardContent>
         </Card>
+
+        {/* Pixel health & activity feed */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <PixelHealthCard
+            pixels={pixels}
+            isLoading={pixelsLoading}
+            error={pixelsError as Error | null}
+            periodLabel={pixelPeriodLabel}
+            period={pixelPeriod}
+            onPeriodChange={setPixelPeriod}
+          />
+          <ActivityFeedCard
+            items={activities}
+            isLoading={activitiesLoading}
+            error={activitiesError as Error | null}
+          />
+        </div>
 
         <TopAdsCard
           ads={topAds}

@@ -32,7 +32,7 @@ export type DatePreset =
 export interface PaginatedResponse<T> {
   data: T[];
   paging?: {
-    cursors?: { before: string; after: string };
+    cursors?: { before?: string; after?: string };
     next?: string;
   };
 }

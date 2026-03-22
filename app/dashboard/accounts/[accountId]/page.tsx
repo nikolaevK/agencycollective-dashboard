@@ -1,17 +1,22 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useCampaigns } from "@/hooks/useCampaigns";
 import { useInsights } from "@/hooks/useInsights";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAccounts } from "@/hooks/useAccounts";
+import { usePixelHealth } from "@/hooks/usePixelHealth";
+import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb";
 import { CampaignTable } from "@/components/drilldown/CampaignTable";
+import { PixelHealthCard } from "@/components/drilldown/PixelHealthCard";
+import { ActivityFeedCard } from "@/components/drilldown/ActivityFeedCard";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { KpiGrid } from "@/components/overview/KpiGrid";
 import { AlertTriangle } from "lucide-react";
+import type { PixelStatsPeriod } from "@/types/dashboard";
 
 interface AccountPageProps {
   params: { accountId: string };
@@ -19,6 +24,7 @@ interface AccountPageProps {
 
 function AccountContent({ accountId }: { accountId: string }) {
   const { dateRange } = useDateRange();
+  const [pixelPeriod, setPixelPeriod] = useState<PixelStatsPeriod>("last_7d");
   const { data: accounts } = useAccounts(dateRange);
   const { data: insightsData, isLoading: insightsLoading, error: insightsError } = useInsights(
     accountId,
@@ -26,6 +32,11 @@ function AccountContent({ accountId }: { accountId: string }) {
     { withTimeSeries: true }
   );
   const { data: campaigns, isLoading: campaignsLoading, error: campaignsError } = useCampaigns(
+    accountId,
+    dateRange
+  );
+  const { pixels, periodLabel: pixelPeriodLabel, isLoading: pixelsLoading, error: pixelsError } = usePixelHealth(accountId, "/api/pixel-health", pixelPeriod);
+  const { data: activities, isLoading: activitiesLoading, error: activitiesError } = useActivityFeed(
     accountId,
     dateRange
   );
@@ -94,6 +105,23 @@ function AccountContent({ accountId }: { accountId: string }) {
               <TimeSeriesChart data={insightsData.timeSeries} height={300} />
             )}
           </ChartContainer>
+        </div>
+
+        {/* Pixel health & activity feed */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <PixelHealthCard
+            pixels={pixels}
+            isLoading={pixelsLoading}
+            error={pixelsError as Error | null}
+            periodLabel={pixelPeriodLabel}
+            period={pixelPeriod}
+            onPeriodChange={setPixelPeriod}
+          />
+          <ActivityFeedCard
+            items={activities}
+            isLoading={activitiesLoading}
+            error={activitiesError as Error | null}
+          />
         </div>
 
         {/* Campaigns table */}

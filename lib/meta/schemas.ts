@@ -202,7 +202,7 @@ export const MetaPaginatedResponseSchema = <T extends z.ZodTypeAny>(
     paging: z
       .object({
         cursors: z
-          .object({ before: z.string(), after: z.string() })
+          .object({ before: z.string().optional(), after: z.string().optional() })
           .optional(),
         next: z.string().optional(),
       })
@@ -226,6 +226,57 @@ export const MetaAdImageUploadResponseSchema = z.object({
 export const MetaCreateResponseSchema = z.object({
   id: z.string(),
 }).passthrough();
+
+// --- Pixel schemas ---
+
+export const MetaPixelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  creation_time: z.string().optional(),
+  last_fired_time: z.string().optional(),
+  is_unavailable: z.boolean().optional(),
+  data_use_setting: z.string().optional(),
+}).passthrough();
+
+export const MetaPixelsPaginatedSchema = MetaPaginatedResponseSchema(MetaPixelSchema);
+
+export const MetaPixelStatsBucketSchema = z.object({
+  count: z.number().optional().default(0),
+  start_time: z.string().optional(),
+  aggregation: z.string().optional(),
+  data: z.array(z.object({
+    value: z.string(),
+    count: z.number().optional().default(0),
+  }).passthrough()).optional(),
+}).passthrough();
+
+export const MetaPixelStatsResponseSchema = z.object({
+  data: z.array(MetaPixelStatsBucketSchema),
+}).passthrough();
+
+export const MetaPixelDaCheckSchema = z.object({
+  description: z.string().optional(),
+  key: z.string().optional(),
+  result: z.string().optional(),
+  title: z.string().optional(),
+}).passthrough();
+
+export const MetaPixelDaChecksResponseSchema = z.object({
+  data: z.array(MetaPixelDaCheckSchema),
+}).passthrough();
+
+// --- Activity schema ---
+
+export const MetaActivitySchema = z.object({
+  event_type: z.string(),
+  event_time: z.string(),
+  object_name: z.string().optional(),
+  translated_event_type: z.string().optional(),
+  extra_data: z.any().optional(),
+  actor_name: z.string().optional(),
+}).passthrough();
+
+export const MetaActivitiesPaginatedSchema = MetaPaginatedResponseSchema(MetaActivitySchema);
 
 export const MetaInsightsPaginatedSchema =
   MetaPaginatedResponseSchema(MetaInsightSchema);

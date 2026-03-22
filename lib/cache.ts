@@ -78,6 +78,8 @@ export const TTL = {
   ALERTS: 180,      // 3 minutes
   CREATIVES: 300,   // 5 minutes
   PAGES: 300,       // 5 minutes
+  PIXEL_HEALTH: 600, // 10 minutes
+  ACTIVITIES: 180,   // 3 minutes
 } as const;
 
 // Cache key builders
@@ -99,4 +101,7 @@ export const CacheKeys = {
   timeSeries: (accountId: string, dateRange: string) =>
     `timeseries:${accountId}:${dateRange}`,
   accountPages: (accountId: string) => `account_pages:${accountId}`,
+  pixelHealth: (accountId: string) => `pixel_health:${accountId}`,
+  activities: (accountId: string, dateRange: string) =>
+    `activities:${accountId}:${dateRange}`,
 } as const;

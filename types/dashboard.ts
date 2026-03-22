@@ -118,6 +118,42 @@ export interface CampaignCreative {
   ctr: number;
 }
 
+export interface PixelHealth {
+  id: string;
+  name: string;
+  createdAt?: string;
+  lastFiredTime?: string;
+  isActive: boolean;
+  dataUseSetting?: string;
+  eventStats: Array<{ event: string; count: number }>;
+  daChecks: Array<{
+    key?: string;
+    title?: string;
+    description?: string;
+    result: "passed" | "failed" | "warning" | "unknown";
+  }>;
+}
+
+export type PixelStatsPeriod = "last_24h" | "last_7d" | "last_30d";
+
+export type ActivityFeedItemType = "meta_activity" | "performance_shift";
+export type PerformanceShiftDirection = "up" | "down";
+export type PerformanceShiftMetric = "spend" | "roas" | "ctr" | "cpc" | "conversions";
+
+export interface ActivityFeedItem {
+  id: string;
+  type: ActivityFeedItemType;
+  timestamp: string;
+  title: string;
+  description: string;
+  actorName?: string;
+  objectName?: string;
+  eventType?: string;
+  metric?: PerformanceShiftMetric;
+  direction?: PerformanceShiftDirection;
+  percentChange?: number;
+}
+
 export interface UploadedImage {
   id: string;
   name: string;
