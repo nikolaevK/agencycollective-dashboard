@@ -7,19 +7,23 @@ import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 interface UserOverviewData {
   accountId: string;
   accountName: string;
+  displayName: string;
   currency: string;
   logoPath: string | null;
   metrics: InsightMetrics;
   timeSeries: TimeSeriesDataPoint[];
 }
 
-async function fetchUserOverview(dateRange: DateRangeInput): Promise<UserOverviewData> {
+async function fetchUserOverview(dateRange: DateRangeInput, accountId?: string): Promise<UserOverviewData> {
   const params = new URLSearchParams();
   if (dateRange.preset) {
     params.set("preset", dateRange.preset);
   } else if (dateRange.since && dateRange.until) {
     params.set("since", dateRange.since);
     params.set("until", dateRange.until);
+  }
+  if (accountId) {
+    params.set("accountId", accountId);
   }
 
   const res = await fetch(`/api/user/overview?${params.toString()}`);
@@ -28,10 +32,10 @@ async function fetchUserOverview(dateRange: DateRangeInput): Promise<UserOvervie
   return json.data as UserOverviewData;
 }
 
-export function useUserOverview(dateRange: DateRangeInput) {
+export function useUserOverview(dateRange: DateRangeInput, accountId?: string) {
   return useQuery({
-    queryKey: ["user-overview", dateRange],
-    queryFn: () => fetchUserOverview(dateRange),
+    queryKey: ["user-overview", dateRange, accountId],
+    queryFn: () => fetchUserOverview(dateRange, accountId),
     staleTime: 5 * 60 * 1000,
   });
 }

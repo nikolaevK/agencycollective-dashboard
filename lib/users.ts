@@ -1,13 +1,20 @@
 import { getDb } from "./db";
 import type { Row } from "@libsql/client";
 
+export type UserStatus = "active" | "onboarding" | "inactive" | "archived";
+
 export interface UserRecord {
   id: string;
   slug: string;
-  accountId: string;
+  accountId: string;          // legacy single-account field
   displayName: string;
   logoPath: string | null;
   passwordHash: string | null;
+  email: string | null;
+  status: UserStatus;
+  mrr: number;                // in cents
+  category: string | null;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +89,11 @@ function rowToUser(row: Row): UserRecord {
     displayName: String(row.display_name),
     logoPath: row.logo_path != null ? String(row.logo_path) : null,
     passwordHash: row.password_hash != null ? String(row.password_hash) : null,
+    email: row.email != null ? String(row.email) : null,
+    status: (String(row.status || "active") as UserStatus),
+    mrr: Number(row.mrr ?? 0),
+    category: row.category != null ? String(row.category) : null,
+    createdAt: String(row.created_at || new Date().toISOString()),
   };
 }
 
@@ -111,10 +123,20 @@ export async function findUserBySlug(slug: string): Promise<UserRecord | null> {
   return result.rows[0] ? rowToUser(result.rows[0]) : null;
 }
 
+export async function findUserByEmail(email: string): Promise<UserRecord | null> {
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM users WHERE email = ? COLLATE NOCASE",
+    args: [email.trim().toLowerCase()],
+  });
+  return result.rows[0] ? rowToUser(result.rows[0]) : null;
+}
+
 export async function insertUser(user: UserRecord): Promise<void> {
   const db = getDb();
   await db.execute({
-    sql: "INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+    sql: `INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash, email, status, mrr, category)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       user.id,
       user.slug,
@@ -122,6 +144,10 @@ export async function insertUser(user: UserRecord): Promise<void> {
       user.displayName,
       user.logoPath,
       user.passwordHash,
+      user.email,
+      user.status,
+      user.mrr,
+      user.category,
     ],
   });
 }
@@ -131,7 +157,7 @@ export async function updateUser(
   changes: Partial<Omit<UserRecord, "id">>
 ): Promise<void> {
   const fields: string[] = [];
-  const args: (string | null)[] = [];
+  const args: (string | number | null)[] = [];
 
   if (changes.slug !== undefined) {
     fields.push("slug = ?");
@@ -152,6 +178,22 @@ export async function updateUser(
   if (changes.passwordHash !== undefined) {
     fields.push("password_hash = ?");
     args.push(changes.passwordHash);
+  }
+  if (changes.email !== undefined) {
+    fields.push("email = ?");
+    args.push(changes.email);
+  }
+  if (changes.status !== undefined) {
+    fields.push("status = ?");
+    args.push(changes.status);
+  }
+  if (changes.mrr !== undefined) {
+    fields.push("mrr = ?");
+    args.push(changes.mrr);
+  }
+  if (changes.category !== undefined) {
+    fields.push("category = ?");
+    args.push(changes.category);
   }
 
   if (fields.length === 0) return;

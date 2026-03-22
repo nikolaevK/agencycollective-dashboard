@@ -1,6 +1,9 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
+import { readActiveAccountsForUser } from "@/lib/clientAccounts";
 import { fetchTopAdsForAccount } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
@@ -12,7 +15,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Re-validate user and get accountId from DB (not just from session token)
+  // Re-validate user
   const userRecord = await findUser(session.userId);
   if (!userRecord) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,7 +25,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
-    const accountId = userRecord.accountId;
+
+    // Allow client-side account selection via query param, with ownership validation
+    const requestedAccountId = searchParams.get("accountId");
+    let accountId = session.accountId || userRecord.accountId;
+
+    if (requestedAccountId && requestedAccountId !== accountId) {
+      const userAccounts = await readActiveAccountsForUser(session.userId);
+      if (userAccounts.some((a) => a.accountId === requestedAccountId)) {
+        accountId = requestedAccountId;
+      }
+    }
 
     const cacheKey = `top_ads:${accountId}:${dateKey}`;
     let topAds = cache.get<Awaited<ReturnType<typeof fetchTopAdsForAccount>>>(cacheKey);
@@ -45,8 +58,7 @@ export async function GET(request: Request) {
     if (err instanceof TokenExpiredError) {
       return NextResponse.json({ error: err.message }, { status: 401 });
     }
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Top ads error:", message, err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Top ads error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

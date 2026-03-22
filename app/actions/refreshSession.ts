@@ -33,6 +33,7 @@ export async function refreshAdminSession(): Promise<void> {
   cookies().set(ADMIN_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     maxAge: ADMIN_SESSION_MAX_AGE,
     path: "/",
   });

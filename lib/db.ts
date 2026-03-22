@@ -45,6 +45,18 @@ export async function ensureMigrated(): Promise<void> {
  * as string literals (not errors), so we must use unquoted names to get a real
  * "no such column" error when a column is missing.
  */
+/**
+ * Check if the users table has the expanded schema (email, status, mrr, etc.).
+ */
+async function usersHasNewColumns(db: Client): Promise<boolean> {
+  try {
+    await db.execute(`SELECT email, status, mrr, category, created_at FROM users LIMIT 0`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function adminsHasNewColumns(db: Client): Promise<boolean> {
   try {
     await db.execute(
@@ -190,6 +202,54 @@ export async function migrate(): Promise<void> {
   } catch {
     // Index may already exist
   }
+
+  // ── Client accounts junction table ──────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_accounts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      account_id  TEXT NOT NULL,
+      label       TEXT,
+      is_active   INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(user_id, account_id)
+    )
+  `);
+
+  // ── Expand users table with new columns ─────────────────────────────
+  const usersExpanded = await usersHasNewColumns(db);
+
+  if (!usersExpanded) {
+    console.log("[migrate] Expanding users table with new columns...");
+
+    const alterCols = [
+      "ALTER TABLE users ADD COLUMN email TEXT",
+      "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+      "ALTER TABLE users ADD COLUMN mrr INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN category TEXT",
+      "ALTER TABLE users ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+    ];
+
+    for (const sql of alterCols) {
+      try {
+        await db.execute(sql);
+      } catch {
+        // Column may already exist
+      }
+    }
+
+    console.log("[migrate] Users table columns added");
+  }
+
+  // ── Migrate existing single account_id to client_accounts ───────────
+  // For users that have an account_id set but no rows in client_accounts,
+  // create a row so the junction table becomes the source of truth.
+  await db.execute(`
+    INSERT OR IGNORE INTO client_accounts (user_id, account_id, is_active)
+    SELECT id, account_id, 1 FROM users
+    WHERE account_id != ''
+      AND id NOT IN (SELECT user_id FROM client_accounts)
+  `);
 
   console.log("[migrate] Database migration complete");
 }

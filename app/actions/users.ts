@@ -3,21 +3,25 @@
 import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import {
   findUser,
+  findUserByEmail,
   insertUser,
   updateUser,
   deleteUser,
-  normalizeAccountId,
   slugify,
   generateUniqueSlug,
 } from "@/lib/users";
+import type { UserStatus } from "@/lib/users";
+import { ensureMigrated } from "@/lib/db";
+import { getAdminSession } from "@/lib/adminSession";
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
 // ---------------------------------------------------------------------------
 
-const ALLOWED_EXTS = ["png", "jpg", "jpeg", "webp", "svg"] as const;
+const ALLOWED_EXTS = ["png", "jpg", "jpeg", "webp"] as const;
 const MAX_BYTES = 2 * 1024 * 1024;
 
 async function saveLogo(
@@ -29,7 +33,7 @@ async function saveLogo(
 
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   if (!ALLOWED_EXTS.includes(ext as (typeof ALLOWED_EXTS)[number])) {
-    return { error: "Invalid file type. Allowed: PNG, JPG, WEBP, SVG" };
+    return { error: "Invalid file type. Allowed: PNG, JPG, WEBP" };
   }
 
   const uploadDir = path.join(process.cwd(), "public", "uploads", "logos");
@@ -48,19 +52,40 @@ async function saveLogo(
 // ---------------------------------------------------------------------------
 
 export async function createUserAction(formData: FormData): Promise<{ error?: string }> {
-  const id = String(formData.get("id") ?? "").trim();
+  const admin = getAdminSession();
+  if (!admin) return { error: "Unauthorized" };
+
+  await ensureMigrated();
+
   const displayName = String(formData.get("displayName") ?? "").trim();
-  const accountId = String(formData.get("accountId") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const category = String(formData.get("category") ?? "").trim() || null;
+  const mrrStr = String(formData.get("mrr") ?? "0").trim();
   const logoFile = formData.get("logo") as File | null;
 
-  if (!id || !displayName || !accountId) {
-    return { error: "User ID, display name, and account ID are required" };
+  if (!displayName || !email) {
+    return { error: "Display name and email are required" };
   }
 
-  const existing = await findUser(id);
-  if (existing) {
-    return { error: "User ID already exists" };
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Invalid email address" };
   }
+
+  // Check email uniqueness
+  const existingByEmail = await findUserByEmail(email);
+  if (existingByEmail) {
+    return { error: "A client with this email already exists" };
+  }
+
+  // Parse MRR (input is dollars, store as cents)
+  const mrrDollars = parseFloat(mrrStr) || 0;
+  const mrr = Math.round(mrrDollars * 100);
+
+  // Auto-generate ID from displayName
+  const baseSlug = slugify(displayName);
+  const id = baseSlug + "-" + crypto.randomBytes(4).toString("hex");
+  const slug = await generateUniqueSlug(baseSlug || "client");
 
   let logoPath: string | null = null;
   if (logoFile && logoFile.size > 0) {
@@ -69,15 +94,18 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     logoPath = result.logoPath;
   }
 
-  const slug = await generateUniqueSlug(slugify(displayName) || slugify(id));
-
   await insertUser({
     id,
     slug,
-    accountId: normalizeAccountId(accountId),
+    accountId: "",  // legacy field — accounts managed via client_accounts
     displayName,
     logoPath,
     passwordHash: null,
+    email,
+    status: "active",
+    mrr,
+    category,
+    createdAt: new Date().toISOString(),
   });
 
   revalidatePath("/dashboard/users");
@@ -85,14 +113,16 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
 }
 
 // ---------------------------------------------------------------------------
-// Update user — Account ID and/or Logo
+// Update user
 // ---------------------------------------------------------------------------
 
 export async function updateUserAction(formData: FormData): Promise<{ error?: string }> {
-  const id = String(formData.get("id") ?? "").trim();
-  const rawAccountId = formData.get("accountId") as string | null;
-  const logoFile = formData.get("logo") as File | null;
+  const admin = getAdminSession();
+  if (!admin) return { error: "Unauthorized" };
 
+  await ensureMigrated();
+
+  const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "User ID is required" };
 
   const user = await findUser(id);
@@ -100,14 +130,51 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 
   const changes: Parameters<typeof updateUser>[1] = {};
 
-  if (rawAccountId && rawAccountId.trim()) {
-    changes.accountId = normalizeAccountId(rawAccountId.trim());
+  const displayName = formData.get("displayName") as string | null;
+  if (displayName && displayName.trim()) {
+    changes.displayName = displayName.trim();
   }
 
+  const email = formData.get("email") as string | null;
+  if (email && email.trim()) {
+    const normalized = email.trim().toLowerCase();
+    if (normalized !== user.email) {
+      const existing = await findUserByEmail(normalized);
+      if (existing && existing.id !== id) {
+        return { error: "This email is already used by another client" };
+      }
+      changes.email = normalized;
+    }
+  }
+
+  const status = formData.get("status") as string | null;
+  if (status && ["active", "onboarding", "inactive", "archived"].includes(status)) {
+    changes.status = status as UserStatus;
+  }
+
+  const mrrStr = formData.get("mrr") as string | null;
+  if (mrrStr !== null && mrrStr !== undefined) {
+    const mrrDollars = parseFloat(mrrStr) || 0;
+    changes.mrr = Math.round(mrrDollars * 100);
+  }
+
+  const category = formData.get("category") as string | null;
+  if (category !== null) {
+    changes.category = category.trim() || null;
+  }
+
+  const logoFile = formData.get("logo") as File | null;
   if (logoFile && logoFile.size > 0) {
     const result = await saveLogo(id, logoFile);
     if ("error" in result) return result;
     changes.logoPath = result.logoPath;
+  }
+
+  // Legacy: also accept accountId for backward compat
+  const rawAccountId = formData.get("accountId") as string | null;
+  if (rawAccountId && rawAccountId.trim()) {
+    const { normalizeAccountId } = await import("@/lib/users");
+    changes.accountId = normalizeAccountId(rawAccountId.trim());
   }
 
   await updateUser(id, changes);
@@ -120,6 +187,10 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 // ---------------------------------------------------------------------------
 
 export async function removeUserLogoAction(id: string): Promise<{ error?: string }> {
+  const admin = getAdminSession();
+  if (!admin) return { error: "Unauthorized" };
+
+  await ensureMigrated();
   const user = await findUser(id);
   if (!user) return { error: "User not found" };
 
@@ -133,6 +204,10 @@ export async function removeUserLogoAction(id: string): Promise<{ error?: string
 // ---------------------------------------------------------------------------
 
 export async function deleteUserAction(id: string): Promise<{ error?: string }> {
+  const admin = getAdminSession();
+  if (!admin) return { error: "Unauthorized" };
+
+  await ensureMigrated();
   const deleted = await deleteUser(id);
   if (!deleted) return { error: "User not found" };
 

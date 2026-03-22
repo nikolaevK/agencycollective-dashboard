@@ -7,7 +7,7 @@ import { useTheme } from "@/components/providers/ThemeProvider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { checkUserAction, loginAction, setPasswordAction } from "@/app/actions/auth";
 
-type Step = "userId" | "createPassword" | "login";
+type Step = "email" | "createPassword" | "login";
 
 function Spinner() {
   return (
@@ -21,16 +21,14 @@ function Spinner() {
 const INPUT_CLS =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50 transition-shadow";
 
-const BTN_STYLE = {
-  background: "linear-gradient(135deg, hsl(263 70% 52%), hsl(210 100% 56%))",
-};
+const BTN_CLS = "ac-gradient";
 
 export default function LoginPage() {
   const { theme } = useTheme();
   const [isPending, startTransition] = useTransition();
 
-  const [step, setStep] = useState<Step>("userId");
-  const [userId, setUserId] = useState("");
+  const [step, setStep] = useState<Step>("email");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -41,9 +39,9 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await checkUserAction(userId);
+      const result = await checkUserAction(email);
       if (!result.exists) {
-        setError("User ID not found. Please contact your administrator.");
+        setError("No account found with this email. Please contact your account manager.");
         return;
       }
       setStep(result.hasPassword ? "login" : "createPassword");
@@ -56,7 +54,7 @@ export default function LoginPage() {
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (password !== confirmPassword) { setError("Passwords do not match."); return; }
     startTransition(async () => {
-      const result = await setPasswordAction(userId, password);
+      const result = await setPasswordAction(email, password);
       if (result?.error) setError(result.error);
       // On success, server action redirects — no client code needed
     });
@@ -66,7 +64,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await loginAction(userId, password);
+      const result = await loginAction(email, password);
       if (result?.error) setError(result.error);
       // On success, server action redirects — no client code needed
     });
@@ -76,7 +74,7 @@ export default function LoginPage() {
     setError(null);
     setPassword("");
     setConfirmPassword("");
-    setStep("userId");
+    setStep("email");
   }
 
   return (
@@ -114,7 +112,7 @@ export default function LoginPage() {
             <div className="space-y-1 text-center">
               <h1 className="text-xl font-bold tracking-tight text-foreground">Client Portal</h1>
               <p className="text-sm text-muted-foreground">
-                {step === "userId" && "Sign in to view your campaign performance"}
+                {step === "email" && "Sign in to view your campaign performance"}
                 {step === "createPassword" && "Create your password to get started"}
                 {step === "login" && "Welcome back — enter your password"}
               </p>
@@ -122,33 +120,32 @@ export default function LoginPage() {
           </div>
 
           <div className="px-8 py-6">
-            {/* Step 1 — User ID */}
-            {step === "userId" && (
+            {/* Step 1 — Email */}
+            {step === "email" && (
               <form onSubmit={handleCheckUser} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label htmlFor="userId" className="text-sm font-medium text-foreground">
-                    User ID
+                  <label htmlFor="email" className="text-sm font-medium text-foreground">
+                    Email Address
                   </label>
                   <input
-                    id="userId"
-                    type="text"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder="Enter your User ID"
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email address"
                     required
                     autoFocus
                     className={INPUT_CLS}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Your User ID was provided by your account manager.
+                    The email address associated with your account.
                   </p>
                 </div>
                 {error && <ErrorBox message={error} />}
                 <button
                   type="submit"
-                  disabled={isPending || !userId.trim()}
-                  className="relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50"
-                  style={BTN_STYLE}
+                  disabled={isPending || !email.trim()}
+                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
                 >
                   {isPending ? <><Spinner /> Checking...</> : "Continue"}
                 </button>
@@ -158,7 +155,7 @@ export default function LoginPage() {
             {/* Step 2a — Create password */}
             {step === "createPassword" && (
               <form onSubmit={handleCreatePassword} className="space-y-4">
-                <UserBadge userId={userId} onBack={goBack} />
+                <UserBadge email={email} onBack={goBack} />
                 <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
                   <p className="text-xs text-primary/80">
                     First time signing in — please create a password for your account.
@@ -187,8 +184,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isPending || !password || !confirmPassword}
-                  className="relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50"
-                  style={BTN_STYLE}
+                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
                 >
                   {isPending ? <><Spinner /> Creating account...</> : "Create Password & Sign In"}
                 </button>
@@ -198,7 +194,7 @@ export default function LoginPage() {
             {/* Step 2b — Login */}
             {step === "login" && (
               <form onSubmit={handleLogin} className="space-y-4">
-                <UserBadge userId={userId} onBack={goBack} />
+                <UserBadge email={email} onBack={goBack} />
                 <PasswordField
                   id="password"
                   label="Password"
@@ -213,8 +209,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isPending || !password}
-                  className="relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50"
-                  style={BTN_STYLE}
+                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
                 >
                   {isPending ? <><Spinner /> Signing in...</> : "Sign In"}
                 </button>
@@ -243,15 +238,15 @@ function ErrorBox({ message }: { message: string }) {
   );
 }
 
-function UserBadge({ userId, onBack }: { userId: string; onBack: () => void }) {
+function UserBadge({ email, onBack }: { email: string; onBack: () => void }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
       <span className="text-xs text-muted-foreground">Signing in as</span>
-      <span className="text-xs font-semibold text-foreground">{userId}</span>
+      <span className="text-xs font-semibold text-foreground truncate">{email}</span>
       <button
         type="button"
         onClick={onBack}
-        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
       >
         <ArrowLeft className="h-3 w-3" />
         Change
@@ -278,7 +273,7 @@ function PasswordField({
           placeholder={placeholder}
           required
           autoFocus={autoFocus}
-          className={INPUT_CLS + " pr-10"}
+          className={`${INPUT_CLS} pr-10`}
         />
         <button
           type="button"

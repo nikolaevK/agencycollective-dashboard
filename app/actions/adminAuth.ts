@@ -24,6 +24,7 @@ function buildSessionAndSetCookie(admin: AdminRecord) {
   cookies().set(ADMIN_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     maxAge: ADMIN_SESSION_MAX_AGE,
     path: "/",
   });
@@ -62,6 +63,7 @@ export async function adminSetPasswordAction(
   password: string
 ): Promise<{ error: string } | undefined> {
   if (password.length < 8) return { error: "Password must be at least 8 characters" };
+  if (password.length > 128) return { error: "Password must be at most 128 characters" };
 
   const admin = await findAdminByUsername(username.trim().toLowerCase());
   if (!admin) return { error: "Admin not found" };

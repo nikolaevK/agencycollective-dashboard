@@ -22,7 +22,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       <UserSidebar
-        displayName={data?.accountName}
+        displayName={data?.displayName}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />

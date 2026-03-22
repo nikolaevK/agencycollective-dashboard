@@ -5,15 +5,16 @@ const SESSION_COOKIE = "u_sess";
 
 function getSecret(): string {
   const s = process.env.SESSION_SECRET;
-  if (!s && process.env.NODE_ENV === "production") {
-    throw new Error("SESSION_SECRET env var must be set in production (min 32 chars recommended)");
+  if (!s) {
+    throw new Error("SESSION_SECRET env var is required (min 32 random chars). Add it to .env.local for development.");
   }
-  return s || "dev-secret-please-change";
+  return s;
 }
 
 export interface SessionData {
   userId: string;
   accountId: string;
+  accountIds?: string[]; // all active account IDs for client-side switching
 }
 
 export function createSession(data: SessionData): string {
@@ -33,7 +34,14 @@ export function verifySession(token: string): SessionData | null {
   const payload = token.slice(0, dot);
   const sig = token.slice(dot + 1);
   const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-  if (expected !== sig) return null;
+  // Constant-time comparison to prevent timing attacks
+  try {
+    const expectedBuf = Buffer.from(expected, "hex");
+    const sigBuf = Buffer.from(sig, "hex");
+    if (expectedBuf.length !== sigBuf.length || !crypto.timingSafeEqual(expectedBuf, sigBuf)) return null;
+  } catch {
+    return null;
+  }
   try {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     // Enforce token expiration

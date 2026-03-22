@@ -1,20 +1,39 @@
 "use client";
 
-import { Suspense } from "react";
+import { useState, useMemo, Suspense } from "react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useUserOverview } from "@/hooks/useUserOverview";
 import { useTopAds } from "@/hooks/useTopAds";
+import { useAllAccountsOverview } from "@/hooks/useAllAccountsOverview";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { KpiGrid } from "@/components/overview/KpiGrid";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { TopAdsCard } from "@/components/portal/TopAdsCard";
+import { AccountsOverviewGrid } from "@/components/portal/AccountsOverviewGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function OverviewContent() {
   const { dateRange } = useDateRange();
-  const { data, isLoading, error } = useUserOverview(dateRange);
-  const { data: topAds, isLoading: topAdsLoading } = useTopAds(dateRange);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
+
+  // Fetch all accounts with metrics (for the grid)
+  const { data: allAccounts, isLoading: allAccountsLoading } = useAllAccountsOverview(dateRange);
+
+  // If selected account was removed, reset to first available
+  const effectiveAccountId = useMemo(() => {
+    if (!allAccounts || allAccounts.length === 0) return selectedAccountId;
+    if (selectedAccountId && allAccounts.some((a) => a.accountId === selectedAccountId)) {
+      return selectedAccountId;
+    }
+    return allAccounts[0].accountId;
+  }, [selectedAccountId, allAccounts]);
+
+  // Fetch detail data for the selected account
+  const { data, isLoading, error } = useUserOverview(dateRange, effectiveAccountId);
+  const { data: topAds, isLoading: topAdsLoading } = useTopAds(dateRange, effectiveAccountId);
+
+  const hasMultipleAccounts = allAccounts && allAccounts.length > 1;
 
   return (
     <DashboardShell>
@@ -25,6 +44,24 @@ function OverviewContent() {
             Performance for {data?.accountName ?? "your account"}
           </p>
         </div>
+
+        {/* All accounts grid — only shown when client has >1 linked account */}
+        {hasMultipleAccounts && (
+          <AccountsOverviewGrid
+            accounts={allAccounts}
+            selectedAccountId={effectiveAccountId}
+            onSelectAccount={setSelectedAccountId}
+          />
+        )}
+
+        {/* Loading skeleton for accounts grid */}
+        {allAccountsLoading && !allAccounts && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-xl bg-muted/60" />
+            ))}
+          </div>
+        )}
 
         <KpiGrid
           metrics={data?.metrics}

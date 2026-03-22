@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* Agency Collective — Light Mode */
-    --background: 240 10% 97%;
+    --background: 229 100% 98%;
     --foreground: 240 15% 9%;
 
     --card: 0 0% 100%;
@@ -37,7 +37,7 @@
     --radius: 0.625rem;
 
     /* Sidebar — Light Mode */
-    --sidebar-bg: 0 0% 100%;
+    --sidebar-bg: 229 100% 98%;
     --sidebar-fg: 240 10% 35%;
     --sidebar-border: 240 6% 88%;
     --sidebar-active-bg: 263 70% 95%;

@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { fetchAccountInsights, fetchOwnedAccounts } from "@/lib/meta/endpoints";
@@ -9,6 +11,7 @@ import cache, { TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
 import { findUser } from "@/lib/users";
+import { readActiveAccountsForUser } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 
 // Use portal-specific cache keys to avoid colliding with admin insight caches,
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Re-validate user and get accountId from DB (not just from session token)
+    // Re-validate user
     const userRecord = await findUser(session.userId);
     if (!userRecord) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,28 +46,45 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
-    const accountId = userRecord.accountId;
 
-    // Time series (daily breakdown) — portal-namespaced cache key avoids colliding
-    // with admin's /api/insights route which stores { metrics, timeSeries } at the same key.
-    const tsCacheKey = portalTimeSeriesCacheKey(accountId, dateKey);
-    let timeSeries = cache.get<TimeSeriesDataPoint[]>(tsCacheKey);
+    // Allow client-side account selection via query param, with ownership validation
+    const requestedAccountId = searchParams.get("accountId");
+    let accountId = session.accountId || userRecord.accountId;
 
-    if (!timeSeries) {
-      const rawInsights = await fetchAccountInsights(accountId, dateRange, 1);
-      timeSeries = transformTimeSeries(rawInsights);
-      cache.set(tsCacheKey, timeSeries, TTL.INSIGHTS);
+    // Fetch linked accounts for ownership validation and label lookup
+    const userAccounts = await readActiveAccountsForUser(session.userId);
+
+    if (requestedAccountId && requestedAccountId !== accountId) {
+      if (userAccounts.some((a) => a.accountId === requestedAccountId)) {
+        accountId = requestedAccountId;
+      }
     }
 
-    // Aggregate metrics — use transformInsight directly (same as admin's /api/insights)
-    // so Meta's pre-calculated website_purchase_roas is used for ROAS.
+    // Get admin-assigned label for this account
+    const linkedAccount = userAccounts.find((a) => a.accountId === accountId);
+
+    // Time series + aggregate metrics — fetch in parallel when both caches are cold
+    const tsCacheKey = portalTimeSeriesCacheKey(accountId, dateKey);
     const metricsCacheKey = portalMetricsCacheKey(accountId, dateKey);
+    let timeSeries = cache.get<TimeSeriesDataPoint[]>(tsCacheKey);
     let metrics = cache.get<InsightMetrics>(metricsCacheKey);
 
-    if (!metrics) {
-      const rawInsights = await fetchAccountInsights(accountId, dateRange);
-      metrics = rawInsights[0] ? transformInsight(rawInsights[0]) : emptyInsights();
-      cache.set(metricsCacheKey, metrics, TTL.INSIGHTS);
+    const needTs = !timeSeries;
+    const needMetrics = !metrics;
+
+    if (needTs || needMetrics) {
+      const [tsRaw, metricsRaw] = await Promise.all([
+        needTs ? fetchAccountInsights(accountId, dateRange, 1) : Promise.resolve(null),
+        needMetrics ? fetchAccountInsights(accountId, dateRange) : Promise.resolve(null),
+      ]);
+      if (tsRaw) {
+        timeSeries = transformTimeSeries(tsRaw);
+        cache.set(tsCacheKey, timeSeries, TTL.INSIGHTS);
+      }
+      if (metricsRaw) {
+        metrics = metricsRaw[0] ? transformInsight(metricsRaw[0]) : emptyInsights();
+        cache.set(metricsCacheKey, metrics, TTL.INSIGHTS);
+      }
     }
 
     // Account name + currency (cached separately)
@@ -83,7 +103,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       data: {
         accountId,
-        accountName: account?.name ?? accountId,
+        accountName: linkedAccount?.label || account?.name || accountId,
+        displayName: userRecord.displayName,
         currency: account?.currency ?? "USD",
         logoPath,
         metrics,
@@ -104,7 +125,7 @@ export async function GET(request: Request) {
     }
     console.error("User overview error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
