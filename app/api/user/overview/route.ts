@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { fetchAccountInsights, fetchOwnedAccounts } from "@/lib/meta/endpoints";
@@ -91,6 +89,8 @@ export async function GET(request: Request) {
         metrics,
         timeSeries,
       },
+    }, {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=240" },
     });
   } catch (err) {
     if (err instanceof RateLimitError) {

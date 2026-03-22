@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { fetchAccountInsights } from "@/lib/meta/endpoints";
@@ -43,7 +41,9 @@ export async function GET(request: Request) {
         data: cached,
         meta: { cached: true, timestamp: Date.now(), dateRange: dateKey },
       };
-      return NextResponse.json(response);
+      return NextResponse.json(response, {
+        headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=240" },
+      });
     }
 
     if (withTimeSeries) {

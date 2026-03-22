@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { fetchOwnedAccounts, fetchAllAccountInsightsBatch, fetchCampaigns } from "@/lib/meta/endpoints";
 import { transformInsight, transformCampaign } from "@/lib/meta/transformers";
@@ -32,7 +30,9 @@ export async function GET(request: Request) {
         data: cached,
         meta: { cached: true, timestamp: Date.now(), dateRange: dateKey },
       };
-      return NextResponse.json(response);
+      return NextResponse.json(response, {
+        headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=120" },
+      });
     }
 
     const prevDateRange = getPreviousPeriod(dateRange);

@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
@@ -34,7 +32,9 @@ export async function GET(request: Request) {
       cache.set(cacheKey, topAds, TTL.ADS);
     }
 
-    return NextResponse.json({ data: topAds });
+    return NextResponse.json({ data: topAds }, {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=240" },
+    });
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(
