@@ -251,5 +251,75 @@ export async function migrate(): Promise<void> {
       AND id NOT IN (SELECT user_id FROM client_accounts)
   `);
 
+  // ── Closers table ──────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS closers (
+      id              TEXT PRIMARY KEY,
+      slug            TEXT NOT NULL UNIQUE,
+      display_name    TEXT NOT NULL,
+      email           TEXT NOT NULL,
+      password_hash   TEXT,
+      role            TEXT NOT NULL DEFAULT 'closer',
+      commission_rate INTEGER NOT NULL DEFAULT 0,
+      quota           INTEGER NOT NULL DEFAULT 0,
+      status          TEXT NOT NULL DEFAULT 'active',
+      avatar_path     TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Deals table ───────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS deals (
+      id              TEXT PRIMARY KEY,
+      closer_id       TEXT NOT NULL REFERENCES closers(id) ON DELETE CASCADE,
+      client_name     TEXT NOT NULL,
+      client_user_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
+      deal_value      INTEGER NOT NULL DEFAULT 0,
+      service_category TEXT,
+      closing_date    TEXT,
+      status          TEXT NOT NULL DEFAULT 'in_progress',
+      notes           TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_deals_closer_id ON deals(closer_id)`
+    );
+  } catch {
+    // Index may already exist
+  }
+
+  // ── Add google_event_id to deals (if not present) ────────────────
+  try {
+    await db.execute(`SELECT google_event_id FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN google_event_id TEXT`);
+      console.log("[migrate] Added google_event_id column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add google_event_id column:", err);
+    }
+  }
+
+  // ── Google Calendar config table ──────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS google_calendar_config (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      label         TEXT NOT NULL DEFAULT 'Main Calendar',
+      email         TEXT,
+      access_token  TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at    INTEGER NOT NULL,
+      calendar_id   TEXT NOT NULL DEFAULT 'primary',
+      connected_by  TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   console.log("[migrate] Database migration complete");
 }

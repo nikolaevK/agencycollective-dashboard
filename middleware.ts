@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 const ADMIN_COOKIE  = "a_sess";
 const PORTAL_COOKIE = "u_sess";
+const CLOSER_COOKIE = "c_sess";
 
 /**
  * Verify an HMAC-SHA256 signed session token using the Web Crypto API.
@@ -82,6 +83,8 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/generate"), perm: "studio" },
   { match: (p) => p.startsWith("/api/ad-copy"), perm: "adcopy" },
   { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
+  { match: (p) => p.startsWith("/api/admin/closers"), perm: "closers" },
+  { match: (p) => p.startsWith("/api/admin/deals"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
   { match: (p) => p.startsWith("/api/accounts"), perm: "dashboard" },
@@ -157,6 +160,32 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ── Closer portal (/closer/*) ────────────────────────────────────────────
+  if (pathname.startsWith("/closer/") && pathname !== "/closer/login") {
+    const token = request.cookies.get(CLOSER_COOKIE)?.value;
+    if (!token) {
+      return NextResponse.redirect(new URL("/closer/login", request.url));
+    }
+    const valid = secret ? await verifyToken(token, secret) : false;
+    if (!valid) {
+      const res = NextResponse.redirect(new URL("/closer/login", request.url));
+      res.cookies.delete(CLOSER_COOKIE);
+      return res;
+    }
+  }
+
+  // ── Closer portal API routes — session enforcement ────────────────────
+  if (pathname.startsWith("/api/closer/")) {
+    const token = request.cookies.get(CLOSER_COOKIE)?.value;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const valid = secret ? await verifyToken(token, secret) : false;
+    if (!valid) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   // ── Client portal (/{slug}/portal/*) ────────────────────────────────────
   if (/^\/[^/]+\/portal(\/|$)/.test(pathname)) {
     const token = request.cookies.get(PORTAL_COOKIE)?.value;
@@ -180,12 +209,17 @@ export const config = {
     "/:slug/portal/:path*",
     "/dashboard",
     "/dashboard/:path*",
+    "/closer/:path*",
     "/api/chat/:path*",
     "/api/generate/:path*",
     "/api/ad-copy/:path*",
     "/api/admin/users/:path*",
+    "/api/admin/closers/:path*",
+    "/api/admin/deals/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
+    "/api/closer/:path*",
+    "/api/calendar/:path*",
     "/api/accounts/:path*",
     "/api/ads/:path*",
     "/api/adsets/:path*",
