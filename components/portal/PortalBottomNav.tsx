@@ -10,9 +10,9 @@ export function PortalBottomNav() {
   const slug = pathname.split("/")[1] ?? "";
 
   const tabs = [
-    { href: `/${slug}/portal/overview`, label: "Home", icon: Home, match: "/portal/overview" },
-    { href: `/${slug}/portal/onboarding`, label: "Onboarding", icon: ClipboardCheck, match: "/portal/onboarding" },
     { href: `/${slug}/portal/welcome-kit`, label: "Kit", icon: BookOpen, match: "/portal/welcome-kit" },
+    { href: `/${slug}/portal/onboarding`, label: "Onboarding", icon: ClipboardCheck, match: "/portal/onboarding" },
+    { href: `/${slug}/portal/overview`, label: "Home", icon: Home, match: "/portal/overview" },
   ];
 
   return (

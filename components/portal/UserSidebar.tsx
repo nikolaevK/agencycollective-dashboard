@@ -66,15 +66,15 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           Portal
         </p>
         <Link
-          href={`/${slug}/portal/overview`}
+          href={`/${slug}/portal/welcome-kit`}
           onClick={onClose}
           className={cn(
             "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
-            pathname.endsWith("/portal/overview") && "active"
+            pathname.includes("/portal/welcome-kit") && "active"
           )}
         >
-          <LayoutDashboard className="h-4 w-4 shrink-0" />
-          <span>Overview</span>
+          <BookOpen className="h-4 w-4 shrink-0" />
+          <span>Welcome Kit</span>
         </Link>
         <Link
           href={`/${slug}/portal/onboarding`}
@@ -88,15 +88,15 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           <span>Onboarding</span>
         </Link>
         <Link
-          href={`/${slug}/portal/welcome-kit`}
+          href={`/${slug}/portal/overview`}
           onClick={onClose}
           className={cn(
             "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
-            pathname.includes("/portal/welcome-kit") && "active"
+            pathname.endsWith("/portal/overview") && "active"
           )}
         >
-          <BookOpen className="h-4 w-4 shrink-0" />
-          <span>Welcome Kit</span>
+          <LayoutDashboard className="h-4 w-4 shrink-0" />
+          <span>Overview</span>
         </Link>
       </nav>
 

@@ -8,8 +8,7 @@ import {
   CheckCircle2,
   Clock,
   Lock,
-  ExternalLink,
-  Headset,
+  MessageCircle,
   ChevronDown,
   AlertTriangle,
 } from "lucide-react";
@@ -294,7 +293,7 @@ function TaskCard({
     >
       {/* Header — always visible */}
       <div
-        className="flex items-start gap-4 p-6 cursor-pointer select-none"
+        className="flex items-start gap-3 md:gap-4 p-4 md:p-6 cursor-pointer select-none"
         onClick={() => setExpanded((v) => !v)}
       >
         {/* Checkbox */}
@@ -350,8 +349,8 @@ function TaskCard({
 
       {/* Expandable detail panel */}
       {expanded && (
-        <div className="px-6 pb-6 pt-0">
-          <div className="ml-10 border-l-2 border-portal-surface-container pl-5 space-y-3">
+        <div className="px-4 md:px-6 pb-4 md:pb-6 pt-0">
+          <div className="ml-7 md:ml-10 border-l-2 border-portal-surface-container pl-4 md:pl-5 space-y-3">
             {task.subSteps.map((sub, idx) => (
               <div key={idx} className="flex items-start gap-3">
                 <span className="text-xs font-bold text-portal-secondary-dim bg-portal-surface-low rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
@@ -467,7 +466,7 @@ function MilestoneSummary({
   }, [completedSteps]);
 
   return (
-    <div className="bg-portal-surface-lowest p-8 rounded-xl shadow-sm">
+    <div className="bg-portal-surface-lowest p-5 md:p-8 rounded-xl shadow-sm">
       <h3 className="text-sm font-bold text-portal-secondary-dim uppercase tracking-widest mb-6">
         Milestone Summary
       </h3>
@@ -533,7 +532,7 @@ function OnboardingContent() {
         <div className="mb-12">
           <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-portal-on-surface mb-2">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-portal-on-surface mb-2">
                 Onboarding Checklist
               </h1>
               <p className="text-portal-secondary-text max-w-2xl">
@@ -566,24 +565,21 @@ function OnboardingContent() {
         </div>
 
         {/* Bento Grid */}
-        <div className="grid grid-cols-12 gap-8">
+        <div className="grid grid-cols-12 gap-5 md:gap-8">
           {/* Left Column */}
           <div className="col-span-12 lg:col-span-4 space-y-8">
             <MilestoneSummary completedSteps={completedSteps} />
 
             {/* Need Assistance Card */}
-            <div className="relative overflow-hidden bg-primary p-8 rounded-xl text-white">
+            <div className="relative overflow-hidden bg-primary p-6 md:p-8 rounded-xl text-white">
               <div className="relative z-10">
                 <h3 className="text-lg font-bold mb-2">Need Assistance?</h3>
-                <p className="text-sm opacity-80 mb-6 leading-relaxed">
-                  Schedule a quick 15-minute technical walkthrough with our
-                  integration team.
+                <p className="text-sm opacity-80 leading-relaxed">
+                  Reach out in your dedicated Slack channel and our team will
+                  help you through any step.
                 </p>
-                <button className="px-6 py-2 bg-white text-primary font-bold text-sm rounded-lg hover:shadow-lg transition-all active:scale-95">
-                  Book Call
-                </button>
               </div>
-              <Headset
+              <MessageCircle
                 className="absolute -right-8 -bottom-8 opacity-10"
                 size={120}
               />
