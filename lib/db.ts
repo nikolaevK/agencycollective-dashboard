@@ -32,7 +32,9 @@ export function getDb(): Client {
 export async function ensureMigrated(): Promise<void> {
   if (_migrated) return;
   if (!_migratePromise) {
-    _migratePromise = migrate().then(() => { _migrated = true; });
+    _migratePromise = migrate()
+      .then(() => { _migrated = true; })
+      .catch((err) => { _migratePromise = null; throw err; });
   }
   await _migratePromise;
 }
