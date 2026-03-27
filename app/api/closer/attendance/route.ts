@@ -13,9 +13,9 @@ export async function GET() {
   const attendance = await getAttendanceByCloser(session.closerId);
   // Convert Map to plain object for JSON
   const data: Record<string, string> = {};
-  for (const [eventId, status] of attendance) {
+  attendance.forEach((status, eventId) => {
     data[eventId] = status;
-  }
+  });
   return NextResponse.json({ data });
 }
 
