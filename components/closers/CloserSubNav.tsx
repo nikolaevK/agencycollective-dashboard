@@ -9,13 +9,14 @@ const tabs = [
   { href: "/dashboard/closers/manage", label: "Manage" },
   { href: "/dashboard/closers/deals", label: "Deals" },
   { href: "/dashboard/closers/calendar", label: "Calendar" },
+  { href: "/dashboard/closers/payouts", label: "Payouts" },
 ];
 
 export function CloserSubNav() {
   const pathname = usePathname();
 
   return (
-    <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 mb-6">
+    <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 mb-6 overflow-x-auto">
       {tabs.map((tab) => {
         const isActive = tab.exact
           ? pathname === tab.href
@@ -25,7 +26,7 @@ export function CloserSubNav() {
             key={tab.href}
             href={tab.href}
             className={cn(
-              "px-4 py-2 rounded-md text-sm font-medium transition-colors",
+              "px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
               isActive
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"

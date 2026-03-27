@@ -377,5 +377,35 @@ export async function migrate(): Promise<void> {
     )
   `);
 
+  // ── Payouts table (payout tracker) ───────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS payouts (
+      id                TEXT PRIMARY KEY,
+      payout_month      INTEGER NOT NULL,
+      payout_year       INTEGER NOT NULL,
+      date_joined       TEXT,
+      first_day_ad_spend TEXT,
+      brand_name        TEXT NOT NULL,
+      vertical          TEXT,
+      point_of_contact  TEXT,
+      service           TEXT,
+      is_signed         INTEGER NOT NULL DEFAULT 0,
+      is_paid           INTEGER NOT NULL DEFAULT 0,
+      added_to_slack    INTEGER NOT NULL DEFAULT 0,
+      amount_due        INTEGER NOT NULL DEFAULT 0,
+      amount_paid       INTEGER NOT NULL DEFAULT 0,
+      payment_notes     TEXT,
+      sales_rep         TEXT,
+      pay_distributed   TEXT NOT NULL DEFAULT 'No',
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_payouts_month_year
+    ON payouts(payout_year, payout_month)
+  `);
+
   console.log("[migrate] Database migration complete");
 }

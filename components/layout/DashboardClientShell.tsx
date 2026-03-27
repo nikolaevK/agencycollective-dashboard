@@ -17,6 +17,7 @@ interface DashboardClientShellProps {
 
 export function DashboardClientShell({ children, adminData, needsSessionRefresh }: DashboardClientShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const refreshed = useRef(false);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh 
         <Suspense fallback={<div className="hidden md:flex md:w-64 border-r bg-card" />}>
           <Sidebar
             isOpen={sidebarOpen}
+            collapsed={sidebarCollapsed}
             onClose={() => setSidebarOpen(false)}
           />
         </Suspense>
@@ -48,7 +50,11 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh 
           <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
           <div className="hidden md:block">
             <Suspense fallback={<div className="h-16 border-b bg-card" />}>
-              <TopBar onMenuClick={() => setSidebarOpen(true)} />
+              <TopBar
+                onMenuClick={() => setSidebarOpen(true)}
+                sidebarCollapsed={sidebarCollapsed}
+                onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+              />
             </Suspense>
           </div>
           {children}

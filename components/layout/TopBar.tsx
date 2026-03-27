@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, Menu, LogOut, ChevronDown } from "lucide-react";
+import { RefreshCw, Menu, LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -14,9 +14,11 @@ import { useAdmin } from "@/components/providers/AdminProvider";
 
 interface TopBarProps {
   onMenuClick?: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
-export function TopBar({ onMenuClick }: TopBarProps) {
+export function TopBar({ onMenuClick, sidebarCollapsed, onToggleSidebar }: TopBarProps) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const admin = useAdmin();
@@ -53,7 +55,7 @@ export function TopBar({ onMenuClick }: TopBarProps) {
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b bg-card px-4 md:px-6 gap-2">
-      {/* Left: hamburger (mobile) + account badge */}
+      {/* Left: hamburger (mobile) + sidebar toggle (desktop) + account badge */}
       <div className="flex items-center gap-2">
         <button
           onClick={onMenuClick}
@@ -62,6 +64,20 @@ export function TopBar({ onMenuClick }: TopBarProps) {
         >
           <Menu className="h-4 w-4" />
         </button>
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="hidden md:flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </button>
+        )}
         {accounts && accounts.length > 0 && (
           <span className="hidden sm:inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
             {accounts.length} account{accounts.length !== 1 ? "s" : ""}

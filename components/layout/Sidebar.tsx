@@ -12,9 +12,8 @@ import type { PermissionKey } from "@/lib/permissions";
 
 interface SidebarProps {
   isOpen?: boolean;
+  collapsed?: boolean;
   onClose?: () => void;
-  /** @deprecated permissions now come from AdminProvider */
-  isSuperAdmin?: boolean;
 }
 
 const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; superOnly?: boolean }[] = [
@@ -29,7 +28,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
 ];
 
-export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const admin = useAdmin();
@@ -51,18 +50,29 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "ac-sidebar flex h-full w-64 shrink-0 flex-col border-r",
-        "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-in-out",
+        "ac-sidebar flex h-full shrink-0 flex-col border-r transition-all duration-200 ease-in-out",
+        "fixed inset-y-0 left-0 z-50",
         "md:relative md:translate-x-0",
-        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        collapsed ? "md:w-16 w-64" : "w-64"
       )}
     >
       {/* Logo row — close button on mobile */}
       <div
-        className="flex h-16 items-center justify-between border-b px-5"
+        className={cn(
+          "flex h-16 items-center border-b",
+          collapsed ? "md:justify-center md:px-2 px-5 justify-between" : "justify-between px-5"
+        )}
         style={{ borderColor: "hsl(var(--sidebar-border))" }}
       >
-        <AgencyLogo />
+        <div className={cn(collapsed && "md:hidden")}>
+          <AgencyLogo />
+        </div>
+        {collapsed && (
+          <div className="hidden md:flex items-center justify-center">
+            <span className="text-lg font-bold text-primary">AC</span>
+          </div>
+        )}
         <button
           onClick={onClose}
           className="md:hidden rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
@@ -73,8 +83,11 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 px-3 py-4">
-        <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40">
+      <nav className={cn("flex-1 space-y-0.5 py-4", collapsed ? "md:px-2 px-3" : "px-3")}>
+        <p className={cn(
+          "mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40",
+          collapsed && "md:hidden"
+        )}>
           Admin
         </p>
         {visibleItems.map((item) => {
@@ -87,14 +100,20 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               key={item.href}
               href={item.href}
               onClick={onClose}
-              className={cn("ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium", isActive && "active")}
+              title={collapsed ? item.label : undefined}
+              className={cn(
+                "ac-sidebar-link flex items-center rounded-lg text-sm font-medium",
+                collapsed ? "md:justify-center md:px-0 md:py-2.5 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5",
+                isActive && "active"
+              )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
-              <span>{item.label}</span>
+              <span className={cn(collapsed && "md:hidden")}>{item.label}</span>
               {item.label === "Alerts" && totalCount > 0 && (
                 <span
                   className={cn(
-                    "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
+                    "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
+                    collapsed ? "md:absolute md:top-0 md:right-0 md:h-4 md:min-w-4 md:text-[9px] md:px-1" : "ml-auto",
                     criticalCount > 0 ? "bg-red-500 text-white" : "bg-amber-400 text-amber-900"
                   )}
                 >
@@ -107,13 +126,17 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       </nav>
 
       {/* Footer — logout */}
-      <div className="border-t p-3" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
+      <div className={cn("border-t", collapsed ? "md:p-2 p-3" : "p-3")} style={{ borderColor: "hsl(var(--sidebar-border))" }}>
         <button
           onClick={handleLogout}
-          className="ac-sidebar-link flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium"
+          title={collapsed ? "Log out" : undefined}
+          className={cn(
+            "ac-sidebar-link flex w-full items-center rounded-lg text-sm font-medium",
+            collapsed ? "md:justify-center md:px-0 md:py-2.5 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5"
+          )}
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          <span>Log out</span>
+          <span className={cn(collapsed && "md:hidden")}>Log out</span>
         </button>
       </div>
     </aside>
