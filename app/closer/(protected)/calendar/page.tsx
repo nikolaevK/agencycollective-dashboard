@@ -3,14 +3,17 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
-import { CalendarEventList, type CalendarEvent } from "@/components/closer/CalendarEventList";
+import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
 import { LinkEventDealModal } from "@/components/closer/LinkEventDealModal";
+import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
+import type { DealPublic } from "@/components/closers/types";
 
 export default function CloserCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [linkingEvent, setLinkingEvent] = useState<CalendarEvent | null>(null);
+  const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const currentWeekStart = useMemo(() => {
@@ -43,13 +46,24 @@ export default function CloserCalendarPage() {
     staleTime: 30_000,
   });
 
-  // Get linked event IDs from closer's deals
-  const { data: deals = [] } = useQuery<Array<{ googleEventId: string | null }>>({
+  // Deals for linked event indicators
+  const { data: deals = [] } = useQuery<DealPublic[]>({
     queryKey: ["closer-deals"],
     queryFn: async () => {
       const res = await fetch("/api/closer/deals");
       const json = await res.json();
       return json.data ?? [];
+    },
+    staleTime: 30_000,
+  });
+
+  // Attendance records (show/no-show per event)
+  const { data: attendance = {} } = useQuery<Record<string, string>>({
+    queryKey: ["closer-attendance"],
+    queryFn: async () => {
+      const res = await fetch("/api/closer/attendance");
+      const json = await res.json();
+      return json.data ?? {};
     },
     staleTime: 30_000,
   });
@@ -61,6 +75,39 @@ export default function CloserCalendarPage() {
     }
     return ids;
   }, [deals]);
+
+  const linkedDeals: LinkedDealInfo[] = useMemo(() => {
+    return deals
+      .filter((d) => d.googleEventId)
+      .map((d) => ({
+        dealId: d.id,
+        googleEventId: d.googleEventId!,
+        closerId: d.closerId,
+      }));
+  }, [deals]);
+
+  async function handleAttendanceChange(eventId: string, showStatus: "showed" | "no_show" | null) {
+    if (showStatus === null) {
+      // Clear attendance
+      const res = await fetch(`/api/closer/attendance?eventId=${encodeURIComponent(eventId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["closer-attendance"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+      }
+    } else {
+      const res = await fetch("/api/closer/attendance", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, showStatus }),
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["closer-attendance"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+      }
+    }
+  }
 
   const connected = status?.connected ?? false;
 
@@ -126,7 +173,11 @@ export default function CloserCalendarPage() {
               <CalendarEventList
                 events={events}
                 linkedEventIds={linkedEventIds}
+                linkedDeals={linkedDeals}
+                attendance={attendance}
                 onLinkDeal={(event) => setLinkingEvent(event)}
+                onAttendanceChange={handleAttendanceChange}
+                onEditDeal={(dealId) => setEditingDealId(dealId)}
               />
             )}
           </>
@@ -142,6 +193,38 @@ export default function CloserCalendarPage() {
             }}
           />
         )}
+
+        {/* Edit deal modal */}
+        {editingDealId && (() => {
+          const deal = deals.find((d) => d.id === editingDealId);
+          if (!deal) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setEditingDealId(null)} />
+              <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                  <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
+                  <button onClick={() => setEditingDealId(null)} className="text-muted-foreground hover:text-foreground">
+                    <span className="sr-only">Close</span>&times;
+                  </button>
+                </div>
+                <div className="p-6">
+                  <UnifiedDealForm
+                    mode="edit"
+                    context="closer"
+                    initialData={deal}
+                    onSuccess={() => {
+                      setEditingDealId(null);
+                      queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+                      queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+                    }}
+                    onCancel={() => setEditingDealId(null)}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </main>
   );

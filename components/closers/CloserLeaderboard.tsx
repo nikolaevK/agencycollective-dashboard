@@ -12,6 +12,9 @@ interface CloserBreakdown {
   closedCount: number;
   totalCount: number;
   commissionRate: number;
+  showCount: number;
+  noShowCount: number;
+  showRate: number;
 }
 
 interface CloserLeaderboardProps {
@@ -101,6 +104,9 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                   <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-24">
                     Close Rate
                   </th>
+                  <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-24">
+                    Show Rate
+                  </th>
                   <th className="text-left pb-3 text-xs font-medium text-muted-foreground hidden lg:table-cell w-36">
                     &nbsp;
                   </th>
@@ -146,6 +152,9 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                       </td>
                       <td className="py-3 pr-4 text-right text-muted-foreground tabular-nums">
                         {closeRate}%
+                      </td>
+                      <td className="py-3 pr-4 text-right text-muted-foreground tabular-nums">
+                        {closer.showRate}%
                       </td>
                       <td className="py-3 hidden lg:table-cell">
                         <div className="w-full bg-muted/50 dark:bg-white/5 rounded-full h-2">
@@ -201,7 +210,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                       {formatCents(closer.revenue)}
                     </span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {closeRate}% close rate
+                      {closeRate}% close &middot; {closer.showRate}% show
                     </span>
                   </div>
                   <div className="w-full bg-muted/50 dark:bg-white/5 rounded-full h-1.5 mt-2">

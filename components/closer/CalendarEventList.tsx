@@ -1,7 +1,7 @@
 "use client";
 
 import { format, parseISO, isSameDay } from "date-fns";
-import { Clock, Users, Video, ArrowRight } from "lucide-react";
+import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CalendarEvent {
@@ -17,16 +17,35 @@ export interface CalendarEvent {
   calendarName?: string;
 }
 
+export interface LinkedDealInfo {
+  dealId: string;
+  googleEventId: string;
+  closerId: string;
+  closerName?: string;
+}
+
 interface Props {
   events: CalendarEvent[];
+  /** Event IDs that have a linked deal */
   linkedEventIds?: Set<string>;
+  /** Deal info for linked events */
+  linkedDeals?: LinkedDealInfo[];
+  /** Attendance status per event ID: "showed" | "no_show" */
+  attendance?: Record<string, string>;
+  /** Create a deal from this event */
   onLinkDeal?: (event: CalendarEvent) => void;
+  /** Toggle showed/no-show for any event. Pass null to clear. */
+  onAttendanceChange?: (eventId: string, status: "showed" | "no_show" | null) => void;
+  /** Edit a linked deal */
+  onEditDeal?: (dealId: string) => void;
+  /** Admin view (read-only attendance, shows closer name) */
+  isAdmin?: boolean;
 }
 
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const groups = new Map<string, CalendarEvent[]>();
   for (const event of events) {
-    const dayKey = event.start.slice(0, 10); // YYYY-MM-DD
+    const dayKey = event.start.slice(0, 10);
     const existing = groups.get(dayKey) ?? [];
     existing.push(event);
     groups.set(dayKey, existing);
@@ -56,7 +75,16 @@ function formatDayHeader(dateStr: string): string {
   }
 }
 
-export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props) {
+export function CalendarEventList({
+  events,
+  linkedEventIds,
+  linkedDeals,
+  attendance,
+  onLinkDeal,
+  onAttendanceChange,
+  onEditDeal,
+  isAdmin,
+}: Props) {
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-12 text-center">
@@ -77,6 +105,9 @@ export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props)
           <div className="space-y-2">
             {dayEvents.map((event) => {
               const isLinked = linkedEventIds?.has(event.id);
+              const dealInfo = linkedDeals?.find((d) => d.googleEventId === event.id);
+              const eventAttendance = attendance?.[event.id] as "showed" | "no_show" | undefined;
+
               return (
                 <div
                   key={event.id}
@@ -87,6 +118,7 @@ export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props)
                       : "border-border/50 dark:border-white/[0.06] hover:bg-muted/30"
                   )}
                 >
+                  {/* Top row: title + link button */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -96,6 +128,11 @@ export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props)
                         {event.calendarName && (
                           <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-muted text-muted-foreground">
                             {event.calendarName}
+                          </span>
+                        )}
+                        {isLinked && (
+                          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                            Deal Linked
                           </span>
                         )}
                       </div>
@@ -122,9 +159,16 @@ export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props)
                             Meet
                           </a>
                         )}
+                        {isAdmin && dealInfo?.closerName && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <User className="h-3 w-3" />
+                            {dealInfo.closerName}
+                          </span>
+                        )}
                       </div>
                     </div>
 
+                    {/* Right side: Link as Deal button for unlinked */}
                     {onLinkDeal && !isLinked && (
                       <button
                         onClick={() => onLinkDeal(event)}
@@ -134,12 +178,63 @@ export function CalendarEventList({ events, linkedEventIds, onLinkDeal }: Props)
                         <ArrowRight className="h-3 w-3" />
                       </button>
                     )}
-                    {isLinked && (
-                      <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                        Linked
-                      </span>
-                    )}
                   </div>
+
+                  {/* Bottom row: Show/No-Show buttons on EVERY card */}
+                  {onAttendanceChange && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
+                      <button
+                        onClick={() => onAttendanceChange(event.id, eventAttendance === "showed" ? null : "showed")}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors",
+                          eventAttendance === "showed"
+                            ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                            : "border-border/50 bg-background text-muted-foreground hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-700 dark:hover:text-emerald-400"
+                        )}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Showed
+                      </button>
+                      <button
+                        onClick={() => onAttendanceChange(event.id, eventAttendance === "no_show" ? null : "no_show")}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors",
+                          eventAttendance === "no_show"
+                            ? "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-400"
+                            : "border-border/50 bg-background text-muted-foreground hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-700 dark:hover:text-red-400"
+                        )}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        No Show
+                      </button>
+
+                      {/* Edit button for linked deals */}
+                      {isLinked && dealInfo && onEditDeal && (
+                        <button
+                          onClick={() => onEditDeal(dealInfo.dealId)}
+                          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border/50 bg-background text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors ml-auto"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit Deal
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Admin: read-only attendance badge */}
+                  {isAdmin && eventAttendance && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                        eventAttendance === "showed"
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+                      )}>
+                        {eventAttendance === "showed" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                        {eventAttendance === "showed" ? "Showed" : "No Show"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}

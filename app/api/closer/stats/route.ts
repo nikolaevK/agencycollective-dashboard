@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";
 import { findCloser } from "@/lib/closers";
 import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
+import { getCloserShowRate } from "@/lib/eventAttendance";
 
 export async function GET() {
   const session = getCloserSession();
@@ -16,9 +17,10 @@ export async function GET() {
     return NextResponse.json({ error: "Closer not found" }, { status: 404 });
   }
 
-  const [deals, stats] = await Promise.all([
+  const [deals, stats, showRateStats] = await Promise.all([
     readDealsByCloser(session.closerId),
     getCloserDealStats(session.closerId),
+    getCloserShowRate(session.closerId),
   ]);
 
   return NextResponse.json({
@@ -30,7 +32,15 @@ export async function GET() {
         quota: closer.quota,
         commissionRate: closer.commissionRate,
       },
-      stats,
+      stats: {
+        totalRevenue: stats.totalRevenue,
+        dealCount: stats.dealCount,
+        closedCount: stats.closedCount,
+        avgDealValue: stats.avgDealValue,
+        showRate: showRateStats.showRate,
+        showCount: showRateStats.showCount,
+        noShowCount: showRateStats.noShowCount,
+      },
       recentDeals: deals.slice(0, 10),
     },
   });

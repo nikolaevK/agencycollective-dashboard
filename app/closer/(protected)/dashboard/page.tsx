@@ -19,6 +19,9 @@ interface StatsResponse {
     dealCount: number;
     closedCount: number;
     avgDealValue: number;
+    showRate: number;
+    showCount: number;
+    noShowCount: number;
   };
   recentDeals: Array<{
     id: string;
@@ -84,6 +87,10 @@ export default function CloserDashboardPage() {
           dealCount={data.stats.dealCount}
           closedCount={data.stats.closedCount}
           avgDealValue={data.stats.avgDealValue}
+          showRate={data.stats.showRate}
+          showCount={data.stats.showCount}
+          noShowCount={data.stats.noShowCount}
+          quota={data.closer.quota}
         />
 
         {/* Recent deals */}

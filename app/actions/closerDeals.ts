@@ -6,8 +6,9 @@ import { getCloserSession } from "@/lib/closerSession";
 import { findDeal, insertDeal, updateDeal, deleteDeal } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
+import { setEventAttendance } from "@/lib/eventAttendance";
 
-const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "in_progress"];
+const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
 export async function createDealAction(formData: FormData): Promise<{ error?: string }> {
   const session = getCloserSession();
@@ -19,8 +20,9 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   const clientUserId = String(formData.get("clientUserId") ?? "").trim() || null;
   const dealValueStr = String(formData.get("dealValue") ?? "0").trim();
   const serviceCategory = String(formData.get("serviceCategory") ?? "").trim() || null;
+  const industry = String(formData.get("industry") ?? "").trim() || null;
   const closingDate = String(formData.get("closingDate") ?? "").trim() || null;
-  const status = (String(formData.get("status") ?? "in_progress").trim()) as DealStatus;
+  const status = (String(formData.get("status") ?? "follow_up").trim()) as DealStatus;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const googleEventId = String(formData.get("googleEventId") ?? "").trim() || null;
 
@@ -33,7 +35,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   }
 
   const dealValueDollars = parseFloat(dealValueStr) || 0;
-  if (dealValueDollars <= 0) {
+  if (status !== "not_closed" && dealValueDollars <= 0) {
     return { error: "Deal value must be greater than 0" };
   }
   const dealValue = Math.round(dealValueDollars * 100);
@@ -47,13 +49,20 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     clientUserId,
     dealValue,
     serviceCategory,
+    industry,
     closingDate,
     status,
+    showStatus: (status === "closed" && googleEventId) ? "showed" : (String(formData.get("showStatus") ?? "").trim() || null) as "showed" | "no_show" | null,
     notes,
     googleEventId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
+
+  // Auto-set attendance when deal is closed and linked to calendar event
+  if (status === "closed" && googleEventId) {
+    await setEventAttendance(googleEventId, session.closerId, "showed");
+  }
 
   revalidatePath("/closer/dashboard");
   return {};
@@ -94,6 +103,11 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
   const serviceCategory = formData.get("serviceCategory") as string | null;
   if (serviceCategory !== null) {
     changes.serviceCategory = serviceCategory.trim() || null;
+  }
+
+  const industry = formData.get("industry") as string | null;
+  if (industry !== null) {
+    changes.industry = industry.trim() || null;
   }
 
   const closingDate = formData.get("closingDate") as string | null;

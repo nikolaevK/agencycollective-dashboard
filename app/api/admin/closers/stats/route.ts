@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { getTeamStats } from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
+import { getTeamShowRate } from "@/lib/eventAttendance";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,9 +17,10 @@ export async function GET() {
   const admin = await findAdmin(session.adminId);
   if (!admin) return unauthorized();
 
-  const [stats, closers] = await Promise.all([
+  const [stats, closers, teamShowRate] = await Promise.all([
     getTeamStats(),
     readClosers(),
+    getTeamShowRate(),
   ]);
 
   const activeCount = closers.filter((c) => c.status === "active").length;
@@ -44,8 +46,19 @@ export async function GET() {
       totalDeals: stats.totalDeals,
       closedDeals: stats.closedDeals,
       closeRate: Math.round(closeRate * 10) / 10,
+      showRate: teamShowRate.showRate,
+      showCount: teamShowRate.showCount,
+      noShowCount: teamShowRate.noShowCount,
       topPerformer,
-      closerBreakdowns: stats.closerBreakdowns,
+      closerBreakdowns: stats.closerBreakdowns.map((cb) => {
+        const sr = teamShowRate.closerBreakdowns.find((s) => s.closerId === cb.closerId);
+        return {
+          ...cb,
+          showCount: sr?.showCount ?? 0,
+          noShowCount: sr?.noShowCount ?? 0,
+          showRate: sr?.showRate ?? 0,
+        };
+      }),
       totalClosers,
       activeCount,
       avgCommission: Math.round(avgCommission),

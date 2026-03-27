@@ -1,7 +1,9 @@
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
 
-export type DealStatus = "closed" | "not_closed" | "pending_signature" | "in_progress";
+export type DealStatus = "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
+
+export type ShowStatus = "showed" | "no_show" | null;
 
 export interface DealRecord {
   id: string;
@@ -10,8 +12,10 @@ export interface DealRecord {
   clientUserId: string | null;
   dealValue: number; // cents
   serviceCategory: string | null;
+  industry: string | null;
   closingDate: string | null;
   status: DealStatus;
+  showStatus: ShowStatus;
   notes: string | null;
   googleEventId: string | null;
   createdAt: string;
@@ -30,8 +34,10 @@ function rowToDeal(row: Row): DealRecord {
     clientUserId: row.client_user_id != null ? String(row.client_user_id) : null,
     dealValue: Number(row.deal_value ?? 0),
     serviceCategory: row.service_category != null ? String(row.service_category) : null,
+    industry: row.industry != null ? String(row.industry) : null,
     closingDate: row.closing_date != null ? String(row.closing_date) : null,
-    status: (String(row.status || "in_progress") as DealStatus),
+    status: (String(row.status || "follow_up") as DealStatus),
+    showStatus: row.show_status != null ? (String(row.show_status) as "showed" | "no_show") : null,
     notes: row.notes != null ? String(row.notes) : null,
     googleEventId: row.google_event_id != null ? String(row.google_event_id) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
@@ -72,8 +78,8 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, deal_value, service_category, closing_date, status, notes, google_event_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
@@ -81,8 +87,10 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.clientUserId,
       deal.dealValue,
       deal.serviceCategory,
+      deal.industry,
       deal.closingDate,
       deal.status,
+      deal.showStatus,
       deal.notes,
       deal.googleEventId,
     ],
@@ -111,6 +119,14 @@ export async function updateDeal(
   if (changes.serviceCategory !== undefined) {
     fields.push("service_category = ?");
     args.push(changes.serviceCategory);
+  }
+  if (changes.industry !== undefined) {
+    fields.push("industry = ?");
+    args.push(changes.industry);
+  }
+  if (changes.showStatus !== undefined) {
+    fields.push("show_status = ?");
+    args.push(changes.showStatus);
   }
   if (changes.closingDate !== undefined) {
     fields.push("closing_date = ?");
@@ -161,6 +177,9 @@ export interface CloserDealStats {
   dealCount: number;
   closedCount: number;
   avgDealValue: number;
+  showCount: number;
+  noShowCount: number;
+  showRate: number; // percentage
 }
 
 export async function getCloserDealStats(closerId: string): Promise<CloserDealStats> {
@@ -171,16 +190,24 @@ export async function getCloserDealStats(closerId: string): Promise<CloserDealSt
             COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS total_revenue,
             COUNT(*) AS deal_count,
             SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_count,
-            COALESCE(AVG(CASE WHEN status = 'closed' THEN deal_value ELSE NULL END), 0) AS avg_deal_value
+            COALESCE(AVG(CASE WHEN status = 'closed' THEN deal_value ELSE NULL END), 0) AS avg_deal_value,
+            SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
+            SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
           FROM deals WHERE closer_id = ?`,
     args: [closerId],
   });
   const row = result.rows[0];
+  const showCount = Number(row?.show_count ?? 0);
+  const noShowCount = Number(row?.no_show_count ?? 0);
+  const totalTracked = showCount + noShowCount;
   return {
     totalRevenue: Number(row?.total_revenue ?? 0),
     dealCount: Number(row?.deal_count ?? 0),
     closedCount: Number(row?.closed_count ?? 0),
     avgDealValue: Number(row?.avg_deal_value ?? 0),
+    showCount,
+    noShowCount,
+    showRate: totalTracked > 0 ? Math.round((showCount / totalTracked) * 1000) / 10 : 0,
   };
 }
 
@@ -188,6 +215,9 @@ export interface TeamStats {
   totalRevenue: number;
   totalDeals: number;
   closedDeals: number;
+  showCount: number;
+  noShowCount: number;
+  showRate: number;
   closerBreakdowns: Array<{
     closerId: string;
     displayName: string;
@@ -196,6 +226,9 @@ export interface TeamStats {
     closedCount: number;
     totalCount: number;
     commissionRate: number;
+    showCount: number;
+    noShowCount: number;
+    showRate: number;
   }>;
 }
 
@@ -208,10 +241,15 @@ export async function getTeamStats(): Promise<TeamStats> {
     `SELECT
        COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS total_revenue,
        COUNT(*) AS total_deals,
-       SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_deals
+       SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_deals,
+       SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
+       SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
      FROM deals`
   );
   const t = totals.rows[0];
+  const teamShowCount = Number(t?.show_count ?? 0);
+  const teamNoShowCount = Number(t?.no_show_count ?? 0);
+  const teamTracked = teamShowCount + teamNoShowCount;
 
   // Per-closer breakdowns
   const breakdowns = await db.execute(
@@ -222,7 +260,9 @@ export async function getTeamStats(): Promise<TeamStats> {
        c.commission_rate,
        COALESCE(SUM(CASE WHEN d.status = 'closed' THEN d.deal_value ELSE 0 END), 0) AS revenue,
        COALESCE(SUM(CASE WHEN d.status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
-       COUNT(d.id) AS total_count
+       COUNT(d.id) AS total_count,
+       COALESCE(SUM(CASE WHEN d.show_status = 'showed' THEN 1 ELSE 0 END), 0) AS show_count,
+       COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
      FROM closers c
      LEFT JOIN deals d ON d.closer_id = c.id
      WHERE c.status = 'active'
@@ -234,14 +274,25 @@ export async function getTeamStats(): Promise<TeamStats> {
     totalRevenue: Number(t?.total_revenue ?? 0),
     totalDeals: Number(t?.total_deals ?? 0),
     closedDeals: Number(t?.closed_deals ?? 0),
-    closerBreakdowns: breakdowns.rows.map((row) => ({
-      closerId: String(row.closer_id),
-      displayName: String(row.display_name),
-      avatarPath: row.avatar_path != null ? String(row.avatar_path) : null,
-      revenue: Number(row.revenue ?? 0),
-      closedCount: Number(row.closed_count ?? 0),
-      totalCount: Number(row.total_count ?? 0),
-      commissionRate: Number(row.commission_rate ?? 0),
-    })),
+    showCount: teamShowCount,
+    noShowCount: teamNoShowCount,
+    showRate: teamTracked > 0 ? Math.round((teamShowCount / teamTracked) * 1000) / 10 : 0,
+    closerBreakdowns: breakdowns.rows.map((row) => {
+      const sc = Number(row.show_count ?? 0);
+      const nsc = Number(row.no_show_count ?? 0);
+      const tracked = sc + nsc;
+      return {
+        closerId: String(row.closer_id),
+        displayName: String(row.display_name),
+        avatarPath: row.avatar_path != null ? String(row.avatar_path) : null,
+        revenue: Number(row.revenue ?? 0),
+        closedCount: Number(row.closed_count ?? 0),
+        totalCount: Number(row.total_count ?? 0),
+        commissionRate: Number(row.commission_rate ?? 0),
+        showCount: sc,
+        noShowCount: nsc,
+        showRate: tracked > 0 ? Math.round((sc / tracked) * 1000) / 10 : 0,
+      };
+    }),
   };
 }

@@ -10,7 +10,7 @@ import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "closed" | "not_closed" | "pending_signature" | "in_progress";
+type StatusFilter = "all" | "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
 
 export default function AdminDealsPage() {
   const [search, setSearch] = useState("");
@@ -45,14 +45,16 @@ export default function AdminDealsPage() {
   const closedCount = deals.filter((d) => d.status === "closed").length;
   const notClosedCount = deals.filter((d) => d.status === "not_closed").length;
   const pendingCount = deals.filter((d) => d.status === "pending_signature").length;
-  const inProgressCount = deals.filter((d) => d.status === "in_progress").length;
+  const rescheduledCount = deals.filter((d) => d.status === "rescheduled").length;
+  const followUpCount = deals.filter((d) => d.status === "follow_up").length;
 
   const filters: { value: StatusFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: deals.length },
     { value: "closed", label: "Closed", count: closedCount },
     { value: "not_closed", label: "Not Closed", count: notClosedCount },
     { value: "pending_signature", label: "Pending", count: pendingCount },
-    { value: "in_progress", label: "In Progress", count: inProgressCount },
+    { value: "rescheduled", label: "Rescheduled", count: rescheduledCount },
+    { value: "follow_up", label: "Follow Up", count: followUpCount },
   ];
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { DollarSign, Target, Trophy, FileText } from "lucide-react";
+import { DollarSign, Target, Trophy, FileText, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
 
@@ -15,6 +15,9 @@ interface OverviewStats {
   totalDeals: number;
   closedDeals: number;
   closeRate: number;
+  showRate?: number;
+  showCount?: number;
+  noShowCount?: number;
   topPerformer: TopPerformer | null;
 }
 
@@ -60,6 +63,17 @@ export function CloserOverviewMetrics({ stats }: CloserOverviewMetricsProps) {
       iconColor: "text-amber-500",
     },
     {
+      label: "Show Rate",
+      value: `${stats.showRate ?? 0}%`,
+      subtitle: (() => {
+        const total = (stats.showCount ?? 0) + (stats.noShowCount ?? 0);
+        return total > 0 ? `${stats.showCount} showed / ${stats.noShowCount} no-show` : "No data yet";
+      })(),
+      icon: UserCheck,
+      iconBg: "bg-cyan-500/10",
+      iconColor: "text-cyan-500",
+    },
+    {
       label: "Total Deals",
       value: String(stats.totalDeals),
       subtitle: `${stats.closedDeals} closed`,
@@ -70,7 +84,7 @@ export function CloserOverviewMetrics({ stats }: CloserOverviewMetricsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {cards.map((card) => {
         const Icon = card.icon;
         return (

@@ -1,5 +1,5 @@
 import type { CloserStatus, CloserRole } from "@/lib/closers";
-import type { DealStatus } from "@/lib/deals";
+import type { DealStatus, ShowStatus } from "@/lib/deals";
 
 export interface CloserPublic {
   id: string;
@@ -22,8 +22,10 @@ export interface DealPublic {
   clientUserId: string | null;
   dealValue: number; // cents
   serviceCategory: string | null;
+  industry: string | null;
   closingDate: string | null;
   status: DealStatus;
+  showStatus: ShowStatus;
   notes: string | null;
   googleEventId: string | null;
   createdAt: string;
@@ -37,25 +39,28 @@ export const CLOSER_ROLES = [
   { value: "closer" as const, label: "Closer" },
 ];
 
-export const SERVICE_CATEGORIES = [
-  "Meta Ads Management",
-  "Google Ads Management",
-  "Social Media Management",
-  "SEO",
-  "Web Development",
-  "Branding",
-  "Content Marketing",
+export const SERVICES_PURCHASED = [
+  "Starter Complete",
+  "Tiktok",
+  "Meta Ads",
   "Email Marketing",
-  "Consulting",
-  "Full Service",
-  "Other",
+  "Creative Design",
+  "Web Design",
+] as const;
+
+export const INDUSTRIES = [
+  "Peptides",
+  "Supplements",
+  "Gambling",
+  "Health",
 ] as const;
 
 export const DEAL_STATUSES = [
   { value: "closed" as const, label: "Closed" },
   { value: "not_closed" as const, label: "Not Closed" },
   { value: "pending_signature" as const, label: "Pending Signature" },
-  { value: "in_progress" as const, label: "In Progress" },
+  { value: "rescheduled" as const, label: "Rescheduled" },
+  { value: "follow_up" as const, label: "Follow Up" },
 ];
 
 export function formatRole(role: string): string {

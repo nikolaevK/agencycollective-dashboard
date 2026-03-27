@@ -4,12 +4,14 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
 import Link from "next/link";
-import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays } from "lucide-react";
+import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCents, SERVICE_CATEGORIES, DEAL_STATUSES } from "@/components/closers/types";
+import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
 import type { DealStatus } from "@/lib/deals";
 import { useQueryClient } from "@tanstack/react-query";
+import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
+import { DealInfoModal } from "@/components/shared/DealInfoModal";
 
 interface RecentDealsTableProps {
   deals: DealPublic[];
@@ -24,7 +26,9 @@ const STATUS_BADGE_STYLES: Record<DealStatus, string> = {
     "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
   pending_signature:
     "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-  in_progress:
+  rescheduled:
+    "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
+  follow_up:
     "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
 };
 
@@ -32,7 +36,8 @@ const STATUS_LABELS: Record<DealStatus, string> = {
   closed: "Closed",
   not_closed: "Not Closed",
   pending_signature: "Pending Signature",
-  in_progress: "In Progress",
+  rescheduled: "Rescheduled",
+  follow_up: "Follow Up",
 };
 
 function DealStatusBadge({ status }: { status: DealStatus }) {
@@ -40,7 +45,7 @@ function DealStatusBadge({ status }: { status: DealStatus }) {
     <span
       className={cn(
         "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap",
-        STATUS_BADGE_STYLES[status] ?? STATUS_BADGE_STYLES.in_progress
+        STATUS_BADGE_STYLES[status] ?? STATUS_BADGE_STYLES.follow_up
       )}
     >
       {STATUS_LABELS[status] ?? status}
@@ -51,6 +56,12 @@ function DealStatusBadge({ status }: { status: DealStatus }) {
 function formatDealDate(dateStr: string | null): string {
   if (!dateStr) return "---";
   try {
+    // Parse YYYY-MM-DD as local date (not UTC) to avoid timezone shift
+    const parts = dateStr.slice(0, 10).split("-");
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      return format(d, "MMM d, yyyy");
+    }
     return format(new Date(dateStr), "MMM d, yyyy");
   } catch {
     return "---";
@@ -153,41 +164,6 @@ function EditDealModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [isPending, startTransition] = useTransition();
-  const [clientName, setClientName] = useState(deal.clientName);
-  const [dealValue, setDealValue] = useState(String(deal.dealValue / 100));
-  const [serviceCategory, setServiceCategory] = useState(deal.serviceCategory ?? "");
-  const [closingDate, setClosingDate] = useState(deal.closingDate ?? "");
-  const [status, setStatus] = useState(deal.status);
-  const [notes, setNotes] = useState(deal.notes ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/admin/deals", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: deal.id,
-          clientName,
-          dealValue: parseFloat(dealValue) || 0,
-          serviceCategory: serviceCategory || null,
-          closingDate: closingDate || null,
-          status,
-          notes: notes || null,
-        }),
-      });
-      const json = await res.json();
-      if (json.error) {
-        setError(json.error);
-      } else {
-        onSaved();
-      }
-    });
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -198,54 +174,15 @@ function EditDealModal({
             <span className="sr-only">Close</span>&times;
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Client Name</label>
-            <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} required className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Deal Value ($)</label>
-            <input type="number" step="0.01" min="0" value={dealValue} onChange={(e) => setDealValue(e.target.value)} required className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Service Category</label>
-            <select value={serviceCategory} onChange={(e) => setServiceCategory(e.target.value)} className={INPUT_CLS}>
-              <option value="">None</option>
-              {SERVICE_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Closing Date</label>
-            <input type="date" value={closingDate} onChange={(e) => setClosingDate(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value as DealStatus)} className={INPUT_CLS}>
-              {DEAL_STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="flex w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none" />
-          </div>
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
-          )}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors">
-              Cancel
-            </button>
-            <button type="submit" disabled={isPending} className="h-9 inline-flex items-center gap-2 rounded-lg ac-gradient px-4 text-sm font-semibold text-white disabled:opacity-50">
-              {isPending ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
-        </form>
+        <div className="p-6">
+          <UnifiedDealForm
+            mode="edit"
+            context="admin"
+            initialData={deal}
+            onSuccess={onSaved}
+            onCancel={onClose}
+          />
+        </div>
       </div>
     </div>
   );
@@ -255,6 +192,7 @@ function EditDealModal({
 export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDealsTableProps) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
   const [isPending, startTransition] = useTransition();
   const queryClient = useQueryClient();
 
@@ -331,6 +269,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                           </span>
                           {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
                           {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
+                          {deal.notes && (
+                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
+                              <StickyNote className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {deal.serviceCategory && (
+                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
+                              <Briefcase className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className="py-3 pr-4">
@@ -366,6 +314,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
                         {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                        {deal.notes && (
+                          <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
+                            <StickyNote className="h-3 w-3" />
+                          </button>
+                        )}
+                        {deal.serviceCategory && (
+                          <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500" title="View services">
+                            <Briefcase className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                       <span className="text-xs text-muted-foreground">{formatDealDate(deal.closingDate || deal.createdAt)}</span>
                     </div>
@@ -391,6 +349,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
       {/* Edit modal */}
       {editDeal && (
         <EditDealModal deal={editDeal} onClose={() => setEditDeal(null)} onSaved={handleSaved} />
+      )}
+
+      {/* Info modal (notes / services) */}
+      {infoModal && (
+        <DealInfoModal
+          title={infoModal.type === "notes" ? `Notes — ${infoModal.deal.clientName}` : `Services — ${infoModal.deal.clientName}`}
+          type={infoModal.type}
+          content={infoModal.type === "notes" ? infoModal.deal.notes : infoModal.deal.serviceCategory}
+          onClose={() => setInfoModal(null)}
+        />
       )}
 
       {/* Confirm delete dialog */}

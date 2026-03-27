@@ -7,7 +7,12 @@ import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
-import { CalendarEventList, type CalendarEvent } from "@/components/closer/CalendarEventList";
+import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
+import type { DealPublic } from "@/components/closers/types";
+
+interface DealWithCloserName extends DealPublic {
+  closerName?: string;
+}
 
 export default function AdminCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
@@ -42,6 +47,60 @@ export default function AdminCalendarPage() {
     staleTime: 30_000,
   });
 
+  // Fetch all deals to show linked indicators
+  const { data: allDeals = [] } = useQuery<DealWithCloserName[]>({
+    queryKey: ["admin-all-deals-calendar"],
+    queryFn: async () => {
+      const [dealsRes, closersRes] = await Promise.all([
+        fetch("/api/admin/deals"),
+        fetch("/api/admin/closers/stats"),
+      ]);
+      const dealsJson = await dealsRes.json();
+      const closersJson = await closersRes.json();
+      const deals: DealPublic[] = dealsJson.data ?? [];
+      const breakdowns: Array<{ closerId: string; displayName: string }> = closersJson.data?.closerBreakdowns ?? [];
+      const closerNameMap = new Map(breakdowns.map((b) => [b.closerId, b.displayName]));
+      return deals.map((d) => ({ ...d, closerName: closerNameMap.get(d.closerId) }));
+    },
+    staleTime: 30_000,
+  });
+
+  // Fetch attendance data
+  const { data: attendance = {} } = useQuery<Record<string, string>>({
+    queryKey: ["admin-attendance"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/attendance");
+      const json = await res.json();
+      // Convert { eventId: { showStatus, closerId } } to { eventId: showStatus }
+      const raw = json.data ?? {};
+      const result: Record<string, string> = {};
+      for (const [eventId, val] of Object.entries(raw)) {
+        result[eventId] = (val as { showStatus: string }).showStatus;
+      }
+      return result;
+    },
+    staleTime: 30_000,
+  });
+
+  const linkedEventIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const deal of allDeals) {
+      if (deal.googleEventId) ids.add(deal.googleEventId);
+    }
+    return ids;
+  }, [allDeals]);
+
+  const linkedDeals: LinkedDealInfo[] = useMemo(() => {
+    return allDeals
+      .filter((d) => d.googleEventId)
+      .map((d) => ({
+        dealId: d.id,
+        googleEventId: d.googleEventId!,
+        closerId: d.closerId,
+        closerName: d.closerName,
+      }));
+  }, [allDeals]);
+
   const connected = status?.connected ?? false;
 
   return (
@@ -58,7 +117,6 @@ export default function AdminCalendarPage() {
 
         <CloserSubNav />
 
-        {/* Connection status */}
         <GoogleConnectCard
           connected={connected}
           email={status?.email}
@@ -67,7 +125,6 @@ export default function AdminCalendarPage() {
 
         {connected && (
           <>
-            {/* Week navigator */}
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setWeekOffset((w) => w - 1)}
@@ -96,7 +153,6 @@ export default function AdminCalendarPage() {
               </button>
             </div>
 
-            {/* Events */}
             {eventsLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
@@ -104,7 +160,13 @@ export default function AdminCalendarPage() {
                 ))}
               </div>
             ) : (
-              <CalendarEventList events={events} />
+              <CalendarEventList
+                events={events}
+                linkedEventIds={linkedEventIds}
+                linkedDeals={linkedDeals}
+                attendance={attendance}
+                isAdmin={true}
+              />
             )}
           </>
         )}

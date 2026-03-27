@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { readDeals, findDeal, updateDeal, deleteDeal } from "@/lib/deals";
 import { logAuditEvent } from "@/lib/auditLog";
+import { setEventAttendance } from "@/lib/eventAttendance";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -59,12 +60,33 @@ export async function PATCH(request: Request) {
     const changes: Parameters<typeof updateDeal>[1] = {};
 
     if (body.clientName !== undefined) changes.clientName = String(body.clientName).trim();
-    if (body.dealValue !== undefined) changes.dealValue = Math.round(Number(body.dealValue) * 100);
+    if (body.dealValue !== undefined) {
+      const dv = Number(body.dealValue);
+      if (!Number.isFinite(dv) || dv < 0 || dv > 10_000_000) {
+        return NextResponse.json({ error: "Invalid deal value" }, { status: 400 });
+      }
+      changes.dealValue = Math.round(dv * 100);
+    }
     if (body.serviceCategory !== undefined) changes.serviceCategory = body.serviceCategory ? String(body.serviceCategory).trim() : null;
+    if (body.industry !== undefined) changes.industry = body.industry ? String(body.industry).trim() : null;
     if (body.closingDate !== undefined) changes.closingDate = body.closingDate ? String(body.closingDate).trim() : null;
-    if (body.status !== undefined) changes.status = String(body.status).trim() as "closed" | "pending_signature" | "in_progress";
+    if (body.status !== undefined) {
+      const s = String(body.status).trim();
+      const validStatuses = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
+      if (!validStatuses.includes(s)) {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+      }
+      changes.status = s as "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
+    }
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;
     if (body.clientUserId !== undefined) changes.clientUserId = body.clientUserId ? String(body.clientUserId).trim() : null;
+    if (body.showStatus !== undefined) changes.showStatus = body.showStatus ? String(body.showStatus).trim() as "showed" | "no_show" : null;
+
+    // Auto-show: if changing to closed and deal has a calendar link, mark as showed
+    if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {
+      changes.showStatus = "showed";
+      await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
+    }
 
     await updateDeal(id, changes);
 
@@ -79,7 +101,8 @@ export async function PATCH(request: Request) {
 
     const updated = await findDeal(id);
     return NextResponse.json({ data: updated });
-  } catch {
+  } catch (err) {
+    console.error("[admin/deals PATCH]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -107,7 +130,8 @@ export async function DELETE(request: Request) {
     }).catch(() => {});
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("[admin/deals DELETE]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

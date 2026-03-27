@@ -305,6 +305,62 @@ export async function migrate(): Promise<void> {
     }
   }
 
+  // ── Add show_status to deals (if not present) ───────────────────
+  try {
+    await db.execute(`SELECT show_status FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN show_status TEXT`);
+      console.log("[migrate] Added show_status column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add show_status column:", err);
+    }
+  }
+
+  // ── Add industry to deals (if not present) ──────────────────────
+  try {
+    await db.execute(`SELECT industry FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN industry TEXT`);
+      console.log("[migrate] Added industry column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add industry column:", err);
+    }
+  }
+
+  // ── Migrate old statuses to new ones ────────────────────────────
+  try {
+    await db.execute(`UPDATE deals SET status = 'follow_up' WHERE status = 'in_progress'`);
+    await db.execute(`UPDATE deals SET status = 'rescheduled' WHERE status = 'pending'`);
+  } catch {
+    // Ignore if already migrated
+  }
+
+  // ── Event attendance table (show/no-show per calendar event) ──────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_attendance (
+      google_event_id TEXT NOT NULL,
+      closer_id       TEXT NOT NULL,
+      show_status     TEXT NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (google_event_id, closer_id)
+    )
+  `);
+
+  // ── Backfill attendance from closed deals with calendar links ─────
+  try {
+    await db.execute(`
+      INSERT OR IGNORE INTO event_attendance (google_event_id, closer_id, show_status)
+      SELECT google_event_id, closer_id, 'showed'
+      FROM deals
+      WHERE google_event_id IS NOT NULL AND status = 'closed'
+    `);
+  } catch {
+    // Ignore if backfill fails
+  }
+
   // ── Google Calendar config table ──────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS google_calendar_config (
