@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, LogOut, X } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
@@ -75,6 +75,28 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
         >
           <LayoutDashboard className="h-4 w-4 shrink-0" />
           <span>Overview</span>
+        </Link>
+        <Link
+          href={`/${slug}/portal/onboarding`}
+          onClick={onClose}
+          className={cn(
+            "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+            pathname.includes("/portal/onboarding") && "active"
+          )}
+        >
+          <ClipboardCheck className="h-4 w-4 shrink-0" />
+          <span>Onboarding</span>
+        </Link>
+        <Link
+          href={`/${slug}/portal/welcome-kit`}
+          onClick={onClose}
+          className={cn(
+            "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+            pathname.includes("/portal/welcome-kit") && "active"
+          )}
+        >
+          <BookOpen className="h-4 w-4 shrink-0" />
+          <span>Welcome Kit</span>
         </Link>
       </nav>
 

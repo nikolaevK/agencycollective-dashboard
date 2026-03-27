@@ -476,5 +476,25 @@ export async function migrate(): Promise<void> {
     WHERE referral IS NOT NULL AND referral != ''
   `);
 
+  // ── Onboarding progress (per-user step tracking) ─────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS onboarding_progress (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      step_id      TEXT NOT NULL,
+      completed    INTEGER NOT NULL DEFAULT 0,
+      completed_at TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(user_id, step_id)
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_onboarding_user ON onboarding_progress(user_id)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_onboarding_user:", err);
+  }
+
   console.log("[migrate] Database migration complete");
 }

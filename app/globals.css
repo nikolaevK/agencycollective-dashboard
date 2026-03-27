@@ -36,6 +36,21 @@
 
     --radius: 0.625rem;
 
+    /* Portal — MD3-style tokens (Light Mode) */
+    --portal-surface: 229 100% 98%;
+    --portal-on-surface: 210 36% 20%;
+    --portal-surface-lowest: 0 0% 100%;
+    --portal-surface-low: 222 100% 96%;
+    --portal-surface-container: 218 100% 93%;
+    --portal-surface-high: 214 100% 91%;
+    --portal-primary-container: 261 100% 77%;
+    --portal-on-primary: 270 100% 97%;
+    --portal-secondary-text: 200 3% 35%;
+    --portal-secondary-dim: 200 3% 31%;
+    --portal-outline: 210 15% 48%;
+    --portal-outline-variant: 214 28% 71%;
+    --portal-error: 345 80% 39%;
+
     /* Sidebar — Light Mode */
     --sidebar-bg: 229 100% 98%;
     --sidebar-fg: 240 10% 35%;
@@ -75,6 +90,21 @@
     --border: 240 10% 18%;
     --input: 240 10% 18%;
     --ring: 263 80% 68%;
+
+    /* Portal — MD3-style tokens (Dark Mode) */
+    --portal-surface: 240 14% 7%;
+    --portal-on-surface: 220 20% 90%;
+    --portal-surface-lowest: 240 12% 10%;
+    --portal-surface-low: 240 14% 14%;
+    --portal-surface-container: 240 12% 18%;
+    --portal-surface-high: 240 10% 22%;
+    --portal-primary-container: 263 50% 30%;
+    --portal-on-primary: 263 20% 90%;
+    --portal-secondary-text: 220 8% 62%;
+    --portal-secondary-dim: 220 8% 55%;
+    --portal-outline: 215 12% 52%;
+    --portal-outline-variant: 215 15% 38%;
+    --portal-error: 345 70% 55%;
 
     /* Sidebar — Dark Mode */
     --sidebar-bg: 240 16% 5%;

@@ -27,6 +27,7 @@ import { cn, formatCurrency, formatRoas } from "@/lib/utils";
 import { useState } from "react";
 import type { ClientPublic } from "@/components/users/types";
 import type { ClientAccount } from "@/lib/clientAccounts";
+import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
 
 interface ClientProfilePageProps {
   params: { userId: string };
@@ -308,6 +309,9 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             </div>
           </div>
         </div>
+
+        {/* Onboarding Progress */}
+        <OnboardingProgressCard userId={params.userId} />
 
         {/* Linked accounts with KPIs */}
         <div>

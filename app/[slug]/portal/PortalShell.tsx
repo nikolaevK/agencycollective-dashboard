@@ -5,6 +5,7 @@ import { useUserOverview } from "@/hooks/useUserOverview";
 import { useDateRange } from "@/hooks/useDateRange";
 import { UserSidebar } from "@/components/portal/UserSidebar";
 import { UserTopBar } from "@/components/portal/UserTopBar";
+import { PortalBottomNav } from "@/components/portal/PortalBottomNav";
 
 function Shell({ children }: { children: React.ReactNode }) {
   const { dateRange } = useDateRange();
@@ -35,6 +36,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           onMenuClick={() => setSidebarOpen(true)}
         />
         {children}
+        <PortalBottomNav />
       </div>
     </div>
   );
