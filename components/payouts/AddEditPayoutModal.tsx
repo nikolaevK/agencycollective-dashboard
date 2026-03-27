@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, ChevronLeft } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, ChevronLeft, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PayoutRecord } from "@/lib/payouts";
+import type { PayoutRecord, SplitParty } from "@/lib/payouts";
 
 interface AddEditPayoutModalProps {
   open: boolean;
@@ -12,6 +12,12 @@ interface AddEditPayoutModalProps {
   payout?: PayoutRecord | null;
   defaultMonth: number;
   defaultYear: number;
+  salesRepOptions: string[];
+  onSalesRepsChanged: () => void;
+  verticalOptions: string[];
+  onVerticalsChanged: () => void;
+  referralOptions: string[];
+  onReferralsChanged: () => void;
 }
 
 export function AddEditPayoutModal({
@@ -21,6 +27,12 @@ export function AddEditPayoutModal({
   payout,
   defaultMonth,
   defaultYear,
+  salesRepOptions,
+  onSalesRepsChanged,
+  verticalOptions,
+  onVerticalsChanged,
+  referralOptions,
+  onReferralsChanged,
 }: AddEditPayoutModalProps) {
   const isEdit = Boolean(payout);
 
@@ -38,8 +50,28 @@ export function AddEditPayoutModal({
   const [paymentNotes, setPaymentNotes] = useState("");
   const [salesRep, setSalesRep] = useState("");
   const [payDistributed, setPayDistributed] = useState("No");
+  const [payDistributedDate, setPayDistributedDate] = useState("");
+  const [commissionSplit, setCommissionSplit] = useState(false);
+  const [splitDetails, setSplitDetails] = useState<SplitParty[]>([]);
+  const [referral, setReferral] = useState("");
+  const [referralPct, setReferralPct] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Referral "add new" state
+  const [addingReferral, setAddingReferral] = useState(false);
+  const [newReferralName, setNewReferralName] = useState("");
+  const newReferralRef = useRef<HTMLInputElement>(null);
+
+  // Sales rep "add new" state
+  const [addingRep, setAddingRep] = useState(false);
+  const [newRepName, setNewRepName] = useState("");
+  const newRepRef = useRef<HTMLInputElement>(null);
+
+  // Vertical "add new" state
+  const [addingVertical, setAddingVertical] = useState(false);
+  const [newVerticalName, setNewVerticalName] = useState("");
+  const newVerticalRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (payout) {
@@ -57,6 +89,11 @@ export function AddEditPayoutModal({
       setPaymentNotes(payout.paymentNotes ?? "");
       setSalesRep(payout.salesRep ?? "");
       setPayDistributed(payout.payDistributed);
+      setPayDistributedDate(payout.payDistributedDate ?? "");
+      setCommissionSplit(payout.commissionSplit);
+      setSplitDetails(payout.splitDetails.length > 0 ? payout.splitDetails : []);
+      setReferral(payout.referral ?? "");
+      setReferralPct(payout.referralPct != null ? String(payout.referralPct) : "");
     } else {
       setBrandName("");
       setDateJoined("");
@@ -72,17 +109,52 @@ export function AddEditPayoutModal({
       setPaymentNotes("");
       setSalesRep("");
       setPayDistributed("No");
+      setPayDistributedDate("");
+      setCommissionSplit(false);
+      setSplitDetails([]);
+      setReferral("");
+      setReferralPct("");
     }
     setError("");
+    setAddingRep(false);
+    setNewRepName("");
+    setAddingVertical(false);
+    setNewVerticalName("");
+    setAddingReferral(false);
+    setNewReferralName("");
   }, [payout, open]);
 
+  useEffect(() => {
+    if (addingRep && newRepRef.current) newRepRef.current.focus();
+  }, [addingRep]);
+
+  useEffect(() => {
+    if (addingVertical && newVerticalRef.current) newVerticalRef.current.focus();
+  }, [addingVertical]);
+
+  useEffect(() => {
+    if (addingReferral && newReferralRef.current) newReferralRef.current.focus();
+  }, [addingReferral]);
+
   if (!open) return null;
+
+  const splitPctTotal = splitDetails.reduce((s, p) => s + p.pct, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!brandName.trim()) {
       setError("Brand name is required");
       return;
+    }
+    if (commissionSplit) {
+      if (splitDetails.length < 2) {
+        setError("Commission split requires at least 2 parties");
+        return;
+      }
+      if (splitDetails.some((p) => !p.name.trim())) {
+        setError("All split parties must have a name");
+        return;
+      }
     }
     setSaving(true);
     setError("");
@@ -103,6 +175,11 @@ export function AddEditPayoutModal({
         paymentNotes: paymentNotes || null,
         salesRep: salesRep || null,
         payDistributed,
+        payDistributedDate: payDistributedDate || null,
+        commissionSplit,
+        splitDetails: commissionSplit ? splitDetails.filter((p) => p.name.trim()) : [],
+        referral: referral || null,
+        referralPct: referralPct ? parseFloat(referralPct) : null,
       };
 
       if (isEdit && payout) {
@@ -139,6 +216,82 @@ export function AddEditPayoutModal({
     }
   };
 
+  const handleAddRep = async () => {
+    const trimmed = newRepName.trim();
+    if (!trimmed) return;
+    const res = await fetch("/api/admin/payouts/sales-reps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (res.ok) {
+      onSalesRepsChanged();
+      setSalesRep(trimmed);
+    }
+    setAddingRep(false);
+    setNewRepName("");
+  };
+
+  const handleAddVertical = async () => {
+    const trimmed = newVerticalName.trim();
+    if (!trimmed) return;
+    const res = await fetch("/api/admin/payouts/verticals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (res.ok) {
+      onVerticalsChanged();
+      setVertical(trimmed);
+    }
+    setAddingVertical(false);
+    setNewVerticalName("");
+  };
+
+  const handleAddReferral = async () => {
+    const trimmed = newReferralName.trim();
+    if (!trimmed) return;
+    const res = await fetch("/api/admin/payouts/referrals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (res.ok) {
+      onReferralsChanged();
+      setReferral(trimmed);
+    }
+    setAddingReferral(false);
+    setNewReferralName("");
+  };
+
+  const distributeEvenly = (parties: SplitParty[]): SplitParty[] => {
+    const count = parties.length;
+    if (count === 0) return parties;
+    const even = Math.floor(100 / count);
+    const remainder = 100 - even * count;
+    return parties.map((p, i) => ({
+      ...p,
+      pct: even + (i < remainder ? 1 : 0),
+    }));
+  };
+
+  const addSplitParty = () => {
+    const updated = [...splitDetails, { name: "", pct: 0 }];
+    setSplitDetails(distributeEvenly(updated));
+  };
+
+  const updateSplitParty = (idx: number, field: "name" | "pct", val: string | number) => {
+    const updated = [...splitDetails];
+    if (field === "name") updated[idx] = { ...updated[idx], name: String(val) };
+    else updated[idx] = { ...updated[idx], pct: Number(val) || 0 };
+    setSplitDetails(updated);
+  };
+
+  const removeSplitParty = (idx: number) => {
+    const updated = splitDetails.filter((_, i) => i !== idx);
+    setSplitDetails(distributeEvenly(updated));
+  };
+
   const inputClass =
     "flex h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
@@ -168,13 +321,60 @@ export function AddEditPayoutModal({
           <label className="block text-sm font-medium text-foreground mb-1.5">
             Vertical
           </label>
-          <input
-            type="text"
-            value={vertical}
-            onChange={(e) => setVertical(e.target.value)}
-            className={inputClass}
-            placeholder="e.g. Research, TeleMed"
-          />
+          {addingVertical ? (
+            <div className="flex gap-2">
+              <input
+                ref={newVerticalRef}
+                type="text"
+                value={newVerticalName}
+                onChange={(e) => setNewVerticalName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); handleAddVertical(); }
+                  if (e.key === "Escape") { setAddingVertical(false); setNewVerticalName(""); }
+                }}
+                className={inputClass}
+                placeholder="New vertical name..."
+              />
+              <button
+                type="button"
+                onClick={handleAddVertical}
+                disabled={!newVerticalName.trim()}
+                className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddingVertical(false); setNewVerticalName(""); }}
+                className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <select
+              value={vertical}
+              onChange={(e) => {
+                if (e.target.value === "__add_new__") {
+                  setAddingVertical(true);
+                } else {
+                  setVertical(e.target.value);
+                }
+              }}
+              className={inputClass}
+            >
+              <option value="">Select vertical...</option>
+              {verticalOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+              {vertical && !verticalOptions.includes(vertical) && (
+                <option value={vertical}>{vertical}</option>
+              )}
+              <option value="__add_new__">+ Add new vertical...</option>
+            </select>
+          )}
         </div>
       </div>
 
@@ -264,18 +464,142 @@ export function AddEditPayoutModal({
         </div>
       </div>
 
-      {/* Sales Rep */}
+      {/* Sales Rep (select) */}
       <div>
         <label className="block text-sm font-medium text-foreground mb-1.5">
           Sales Rep
         </label>
-        <input
-          type="text"
-          value={salesRep}
-          onChange={(e) => setSalesRep(e.target.value)}
-          className={inputClass}
-          placeholder="e.g. Milosh, Chris"
-        />
+        {addingRep ? (
+          <div className="flex gap-2">
+            <input
+              ref={newRepRef}
+              type="text"
+              value={newRepName}
+              onChange={(e) => setNewRepName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); handleAddRep(); }
+                if (e.key === "Escape") { setAddingRep(false); setNewRepName(""); }
+              }}
+              className={inputClass}
+              placeholder="New rep name..."
+            />
+            <button
+              type="button"
+              onClick={handleAddRep}
+              disabled={!newRepName.trim()}
+              className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAddingRep(false); setNewRepName(""); }}
+              className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <select
+              value={salesRep}
+              onChange={(e) => {
+                if (e.target.value === "__add_new__") {
+                  setAddingRep(true);
+                } else {
+                  setSalesRep(e.target.value);
+                }
+              }}
+              className={inputClass}
+            >
+              <option value="">Select sales rep...</option>
+              {salesRepOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+              <option value="__add_new__">+ Add new rep...</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Referral + Percentage */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">
+            Referral
+          </label>
+          {addingReferral ? (
+            <div className="flex gap-2">
+              <input
+                ref={newReferralRef}
+                type="text"
+                value={newReferralName}
+                onChange={(e) => setNewReferralName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); handleAddReferral(); }
+                  if (e.key === "Escape") { setAddingReferral(false); setNewReferralName(""); }
+                }}
+                className={inputClass}
+                placeholder="New referral name..."
+              />
+              <button
+                type="button"
+                onClick={handleAddReferral}
+                disabled={!newReferralName.trim()}
+                className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddingReferral(false); setNewReferralName(""); }}
+                className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <select
+              value={referral}
+              onChange={(e) => {
+                if (e.target.value === "__add_new__") {
+                  setAddingReferral(true);
+                } else {
+                  setReferral(e.target.value);
+                }
+              }}
+              className={inputClass}
+            >
+              <option value="">Select referral...</option>
+              {referralOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+              {referral && !referralOptions.includes(referral) && (
+                <option value={referral}>{referral}</option>
+              )}
+              <option value="__add_new__">+ Add new referral...</option>
+            </select>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">
+            Referral %
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={referralPct}
+            onChange={(e) => setReferralPct(e.target.value)}
+            className={inputClass}
+            placeholder="e.g. 10"
+          />
+        </div>
       </div>
 
       {/* Toggles */}
@@ -309,20 +633,128 @@ export function AddEditPayoutModal({
         </label>
       </div>
 
-      {/* Pay Distributed */}
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1.5">
-          Pay Distributed
+      {/* Pay Distributed + Date */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">
+            Pay Distributed
+          </label>
+          <select
+            value={payDistributed}
+            onChange={(e) => setPayDistributed(e.target.value)}
+            className={inputClass}
+          >
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+            <option value="Hold Til Full Pay">Hold Til Full Pay</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">
+            Distribution Date
+          </label>
+          <input
+            type="date"
+            value={payDistributedDate}
+            onChange={(e) => setPayDistributedDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      {/* Commission Split */}
+      <div className="space-y-3">
+        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={commissionSplit}
+            onChange={(e) => {
+              setCommissionSplit(e.target.checked);
+              if (e.target.checked && splitDetails.length < 2) {
+                const rep1 = salesRepOptions[0] ?? "";
+                const rep2 = salesRepOptions[1] ?? "";
+                setSplitDetails(distributeEvenly([
+                  { name: rep1, pct: 0 },
+                  { name: rep2, pct: 0 },
+                ]));
+              }
+            }}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          Commission Split
         </label>
-        <select
-          value={payDistributed}
-          onChange={(e) => setPayDistributed(e.target.value)}
-          className={inputClass}
-        >
-          <option value="No">No</option>
-          <option value="Yes">Yes</option>
-          <option value="Hold Til Full Pay">Hold Til Full Pay</option>
-        </select>
+
+        {commissionSplit && (
+          <div className="rounded-lg border border-border/50 dark:border-white/[0.06] bg-muted/20 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Split Parties
+              </p>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  splitPctTotal === 100
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-amber-600 dark:text-amber-400"
+                )}
+              >
+                Total: {splitPctTotal}%
+              </span>
+            </div>
+
+            {splitDetails.map((party, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <select
+                  value={party.name}
+                  onChange={(e) => updateSplitParty(idx, "name", e.target.value)}
+                  className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                >
+                  <option value="">Select party...</option>
+                  {salesRepOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  {party.name && !salesRepOptions.includes(party.name) && (
+                    <option value={party.name}>{party.name}</option>
+                  )}
+                </select>
+                <div className="relative w-20">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={party.pct || ""}
+                    onChange={(e) => updateSplitParty(idx, "pct", e.target.value)}
+                    placeholder="0"
+                    className="h-9 w-full rounded-lg border border-input bg-background px-3 pr-7 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                {splitDetails.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => removeSplitParty(idx)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addSplitParty}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              Add Party
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Payment Notes */}
@@ -343,7 +775,7 @@ export function AddEditPayoutModal({
 
   return (
     <>
-      {/* ── Mobile: full-screen form ── */}
+      {/* Mobile: full-screen form */}
       <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
         {/* Mobile header */}
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -387,7 +819,7 @@ export function AddEditPayoutModal({
         </form>
       </div>
 
-      {/* ── Desktop: centered dialog ── */}
+      {/* Desktop: centered dialog */}
       <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center">
         <div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"

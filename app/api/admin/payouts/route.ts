@@ -17,6 +17,17 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+const MAX_TEXT = 500;
+const MAX_NOTES = 2000;
+const MAX_DATE = 20;
+const MAX_SPLIT_PARTIES = 20;
+
+function trimStr(val: unknown, max: number): string | null {
+  if (!val) return null;
+  const s = String(val).trim();
+  return s ? s.slice(0, max) : null;
+}
+
 async function requireAdmin() {
   const session = getAdminSession();
   if (!session) return null;
@@ -63,7 +74,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const brandName = String(body.brandName ?? "").trim();
+    const brandName = String(body.brandName ?? "").trim().slice(0, MAX_TEXT);
     if (!brandName) {
       return NextResponse.json(
         { error: "Brand name is required" },
@@ -109,31 +120,52 @@ export async function POST(request: Request) {
         ? (body.payDistributed as PayDistributed)
         : "No";
 
+    // Commission split validation
+    const commissionSplit = Boolean(body.commissionSplit);
+    let splitDetails: Array<{ name: string; pct: number }> = [];
+    if (commissionSplit && Array.isArray(body.splitDetails)) {
+      splitDetails = body.splitDetails
+        .slice(0, MAX_SPLIT_PARTIES)
+        .filter((p: unknown) => p && typeof p === "object")
+        .map((p: { name?: string; pct?: number }) => ({
+          name: String(p.name ?? "").trim().slice(0, MAX_TEXT),
+          pct: Number(p.pct ?? 0),
+        }))
+        .filter((p: { name: string; pct: number }) => p.name);
+      if (splitDetails.length < 2) {
+        return NextResponse.json(
+          { error: "Split requires at least 2 parties" },
+          { status: 400 }
+        );
+      }
+    }
+
     const id = crypto.randomUUID();
     const payout = {
       id,
       payoutMonth,
       payoutYear,
-      dateJoined: body.dateJoined ? String(body.dateJoined).trim() : null,
-      firstDayAdSpend: body.firstDayAdSpend
-        ? String(body.firstDayAdSpend).trim()
-        : null,
+      dateJoined: trimStr(body.dateJoined, MAX_DATE),
+      firstDayAdSpend: trimStr(body.firstDayAdSpend, MAX_DATE),
       brandName,
-      vertical: body.vertical ? String(body.vertical).trim() : null,
-      pointOfContact: body.pointOfContact
-        ? String(body.pointOfContact).trim()
-        : null,
-      service: body.service ? String(body.service).trim() : null,
+      vertical: trimStr(body.vertical, MAX_TEXT),
+      pointOfContact: trimStr(body.pointOfContact, MAX_TEXT),
+      service: trimStr(body.service, MAX_TEXT),
       isSigned: Boolean(body.isSigned),
       isPaid: Boolean(body.isPaid),
       addedToSlack: Boolean(body.addedToSlack),
       amountDue,
       amountPaid,
-      paymentNotes: body.paymentNotes
-        ? String(body.paymentNotes).trim()
-        : null,
-      salesRep: body.salesRep ? String(body.salesRep).trim() : null,
+      paymentNotes: trimStr(body.paymentNotes, MAX_NOTES),
+      salesRep: trimStr(body.salesRep, MAX_TEXT),
       payDistributed,
+      payDistributedDate: trimStr(body.payDistributedDate, MAX_DATE),
+      commissionSplit,
+      splitDetails,
+      referral: trimStr(body.referral, MAX_TEXT),
+      referralPct: body.referralPct !== undefined && body.referralPct !== null
+        ? Math.max(0, Math.min(100, Math.round(Number(body.referralPct))))
+        : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -182,25 +214,25 @@ export async function PATCH(request: Request) {
     const changes: Parameters<typeof updatePayout>[1] = {};
 
     if (body.dateJoined !== undefined)
-      changes.dateJoined = body.dateJoined
-        ? String(body.dateJoined).trim()
-        : null;
+      changes.dateJoined = trimStr(body.dateJoined, MAX_DATE);
     if (body.firstDayAdSpend !== undefined)
-      changes.firstDayAdSpend = body.firstDayAdSpend
-        ? String(body.firstDayAdSpend).trim()
-        : null;
-    if (body.brandName !== undefined)
-      changes.brandName = String(body.brandName).trim();
+      changes.firstDayAdSpend = trimStr(body.firstDayAdSpend, MAX_DATE);
+    if (body.brandName !== undefined) {
+      const bn = String(body.brandName).trim().slice(0, MAX_TEXT);
+      if (!bn) {
+        return NextResponse.json(
+          { error: "Brand name cannot be empty" },
+          { status: 400 }
+        );
+      }
+      changes.brandName = bn;
+    }
     if (body.vertical !== undefined)
-      changes.vertical = body.vertical
-        ? String(body.vertical).trim()
-        : null;
+      changes.vertical = trimStr(body.vertical, MAX_TEXT);
     if (body.pointOfContact !== undefined)
-      changes.pointOfContact = body.pointOfContact
-        ? String(body.pointOfContact).trim()
-        : null;
+      changes.pointOfContact = trimStr(body.pointOfContact, MAX_TEXT);
     if (body.service !== undefined)
-      changes.service = body.service ? String(body.service).trim() : null;
+      changes.service = trimStr(body.service, MAX_TEXT);
     if (body.isSigned !== undefined) changes.isSigned = Boolean(body.isSigned);
     if (body.isPaid !== undefined) changes.isPaid = Boolean(body.isPaid);
     if (body.addedToSlack !== undefined)
@@ -226,13 +258,9 @@ export async function PATCH(request: Request) {
       changes.amountPaid = Math.round(av * 100);
     }
     if (body.paymentNotes !== undefined)
-      changes.paymentNotes = body.paymentNotes
-        ? String(body.paymentNotes).trim()
-        : null;
+      changes.paymentNotes = trimStr(body.paymentNotes, MAX_NOTES);
     if (body.salesRep !== undefined)
-      changes.salesRep = body.salesRep
-        ? String(body.salesRep).trim()
-        : null;
+      changes.salesRep = trimStr(body.salesRep, MAX_TEXT);
     if (body.payDistributed !== undefined) {
       const valid = ["Yes", "No", "Hold Til Full Pay"];
       if (!valid.includes(body.payDistributed)) {
@@ -242,6 +270,43 @@ export async function PATCH(request: Request) {
         );
       }
       changes.payDistributed = body.payDistributed as PayDistributed;
+    }
+    if (body.payDistributedDate !== undefined) {
+      changes.payDistributedDate = trimStr(body.payDistributedDate, MAX_DATE);
+    }
+    if (body.commissionSplit !== undefined) {
+      changes.commissionSplit = Boolean(body.commissionSplit);
+    }
+    if (body.splitDetails !== undefined) {
+      if (Array.isArray(body.splitDetails)) {
+        const parsed = body.splitDetails
+          .slice(0, MAX_SPLIT_PARTIES)
+          .filter((p: unknown) => p && typeof p === "object")
+          .map((p: { name?: string; pct?: number }) => ({
+            name: String(p.name ?? "").trim().slice(0, MAX_TEXT),
+            pct: Number(p.pct ?? 0),
+          }))
+          .filter((p: { name: string; pct: number }) => p.name);
+        const isSplitEnabled = body.commissionSplit !== undefined
+          ? Boolean(body.commissionSplit)
+          : payout.commissionSplit;
+        if (isSplitEnabled && parsed.length < 2) {
+          return NextResponse.json(
+            { error: "Split requires at least 2 parties" },
+            { status: 400 }
+          );
+        }
+        changes.splitDetails = parsed;
+      } else {
+        changes.splitDetails = [];
+      }
+    }
+    if (body.referral !== undefined)
+      changes.referral = trimStr(body.referral, MAX_TEXT);
+    if (body.referralPct !== undefined) {
+      changes.referralPct = body.referralPct !== null
+        ? Math.max(0, Math.min(100, Math.round(Number(body.referralPct))))
+        : null;
     }
 
     await updatePayout(id, changes);

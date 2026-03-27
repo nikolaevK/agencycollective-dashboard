@@ -407,5 +407,72 @@ export async function migrate(): Promise<void> {
     ON payouts(payout_year, payout_month)
   `);
 
+  // ── Add new payout columns (if not present) ────────────────────────
+  const payoutNewCols = [
+    { col: "pay_distributed_date", sql: "ALTER TABLE payouts ADD COLUMN pay_distributed_date TEXT" },
+    { col: "commission_split", sql: "ALTER TABLE payouts ADD COLUMN commission_split INTEGER NOT NULL DEFAULT 0" },
+    { col: "split_details", sql: "ALTER TABLE payouts ADD COLUMN split_details TEXT" },
+    { col: "referral", sql: "ALTER TABLE payouts ADD COLUMN referral TEXT" },
+    { col: "referral_pct", sql: "ALTER TABLE payouts ADD COLUMN referral_pct INTEGER" },
+  ];
+
+  for (const { col, sql } of payoutNewCols) {
+    try {
+      await db.execute(`SELECT ${col} FROM payouts LIMIT 0`);
+    } catch {
+      try {
+        await db.execute(sql);
+        console.log(`[migrate] Added ${col} column to payouts`);
+      } catch (err) {
+        console.warn(`[migrate] Could not add ${col} column:`, err);
+      }
+    }
+  }
+
+  // ── Sales rep options table ─────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sales_rep_options (
+      id   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    )
+  `);
+
+  // Seed from existing payout data (idempotent)
+  await db.execute(`
+    INSERT OR IGNORE INTO sales_rep_options (name)
+    SELECT DISTINCT sales_rep FROM payouts
+    WHERE sales_rep IS NOT NULL AND sales_rep != ''
+  `);
+
+  // ── Vertical options table ──────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS vertical_options (
+      id   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    )
+  `);
+
+  // Seed from existing payout data (idempotent)
+  await db.execute(`
+    INSERT OR IGNORE INTO vertical_options (name)
+    SELECT DISTINCT vertical FROM payouts
+    WHERE vertical IS NOT NULL AND vertical != ''
+  `);
+
+  // ── Referral options table ────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS referral_options (
+      id   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    )
+  `);
+
+  // Seed from existing payout data (idempotent)
+  await db.execute(`
+    INSERT OR IGNORE INTO referral_options (name)
+    SELECT DISTINCT referral FROM payouts
+    WHERE referral IS NOT NULL AND referral != ''
+  `);
+
   console.log("[migrate] Database migration complete");
 }

@@ -7,6 +7,11 @@ import type { Row } from "@libsql/client";
 
 export type PayDistributed = "Yes" | "No" | "Hold Til Full Pay";
 
+export interface SplitParty {
+  name: string;
+  pct: number;
+}
+
 export interface PayoutRecord {
   id: string;
   payoutMonth: number;
@@ -25,6 +30,11 @@ export interface PayoutRecord {
   paymentNotes: string | null;
   salesRep: string | null;
   payDistributed: PayDistributed;
+  payDistributedDate: string | null;
+  commissionSplit: boolean;
+  splitDetails: SplitParty[];
+  referral: string | null;
+  referralPct: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +52,19 @@ export interface PayoutSummary {
 // ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
+
+function parseSplitDetails(raw: unknown): SplitParty[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(String(raw));
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((p: unknown) => p && typeof p === "object" && "name" in (p as Record<string, unknown>) && "pct" in (p as Record<string, unknown>))
+      .map((p: { name: string; pct: number }) => ({ name: String(p.name), pct: Number(p.pct) }));
+  } catch {
+    return [];
+  }
+}
 
 function rowToPayout(row: Row): PayoutRecord {
   return {
@@ -62,6 +85,11 @@ function rowToPayout(row: Row): PayoutRecord {
     paymentNotes: row.payment_notes != null ? String(row.payment_notes) : null,
     salesRep: row.sales_rep != null ? String(row.sales_rep) : null,
     payDistributed: (String(row.pay_distributed || "No") as PayDistributed),
+    payDistributedDate: row.pay_distributed_date != null ? String(row.pay_distributed_date) : null,
+    commissionSplit: Number(row.commission_split ?? 0) === 1,
+    splitDetails: parseSplitDetails(row.split_details),
+    referral: row.referral != null ? String(row.referral) : null,
+    referralPct: row.referral_pct != null ? Number(row.referral_pct) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -98,8 +126,8 @@ export async function insertPayout(payout: PayoutRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO payouts (id, payout_month, payout_year, date_joined, first_day_ad_spend, brand_name, vertical, point_of_contact, service, is_signed, is_paid, added_to_slack, amount_due, amount_paid, payment_notes, sales_rep, pay_distributed)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO payouts (id, payout_month, payout_year, date_joined, first_day_ad_spend, brand_name, vertical, point_of_contact, service, is_signed, is_paid, added_to_slack, amount_due, amount_paid, payment_notes, sales_rep, pay_distributed, pay_distributed_date, commission_split, split_details, referral, referral_pct, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payout.id,
       payout.payoutMonth,
@@ -118,6 +146,13 @@ export async function insertPayout(payout: PayoutRecord): Promise<void> {
       payout.paymentNotes,
       payout.salesRep,
       payout.payDistributed,
+      payout.payDistributedDate,
+      payout.commissionSplit ? 1 : 0,
+      payout.splitDetails.length > 0 ? JSON.stringify(payout.splitDetails) : null,
+      payout.referral,
+      payout.referralPct,
+      payout.createdAt,
+      payout.updatedAt,
     ],
   });
 }
@@ -126,6 +161,7 @@ export async function updatePayout(
   id: string,
   changes: Partial<Omit<PayoutRecord, "id">>
 ): Promise<void> {
+  await ensureMigrated();
   const fields: string[] = [];
   const args: (string | number | null)[] = [];
 
@@ -193,13 +229,32 @@ export async function updatePayout(
     fields.push("pay_distributed = ?");
     args.push(changes.payDistributed);
   }
+  if (changes.payDistributedDate !== undefined) {
+    fields.push("pay_distributed_date = ?");
+    args.push(changes.payDistributedDate);
+  }
+  if (changes.commissionSplit !== undefined) {
+    fields.push("commission_split = ?");
+    args.push(changes.commissionSplit ? 1 : 0);
+  }
+  if (changes.splitDetails !== undefined) {
+    fields.push("split_details = ?");
+    args.push(changes.splitDetails.length > 0 ? JSON.stringify(changes.splitDetails) : null);
+  }
+  if (changes.referral !== undefined) {
+    fields.push("referral = ?");
+    args.push(changes.referral);
+  }
+  if (changes.referralPct !== undefined) {
+    fields.push("referral_pct = ?");
+    args.push(changes.referralPct);
+  }
 
   if (fields.length === 0) return;
 
   fields.push("updated_at = datetime('now')");
   args.push(id);
 
-  await ensureMigrated();
   const db = getDb();
   await db.execute({
     sql: `UPDATE payouts SET ${fields.join(", ")} WHERE id = ?`,
@@ -215,6 +270,97 @@ export async function deletePayout(id: string): Promise<boolean> {
     args: [id],
   });
   return (result.rowsAffected ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Sales Rep Options
+// ---------------------------------------------------------------------------
+
+export async function readSalesRepOptions(): Promise<string[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute("SELECT name FROM sales_rep_options ORDER BY name");
+  return result.rows.map((r) => String(r.name));
+}
+
+export async function addSalesRepOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO sales_rep_options (name) VALUES (?)",
+    args: [name],
+  });
+}
+
+export async function removeSalesRepOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "DELETE FROM sales_rep_options WHERE name = ?",
+    args: [name],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Vertical Options
+// ---------------------------------------------------------------------------
+
+export async function readVerticalOptions(): Promise<string[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute("SELECT name FROM vertical_options ORDER BY name");
+  return result.rows.map((r) => String(r.name));
+}
+
+export async function addVerticalOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO vertical_options (name) VALUES (?)",
+    args: [name],
+  });
+}
+
+export async function removeVerticalOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "DELETE FROM vertical_options WHERE name = ?",
+    args: [name],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Referral Options
+// ---------------------------------------------------------------------------
+
+export async function readReferralOptions(): Promise<string[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute("SELECT name FROM referral_options ORDER BY name");
+  return result.rows.map((r) => String(r.name));
+}
+
+export async function addReferralOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO referral_options (name) VALUES (?)",
+    args: [name],
+  });
+}
+
+export async function removeReferralOption(name: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "DELETE FROM referral_options WHERE name = ?",
+    args: [name],
+  });
 }
 
 // ---------------------------------------------------------------------------

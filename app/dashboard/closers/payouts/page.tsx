@@ -214,6 +214,51 @@ export default function PayoutsPage() {
 
   const queryClient = useQueryClient();
 
+  const { data: salesRepOptions = [] } = useQuery<string[]>({
+    queryKey: ["sales-rep-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/payouts/sales-reps");
+      if (!res.ok) throw new Error("Failed to fetch sales rep options");
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const refreshSalesReps = () => {
+    queryClient.invalidateQueries({ queryKey: ["sales-rep-options"] });
+  };
+
+  const { data: verticalOptions = [] } = useQuery<string[]>({
+    queryKey: ["vertical-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/payouts/verticals");
+      if (!res.ok) throw new Error("Failed to fetch vertical options");
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const refreshVerticals = () => {
+    queryClient.invalidateQueries({ queryKey: ["vertical-options"] });
+  };
+
+  const { data: referralOptions = [] } = useQuery<string[]>({
+    queryKey: ["referral-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/payouts/referrals");
+      if (!res.ok) throw new Error("Failed to fetch referral options");
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const refreshReferrals = () => {
+    queryClient.invalidateQueries({ queryKey: ["referral-options"] });
+  };
+
   const {
     data: payouts = [],
     isLoading,
@@ -308,7 +353,7 @@ export default function PayoutsPage() {
   };
 
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -418,6 +463,12 @@ export default function PayoutsPage() {
           isLoading={isLoading}
           onEdit={handleEdit}
           onRefresh={refresh}
+          salesRepOptions={salesRepOptions}
+          onSalesRepsChanged={refreshSalesReps}
+          verticalOptions={verticalOptions}
+          onVerticalsChanged={refreshVerticals}
+          referralOptions={referralOptions}
+          onReferralsChanged={refreshReferrals}
         />
       </div>
 
@@ -440,6 +491,12 @@ export default function PayoutsPage() {
         payout={editingPayout}
         defaultMonth={month}
         defaultYear={year}
+        salesRepOptions={salesRepOptions}
+        onSalesRepsChanged={refreshSalesReps}
+        verticalOptions={verticalOptions}
+        onVerticalsChanged={refreshVerticals}
+        referralOptions={referralOptions}
+        onReferralsChanged={refreshReferrals}
       />
     </DashboardShell>
   );
