@@ -19,7 +19,6 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
   const [displayName, setDisplayName] = useState(client.displayName);
   const [email, setEmail] = useState(client.email ?? "");
   const [category, setCategory] = useState(client.category ?? "");
-  const [mrr, setMrr] = useState(String(client.mrr / 100));
   const [status, setStatus] = useState<UserStatus>(client.status);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoRemoved, setLogoRemoved] = useState(false);
@@ -34,7 +33,6 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     formData.set("displayName", displayName);
     formData.set("email", email);
     formData.set("category", category);
-    formData.set("mrr", mrr);
     formData.set("status", status);
 
     // Append new logo file if selected
@@ -105,35 +103,20 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Category
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className={`${INPUT_CLS} appearance-none cursor-pointer`}
-              >
-                <option value="">None</option>
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                MRR ($)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={mrr}
-                onChange={(e) => setMrr(e.target.value)}
-                className={INPUT_CLS}
-              />
-            </div>
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+              Category
+            </label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={`${INPUT_CLS} appearance-none cursor-pointer`}
+            >
+              <option value="">None</option>
+              {CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
 
           <div>

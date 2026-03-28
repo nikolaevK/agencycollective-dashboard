@@ -77,35 +77,20 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
           />
         </div>
 
-        {/* Category + MRR */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Category
-            </label>
-            <select
-              name="category"
-              className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
-            >
-              <option value="">Select...</option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Initial MRR
-            </label>
-            <input
-              name="mrr"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="$0.00"
-              className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
-            />
-          </div>
+        {/* Category */}
+        <div>
+          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+            Category
+          </label>
+          <select
+            name="category"
+            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
+          >
+            <option value="">Select...</option>
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
         </div>
 
         {/* Logo */}

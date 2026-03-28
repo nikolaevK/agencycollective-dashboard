@@ -6,6 +6,7 @@ import { readAllClientAccounts } from "@/lib/clientAccounts";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
+import { getPayoutAggregatesByBrand } from "@/lib/payouts";
 
 async function requireAdminSession() {
   const session = getAdminSession();
@@ -49,12 +50,39 @@ export async function GET(request: Request) {
     accountsByUser.set(account.userId, list);
   }
 
-  // Build response — strip passwordHash, include accounts
-  const safe = users.map(({ passwordHash, ...rest }) => ({
-    ...rest,
-    hasPassword: Boolean(passwordHash),
-    accounts: accountsByUser.get(rest.id) ?? [],
-  }));
+  // Fetch payout aggregates for MRR and total revenue
+  const now = new Date();
+  const payoutAggregates = await getPayoutAggregatesByBrand(
+    now.getMonth() + 1,
+    now.getFullYear()
+  );
+
+  function normalize(s: string): string {
+    return s.toLowerCase().replace(/\s/g, "");
+  }
+
+  // Build response — strip passwordHash, include accounts + payout metrics
+  const safe = users.map(({ passwordHash, ...rest }) => {
+    const normName = normalize(rest.displayName);
+    let payoutMrr = 0;
+    let totalRevenue = 0;
+    if (normName.length > 0) {
+      for (const agg of payoutAggregates) {
+        if (agg.normalizedBrandName.includes(normName)) {
+          payoutMrr += agg.currentMonthAmountDue;
+          totalRevenue += agg.totalAmountPaid;
+        }
+      }
+    }
+
+    return {
+      ...rest,
+      hasPassword: Boolean(passwordHash),
+      accounts: accountsByUser.get(rest.id) ?? [],
+      payoutMrr,
+      totalRevenue,
+    };
+  });
 
   return NextResponse.json({ data: safe });
 }

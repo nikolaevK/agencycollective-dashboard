@@ -273,8 +273,36 @@ export async function deletePayout(id: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Aggregates
+// Aggregates — brand-level
 // ---------------------------------------------------------------------------
+
+export interface BrandPayoutAggregate {
+  normalizedBrandName: string;
+  currentMonthAmountDue: number; // cents
+  totalAmountPaid: number; // cents
+}
+
+export async function getPayoutAggregatesByBrand(
+  currentMonth: number,
+  currentYear: number
+): Promise<BrandPayoutAggregate[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT
+            LOWER(REPLACE(brand_name, ' ', '')) AS norm_brand,
+            COALESCE(SUM(CASE WHEN payout_month = ? AND payout_year = ? THEN amount_due ELSE 0 END), 0) AS current_month_due,
+            COALESCE(SUM(amount_paid), 0) AS total_paid
+          FROM payouts
+          GROUP BY LOWER(REPLACE(brand_name, ' ', ''))`,
+    args: [currentMonth, currentYear],
+  });
+  return result.rows.map((row) => ({
+    normalizedBrandName: String(row.norm_brand),
+    currentMonthAmountDue: Number(row.current_month_due ?? 0),
+    totalAmountPaid: Number(row.total_paid ?? 0),
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Sales Rep Options

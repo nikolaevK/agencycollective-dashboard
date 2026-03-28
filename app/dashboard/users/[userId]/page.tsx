@@ -416,10 +416,14 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-border/50">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-6 border-t border-border/50">
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Monthly MRR</p>
-                <p className="text-xl font-black text-foreground">{formatMrr(client.mrr)}</p>
+                <p className="text-xl font-black text-foreground">{formatMrr(client.payoutMrr)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Total Revenue</p>
+                <p className="text-xl font-black text-foreground">{formatMrr(client.totalRevenue)}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Linked Accounts</p>

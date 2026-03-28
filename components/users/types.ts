@@ -10,6 +10,8 @@ export interface ClientPublic {
   email: string | null;
   status: UserStatus;
   mrr: number;
+  payoutMrr: number;
+  totalRevenue: number;
   category: string | null;
   createdAt: string;
   hasPassword: boolean;
@@ -31,5 +33,6 @@ export const CATEGORIES = [
   "Digital Marketing",
   "Technology",
   "Entertainment",
+  "Research",
   "Other",
 ] as const;

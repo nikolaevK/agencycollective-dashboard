@@ -146,13 +146,14 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
               <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Status</th>
               <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Accounts</th>
               <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Monthly MRR</th>
+              <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Total Revenue</th>
               <th className="px-8 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/30">
             {paginated.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-8 py-12 text-center text-sm text-muted-foreground">
+                <td colSpan={6} className="px-8 py-12 text-center text-sm text-muted-foreground">
                   {search ? "No clients match your search." : "No clients yet. Create one using the form."}
                 </td>
               </tr>
@@ -193,7 +194,12 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm font-semibold text-foreground">
-                      {formatMrr(client.mrr)}
+                      {formatMrr(client.payoutMrr)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-semibold text-foreground">
+                      {formatMrr(client.totalRevenue)}
                     </span>
                   </td>
                   <td className="px-8 py-4 text-right">
@@ -235,8 +241,10 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
               </div>
               <div className="text-right shrink-0 ml-3 flex items-center gap-2">
                 <div>
-                  <p className="text-sm font-bold text-foreground">{formatMrr(client.mrr)}</p>
+                  <p className="text-sm font-bold text-foreground">{formatMrr(client.payoutMrr)}</p>
                   <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
+                  <p className="text-xs font-medium text-foreground mt-1">{formatMrr(client.totalRevenue)}</p>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Revenue</p>
                 </div>
                 <ClientActionsMenu
                   client={client}
