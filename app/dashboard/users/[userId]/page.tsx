@@ -14,6 +14,7 @@ import {
   TrendingUp,
   ShoppingCart,
   Banknote,
+  Layers,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { StatusBadge } from "@/components/users/StatusBadge";
@@ -23,11 +24,18 @@ import { ManageAccountsModal } from "@/components/users/ManageAccountsModal";
 import { useInsights } from "@/hooks/useInsights";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDateRange } from "@/hooks/useDateRange";
+import { aggregateInsights } from "@/lib/meta/transformers";
 import { cn, formatCurrency, formatRoas } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { ClientPublic } from "@/components/users/types";
 import type { ClientAccount } from "@/lib/clientAccounts";
+import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
+import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiGrid } from "@/components/overview/KpiGrid";
+import { mergeTimeSeries } from "@/lib/timeseries";
 
 interface ClientProfilePageProps {
   params: { userId: string };
@@ -148,6 +156,121 @@ function AccountKpiCard({ account }: { account: ClientAccount }) {
   );
 }
 
+// ---------- Combined performance with chart ----------
+
+/** Fetch combined time series for multiple accounts via a single React Query call. */
+async function fetchCombinedTimeSeries(
+  accountIds: string[],
+  dateRange: { preset?: string; since?: string; until?: string }
+): Promise<TimeSeriesDataPoint[]> {
+  const results = await Promise.all(
+    accountIds.map(async (accountId) => {
+      const params = new URLSearchParams({ accountId, timeSeries: "true" });
+      if (dateRange.preset) params.set("preset", dateRange.preset);
+      else if (dateRange.since && dateRange.until) {
+        params.set("since", dateRange.since);
+        params.set("until", dateRange.until);
+      }
+      const res = await fetch(`/api/insights?${params.toString()}`);
+      if (!res.ok) return undefined;
+      const json = await res.json();
+      return json.data?.timeSeries as TimeSeriesDataPoint[] | undefined;
+    })
+  );
+  return mergeTimeSeries(results);
+}
+
+function CombinedPerformanceSection({
+  accounts,
+  aggregated,
+  dateRange,
+}: {
+  accounts: ClientAccount[];
+  aggregated: InsightMetrics;
+  dateRange: { preset?: string; since?: string; until?: string };
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const accountIds = useMemo(() => accounts.map((a) => a.accountId), [accounts]);
+
+  const { data: mergedTimeSeries, isLoading: tsLoading, error: tsError } = useQuery({
+    queryKey: ["admin-combined-ts", accountIds, dateRange],
+    queryFn: () => fetchCombinedTimeSeries(accountIds, dateRange),
+    enabled: expanded && accountIds.length > 0,
+    staleTime: 4 * 60 * 1000,
+  });
+
+  return (
+    <div className="space-y-4 mb-4">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className={cn(
+          "w-full text-left bg-card rounded-xl border p-5 shadow-sm transition-all",
+          expanded ? "border-primary/30 ring-1 ring-primary/10" : "border-primary/20 hover:border-primary/30"
+        )}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Layers className="h-4 w-4 text-primary" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-foreground">Combined Performance</p>
+            <p className="text-[10px] text-muted-foreground">
+              {accounts.length} accounts aggregated{!expanded && " — click to expand"}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Spend</p>
+            <p className="text-lg font-black text-foreground">{formatCurrency(aggregated.spend)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">ROAS</p>
+            <p className="text-lg font-black text-foreground">{formatRoas(aggregated.roas)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Conversions</p>
+            <p className="text-lg font-black text-foreground">{new Intl.NumberFormat("en-US").format(aggregated.conversions)}</p>
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Revenue</p>
+            <p className="text-lg font-black text-foreground">{formatCurrency(aggregated.conversionValue)}</p>
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">CPC</p>
+            <p className="text-lg font-black text-foreground">{formatCurrency(aggregated.cpc)}</p>
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <>
+          <KpiGrid metrics={aggregated} isLoading={false} />
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Combined Performance Over Time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer
+                isLoading={tsLoading}
+                error={tsError as Error | null}
+                isEmpty={!tsLoading && (!mergedTimeSeries || mergedTimeSeries.length === 0)}
+                height={320}
+              >
+                {mergedTimeSeries && mergedTimeSeries.length > 0 && (
+                  <TimeSeriesChart data={mergedTimeSeries} height={320} />
+                )}
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Main page ----------
 
 export default function ClientProfilePage({ params }: ClientProfilePageProps) {
@@ -155,11 +278,23 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
 
+  const { dateRange } = useDateRange();
+  const { data: allMetaAccounts } = useAccounts(dateRange);
+
   const { data: client, isLoading, refetch } = useQuery({
     queryKey: ["admin-user", params.userId],
     queryFn: () => fetchClient(params.userId),
     staleTime: 0,
   });
+
+  // Aggregate metrics across user's linked accounts
+  const aggregated = useMemo(() => {
+    if (!client || !allMetaAccounts || client.accounts.length < 2) return undefined;
+    const userIds = new Set(client.accounts.map((a) => a.accountId));
+    const matched = allMetaAccounts.filter((a) => userIds.has(a.id));
+    if (matched.length < 2) return undefined;
+    return aggregateInsights(matched.map((a) => a.insights));
+  }, [client, allMetaAccounts]);
 
   if (isLoading) {
     return (
@@ -330,6 +465,15 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
               Manage
             </button>
           </div>
+
+          {/* Aggregated summary with expandable chart — only when 2+ accounts */}
+          {aggregated && (
+            <CombinedPerformanceSection
+              accounts={client.accounts}
+              aggregated={aggregated}
+              dateRange={dateRange}
+            />
+          )}
 
           {client.accounts.length === 0 ? (
             <div className="bg-card rounded-xl border border-border/50 dark:border-white/[0.06] p-8 text-center">
