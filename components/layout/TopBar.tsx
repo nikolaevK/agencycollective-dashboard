@@ -47,7 +47,7 @@ export function TopBar({ onMenuClick, sidebarCollapsed, onToggleSidebar }: TopBa
 
   async function handleLogout() {
     await fetch("/api/auth/admin/logout", { method: "POST" });
-    router.push("/admin/login");
+    router.push("/?portal=admin");
   }
 
   const initials = getInitials(admin.displayName, admin.username);

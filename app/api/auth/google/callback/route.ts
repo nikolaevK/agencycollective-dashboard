@@ -10,7 +10,7 @@ import { google } from "googleapis";
 export async function GET(request: NextRequest) {
   const session = getAdminSession();
   if (!session) {
-    return NextResponse.redirect(new URL("/admin/login", request.url));
+    return NextResponse.redirect(new URL("/?portal=admin", request.url));
   }
 
   const code = request.nextUrl.searchParams.get("code");

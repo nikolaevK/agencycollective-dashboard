@@ -9,10 +9,10 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const session = getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/?portal=admin");
 
   const admin = await findAdmin(session.adminId);
-  if (!admin) redirect("/admin/login");
+  if (!admin) redirect("/?portal=admin");
 
   const permissions = getEffectivePermissions(admin);
 

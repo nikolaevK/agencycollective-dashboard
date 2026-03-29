@@ -106,10 +106,10 @@ export async function middleware(request: NextRequest) {
     // Allow the unauthorized page without further permission checks
     if (pathname === "/dashboard/unauthorized") {
       const token = request.cookies.get(ADMIN_COOKIE)?.value;
-      if (!token) return NextResponse.redirect(new URL("/admin/login", request.url));
+      if (!token) return NextResponse.redirect(new URL("/?portal=admin", request.url));
       const valid = secret ? await verifyToken(token, secret) : false;
       if (!valid) {
-        const res = NextResponse.redirect(new URL("/admin/login", request.url));
+        const res = NextResponse.redirect(new URL("/?portal=admin", request.url));
         res.cookies.delete(ADMIN_COOKIE);
         return res;
       }
@@ -118,11 +118,11 @@ export async function middleware(request: NextRequest) {
 
     const token = request.cookies.get(ADMIN_COOKIE)?.value;
     if (!token) {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
+      return NextResponse.redirect(new URL("/?portal=admin", request.url));
     }
     const valid = secret ? await verifyToken(token, secret) : false;
     if (!valid) {
-      const res = NextResponse.redirect(new URL("/admin/login", request.url));
+      const res = NextResponse.redirect(new URL("/?portal=admin", request.url));
       res.cookies.delete(ADMIN_COOKIE);
       return res;
     }
@@ -165,11 +165,11 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/closer/") && pathname !== "/closer/login") {
     const token = request.cookies.get(CLOSER_COOKIE)?.value;
     if (!token) {
-      return NextResponse.redirect(new URL("/closer/login", request.url));
+      return NextResponse.redirect(new URL("/?portal=closer", request.url));
     }
     const valid = secret ? await verifyToken(token, secret) : false;
     if (!valid) {
-      const res = NextResponse.redirect(new URL("/closer/login", request.url));
+      const res = NextResponse.redirect(new URL("/?portal=closer", request.url));
       res.cookies.delete(CLOSER_COOKIE);
       return res;
     }
@@ -191,12 +191,12 @@ export async function middleware(request: NextRequest) {
   if (/^\/[^/]+\/portal(\/|$)/.test(pathname)) {
     const token = request.cookies.get(PORTAL_COOKIE)?.value;
     if (!token) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL("/?portal=client", request.url));
     }
     // Portal token uses the same signing scheme
     const valid = secret ? await verifyToken(token, secret) : false;
     if (!valid) {
-      const res = NextResponse.redirect(new URL("/login", request.url));
+      const res = NextResponse.redirect(new URL("/?portal=client", request.url));
       res.cookies.delete(PORTAL_COOKIE);
       return res;
     }

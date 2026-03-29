@@ -44,7 +44,7 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
 
   async function handleLogout() {
     await fetch("/api/auth/admin/logout", { method: "POST" });
-    router.push("/admin/login");
+    router.push("/?portal=admin");
   }
 
   return (

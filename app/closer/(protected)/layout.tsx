@@ -10,11 +10,11 @@ export default async function CloserProtectedLayout({
   children: React.ReactNode;
 }) {
   const session = getCloserSession();
-  if (!session) redirect("/closer/login");
+  if (!session) redirect("/?portal=closer");
 
   await ensureMigrated();
   const closer = await findCloser(session.closerId);
-  if (!closer) redirect("/closer/login");
+  if (!closer) redirect("/?portal=closer");
 
   return (
     <CloserPortalShell displayName={closer.displayName}>

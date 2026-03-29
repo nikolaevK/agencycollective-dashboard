@@ -7,7 +7,7 @@ import { getAuthUrl } from "@/lib/google/oauth";
 export async function GET() {
   const session = getAdminSession();
   if (!session) {
-    return NextResponse.redirect(new URL("/admin/login", process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000"));
+    return NextResponse.redirect(new URL("/?portal=admin", process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000"));
   }
 
   try {

@@ -11,10 +11,10 @@ export default async function PortalLayout({
   params: { slug: string };
 }) {
   const session = getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/?portal=client");
 
   const user = await findUser(session.userId);
-  if (!user || user.slug !== params.slug) redirect("/login");
+  if (!user || user.slug !== params.slug) redirect("/?portal=client");
 
   return <PortalShell>{children}</PortalShell>;
 }

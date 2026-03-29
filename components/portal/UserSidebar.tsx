@@ -21,7 +21,7 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
+    router.push("/?portal=client");
   }
 
   return (

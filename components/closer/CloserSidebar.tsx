@@ -24,7 +24,7 @@ export function CloserSidebar({ displayName, isOpen = false, onClose }: CloserSi
 
   async function handleLogout() {
     await fetch("/api/auth/closer/logout", { method: "POST" });
-    router.push("/closer/login");
+    router.push("/?portal=closer");
   }
 
   return (

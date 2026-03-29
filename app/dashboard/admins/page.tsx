@@ -5,10 +5,10 @@ import { AdminsPanel } from "./AdminsPanel";
 
 export default async function AdminsPage() {
   const session = getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/?portal=admin");
 
   const admin = await findAdmin(session.adminId);
-  if (!admin) redirect("/admin/login");
+  if (!admin) redirect("/?portal=admin");
 
   // Require admin permission or super admin
   if (!admin.isSuper && !admin.permissions.admin) {
