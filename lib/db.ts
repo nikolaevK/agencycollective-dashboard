@@ -535,5 +535,12 @@ export async function migrate(): Promise<void> {
     console.warn("[migrate] Could not create idx_payout_docs_type:", err);
   }
 
+  // ── Add file_data BLOB column (replaces filesystem storage) ─────
+  try {
+    await db.execute(`ALTER TABLE payout_documents ADD COLUMN file_data BLOB`);
+  } catch {
+    // column already exists
+  }
+
   console.log("[migrate] Database migration complete");
 }

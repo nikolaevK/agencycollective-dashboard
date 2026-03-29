@@ -8,13 +8,18 @@ import type { Row } from "@libsql/client";
 
 export type DocType = "project_scope" | "invoice";
 
+export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Metadata columns (excludes file_data BLOB) */
+const META_COLUMNS = `id, normalized_brand, brand_name, doc_type, file_name,
+  file_size, payout_month, payout_year, uploaded_by, created_at`;
+
 export interface PayoutDocument {
   id: string;
   normalizedBrand: string;
   brandName: string;
   docType: DocType;
   fileName: string;
-  filePath: string;
   fileSize: number;
   payoutMonth: number | null;
   payoutYear: number | null;
@@ -33,7 +38,6 @@ function rowToDocument(row: Row): PayoutDocument {
     brandName: String(row.brand_name),
     docType: String(row.doc_type) as DocType,
     fileName: String(row.file_name),
-    filePath: String(row.file_path),
     fileSize: Number(row.file_size ?? 0),
     payoutMonth: row.payout_month != null ? Number(row.payout_month) : null,
     payoutYear: row.payout_year != null ? Number(row.payout_year) : null,
@@ -42,29 +46,41 @@ function rowToDocument(row: Row): PayoutDocument {
   };
 }
 
+function blobToBuffer(raw: unknown): Buffer | null {
+  if (raw == null) return null;
+  if (raw instanceof ArrayBuffer) return Buffer.from(raw);
+  if (raw instanceof Uint8Array) return Buffer.from(raw);
+  if (typeof raw === "string") return Buffer.from(raw, "base64");
+  console.error("[payoutDocuments] Unexpected BLOB type:", typeof raw);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
-export async function insertDocument(doc: PayoutDocument): Promise<void> {
+export async function insertDocument(
+  doc: PayoutDocument,
+  fileData: Buffer
+): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
     sql: `INSERT INTO payout_documents
             (id, normalized_brand, brand_name, doc_type, file_name, file_path,
-             file_size, payout_month, payout_year, uploaded_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             file_size, payout_month, payout_year, uploaded_by, file_data)
+          VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
     args: [
       doc.id,
       doc.normalizedBrand,
       doc.brandName,
       doc.docType,
       doc.fileName,
-      doc.filePath,
       doc.fileSize,
       doc.payoutMonth,
       doc.payoutYear,
       doc.uploadedBy,
+      fileData,
     ],
   });
 }
@@ -72,15 +88,37 @@ export async function insertDocument(doc: PayoutDocument): Promise<void> {
 export async function findDocument(id: string): Promise<PayoutDocument | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM payout_documents WHERE id = ?", args: [id] });
+  const result = await db.execute({
+    sql: `SELECT ${META_COLUMNS} FROM payout_documents WHERE id = ?`,
+    args: [id],
+  });
   if (result.rows.length === 0) return null;
   return rowToDocument(result.rows[0]);
+}
+
+export async function findDocumentWithData(
+  id: string
+): Promise<{ doc: PayoutDocument; fileData: Buffer } | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT ${META_COLUMNS}, file_data FROM payout_documents WHERE id = ?`,
+    args: [id],
+  });
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const fileData = blobToBuffer(row.file_data);
+  if (!fileData) return null;
+  return { doc: rowToDocument(row), fileData };
 }
 
 export async function deleteDocument(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "DELETE FROM payout_documents WHERE id = ?", args: [id] });
+  const result = await db.execute({
+    sql: "DELETE FROM payout_documents WHERE id = ?",
+    args: [id],
+  });
   return (result.rowsAffected ?? 0) > 0;
 }
 
@@ -88,7 +126,9 @@ export async function deleteDocument(id: string): Promise<boolean> {
 // Brand-level retrieval with fuzzy matching
 // ---------------------------------------------------------------------------
 
-export async function readDocumentsByBrand(brandName: string): Promise<PayoutDocument[]> {
+export async function readDocumentsByBrand(
+  brandName: string
+): Promise<PayoutDocument[]> {
   await ensureMigrated();
   const norm = normalizeBrandName(brandName);
   if (!norm) return [];
@@ -96,7 +136,9 @@ export async function readDocumentsByBrand(brandName: string): Promise<PayoutDoc
   const db = getDb();
 
   // Fetch all distinct normalized brands stored in the documents table
-  const distinctResult = await db.execute("SELECT DISTINCT normalized_brand FROM payout_documents");
+  const distinctResult = await db.execute(
+    "SELECT DISTINCT normalized_brand FROM payout_documents"
+  );
   const matchedBrands: string[] = [];
   for (const row of distinctResult.rows) {
     const stored = String(row.normalized_brand);
@@ -110,7 +152,8 @@ export async function readDocumentsByBrand(brandName: string): Promise<PayoutDoc
   // Build parameterised IN clause
   const placeholders = matchedBrands.map(() => "?").join(", ");
   const result = await db.execute({
-    sql: `SELECT * FROM payout_documents
+    sql: `SELECT ${META_COLUMNS}
+          FROM payout_documents
           WHERE normalized_brand IN (${placeholders})
           ORDER BY created_at DESC`,
     args: matchedBrands,

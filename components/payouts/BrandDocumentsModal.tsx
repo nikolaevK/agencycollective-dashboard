@@ -11,20 +11,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { DocType } from "@/lib/payoutDocuments";
-
-interface PayoutDocumentRow {
-  id: string;
-  normalizedBrand: string;
-  brandName: string;
-  docType: DocType;
-  fileName: string;
-  fileSize: number;
-  payoutMonth: number | null;
-  payoutYear: number | null;
-  uploadedBy: string | null;
-  createdAt: string;
-}
+import type { DocType, PayoutDocument } from "@/lib/payoutDocuments";
+import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocuments";
 
 interface BrandDocumentsModalProps {
   open: boolean;
@@ -60,7 +48,7 @@ function DocumentRow({
   onDelete,
   deleting,
 }: {
-  doc: PayoutDocumentRow;
+  doc: PayoutDocument;
   onDelete: (id: string) => void;
   deleting: string | null;
 }) {
@@ -129,7 +117,7 @@ function UploadArea({
 
   const handleUpload = async (file: File) => {
     setError("");
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
       setError("File too large (max 10 MB)");
       return;
     }
@@ -245,7 +233,7 @@ export function BrandDocumentsModal({
 
   const queryKey = ["payout-documents", brandName];
 
-  const { data: docs = [], isLoading } = useQuery<PayoutDocumentRow[]>({
+  const { data: docs = [], isLoading } = useQuery<PayoutDocument[]>({
     queryKey,
     queryFn: async () => {
       const res = await fetch(

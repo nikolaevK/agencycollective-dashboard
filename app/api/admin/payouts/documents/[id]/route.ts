@@ -1,13 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
-import { findDocument } from "@/lib/payoutDocuments";
-
-const UPLOAD_DIR = path.resolve(process.cwd(), "data", "uploads", "documents");
+import { findDocumentWithData } from "@/lib/payoutDocuments";
 
 async function requireCloserAdmin() {
   const session = getAdminSession();
@@ -26,31 +22,25 @@ export async function GET(
   if (!admin)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const doc = await findDocument(params.id);
-  if (!doc)
+  const id = params.id;
+  if (!id)
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+
+  const result = await findDocumentWithData(id);
+  if (!result)
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
-  // Path traversal prevention: resolve and verify within upload dir
-  const fullPath = path.resolve(process.cwd(), doc.filePath);
-  if (!fullPath.startsWith(UPLOAD_DIR)) {
-    console.error("[admin/payouts/documents/[id] GET] Path traversal blocked:", doc.filePath);
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  if (!fs.existsSync(fullPath))
-    return NextResponse.json({ error: "File not found" }, { status: 404 });
-
-  const fileBuffer = fs.readFileSync(fullPath);
+  const { doc, fileData } = result;
 
   // RFC 5987 encoding for non-ASCII filenames
   const asciiName = doc.fileName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "_");
   const encodedName = encodeURIComponent(doc.fileName);
 
-  return new NextResponse(fileBuffer, {
+  return new NextResponse(new Uint8Array(fileData), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
-      "Content-Length": String(fileBuffer.length),
+      "Content-Length": String(fileData.length),
       "Cache-Control": "private, no-store",
     },
   });

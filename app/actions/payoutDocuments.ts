@@ -1,17 +1,17 @@
 "use server";
 
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { normalizeBrandName } from "@/lib/payouts";
-import { insertDocument, findDocument, deleteDocument } from "@/lib/payoutDocuments";
+import {
+  insertDocument,
+  findDocument,
+  deleteDocument,
+  MAX_DOCUMENT_SIZE_BYTES,
+} from "@/lib/payoutDocuments";
 import { logAuditEvent } from "@/lib/auditLog";
 import type { DocType, PayoutDocument } from "@/lib/payoutDocuments";
-
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-const UPLOAD_DIR = path.resolve(process.cwd(), "data", "uploads", "documents");
 
 async function requireCloserAdmin() {
   const session = getAdminSession();
@@ -35,7 +35,8 @@ export async function uploadPayoutDocumentAction(
   const yearStr = formData.get("payoutYear");
 
   if (!file || file.size === 0) return { error: "No file provided" };
-  if (file.size > MAX_BYTES) return { error: "File too large (max 10 MB)" };
+  if (file.size > MAX_DOCUMENT_SIZE_BYTES)
+    return { error: "File too large (max 10 MB)" };
 
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   if (ext !== "pdf") return { error: "Only PDF files are allowed" };
@@ -55,19 +56,8 @@ export async function uploadPayoutDocumentAction(
     return { error: "Invalid year" };
   }
 
-  // Ensure upload directory exists
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
   const id = crypto.randomUUID();
-  const safeName = file.name
-    .replace(/\.pdf$/i, "")
-    .replace(/[^a-zA-Z0-9-_]/g, "_")
-    .slice(0, 100);
-  const filename = `${id}_${safeName}.pdf`;
-  const filePath = path.join(UPLOAD_DIR, filename);
-
-  const bytes = await file.arrayBuffer();
-  fs.writeFileSync(filePath, Buffer.from(bytes));
+  const fileData = Buffer.from(await file.arrayBuffer());
 
   const doc: PayoutDocument = {
     id,
@@ -75,7 +65,6 @@ export async function uploadPayoutDocumentAction(
     brandName,
     docType,
     fileName: file.name,
-    filePath: `data/uploads/documents/${filename}`,
     fileSize: file.size,
     payoutMonth,
     payoutYear,
@@ -83,7 +72,7 @@ export async function uploadPayoutDocumentAction(
     createdAt: new Date().toISOString(),
   };
 
-  await insertDocument(doc);
+  await insertDocument(doc, fileData);
 
   try {
     await logAuditEvent({
@@ -110,16 +99,6 @@ export async function deletePayoutDocumentAction(
   const doc = await findDocument(documentId);
   if (!doc) return { error: "Document not found" };
 
-  // Delete file from disk (with path traversal guard)
-  try {
-    const fullPath = path.resolve(process.cwd(), doc.filePath);
-    if (fullPath.startsWith(UPLOAD_DIR) && fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
-    }
-  } catch {
-    // continue even if file removal fails
-  }
-
   await deleteDocument(documentId);
 
   try {
@@ -129,7 +108,11 @@ export async function deletePayoutDocumentAction(
       action: "payout_document.delete",
       targetType: "payout_document",
       targetId: documentId,
-      details: JSON.stringify({ docType: doc.docType, fileName: doc.fileName, brandName: doc.brandName }),
+      details: JSON.stringify({
+        docType: doc.docType,
+        fileName: doc.fileName,
+        brandName: doc.brandName,
+      }),
     });
   } catch {
     // audit is fire-and-forget

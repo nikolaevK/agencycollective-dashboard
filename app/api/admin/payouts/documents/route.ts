@@ -33,9 +33,7 @@ export async function GET(request: Request) {
 
   try {
     const docs = await readDocumentsByBrand(brandName);
-    // Strip filePath from response — internal server path should not be exposed
-    const safe = docs.map(({ filePath: _, ...rest }) => rest);
-    return NextResponse.json({ data: safe });
+    return NextResponse.json({ data: docs });
   } catch (err) {
     console.error("[admin/payouts/documents GET]", err);
     return NextResponse.json(
@@ -55,11 +53,6 @@ export async function POST(request: Request) {
     const result = await uploadPayoutDocumentAction(formData);
     if (result.error)
       return NextResponse.json({ error: result.error }, { status: 400 });
-    // Strip filePath from response
-    if (result.data) {
-      const { filePath: _, ...safe } = result.data;
-      return NextResponse.json({ data: safe });
-    }
     return NextResponse.json({ data: result.data });
   } catch (err) {
     console.error("[admin/payouts/documents POST]", err);
