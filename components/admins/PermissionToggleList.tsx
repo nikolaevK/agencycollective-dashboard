@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Sparkles, ImageIcon, PenTool, Users, Handshake, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Sparkles, ImageIcon, Braces, PenTool, Users, Handshake, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { PERMISSION_MODULES } from "@/lib/permissions";
@@ -9,6 +9,7 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   LayoutDashboard,
   Sparkles,
   ImageIcon,
+  Braces,
   PenTool,
   Users,
   Handshake,

@@ -61,6 +61,7 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
         dashboard: false,
         analyst: false,
         studio: false,
+        jsoneditor: false,
         adcopy: false,
         users: false,
         closers: false,

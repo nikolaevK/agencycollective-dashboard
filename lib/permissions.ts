@@ -1,9 +1,10 @@
-export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'adcopy' | 'users' | 'closers' | 'admin';
+export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'jsoneditor' | 'adcopy' | 'users' | 'closers' | 'admin';
 
 export interface AdminPermissions {
   dashboard: boolean;
   analyst: boolean;
   studio: boolean;
+  jsoneditor: boolean;
   adcopy: boolean;
   users: boolean;
   closers: boolean;
@@ -20,6 +21,7 @@ export const PERMISSION_MODULES: {
   { key: 'dashboard', label: 'Dashboard', description: 'View metrics and growth', icon: 'LayoutDashboard' },
   { key: 'analyst', label: 'AI Analyst', description: 'Run intelligence reports', icon: 'Sparkles' },
   { key: 'studio', label: 'Image Studio', description: 'Access asset generation', icon: 'ImageIcon' },
+  { key: 'jsoneditor', label: 'JSON Editor', description: 'JSON-based image editing', icon: 'Braces' },
   { key: 'adcopy', label: 'Ad Copy', description: 'Creative management', icon: 'PenTool' },
   { key: 'users', label: 'Users', description: 'Manage end-user access', icon: 'Users' },
   { key: 'closers', label: 'Closers', description: 'Sales pipeline control', icon: 'Handshake' },
@@ -33,6 +35,7 @@ export function allPermissionsTrue(): AdminPermissions {
     dashboard: true,
     analyst: true,
     studio: true,
+    jsoneditor: true,
     adcopy: true,
     users: true,
     closers: true,
@@ -45,6 +48,7 @@ export function allPermissionsFalse(): AdminPermissions {
     dashboard: false,
     analyst: false,
     studio: false,
+    jsoneditor: false,
     adcopy: false,
     users: false,
     closers: false,

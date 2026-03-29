@@ -103,6 +103,7 @@ export async function migrate(): Promise<void> {
       perm_dashboard INTEGER NOT NULL DEFAULT 0,
       perm_analyst   INTEGER NOT NULL DEFAULT 0,
       perm_studio    INTEGER NOT NULL DEFAULT 0,
+      perm_jsoneditor INTEGER NOT NULL DEFAULT 0,
       perm_adcopy    INTEGER NOT NULL DEFAULT 0,
       perm_users     INTEGER NOT NULL DEFAULT 0,
       perm_closers   INTEGER NOT NULL DEFAULT 0,
@@ -151,6 +152,7 @@ export async function migrate(): Promise<void> {
         perm_dashboard INTEGER NOT NULL DEFAULT 0,
         perm_analyst   INTEGER NOT NULL DEFAULT 0,
         perm_studio    INTEGER NOT NULL DEFAULT 0,
+        perm_jsoneditor INTEGER NOT NULL DEFAULT 0,
         perm_adcopy    INTEGER NOT NULL DEFAULT 0,
         perm_users     INTEGER NOT NULL DEFAULT 0,
         perm_closers   INTEGER NOT NULL DEFAULT 0,
@@ -173,12 +175,20 @@ export async function migrate(): Promise<void> {
     console.log("[migrate] Admins table rebuilt successfully");
   }
 
+  // ── Add perm_jsoneditor column to existing admins tables ────────────
+  try {
+    await db.execute(`SELECT perm_jsoneditor FROM admins LIMIT 0`);
+  } catch {
+    await db.execute(`ALTER TABLE admins ADD COLUMN perm_jsoneditor INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migrate] Added perm_jsoneditor column to admins");
+  }
+
   // ── Set permissions for seed super admin (idempotent) ──────────────
   await db.execute(`
     UPDATE admins
     SET display_name = 'Agency Collective',
         role = 'super_admin',
-        perm_dashboard = 1, perm_analyst = 1, perm_studio = 1,
+        perm_dashboard = 1, perm_analyst = 1, perm_studio = 1, perm_jsoneditor = 1,
         perm_adcopy = 1, perm_users = 1, perm_closers = 1, perm_admin = 1
     WHERE id = 'agencycollective' AND display_name IS NULL
   `);

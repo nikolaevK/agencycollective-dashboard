@@ -64,11 +64,12 @@ function decodePayload(token: string): Record<string, unknown> | null {
 }
 
 /** Map route patterns to required permission keys. */
-type PermKey = "dashboard" | "analyst" | "studio" | "adcopy" | "users" | "closers" | "admin";
+type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "users" | "closers" | "admin";
 
 const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p === "/dashboard/chat", perm: "analyst" },
   { match: (p) => p.startsWith("/dashboard/generate"), perm: "studio" },
+  { match: (p) => p.startsWith("/dashboard/json-editor"), perm: "jsoneditor" },
   { match: (p) => p.startsWith("/dashboard/ad-copy"), perm: "adcopy" },
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
@@ -81,6 +82,7 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
 const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/chat"), perm: "analyst" },
   { match: (p) => p.startsWith("/api/generate"), perm: "studio" },
+  { match: (p) => p.startsWith("/api/json-editor"), perm: "jsoneditor" },
   { match: (p) => p.startsWith("/api/ad-copy"), perm: "adcopy" },
   { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/closers"), perm: "closers" },
@@ -213,6 +215,7 @@ export const config = {
     "/closer/:path*",
     "/api/chat/:path*",
     "/api/generate/:path*",
+    "/api/json-editor/:path*",
     "/api/ad-copy/:path*",
     "/api/admin/users/:path*",
     "/api/admin/closers/:path*",

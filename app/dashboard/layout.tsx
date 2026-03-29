@@ -25,6 +25,7 @@ export default async function DashboardLayout({
     sessionPerms.dashboard !== permissions.dashboard ||
     sessionPerms.analyst !== permissions.analyst ||
     sessionPerms.studio !== permissions.studio ||
+    sessionPerms.jsoneditor !== permissions.jsoneditor ||
     sessionPerms.adcopy !== permissions.adcopy ||
     sessionPerms.users !== permissions.users ||
     sessionPerms.closers !== permissions.closers ||
