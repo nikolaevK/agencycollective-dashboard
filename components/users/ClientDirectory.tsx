@@ -9,6 +9,7 @@ import { StatusBadge } from "./StatusBadge";
 import { ClientActionsMenu } from "./ClientActionsMenu";
 import { ManageAccountsModal } from "./ManageAccountsModal";
 import { EditClientModal } from "./EditClientModal";
+import { MrrDetailModal } from "./MrrDetailModal";
 import { updateUserAction, deleteUserAction } from "@/app/actions/users";
 import type { ClientPublic } from "./types";
 import type { UserStatus } from "@/lib/users";
@@ -43,11 +44,13 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
+  const [mrrClientId, setMrrClientId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Derive current client objects from fresh data so modals never show stale state
   const editingClient = editingId ? clients.find((c) => c.id === editingId) ?? null : null;
   const managingClient = managingId ? clients.find((c) => c.id === managingId) ?? null : null;
+  const mrrClient = mrrClientId ? clients.find((c) => c.id === mrrClientId) ?? null : null;
 
   const filtered = useMemo(() => {
     let result = clients;
@@ -193,9 +196,18 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm font-semibold text-foreground">
-                      {formatMrr(client.payoutMrr)}
-                    </span>
+                    {client.payoutMrr > 0 ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMrrClientId(client.id); }}
+                        className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-2 hover:decoration-emerald-600 dark:hover:decoration-emerald-400 transition-colors"
+                      >
+                        {formatMrr(client.payoutMrr)}
+                      </button>
+                    ) : (
+                      <span className="text-sm font-semibold text-foreground">
+                        {formatMrr(client.payoutMrr)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm font-semibold text-foreground">
@@ -230,7 +242,10 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
               key={client.id}
               className="flex items-center justify-between p-4 bg-muted/20 dark:bg-white/[0.03] rounded-xl border border-border/30"
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div
+                className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer active:scale-[0.98] transition-all"
+                onClick={() => router.push(`/dashboard/users/${client.id}`)}
+              >
                 <AvatarInitials name={client.displayName} className="w-12 h-12" />
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-foreground truncate">
@@ -241,8 +256,17 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
               </div>
               <div className="text-right shrink-0 ml-3 flex items-center gap-2">
                 <div>
-                  <p className="text-sm font-bold text-foreground">{formatMrr(client.payoutMrr)}</p>
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
+                  {client.payoutMrr > 0 ? (
+                    <button onClick={(e) => { e.stopPropagation(); setMrrClientId(client.id); }}>
+                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-2">{formatMrr(client.payoutMrr)}</p>
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
+                    </button>
+                  ) : (
+                    <>
+                      <p className="text-sm font-bold text-foreground">{formatMrr(client.payoutMrr)}</p>
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
+                    </>
+                  )}
                   <p className="text-xs font-medium text-foreground mt-1">{formatMrr(client.totalRevenue)}</p>
                   <p className="text-[10px] font-medium text-muted-foreground uppercase">Revenue</p>
                 </div>
@@ -323,6 +347,14 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
           client={managingClient}
           onClose={() => setManagingId(null)}
           onUpdated={onRefresh}
+        />
+      )}
+      {mrrClient && (
+        <MrrDetailModal
+          open={!!mrrClient}
+          onClose={() => setMrrClientId(null)}
+          clientName={mrrClient.displayName}
+          mrrCents={mrrClient.payoutMrr}
         />
       )}
     </div>

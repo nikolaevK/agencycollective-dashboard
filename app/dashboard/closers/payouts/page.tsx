@@ -7,9 +7,11 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { MonthYearSelector } from "@/components/payouts/MonthYearSelector";
 import { PayoutSummaryCards } from "@/components/payouts/PayoutSummaryCards";
+import type { MetricCardType } from "@/components/payouts/PayoutSummaryCards";
 import { PayoutTable } from "@/components/payouts/PayoutTable";
 import { AddEditPayoutModal } from "@/components/payouts/AddEditPayoutModal";
-import type { PayoutRecord, PayoutSummary } from "@/lib/payouts";
+import { RebillDetailModal } from "@/components/payouts/RebillDetailModal";
+import type { PayoutRecord, PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
 import { cn } from "@/lib/utils";
 
 type PaidFilter = "all" | "paid" | "unpaid";
@@ -211,6 +213,8 @@ export default function PayoutsPage() {
   const [customTo, setCustomTo] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPayout, setEditingPayout] = useState<PayoutRecord | null>(null);
+  const [rebillModalOpen, setRebillModalOpen] = useState(false);
+  const [rebillModalView, setRebillModalView] = useState<MetricCardType>("new");
 
   const queryClient = useQueryClient();
 
@@ -289,10 +293,29 @@ export default function PayoutsPage() {
       staleTime: 30_000,
     });
 
+  const {
+    data: rebillData,
+    isLoading: rebillLoading,
+  } = useQuery<{ metrics: RebillMetrics; forecast: ForecastData }>({
+    queryKey: ["admin-payouts-rebill", month, year],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/payouts/rebill-metrics?month=${month}&year=${year}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch rebill metrics");
+      const json = await res.json();
+      return json.data;
+    },
+    staleTime: 60_000,
+  });
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["admin-payouts", month, year] });
     queryClient.invalidateQueries({
       queryKey: ["admin-payouts-summary", month, year],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["admin-payouts-rebill", month, year],
     });
   };
 
@@ -388,7 +411,17 @@ export default function PayoutsPage() {
         />
 
         {/* Summary cards */}
-        <PayoutSummaryCards summary={summary} isLoading={summaryLoading} />
+        <PayoutSummaryCards
+          summary={summary}
+          isLoading={summaryLoading}
+          rebillMetrics={rebillData?.metrics}
+          forecast={rebillData?.forecast}
+          rebillLoading={rebillLoading}
+          onCardClick={(card) => {
+            setRebillModalView(card);
+            setRebillModalOpen(true);
+          }}
+        />
 
         {/* Search + filters */}
         <div className="flex flex-col sm:flex-row gap-3">
@@ -497,6 +530,16 @@ export default function PayoutsPage() {
         onVerticalsChanged={refreshVerticals}
         referralOptions={referralOptions}
         onReferralsChanged={refreshReferrals}
+      />
+
+      <RebillDetailModal
+        open={rebillModalOpen}
+        onClose={() => setRebillModalOpen(false)}
+        view={rebillModalView}
+        metrics={rebillData?.metrics}
+        forecast={rebillData?.forecast}
+        month={month}
+        year={year}
       />
     </DashboardShell>
   );

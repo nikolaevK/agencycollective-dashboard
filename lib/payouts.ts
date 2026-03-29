@@ -49,6 +49,57 @@ export interface PayoutSummary {
   undistributedAmount: number;
 }
 
+export interface PriorMonth {
+  month: number;
+  year: number;
+  amountDue: number;
+  amountPaid: number;
+}
+
+export interface RebillAccount {
+  type: "new" | "rebill";
+  brandName: string;
+  normalizedName: string;
+  totalAmountDue: number;   // cents
+  totalAmountPaid: number;  // cents
+  salesRep: string | null;
+  vertical: string | null;
+  service: string | null;
+  recordCount: number;
+  priorMonths: PriorMonth[];
+  /** true if sales_rep says REBILL but no prior history found — admin should verify */
+  noPriorHistory?: boolean;
+  /** true if amount_paid changed from the most recent prior month — admin should verify */
+  amountChanged?: boolean;
+  /** the most recent prior month's amount_paid for comparison (cents) */
+  lastAmountPaid?: number;
+}
+
+export interface RebillMetrics {
+  newAccounts: RebillAccount[];
+  rebilledAccounts: RebillAccount[];
+  newAccountCount: number;
+  newAccountRevenue: number;    // cents
+  rebillAccountCount: number;
+  rebillAccountRevenue: number; // cents
+}
+
+export interface ForecastData {
+  projectedNewAccounts: number;
+  projectedNewRevenue: number;    // cents
+  projectedRebillRevenue: number; // cents
+  trailingMonths: number;
+  limitedData: boolean;
+  historicalData: Array<{
+    month: number;
+    year: number;
+    newCount: number;
+    newRevenue: number;
+    rebillCount: number;
+    rebillRevenue: number;
+  }>;
+}
+
 // ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
@@ -304,6 +355,25 @@ export async function getPayoutAggregatesByBrand(
   }));
 }
 
+export async function readPayoutsByNormalizedBrand(
+  clientName: string,
+  month: number,
+  year: number
+): Promise<PayoutRecord[]> {
+  await ensureMigrated();
+  const normName = clientName.toLowerCase().replace(/\s/g, "");
+  if (!normName) return [];
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT * FROM payouts
+          WHERE payout_month = ? AND payout_year = ?
+          AND LOWER(REPLACE(brand_name, ' ', '')) LIKE ?
+          ORDER BY amount_due DESC`,
+    args: [month, year, `%${normName}%`],
+  });
+  return result.rows.map(rowToPayout);
+}
+
 // ---------------------------------------------------------------------------
 // Sales Rep Options
 // ---------------------------------------------------------------------------
@@ -423,5 +493,338 @@ export async function getPayoutSummary(
     unpaidAmount: Number(row?.unpaid_amount ?? 0),
     distributedCount: Number(row?.distributed_count ?? 0),
     undistributedAmount: Number(row?.undistributed_amount ?? 0),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Brand name normalization
+// ---------------------------------------------------------------------------
+
+const BUSINESS_SUFFIXES = /\b(llc|inc|incorporated|ltd|limited|corp|corporation|co|company|group|enterprises|holdings|solutions|services|agency|consulting)\b/g;
+const LEADING_THE = /^the\b/;
+
+export function normalizeBrandName(name: string): string {
+  let s = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // strip combining marks
+    .toLowerCase()
+    .replace(/['\u2019]s\b/g, "")    // strip possessives
+    .replace(/[^a-z0-9\s]/g, "")     // strip punctuation
+    .replace(/\s+/g, " ")
+    .trim();
+  s = s.replace(LEADING_THE, "").trim();
+  s = s.replace(BUSINESS_SUFFIXES, "").trim();
+  return s.replace(/\s/g, "");       // compact key
+}
+
+// ---------------------------------------------------------------------------
+// Rebill detection
+// ---------------------------------------------------------------------------
+
+interface HistoricalEntry {
+  month: number;
+  year: number;
+  amountDue: number;
+  amountPaid: number;
+}
+
+function buildHistoricalMap(
+  rows: Row[]
+): Map<string, HistoricalEntry[]> {
+  const map = new Map<string, HistoricalEntry[]>();
+  for (const row of rows) {
+    const norm = normalizeBrandName(String(row.brand_name));
+    if (!norm) continue;
+    const entry: HistoricalEntry = {
+      month: Number(row.payout_month),
+      year: Number(row.payout_year),
+      amountDue: Number(row.amount_due ?? 0),
+      amountPaid: Number(row.amount_paid ?? 0),
+    };
+    const arr = map.get(norm);
+    if (arr) arr.push(entry);
+    else map.set(norm, [entry]);
+  }
+  return map;
+}
+
+function isRebillSalesRep(salesRep: string | null): boolean {
+  if (!salesRep) return false;
+  return salesRep.toLowerCase().includes("rebill");
+}
+
+function deduplicatePriorMonths(entries: HistoricalEntry[]): PriorMonth[] {
+  const monthMap = new Map<string, PriorMonth>();
+  for (const e of entries) {
+    const key = `${e.year}-${e.month}`;
+    const existing = monthMap.get(key);
+    if (existing) {
+      existing.amountDue += e.amountDue;
+      existing.amountPaid += e.amountPaid;
+    } else {
+      monthMap.set(key, { ...e });
+    }
+  }
+  return Array.from(monthMap.values()).sort(
+    (a, b) => a.year - b.year || a.month - b.month
+  );
+}
+
+function classifyMonth(
+  currentRecords: PayoutRecord[],
+  historicalMap: Map<string, HistoricalEntry[]>
+): RebillMetrics {
+  // Group current month records by normalized brand
+  const brandGroups = new Map<
+    string,
+    { records: PayoutRecord[]; norm: string }
+  >();
+  for (const rec of currentRecords) {
+    const norm = normalizeBrandName(rec.brandName);
+    if (!norm) continue;
+    const group = brandGroups.get(norm);
+    if (group) group.records.push(rec);
+    else brandGroups.set(norm, { records: [rec], norm });
+  }
+
+  const newAccounts: RebillAccount[] = [];
+  const rebilledAccounts: RebillAccount[] = [];
+
+  for (const [norm, { records }] of brandGroups) {
+    const totalDue = records.reduce((s, r) => s + r.amountDue, 0);
+    const totalPaid = records.reduce((s, r) => s + r.amountPaid, 0);
+    const first = records[0];
+
+    // An account is a rebill candidate if ANY record for this brand
+    // in the current month has a sales_rep containing "REBILL"
+    const hasRebillFlag = records.some((r) => isRebillSalesRep(r.salesRep));
+
+    if (!hasRebillFlag) {
+      // Not flagged as rebill → it's a new account for this month
+      newAccounts.push({
+        type: "new",
+        brandName: first.brandName,
+        normalizedName: norm,
+        totalAmountDue: totalDue,
+        totalAmountPaid: totalPaid,
+        salesRep: first.salesRep,
+        vertical: first.vertical,
+        service: first.service,
+        recordCount: records.length,
+        priorMonths: [],
+      });
+      continue;
+    }
+
+    // Has REBILL flag — search all prior months for a brand name that
+    // includes or is included by this normalized name. This handles
+    // inconsistent entries like "Inner Glow" vs "Inner Glow Services".
+    // Require the shorter side to be at least 4 chars to prevent false
+    // positives from very short names (e.g. "ace" matching "racetrack").
+    const MIN_MATCH_LEN = 4;
+    const priorEntries: HistoricalEntry[] = [];
+    for (const [histNorm, entries] of historicalMap) {
+      const shorter = norm.length <= histNorm.length ? norm : histNorm;
+      if (shorter.length < MIN_MATCH_LEN) {
+        // For very short names, require exact match only
+        if (norm === histNorm) priorEntries.push(...entries);
+      } else if (histNorm.includes(norm) || norm.includes(histNorm)) {
+        priorEntries.push(...entries);
+      }
+    }
+    const priorMonths = priorEntries.length > 0
+      ? deduplicatePriorMonths(priorEntries)
+      : [];
+
+    const hasPriorHistory = priorMonths.length > 0;
+
+    // Amount change detection: compare current amount_paid with the most
+    // recent prior month's amount_paid as a secondary verification signal
+    let amountChanged = false;
+    let lastAmountPaid: number | undefined;
+    if (hasPriorHistory) {
+      const mostRecent = priorMonths[priorMonths.length - 1];
+      lastAmountPaid = mostRecent.amountPaid;
+      if (totalPaid !== mostRecent.amountPaid) {
+        amountChanged = true;
+      }
+    }
+
+    rebilledAccounts.push({
+      type: "rebill",
+      brandName: first.brandName,
+      normalizedName: norm,
+      totalAmountDue: totalDue,
+      totalAmountPaid: totalPaid,
+      salesRep: first.salesRep,
+      vertical: first.vertical,
+      service: first.service,
+      recordCount: records.length,
+      priorMonths,
+      // Warnings for admin
+      noPriorHistory: !hasPriorHistory,
+      amountChanged,
+      lastAmountPaid,
+    });
+  }
+
+  return {
+    newAccounts,
+    rebilledAccounts,
+    newAccountCount: newAccounts.length,
+    newAccountRevenue: newAccounts.reduce((s, a) => s + a.totalAmountDue, 0),
+    rebillAccountCount: rebilledAccounts.length,
+    rebillAccountRevenue: rebilledAccounts.reduce(
+      (s, a) => s + a.totalAmountDue,
+      0
+    ),
+  };
+}
+
+export async function getRebillMetrics(
+  month: number,
+  year: number
+): Promise<RebillMetrics> {
+  await ensureMigrated();
+  const db = getDb();
+
+  // Fetch current month records AND all other records in parallel
+  const [currentResult, histResult] = await Promise.all([
+    db.execute({
+      sql: "SELECT * FROM payouts WHERE payout_month = ? AND payout_year = ?",
+      args: [month, year],
+    }),
+    db.execute({
+      sql: `SELECT brand_name, payout_month, payout_year, amount_due, amount_paid
+            FROM payouts
+            WHERE payout_year < ? OR (payout_year = ? AND payout_month < ?)`,
+      args: [year, year, month],
+    }),
+  ]);
+
+  const currentRecords = currentResult.rows.map(rowToPayout);
+  const historicalMap = buildHistoricalMap(histResult.rows);
+
+  return classifyMonth(currentRecords, historicalMap);
+}
+
+// ---------------------------------------------------------------------------
+// Forecasting
+// ---------------------------------------------------------------------------
+
+function getPriorMonths(
+  month: number,
+  year: number,
+  count: number
+): Array<{ month: number; year: number }> {
+  const result: Array<{ month: number; year: number }> = [];
+  let m = month;
+  let y = year;
+  for (let i = 0; i < count; i++) {
+    m--;
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+    result.push({ month: m, year: y });
+  }
+  return result;
+}
+
+export async function getPayoutForecast(
+  month: number,
+  year: number
+): Promise<ForecastData> {
+  await ensureMigrated();
+  const db = getDb();
+
+  const trailing = getPriorMonths(month, year, 6);
+
+  // The month before the selected one (handles Jan → Dec of prior year)
+  let prevMonth = month - 1;
+  let prevYear = year;
+  if (prevMonth < 1) {
+    prevMonth = 12;
+    prevYear--;
+  }
+
+  // Fetch ALL records up to and including the trailing period in one query
+  const allResult = await db.execute({
+    sql: `SELECT * FROM payouts
+          WHERE payout_year < ? OR (payout_year = ? AND payout_month <= ?)`,
+    args: [prevYear, prevYear, prevMonth],
+  });
+
+  // Group all records by month
+  const allRows = allResult.rows;
+  const byMonth = new Map<string, Row[]>();
+  for (const row of allRows) {
+    const key = `${row.payout_year}-${row.payout_month}`;
+    const arr = byMonth.get(key);
+    if (arr) arr.push(row);
+    else byMonth.set(key, [row]);
+  }
+
+  // For each trailing month, compute rebill metrics
+  const historicalData: ForecastData["historicalData"] = [];
+  for (const t of trailing) {
+    const key = `${t.year}-${t.month}`;
+    const monthRows = byMonth.get(key);
+    if (!monthRows || monthRows.length === 0) continue;
+
+    // Build historical map for everything BEFORE this trailing month
+    const histRows = allRows.filter((r) => {
+      const ry = Number(r.payout_year);
+      const rm = Number(r.payout_month);
+      return ry < t.year || (ry === t.year && rm < t.month);
+    });
+    const histMap = buildHistoricalMap(histRows);
+    const monthRecords = monthRows.map(rowToPayout);
+    const metrics = classifyMonth(monthRecords, histMap);
+
+    historicalData.push({
+      month: t.month,
+      year: t.year,
+      newCount: metrics.newAccountCount,
+      newRevenue: metrics.newAccountRevenue,
+      rebillCount: metrics.rebillAccountCount,
+      rebillRevenue: metrics.rebillAccountRevenue,
+    });
+  }
+
+  // Weighted moving average (most recent = highest weight)
+  const n = historicalData.length;
+  if (n === 0) {
+    return {
+      projectedNewAccounts: 0,
+      projectedNewRevenue: 0,
+      projectedRebillRevenue: 0,
+      trailingMonths: 0,
+      limitedData: true,
+      historicalData: [],
+    };
+  }
+
+  // historicalData[0] is the most recent trailing month
+  let weightSum = 0;
+  let wNewAccounts = 0;
+  let wNewRevenue = 0;
+  let wRebillRevenue = 0;
+  for (let i = 0; i < n; i++) {
+    const weight = n - i; // most recent gets highest weight
+    const d = historicalData[i];
+    wNewAccounts += d.newCount * weight;
+    wNewRevenue += d.newRevenue * weight;
+    wRebillRevenue += d.rebillRevenue * weight;
+    weightSum += weight;
+  }
+
+  return {
+    projectedNewAccounts: Math.round(wNewAccounts / weightSum),
+    projectedNewRevenue: Math.round(wNewRevenue / weightSum),
+    projectedRebillRevenue: Math.round(wRebillRevenue / weightSum),
+    trailingMonths: n,
+    limitedData: n < 3,
+    historicalData,
   };
 }

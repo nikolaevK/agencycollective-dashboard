@@ -31,6 +31,7 @@ import type { ClientPublic } from "@/components/users/types";
 import type { ClientAccount } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
+import { MrrDetailModal } from "@/components/users/MrrDetailModal";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -277,6 +278,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
+  const [showMrrDetail, setShowMrrDetail] = useState(false);
 
   const { dateRange } = useDateRange();
   const { data: allMetaAccounts } = useAccounts(dateRange);
@@ -419,7 +421,16 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-6 border-t border-border/50">
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Monthly MRR</p>
-                <p className="text-xl font-black text-foreground">{formatMrr(client.payoutMrr)}</p>
+                {client.payoutMrr > 0 ? (
+                  <button
+                    onClick={() => setShowMrrDetail(true)}
+                    className="text-xl font-black text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-4 hover:decoration-emerald-600 dark:hover:decoration-emerald-400 transition-colors"
+                  >
+                    {formatMrr(client.payoutMrr)}
+                  </button>
+                ) : (
+                  <p className="text-xl font-black text-foreground">{formatMrr(client.payoutMrr)}</p>
+                )}
               </div>
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Total Revenue</p>
@@ -511,6 +522,14 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             client={client}
             onClose={() => setShowAccounts(false)}
             onUpdated={() => refetch()}
+          />
+        )}
+        {showMrrDetail && (
+          <MrrDetailModal
+            open={showMrrDetail}
+            onClose={() => setShowMrrDetail(false)}
+            clientName={client.displayName}
+            mrrCents={client.payoutMrr}
           />
         )}
       </div>
