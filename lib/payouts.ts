@@ -518,6 +518,24 @@ export function normalizeBrandName(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Brand matching
+// ---------------------------------------------------------------------------
+
+const MIN_MATCH_LEN = 4;
+
+/**
+ * Check whether two already-normalised brand names refer to the same client.
+ * Uses substring-includes with a 4-char minimum to prevent false positives.
+ */
+export function brandsMatch(normA: string, normB: string): boolean {
+  const shorter = normA.length <= normB.length ? normA : normB;
+  if (shorter.length < MIN_MATCH_LEN) {
+    return normA === normB;
+  }
+  return normA.includes(normB) || normB.includes(normA);
+}
+
+// ---------------------------------------------------------------------------
 // Rebill detection
 // ---------------------------------------------------------------------------
 
@@ -619,16 +637,9 @@ function classifyMonth(
     // Has REBILL flag — search all prior months for a brand name that
     // includes or is included by this normalized name. This handles
     // inconsistent entries like "Inner Glow" vs "Inner Glow Services".
-    // Require the shorter side to be at least 4 chars to prevent false
-    // positives from very short names (e.g. "ace" matching "racetrack").
-    const MIN_MATCH_LEN = 4;
     const priorEntries: HistoricalEntry[] = [];
     for (const [histNorm, entries] of historicalMap) {
-      const shorter = norm.length <= histNorm.length ? norm : histNorm;
-      if (shorter.length < MIN_MATCH_LEN) {
-        // For very short names, require exact match only
-        if (norm === histNorm) priorEntries.push(...entries);
-      } else if (histNorm.includes(norm) || norm.includes(histNorm)) {
+      if (brandsMatch(norm, histNorm)) {
         priorEntries.push(...entries);
       }
     }

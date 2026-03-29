@@ -496,5 +496,34 @@ export async function migrate(): Promise<void> {
     console.warn("[migrate] Could not create idx_onboarding_user:", err);
   }
 
+  // ── Payout documents table ───────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS payout_documents (
+      id                TEXT PRIMARY KEY,
+      normalized_brand  TEXT NOT NULL,
+      brand_name        TEXT NOT NULL,
+      doc_type          TEXT NOT NULL CHECK (doc_type IN ('project_scope', 'invoice')),
+      file_name         TEXT NOT NULL,
+      file_path         TEXT NOT NULL,
+      file_size         INTEGER NOT NULL DEFAULT 0,
+      payout_month      INTEGER,
+      payout_year       INTEGER,
+      uploaded_by       TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_payout_docs_brand ON payout_documents(normalized_brand)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_payout_docs_brand:", err);
+  }
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_payout_docs_type ON payout_documents(doc_type)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_payout_docs_type:", err);
+  }
+
   console.log("[migrate] Database migration complete");
 }

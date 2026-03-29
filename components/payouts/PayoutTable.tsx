@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal, Pencil, Trash2, StickyNote, Briefcase, Plus, X, GitBranch, UserCircle } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, StickyNote, Briefcase, Plus, X, GitBranch, UserCircle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
 import { SortHeader } from "@/components/ui/SortHeader";
@@ -992,12 +992,14 @@ function ActionsDropdown({
   payout,
   onEdit,
   onDelete,
+  onViewDocs,
   onClose,
   anchorRef,
 }: {
   payout: PayoutRecord;
   onEdit: (p: PayoutRecord) => void;
   onDelete: (id: string) => void;
+  onViewDocs: (brandName: string) => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLButtonElement | null>;
 }) {
@@ -1007,7 +1009,7 @@ function ActionsDropdown({
     if (!anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
-    const top = spaceBelow >= 100 ? rect.bottom + 4 : rect.top - 96;
+    const top = spaceBelow >= 140 ? rect.bottom + 4 : rect.top - 136;
     setPos({ top: Math.max(4, top), left: rect.right - 192 });
   }, [anchorRef]);
 
@@ -1030,6 +1032,15 @@ function ActionsDropdown({
         <button
           onClick={() => {
             onClose();
+            onViewDocs(payout.brandName);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+        >
+          <FileText className="h-3.5 w-3.5" /> Documents
+        </button>
+        <button
+          onClick={() => {
+            onClose();
             onDelete(payout.id);
           }}
           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
@@ -1046,10 +1057,12 @@ function ActionsCell({
   payout,
   onEdit,
   onDelete,
+  onViewDocs,
 }: {
   payout: PayoutRecord;
   onEdit: (p: PayoutRecord) => void;
   onDelete: (id: string) => void;
+  onViewDocs: (brandName: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -1069,6 +1082,7 @@ function ActionsCell({
           payout={payout}
           onEdit={onEdit}
           onDelete={onDelete}
+          onViewDocs={onViewDocs}
           onClose={() => setOpen(false)}
           anchorRef={btnRef}
         />
@@ -1168,6 +1182,7 @@ interface PayoutTableProps {
   payouts: PayoutRecord[];
   isLoading: boolean;
   onEdit: (payout: PayoutRecord) => void;
+  onViewDocs: (brandName: string) => void;
   onRefresh: () => void;
   salesRepOptions: string[];
   onSalesRepsChanged: () => void;
@@ -1190,6 +1205,7 @@ export function PayoutTable({
   payouts,
   isLoading,
   onEdit,
+  onViewDocs,
   onRefresh,
   salesRepOptions,
   onSalesRepsChanged,
@@ -1312,6 +1328,9 @@ export function PayoutTable({
                 </th>
                 <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
                   Notes
+                </th>
+                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
+                  Docs
                 </th>
                 <th className="px-2 py-3 w-10" />
               </tr>
@@ -1457,11 +1476,21 @@ export function PayoutTable({
                       <span className="text-muted-foreground/40">{"\u2014"}</span>
                     )}
                   </td>
+                  <td className="px-3 py-3 text-center">
+                    <button
+                      onClick={() => onViewDocs(p.brandName)}
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-md text-blue-500 hover:bg-blue-500/10 transition-colors"
+                      title="View documents"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
                   <td className="px-2 py-3">
                     <ActionsCell
                       payout={p}
                       onEdit={onEdit}
                       onDelete={setDeleteId}
+                      onViewDocs={onViewDocs}
                     />
                   </td>
                 </tr>
@@ -1522,12 +1551,20 @@ export function PayoutTable({
                       View Service
                     </button>
                   )}
+                  <button
+                    onClick={() => onViewDocs(p.brandName)}
+                    className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 transition-colors"
+                  >
+                    <FileText className="h-3 w-3" />
+                    Docs
+                  </button>
                 </div>
               </div>
               <ActionsCell
                 payout={p}
                 onEdit={onEdit}
                 onDelete={setDeleteId}
+                onViewDocs={onViewDocs}
               />
             </div>
 

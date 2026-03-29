@@ -11,6 +11,7 @@ import type { MetricCardType } from "@/components/payouts/PayoutSummaryCards";
 import { PayoutTable } from "@/components/payouts/PayoutTable";
 import { AddEditPayoutModal } from "@/components/payouts/AddEditPayoutModal";
 import { RebillDetailModal } from "@/components/payouts/RebillDetailModal";
+import { BrandDocumentsModal } from "@/components/payouts/BrandDocumentsModal";
 import type { PayoutRecord, PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
 import { cn } from "@/lib/utils";
 
@@ -215,6 +216,7 @@ export default function PayoutsPage() {
   const [editingPayout, setEditingPayout] = useState<PayoutRecord | null>(null);
   const [rebillModalOpen, setRebillModalOpen] = useState(false);
   const [rebillModalView, setRebillModalView] = useState<MetricCardType>("new");
+  const [docsModalBrand, setDocsModalBrand] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -495,6 +497,7 @@ export default function PayoutsPage() {
           payouts={filtered}
           isLoading={isLoading}
           onEdit={handleEdit}
+          onViewDocs={setDocsModalBrand}
           onRefresh={refresh}
           salesRepOptions={salesRepOptions}
           onSalesRepsChanged={refreshSalesReps}
@@ -541,6 +544,16 @@ export default function PayoutsPage() {
         month={month}
         year={year}
       />
+
+      {docsModalBrand && (
+        <BrandDocumentsModal
+          open={!!docsModalBrand}
+          onClose={() => setDocsModalBrand(null)}
+          brandName={docsModalBrand}
+          defaultMonth={month}
+          defaultYear={year}
+        />
+      )}
     </DashboardShell>
   );
 }
