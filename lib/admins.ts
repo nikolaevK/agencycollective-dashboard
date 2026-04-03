@@ -30,6 +30,7 @@ function rowToAdmin(row: Row): AdminRecord {
       studio: Number(row.perm_studio) === 1,
       jsoneditor: Number(row.perm_jsoneditor) === 1,
       adcopy: Number(row.perm_adcopy) === 1,
+      invoice: Number(row.perm_invoice) === 1,
       users: Number(row.perm_users) === 1,
       closers: Number(row.perm_closers) === 1,
       admin: Number(row.perm_admin) === 1,
@@ -84,8 +85,8 @@ export async function insertAdmin(
       id, username, password_hash, is_super,
       display_name, email, avatar_path, role,
       perm_dashboard, perm_analyst, perm_studio, perm_jsoneditor,
-      perm_adcopy, perm_users, perm_closers, perm_admin
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      perm_adcopy, perm_invoice, perm_users, perm_closers, perm_admin
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       admin.id,
       admin.username,
@@ -100,6 +101,7 @@ export async function insertAdmin(
       perms.studio ? 1 : 0,
       perms.jsoneditor ? 1 : 0,
       perms.adcopy ? 1 : 0,
+      perms.invoice ? 1 : 0,
       perms.users ? 1 : 0,
       perms.closers ? 1 : 0,
       perms.admin ? 1 : 0,
@@ -150,6 +152,7 @@ export async function updateAdmin(
     if (p.studio !== undefined) { fields.push("perm_studio = ?"); args.push(p.studio ? 1 : 0); }
     if (p.jsoneditor !== undefined) { fields.push("perm_jsoneditor = ?"); args.push(p.jsoneditor ? 1 : 0); }
     if (p.adcopy !== undefined) { fields.push("perm_adcopy = ?"); args.push(p.adcopy ? 1 : 0); }
+    if (p.invoice !== undefined) { fields.push("perm_invoice = ?"); args.push(p.invoice ? 1 : 0); }
     if (p.users !== undefined) { fields.push("perm_users = ?"); args.push(p.users ? 1 : 0); }
     if (p.closers !== undefined) { fields.push("perm_closers = ?"); args.push(p.closers ? 1 : 0); }
     if (p.admin !== undefined) { fields.push("perm_admin = ?"); args.push(p.admin ? 1 : 0); }

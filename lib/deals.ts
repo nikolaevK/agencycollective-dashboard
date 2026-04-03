@@ -10,6 +10,7 @@ export interface DealRecord {
   closerId: string;
   clientName: string;
   clientUserId: string | null;
+  clientEmail: string | null;
   dealValue: number; // cents
   serviceCategory: string | null;
   industry: string | null;
@@ -18,6 +19,7 @@ export interface DealRecord {
   showStatus: ShowStatus;
   notes: string | null;
   googleEventId: string | null;
+  paymentType: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +34,7 @@ function rowToDeal(row: Row): DealRecord {
     closerId: String(row.closer_id),
     clientName: String(row.client_name),
     clientUserId: row.client_user_id != null ? String(row.client_user_id) : null,
+    clientEmail: row.client_email != null ? String(row.client_email) : null,
     dealValue: Number(row.deal_value ?? 0),
     serviceCategory: row.service_category != null ? String(row.service_category) : null,
     industry: row.industry != null ? String(row.industry) : null,
@@ -40,6 +43,7 @@ function rowToDeal(row: Row): DealRecord {
     showStatus: row.show_status != null ? (String(row.show_status) as "showed" | "no_show") : null,
     notes: row.notes != null ? String(row.notes) : null,
     googleEventId: row.google_event_id != null ? String(row.google_event_id) : null,
+    paymentType: String(row.payment_type ?? "local"),
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -78,13 +82,14 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
       deal.clientName,
       deal.clientUserId,
+      deal.clientEmail,
       deal.dealValue,
       deal.serviceCategory,
       deal.industry,
@@ -93,6 +98,7 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.showStatus,
       deal.notes,
       deal.googleEventId,
+      deal.paymentType ?? "local",
     ],
   });
 }
@@ -144,6 +150,14 @@ export async function updateDeal(
     fields.push("google_event_id = ?");
     args.push(changes.googleEventId);
   }
+  if (changes.clientEmail !== undefined) {
+    fields.push("client_email = ?");
+    args.push(changes.clientEmail);
+  }
+  if (changes.paymentType !== undefined) {
+    fields.push("payment_type = ?");
+    args.push(changes.paymentType);
+  }
 
   if (fields.length === 0) return;
 
@@ -161,6 +175,8 @@ export async function updateDeal(
 export async function deleteDeal(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
+  // Delete linked invoice first
+  await db.execute({ sql: "DELETE FROM deal_invoices WHERE deal_id = ?", args: [id] });
   const result = await db.execute({
     sql: "DELETE FROM deals WHERE id = ?",
     args: [id],

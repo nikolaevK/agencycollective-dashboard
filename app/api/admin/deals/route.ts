@@ -6,6 +6,7 @@ import { findAdmin } from "@/lib/admins";
 import { readDeals, findDeal, updateDeal, deleteDeal } from "@/lib/deals";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,7 +43,16 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ data: deals });
+  // Attach invoice statuses
+  const dealIds = deals.map((d) => d.id);
+  const invoiceStatuses = await getDealInvoiceStatuses(dealIds);
+  const dealsWithInvoice = deals.map((d) => ({
+    ...d,
+    invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
+    invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
+  }));
+
+  return NextResponse.json({ data: dealsWithInvoice });
 }
 
 export async function PATCH(request: Request) {
@@ -80,6 +90,8 @@ export async function PATCH(request: Request) {
     }
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;
     if (body.clientUserId !== undefined) changes.clientUserId = body.clientUserId ? String(body.clientUserId).trim() : null;
+    if (body.clientEmail !== undefined) changes.clientEmail = body.clientEmail ? String(body.clientEmail).trim() : null;
+    if (body.paymentType !== undefined) changes.paymentType = String(body.paymentType).trim() || "local";
     if (body.showStatus !== undefined) changes.showStatus = body.showStatus ? String(body.showStatus).trim() as "showed" | "no_show" : null;
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
@@ -89,6 +101,19 @@ export async function PATCH(request: Request) {
     }
 
     await updateDeal(id, changes);
+
+    // Sync email to linked invoice when clientEmail changes
+    if (changes.clientEmail !== undefined) {
+      const invoice = await findDealInvoiceByDealId(id);
+      if (invoice) {
+        const invoiceData = invoice.invoiceData;
+        invoiceData.receiver.email = changes.clientEmail || "";
+        await updateDealInvoice(invoice.id, {
+          clientEmail: changes.clientEmail,
+          invoiceData: JSON.stringify(invoiceData),
+        });
+      }
+    }
 
     logAuditEvent({
       adminId: admin.id,

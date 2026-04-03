@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";
 import { readDealsByCloser, findDeal, deleteDeal, updateDeal } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 
 export async function GET() {
   const session = getCloserSession();
@@ -12,7 +13,17 @@ export async function GET() {
   }
 
   const deals = await readDealsByCloser(session.closerId);
-  return NextResponse.json({ data: deals });
+
+  // Attach invoice statuses
+  const dealIds = deals.map((d) => d.id);
+  const invoiceStatuses = await getDealInvoiceStatuses(dealIds);
+  const dealsWithInvoice = deals.map((d) => ({
+    ...d,
+    invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
+    invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
+  }));
+
+  return NextResponse.json({ data: dealsWithInvoice });
 }
 
 export async function PATCH(request: Request) {
@@ -61,6 +72,8 @@ export async function PATCH(request: Request) {
       changes.status = s as "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
     }
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;
+    if (body.clientEmail !== undefined) changes.clientEmail = body.clientEmail ? String(body.clientEmail).trim() : null;
+    if (body.paymentType !== undefined) changes.paymentType = String(body.paymentType).trim() || "local";
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {
@@ -69,6 +82,20 @@ export async function PATCH(request: Request) {
     }
 
     await updateDeal(id, changes);
+
+    // Sync email to linked invoice when clientEmail changes
+    if (changes.clientEmail !== undefined) {
+      const invoice = await findDealInvoiceByDealId(id);
+      if (invoice) {
+        const invoiceData = invoice.invoiceData;
+        invoiceData.receiver.email = changes.clientEmail || "";
+        await updateDealInvoice(invoice.id, {
+          clientEmail: changes.clientEmail,
+          invoiceData: JSON.stringify(invoiceData),
+        });
+      }
+    }
+
     const updated = await findDeal(id);
     return NextResponse.json({ data: updated });
   } catch (err) {

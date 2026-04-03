@@ -8,6 +8,7 @@ import type { DealPublic } from "@/components/closers/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
+import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { format } from "date-fns";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -53,8 +54,13 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
+interface DealWithInvoice extends DealPublic {
+  invoiceStatus?: string | null;
+  invoiceNumber?: string | null;
+}
+
 interface Props {
-  deals: DealPublic[];
+  deals: DealWithInvoice[];
 }
 
 export function CloserRecentDeals({ deals }: Props) {
@@ -117,7 +123,14 @@ export function CloserRecentDeals({ deals }: Props) {
                       </span>
                     </td>
                     <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
-                    <td className="px-5 py-3"><DealStatusBadge status={deal.status} /></td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <DealStatusBadge status={deal.status} />
+                        {deal.invoiceStatus && (
+                          <DealInvoiceStatusBadge status={deal.invoiceStatus} />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3 text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</td>
                     <td className="px-5 py-3 text-right">
                       <button
@@ -157,6 +170,9 @@ export function CloserRecentDeals({ deals }: Props) {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <DealStatusBadge status={deal.status} />
+                  {deal.invoiceStatus && (
+                    <DealInvoiceStatusBadge status={deal.invoiceStatus} />
+                  )}
                   <span className="text-sm font-semibold text-foreground">
                     {formatCents(deal.dealValue)}
                   </span>

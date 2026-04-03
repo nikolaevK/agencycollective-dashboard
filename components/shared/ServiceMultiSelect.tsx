@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check, Briefcase } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { SERVICES_PURCHASED } from "@/components/closers/types";
 
 const INPUT_CLS =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
@@ -17,6 +17,18 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Fetch preset services from DB
+  const { data: serviceNames = [] } = useQuery<string[]>({
+    queryKey: ["service-names-for-deals"],
+    queryFn: async () => {
+      const res = await fetch("/api/services");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.data ?? []).map((s: { name: string }) => s.name);
+    },
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -28,7 +40,7 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const allSelected = value.length === SERVICES_PURCHASED.length;
+  const allSelected = serviceNames.length > 0 && value.length === serviceNames.length;
 
   function toggleItem(item: string) {
     if (value.includes(item)) {
@@ -42,14 +54,14 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
     if (allSelected) {
       onChange([]);
     } else {
-      onChange([...SERVICES_PURCHASED]);
+      onChange([...serviceNames]);
     }
   }
 
   const displayText =
     value.length === 0
       ? "Select services..."
-      : value.length === SERVICES_PURCHASED.length
+      : allSelected
         ? "All services"
         : value.join(", ");
 
@@ -90,7 +102,7 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
           </button>
 
           {/* Individual items */}
-          {SERVICES_PURCHASED.map((item) => {
+          {serviceNames.map((item) => {
             const checked = value.includes(item);
             return (
               <button
@@ -111,6 +123,10 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
               </button>
             );
           })}
+
+          {serviceNames.length === 0 && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">No services configured</p>
+          )}
         </div>
       )}
     </div>

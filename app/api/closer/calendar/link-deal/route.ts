@@ -6,6 +6,8 @@ import { getCloserSession } from "@/lib/closerSession";
 import { insertDeal } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
+import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 
 export async function POST(request: Request) {
   const session = getCloserSession();
@@ -28,6 +30,9 @@ export async function POST(request: Request) {
     const status = String(body.status ?? "closed").trim();
     const notes = String(body.notes ?? "").trim() || null;
     const clientUserId = String(body.clientUserId ?? "").trim() || null;
+    const rawEmail = String(body.clientEmail ?? "").trim();
+    const clientEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && rawEmail.length <= 254 ? rawEmail : null;
+    const paymentType = String(body.paymentType ?? "local").trim() || "local";
 
     if (!eventTitle) {
       return NextResponse.json({ error: "Event title is required" }, { status: 400 });
@@ -46,6 +51,7 @@ export async function POST(request: Request) {
       closerId: session.closerId,
       clientName: eventTitle,
       clientUserId,
+      clientEmail,
       dealValue: Math.round(dealValue * 100), // dollars to cents
       serviceCategory,
       industry,
@@ -54,6 +60,7 @@ export async function POST(request: Request) {
       showStatus: status === "closed" ? "showed" : null,
       notes,
       googleEventId: eventId || null,
+      paymentType,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -61,6 +68,26 @@ export async function POST(request: Request) {
     // Auto-mark attendance as "showed" when deal is closed
     if (status === "closed" && eventId) {
       await setEventAttendance(eventId, session.closerId, "showed");
+    }
+
+    // Auto-generate invoice for closed deals
+    if (status === "closed" && dealValue > 0) {
+      try {
+        const dealValueCents = Math.round(dealValue * 100);
+        const invoiceNumber = await generateInvoiceNumber();
+        const deal = { id, closerId: session.closerId, clientName: eventTitle, clientUserId, clientEmail, dealValue: dealValueCents, serviceCategory, industry, closingDate: eventDate, status: status as "closed", showStatus: "showed" as const, notes, googleEventId: eventId || null, paymentType, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
+        await insertDealInvoice({
+          id: crypto.randomUUID(),
+          dealId: id,
+          invoiceNumber,
+          invoiceData: JSON.stringify(invoiceData),
+          clientEmail,
+          createdBy: session.closerId,
+        });
+      } catch (err) {
+        console.error("[link-deal] Invoice generation failed:", err instanceof Error ? err.message : err);
+      }
     }
 
     return NextResponse.json({ data: { id } }, { status: 201 });

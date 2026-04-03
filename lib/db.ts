@@ -105,6 +105,7 @@ export async function migrate(): Promise<void> {
       perm_studio    INTEGER NOT NULL DEFAULT 0,
       perm_jsoneditor INTEGER NOT NULL DEFAULT 0,
       perm_adcopy    INTEGER NOT NULL DEFAULT 0,
+      perm_invoice   INTEGER NOT NULL DEFAULT 0,
       perm_users     INTEGER NOT NULL DEFAULT 0,
       perm_closers   INTEGER NOT NULL DEFAULT 0,
       perm_admin     INTEGER NOT NULL DEFAULT 0
@@ -154,6 +155,7 @@ export async function migrate(): Promise<void> {
         perm_studio    INTEGER NOT NULL DEFAULT 0,
         perm_jsoneditor INTEGER NOT NULL DEFAULT 0,
         perm_adcopy    INTEGER NOT NULL DEFAULT 0,
+        perm_invoice   INTEGER NOT NULL DEFAULT 0,
         perm_users     INTEGER NOT NULL DEFAULT 0,
         perm_closers   INTEGER NOT NULL DEFAULT 0,
         perm_admin     INTEGER NOT NULL DEFAULT 0
@@ -183,13 +185,21 @@ export async function migrate(): Promise<void> {
     console.log("[migrate] Added perm_jsoneditor column to admins");
   }
 
+  // ── Add perm_invoice column to existing admins tables ──────────────
+  try {
+    await db.execute(`SELECT perm_invoice FROM admins LIMIT 0`);
+  } catch {
+    await db.execute(`ALTER TABLE admins ADD COLUMN perm_invoice INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migrate] Added perm_invoice column to admins");
+  }
+
   // ── Set permissions for seed super admin (idempotent) ──────────────
   await db.execute(`
     UPDATE admins
     SET display_name = 'Agency Collective',
         role = 'super_admin',
         perm_dashboard = 1, perm_analyst = 1, perm_studio = 1, perm_jsoneditor = 1,
-        perm_adcopy = 1, perm_users = 1, perm_closers = 1, perm_admin = 1
+        perm_adcopy = 1, perm_invoice = 1, perm_users = 1, perm_closers = 1, perm_admin = 1
     WHERE id = 'agencycollective' AND display_name IS NULL
   `);
 
@@ -540,6 +550,150 @@ export async function migrate(): Promise<void> {
     await db.execute(`ALTER TABLE payout_documents ADD COLUMN file_data BLOB`);
   } catch {
     // column already exists
+  }
+
+  // ── Add client_email to deals (if not present) ──────────────────
+  try {
+    await db.execute(`SELECT client_email FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN client_email TEXT`);
+      console.log("[migrate] Added client_email column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add client_email column:", err);
+    }
+  }
+
+  // ── Invoice services table (admin-managed presets) ──────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS invoice_services (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      description     TEXT NOT NULL DEFAULT '',
+      rate            INTEGER NOT NULL DEFAULT 0,
+      deal_service_key TEXT,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Seed default invoice services if empty ───────────────────────
+  {
+    const cnt = await db.execute("SELECT COUNT(*) as cnt FROM invoice_services");
+    if (Number(cnt.rows[0]?.cnt ?? 0) === 0) {
+      const seeds: [string, string, number, string | null][] = [
+        ["Ad Creatives Creation Retainer", "Creative Strategy & Concepts\nAd Copy & Messaging\nVisual Assets & Templates\nReady to use Ad Creatives", 200000, "Creative Design"],
+        ["Ad Management Retainer", "Full-funnel ad strategy & creative direction.\nCampaign setup, audience building, and optimization.\nReporting dashboards and insights.", 500000, "Meta Ads"],
+        ["All-In-One Peptide Marketing for Startups", "Meta Ads + Creative Production + Email Marketing (No SMS)", 550000, null],
+        ["All-In-One Telemed Marketing Package", "Meta Ads + Creative Production + Email Marketing (No SMS)", 550000, null],
+        ["Email Marketing", "Complete email strategy & setup\n3 core flows\n1-2 campaigns per month\nList segmentation & reporting", 150000, "Email Marketing"],
+        ["Email Retainer", "Email & SMS Flows\nAbandonment Cart Recovery\nEmail & SMS Campaigns\nAutomated Flow Optimization", 200000, null],
+        ["Premium Package", "Meta Ads + Unlimited Creatives + Email & SMS Marketing\nDedicated support & consultation", 1200000, null],
+        ["Web Development - Research Peptides", "Website Setup & Customization\nPayment & Compliance Integration", 300000, "Web Design"],
+      ];
+      for (let i = 0; i < seeds.length; i++) {
+        const [name, desc, rate, key] = seeds[i];
+        await db.execute({
+          sql: `INSERT INTO invoice_services (id, name, description, rate, deal_service_key, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [crypto.randomUUID(), name, desc, rate, key, i],
+        });
+      }
+      console.log("[migrate] Seeded default invoice services");
+    }
+  }
+
+  // ── Deal invoices table ─────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS deal_invoices (
+      id              TEXT PRIMARY KEY,
+      deal_id         TEXT NOT NULL UNIQUE,
+      invoice_number  TEXT NOT NULL UNIQUE,
+      invoice_data    TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'draft',
+      client_email    TEXT,
+      sent_at         TEXT,
+      sent_count      INTEGER NOT NULL DEFAULT 0,
+      created_by      TEXT,
+      sent_by         TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_invoices_deal_id ON deal_invoices(deal_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_invoices_status ON deal_invoices(status)`);
+  } catch {
+    // indexes may already exist
+  }
+
+  // ── Add pdf_data BLOB column to deal_invoices ───────────────────
+  try {
+    await db.execute(`SELECT pdf_data FROM deal_invoices LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deal_invoices ADD COLUMN pdf_data BLOB`);
+      console.log("[migrate] Added pdf_data column to deal_invoices");
+    } catch {
+      // already exists
+    }
+  }
+
+  // ── Add payment_type to deals (if not present) ──────────────────
+  try {
+    await db.execute(`SELECT payment_type FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN payment_type TEXT NOT NULL DEFAULT 'local'`);
+      console.log("[migrate] Added payment_type column to deals");
+    } catch {
+      // already exists
+    }
+  }
+
+  // ── Agency config table ─────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS agency_config (
+      id              TEXT PRIMARY KEY,
+      config_key      TEXT NOT NULL UNIQUE,
+      config_value    TEXT NOT NULL,
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Seed agency config if empty
+  {
+    const cnt = await db.execute("SELECT COUNT(*) as cnt FROM agency_config");
+    if (Number(cnt.rows[0]?.cnt ?? 0) === 0) {
+      const sender = JSON.stringify({
+        name: "Agency Collective LLC",
+        address: "30 N Gould St",
+        city: "Sheridan",
+        zipCode: "82801",
+        country: "WY, USA",
+        email: "sales@agencycollective.ai",
+        phone: "+1 (310) 559-1655",
+      });
+      const noteLocal = "Payment through Wire or Zelle\n\nZelle info:\nPhone number: 3109805141\n\nWire info:\nAccount number: 4215126533380992\nRouting number: 121145433\nBank Name: Column N.A.\nBank Address:\n1 Letterman Drive, Building A,\nSuite A4-700\nSan Francisco, CA 94129\nUSA\n\nBeneficiary Name: AGENCY COLLECTIVE LLC\nBeneficiary Address: 30 North Gould Street, #25048\nSheridan, WY 82801\nUSA\n\nDigital Service/Work - Non Refundable";
+      const noteInternational = "Payment through Wire\n\nWire info:\nSWIFT / BIC Code: CLNOUS66MER\nAccount number: 421512653380992\nRouting number: 121145433\nIf the sending bank doesn't recognize this ABA Routing Number,\nplease use: 121145307\n\nBank Name: Column N.A.\nBank Address:\n1 Letterman Drive, Building A,\nSuite A4-700\nSan Francisco, CA 94129\nUSA\n\nBeneficiary Name: AGENCY COLLECTIVE LLC\nBeneficiary Address: 30 North Gould Street, #25046\nSheridan, WY 82801\nUSA\n\nDigital Service/Work - Non Refundable";
+
+      await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "sender", sender] });
+      await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "note_local", noteLocal] });
+      await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "note_international", noteInternational] });
+      console.log("[migrate] Seeded agency config");
+    }
+  }
+
+  // Seed default_logo and default_theme_color if not present
+  {
+    const logoCheck = await db.execute({ sql: "SELECT id FROM agency_config WHERE config_key = ?", args: ["default_logo"] });
+    if (logoCheck.rows.length === 0) {
+      await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "default_logo", ""] });
+    }
+    const themeCheck = await db.execute({ sql: "SELECT id FROM agency_config WHERE config_key = ?", args: ["default_theme_color"] });
+    if (themeCheck.rows.length === 0) {
+      await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "default_theme_color", "#475569"] });
+    }
   }
 
   console.log("[migrate] Database migration complete");

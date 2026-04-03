@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, Handshake, Braces } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -23,6 +23,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/generate", label: "Image Generator", icon: ImageIcon, perm: "studio" },
   { href: "/dashboard/json-editor", label: "JSON Editor", icon: Braces, perm: "jsoneditor" },
   { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool, perm: "adcopy" },
+  { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
   { href: "/dashboard/users", label: "Users", icon: Users, perm: "users" },
   { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
   { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },

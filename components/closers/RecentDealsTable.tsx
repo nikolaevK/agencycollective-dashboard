@@ -12,9 +12,16 @@ import type { DealStatus } from "@/lib/deals";
 import { useQueryClient } from "@tanstack/react-query";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
+import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
+import { DealInvoiceDrawer } from "@/components/closers/DealInvoiceDrawer";
+
+interface DealWithInvoice extends DealPublic {
+  invoiceStatus?: string | null;
+  invoiceNumber?: string | null;
+}
 
 interface RecentDealsTableProps {
-  deals: DealPublic[];
+  deals: DealWithInvoice[];
   adminMode?: boolean;
   closerId?: string;
 }
@@ -165,7 +172,7 @@ function EditDealModal({
   onSaved: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
@@ -193,6 +200,8 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
+  const [invoiceDealId, setInvoiceDealId] = useState<string | null>(null);
+  const invoiceDeal = deals.find((d) => d.id === invoiceDealId);
   const [isPending, startTransition] = useTransition();
   const queryClient = useQueryClient();
 
@@ -214,6 +223,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
       setConfirmDeleteId(null);
       queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
       queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
     });
   }
 
@@ -221,6 +231,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
     setEditDeal(null);
     queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
     queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
   }
 
   return (
@@ -285,7 +296,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                         <span className="font-semibold text-foreground">{formatCents(deal.dealValue)}</span>
                       </td>
                       <td className="py-3 pr-4">
-                        <DealStatusBadge status={deal.status} />
+                        <div className="flex items-center gap-1.5">
+                          <DealStatusBadge status={deal.status} />
+                          {deal.invoiceStatus && (
+                            <DealInvoiceStatusBadge
+                              status={deal.invoiceStatus}
+                              onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
+                              isAdmin={adminMode}
+                            />
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 pr-4 text-muted-foreground">
                         {formatDealDate(deal.closingDate || deal.createdAt)}
@@ -337,7 +357,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-foreground text-sm">{formatCents(deal.dealValue)}</span>
-                    <DealStatusBadge status={deal.status} />
+                    <div className="flex items-center gap-1.5">
+                      <DealStatusBadge status={deal.status} />
+                      {deal.invoiceStatus && (
+                        <DealInvoiceStatusBadge
+                          status={deal.invoiceStatus}
+                          onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
+                          isAdmin={adminMode}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -361,9 +390,18 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
         />
       )}
 
+      {/* Invoice review drawer */}
+      {adminMode && invoiceDealId && (
+        <DealInvoiceDrawer
+          dealId={invoiceDealId}
+          dealValue={invoiceDeal?.dealValue ?? 0}
+          onClose={() => setInvoiceDealId(null)}
+        />
+      )}
+
       {/* Confirm delete dialog */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteId(null)} />
           <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-border bg-card shadow-2xl p-6">
             <h3 className="text-lg font-semibold text-foreground mb-2">Delete Deal</h3>

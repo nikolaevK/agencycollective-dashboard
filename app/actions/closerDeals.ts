@@ -7,6 +7,8 @@ import { findDeal, insertDeal, updateDeal, deleteDeal } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
+import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
@@ -42,11 +44,16 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
 
   const id = crypto.randomUUID();
 
+  const rawEmail = String(formData.get("clientEmail") ?? "").trim();
+  const clientEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && rawEmail.length <= 254 ? rawEmail : null;
+  const paymentType = String(formData.get("paymentType") ?? "local").trim() || "local";
+
   await insertDeal({
     id,
     closerId: session.closerId,
     clientName,
     clientUserId,
+    clientEmail,
     dealValue,
     serviceCategory,
     industry,
@@ -55,6 +62,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     showStatus: (status === "closed" && googleEventId) ? "showed" : (String(formData.get("showStatus") ?? "").trim() || null) as "showed" | "no_show" | null,
     notes,
     googleEventId,
+    paymentType,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -62,6 +70,26 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   // Auto-set attendance when deal is closed and linked to calendar event
   if (status === "closed" && googleEventId) {
     await setEventAttendance(googleEventId, session.closerId, "showed");
+  }
+
+  // Auto-generate invoice for closed deals
+  if (status === "closed" && dealValue > 0) {
+    try {
+      const invoiceNumber = await generateInvoiceNumber();
+      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
+      await insertDealInvoice({
+        id: crypto.randomUUID(),
+        dealId: id,
+        invoiceNumber,
+        invoiceData: JSON.stringify(invoiceData),
+        clientEmail,
+        createdBy: session.closerId,
+      });
+    } catch (err) {
+      console.error("[createDealAction] Invoice generation failed:", err instanceof Error ? err.message : err);
+      // Don't fail deal creation if invoice generation fails
+    }
   }
 
   revalidatePath("/closer/dashboard");

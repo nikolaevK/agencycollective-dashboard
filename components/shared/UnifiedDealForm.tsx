@@ -5,7 +5,7 @@ import { DollarSign, Calendar, Tag, FileText, Send } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
-import { INDUSTRIES, DEAL_STATUSES } from "@/components/closers/types";
+import { INDUSTRIES, DEAL_STATUSES, PAYMENT_TYPES } from "@/components/closers/types";
 import { parseServiceCategory, serializeServiceCategory } from "@/lib/serviceCategory";
 import { createDealAction } from "@/app/actions/closerDeals";
 
@@ -19,6 +19,7 @@ interface UnifiedDealFormProps {
     id?: string;
     clientName?: string;
     clientUserId?: string | null;
+    clientEmail?: string | null;
     dealValue?: number; // cents
     closingDate?: string | null;
     serviceCategory?: string | null;
@@ -26,6 +27,7 @@ interface UnifiedDealFormProps {
     status?: string;
     notes?: string | null;
     googleEventId?: string | null;
+    paymentType?: string;
   };
   calendarEvent?: {
     id: string;
@@ -51,6 +53,7 @@ export function UnifiedDealForm({
 
   const [clientName, setClientName] = useState(initialData?.clientName ?? calendarEvent?.title ?? "");
   const [clientUserId, setClientUserId] = useState<string | null>(initialData?.clientUserId ?? null);
+  const [clientEmail, setClientEmail] = useState(initialData?.clientEmail ?? "");
   const [dealValue, setDealValue] = useState(
     initialData?.dealValue ? String(initialData.dealValue / 100) : ""
   );
@@ -63,6 +66,7 @@ export function UnifiedDealForm({
   const [industry, setIndustry] = useState(initialData?.industry ?? "");
   const [status, setStatus] = useState(initialData?.status ?? "closed");
   const [notes, setNotes] = useState(initialData?.notes ?? "");
+  const [paymentType, setPaymentType] = useState(initialData?.paymentType ?? "local");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -71,12 +75,14 @@ export function UnifiedDealForm({
   function resetForm() {
     setClientName("");
     setClientUserId(null);
+    setClientEmail("");
     setDealValue("");
     setClosingDate("");
     setSelectedServices([]);
     setIndustry("");
     setStatus("closed");
     setNotes("");
+    setPaymentType("local");
     setError(null);
     setSuccess(false);
   }
@@ -111,12 +117,14 @@ export function UnifiedDealForm({
           const fd = new FormData();
           fd.set("clientName", clientName);
           if (clientUserId) fd.set("clientUserId", clientUserId);
+          if (clientEmail) fd.set("clientEmail", clientEmail);
           fd.set("dealValue", dealValue || "0");
           fd.set("closingDate", closingDate);
           fd.set("serviceCategory", serializedServices ?? "");
           fd.set("industry", industry);
           fd.set("status", status);
           fd.set("notes", notes);
+          fd.set("paymentType", paymentType);
           if (googleEventId) fd.set("googleEventId", googleEventId);
           if (autoShowStatus) fd.set("showStatus", autoShowStatus);
 
@@ -143,6 +151,8 @@ export function UnifiedDealForm({
               status,
               notes: notes || null,
               clientUserId,
+              clientEmail: clientEmail || null,
+              paymentType,
             }),
           });
           const json = await res.json();
@@ -168,6 +178,8 @@ export function UnifiedDealForm({
             notes: notes || null,
           };
           if (clientUserId !== undefined) body.clientUserId = clientUserId;
+          body.clientEmail = clientEmail || null;
+          body.paymentType = paymentType;
           if (autoShowStatus) body.showStatus = autoShowStatus;
 
           const res = await fetch(endpoint, {
@@ -227,6 +239,32 @@ export function UnifiedDealForm({
         </div>
       )}
 
+      {/* Client Email */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-1.5 block">Client Email <span className="text-muted-foreground font-normal">(optional)</span></label>
+        <input
+          type="email"
+          value={clientEmail}
+          onChange={(e) => setClientEmail(e.target.value)}
+          placeholder="client@example.com"
+          className={INPUT_CLS}
+        />
+      </div>
+
+      {/* Payment Type */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-1.5 block">Payment Type</label>
+        <select
+          value={paymentType}
+          onChange={(e) => setPaymentType(e.target.value)}
+          className={INPUT_CLS}
+        >
+          {PAYMENT_TYPES.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+      </div>
+
       {/* Status */}
       <div>
         <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
@@ -235,9 +273,11 @@ export function UnifiedDealForm({
           onChange={(e) => setStatus(e.target.value)}
           className={INPUT_CLS}
         >
-          {DEAL_STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
+          {DEAL_STATUSES
+            .filter((s) => context === "admin" || s.value !== "pending_signature")
+            .map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
         </select>
       </div>
 

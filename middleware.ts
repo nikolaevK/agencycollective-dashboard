@@ -64,13 +64,14 @@ function decodePayload(token: string): Record<string, unknown> | null {
 }
 
 /** Map route patterns to required permission keys. */
-type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "users" | "closers" | "admin";
+type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "admin";
 
 const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p === "/dashboard/chat", perm: "analyst" },
   { match: (p) => p.startsWith("/dashboard/generate"), perm: "studio" },
   { match: (p) => p.startsWith("/dashboard/json-editor"), perm: "jsoneditor" },
   { match: (p) => p.startsWith("/dashboard/ad-copy"), perm: "adcopy" },
+  { match: (p) => p.startsWith("/dashboard/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
@@ -84,9 +85,12 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/generate"), perm: "studio" },
   { match: (p) => p.startsWith("/api/json-editor"), perm: "jsoneditor" },
   { match: (p) => p.startsWith("/api/ad-copy"), perm: "adcopy" },
+  { match: (p) => p.startsWith("/api/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/deals"), perm: "closers" },
+  { match: (p) => p.startsWith("/api/admin/deal-invoices"), perm: "closers" },
+  { match: (p) => p.startsWith("/api/admin/invoice-services"), perm: "invoice" },
   { match: (p) => p.startsWith("/api/admin/payouts"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
@@ -217,10 +221,14 @@ export const config = {
     "/api/generate/:path*",
     "/api/json-editor/:path*",
     "/api/ad-copy/:path*",
+    "/api/invoice/:path*",
     "/api/admin/users/:path*",
     "/api/admin/closers/:path*",
     "/api/admin/deals/:path*",
+    "/api/admin/deal-invoices/:path*",
+    "/api/admin/invoice-services/:path*",
     "/api/admin/payouts/:path*",
+    "/api/admin/agency-config/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
     "/api/closer/:path*",

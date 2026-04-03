@@ -20,6 +20,7 @@ export interface DealPublic {
   closerId: string;
   clientName: string;
   clientUserId: string | null;
+  clientEmail: string | null;
   dealValue: number; // cents
   serviceCategory: string | null;
   industry: string | null;
@@ -28,6 +29,7 @@ export interface DealPublic {
   showStatus: ShowStatus;
   notes: string | null;
   googleEventId: string | null;
+  paymentType: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +55,11 @@ export const INDUSTRIES = [
   "Supplements",
   "Gambling",
   "Health",
+] as const;
+
+export const PAYMENT_TYPES = [
+  { value: "local" as const, label: "Local (Zelle + Wire)" },
+  { value: "international" as const, label: "International (Wire)" },
 ] as const;
 
 export const DEAL_STATUSES = [
