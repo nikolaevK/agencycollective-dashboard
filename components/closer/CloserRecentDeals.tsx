@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
+import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
 import { format } from "date-fns";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -57,6 +58,7 @@ function formatDate(dateStr: string | null): string {
 interface DealWithInvoice extends DealPublic {
   invoiceStatus?: string | null;
   invoiceNumber?: string | null;
+  contractStatus?: string | null;
 }
 
 interface Props {
@@ -124,10 +126,13 @@ export function CloserRecentDeals({ deals }: Props) {
                     </td>
                     <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <DealStatusBadge status={deal.status} />
                         {deal.invoiceStatus && (
                           <DealInvoiceStatusBadge status={deal.invoiceStatus} />
+                        )}
+                        {deal.contractStatus && (
+                          <DealContractStatusBadge status={deal.contractStatus} />
                         )}
                       </div>
                     </td>
@@ -168,10 +173,13 @@ export function CloserRecentDeals({ deals }: Props) {
                     {formatDate(deal.closingDate || deal.createdAt)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <DealStatusBadge status={deal.status} />
                   {deal.invoiceStatus && (
                     <DealInvoiceStatusBadge status={deal.invoiceStatus} />
+                  )}
+                  {deal.contractStatus && (
+                    <DealContractStatusBadge status={deal.contractStatus} />
                   )}
                   <span className="text-sm font-semibold text-foreground">
                     {formatCents(deal.dealValue)}

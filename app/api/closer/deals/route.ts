@@ -5,6 +5,7 @@ import { getCloserSession } from "@/lib/closerSession";
 import { readDealsByCloser, findDeal, deleteDeal, updateDeal } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
+import { getDealContractStatuses } from "@/lib/dealContracts";
 
 export async function GET() {
   const session = getCloserSession();
@@ -14,16 +15,20 @@ export async function GET() {
 
   const deals = await readDealsByCloser(session.closerId);
 
-  // Attach invoice statuses
+  // Attach invoice and contract statuses
   const dealIds = deals.map((d) => d.id);
-  const invoiceStatuses = await getDealInvoiceStatuses(dealIds);
-  const dealsWithInvoice = deals.map((d) => ({
+  const [invoiceStatuses, contractStatuses] = await Promise.all([
+    getDealInvoiceStatuses(dealIds),
+    getDealContractStatuses(dealIds),
+  ]);
+  const dealsWithStatuses = deals.map((d) => ({
     ...d,
     invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
     invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
+    contractStatus: contractStatuses[d.id]?.status ?? null,
   }));
 
-  return NextResponse.json({ data: dealsWithInvoice });
+  return NextResponse.json({ data: dealsWithStatuses });
 }
 
 export async function PATCH(request: Request) {

@@ -11,7 +11,8 @@ export function isEmailConfigured(): boolean {
 export async function sendInvoiceEmail(
   recipientEmail: string,
   pdfBuffer: Buffer,
-  invoiceNumber: string
+  invoiceNumber: string,
+  options?: { includesContract?: boolean }
 ): Promise<boolean> {
   if (!isEmailConfigured()) {
     console.warn("[invoice-email] SMTP not configured — skipping send");
@@ -38,6 +39,15 @@ export async function sendInvoiceEmail(
   });
 
   const filename = `invoice-${safeNumber}.pdf`;
+  const includesContract = options?.includesContract ?? true;
+
+  const contractParagraph = includesContract
+    ? `<p style="line-height: 1.7; margin: 0 0 16px;">
+            We've also sent over a contract for your review and signature. Once the agreement is signed and the invoice is taken care of, we'll get your onboarding call on the calendar.
+          </p>`
+    : `<p style="line-height: 1.7; margin: 0 0 16px;">
+            Once the invoice is taken care of, we'll get your onboarding call on the calendar.
+          </p>`;
 
   try {
     await transport.sendMail({
@@ -55,9 +65,7 @@ export async function sendInvoiceEmail(
             <li><strong>Project Scope</strong> &mdash; an overview of what we'll be tackling together</li>
             <li><strong>Invoice</strong> &mdash; payment details for your month-to-month agreement</li>
           </ul>
-          <p style="line-height: 1.7; margin: 0 0 16px;">
-            We've also sent over a DocuSign. Once the agreement is signed and the invoice is taken care of, we'll get your onboarding call on the calendar.
-          </p>
+          ${contractParagraph}
           <p style="line-height: 1.7; margin: 0 0 16px;">Looking forward to it!</p>
           <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Amber</strong></p>
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">

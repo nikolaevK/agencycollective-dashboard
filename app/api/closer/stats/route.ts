@@ -6,6 +6,7 @@ import { findCloser } from "@/lib/closers";
 import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
 import { getCloserShowRate } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
+import { getDealContractStatuses } from "@/lib/dealContracts";
 
 export async function GET() {
   const session = getCloserSession();
@@ -44,11 +45,16 @@ export async function GET() {
       },
       recentDeals: await (async () => {
         const recent = deals.slice(0, 10);
-        const invoiceStatuses = await getDealInvoiceStatuses(recent.map((d) => d.id));
+        const recentIds = recent.map((d) => d.id);
+        const [invoiceStatuses, contractStatuses] = await Promise.all([
+          getDealInvoiceStatuses(recentIds),
+          getDealContractStatuses(recentIds),
+        ]);
         return recent.map((d) => ({
           ...d,
           invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
           invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
+          contractStatus: contractStatuses[d.id]?.status ?? null,
         }));
       })(),
     },

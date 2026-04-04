@@ -175,8 +175,9 @@ export async function updateDeal(
 export async function deleteDeal(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
-  // Delete linked invoice first
+  // Delete linked invoice and contract first
   await db.execute({ sql: "DELETE FROM deal_invoices WHERE deal_id = ?", args: [id] });
+  await db.execute({ sql: "DELETE FROM deal_contracts WHERE deal_id = ?", args: [id] });
   const result = await db.execute({
     sql: "DELETE FROM deals WHERE id = ?",
     args: [id],

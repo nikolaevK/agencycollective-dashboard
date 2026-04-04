@@ -14,10 +14,13 @@ import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealInvoiceDrawer } from "@/components/closers/DealInvoiceDrawer";
+import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
+import { DealContractDrawer } from "@/components/closers/DealContractDrawer";
 
 interface DealWithInvoice extends DealPublic {
   invoiceStatus?: string | null;
   invoiceNumber?: string | null;
+  contractStatus?: string | null;
 }
 
 interface RecentDealsTableProps {
@@ -201,6 +204,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
   const [invoiceDealId, setInvoiceDealId] = useState<string | null>(null);
+  const [contractDealId, setContractDealId] = useState<string | null>(null);
   const invoiceDeal = deals.find((d) => d.id === invoiceDealId);
   const [isPending, startTransition] = useTransition();
   const queryClient = useQueryClient();
@@ -296,13 +300,25 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                         <span className="font-semibold text-foreground">{formatCents(deal.dealValue)}</span>
                       </td>
                       <td className="py-3 pr-4">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <DealStatusBadge status={deal.status} />
                           {deal.invoiceStatus && (
                             <DealInvoiceStatusBadge
                               status={deal.invoiceStatus}
                               onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
                               isAdmin={adminMode}
+                            />
+                          )}
+                          {deal.contractStatus && (
+                            <DealContractStatusBadge
+                              status={deal.contractStatus}
+                              onClick={adminMode ? () => {
+                                if (deal.contractStatus === "pending") {
+                                  setInvoiceDealId(deal.id);
+                                } else {
+                                  setContractDealId(deal.id);
+                                }
+                              } : undefined}
                             />
                           )}
                         </div>
@@ -357,13 +373,25 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-foreground text-sm">{formatCents(deal.dealValue)}</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <DealStatusBadge status={deal.status} />
                       {deal.invoiceStatus && (
                         <DealInvoiceStatusBadge
                           status={deal.invoiceStatus}
                           onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
                           isAdmin={adminMode}
+                        />
+                      )}
+                      {deal.contractStatus && (
+                        <DealContractStatusBadge
+                          status={deal.contractStatus}
+                          onClick={adminMode ? () => {
+                            if (deal.contractStatus === "pending") {
+                              setInvoiceDealId(deal.id);
+                            } else {
+                              setContractDealId(deal.id);
+                            }
+                          } : undefined}
                         />
                       )}
                     </div>
@@ -396,6 +424,16 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
           dealId={invoiceDealId}
           dealValue={invoiceDeal?.dealValue ?? 0}
           onClose={() => setInvoiceDealId(null)}
+        />
+      )}
+
+      {/* Contract review drawer */}
+      {adminMode && contractDealId && (
+        <DealContractDrawer
+          dealId={contractDealId}
+          clientEmail={deals.find((d) => d.id === contractDealId)?.clientEmail}
+          onClose={() => setContractDealId(null)}
+          isAdmin
         />
       )}
 

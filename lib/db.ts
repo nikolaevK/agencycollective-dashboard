@@ -696,5 +696,46 @@ export async function migrate(): Promise<void> {
     }
   }
 
+  // ── Contract templates table (DocuSeal integration) ─────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS contract_templates (
+      id                    TEXT PRIMARY KEY,
+      name                  TEXT NOT NULL,
+      docuseal_template_id  INTEGER NOT NULL,
+      service_keys          TEXT,
+      is_default            INTEGER NOT NULL DEFAULT 0,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Deal contracts table (DocuSeal submissions per deal) ───────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS deal_contracts (
+      id                      TEXT PRIMARY KEY,
+      deal_id                 TEXT NOT NULL UNIQUE,
+      contract_template_id    TEXT REFERENCES contract_templates(id) ON DELETE SET NULL,
+      docuseal_submission_id  INTEGER,
+      docuseal_submitter_id   INTEGER,
+      status                  TEXT NOT NULL DEFAULT 'pending',
+      client_email            TEXT,
+      signing_url             TEXT,
+      sent_at                 TEXT,
+      signed_at               TEXT,
+      document_urls           TEXT,
+      created_by              TEXT,
+      created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_contracts_deal_id ON deal_contracts(deal_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_contracts_status ON deal_contracts(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_contracts_submission_id ON deal_contracts(docuseal_submission_id)`);
+  } catch {
+    // indexes may already exist
+  }
+
   console.log("[migrate] Database migration complete");
 }

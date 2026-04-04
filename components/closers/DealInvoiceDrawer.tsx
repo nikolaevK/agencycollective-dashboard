@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck } from "lucide-react";
+import { useState, useEffect, lazy, Suspense } from "react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ChevronDown, ExternalLink } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,13 +20,18 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { useDealInvoice } from "@/hooks/useDealInvoice";
+import { useDealContract } from "@/hooks/useDealContract";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { formatCurrencyValue, createEmptyItem } from "@/lib/invoice/validation";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
 import type { InvoiceData, InvoiceItem } from "@/types/invoice";
 import { cn } from "@/lib/utils";
+
+const DocusealBuilder = lazy(() =>
+  import("@docuseal/react").then((mod) => ({ default: mod.DocusealBuilder }))
+);
 
 interface Props {
   dealId: string | null;
@@ -99,7 +104,11 @@ function SortableDrawerRow({
 export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
   const queryClient = useQueryClient();
   const { data: invoice, isLoading } = useDealInvoice(dealId);
+  const { data: contract } = useDealContract(dealId);
+  const hasPendingContract = contract?.status === "pending";
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [showContractPreview, setShowContractPreview] = useState(false);
+  const [changingTemplate, setChangingTemplate] = useState(false);
   const [clientEmail, setClientEmail] = useState("");
   const [drawerPaymentType, setDrawerPaymentType] = useState<"local" | "international">("local");
 
@@ -312,13 +321,24 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
       formData.append("invoiceId", invoice.id);
       formData.append("email", clientEmail);
       formData.append("pdf", new File([blob], `invoice-${invoiceData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+      if (hasPendingContract) {
+        formData.append("sendContract", "true");
+      }
       const res = await fetch("/api/admin/deal-invoices/send", { method: "POST", body: formData });
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMsg({ type: "success", text: "Invoice sent to " + clientEmail });
+        if (json.contractSent) {
+          setMsg({ type: "success", text: "Invoice & contract sent to " + clientEmail });
+        } else if (hasPendingContract && json.contractError) {
+          setMsg({ type: "error", text: "Invoice sent, but contract failed: " + json.contractError });
+        } else {
+          setMsg({ type: "success", text: "Invoice sent to " + clientEmail });
+        }
         queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
+        queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
         queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
       } else {
-        const json = await res.json().catch(() => ({}));
         setMsg({ type: "error", text: json.error || "Failed to send" });
       }
     } catch {
@@ -545,6 +565,18 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
                 </span>
               </div>
 
+              {/* Contract Section */}
+              <ContractSection
+                dealId={dealId}
+                contract={contract ?? null}
+                hasPendingContract={hasPendingContract}
+                showPreview={showContractPreview}
+                onTogglePreview={() => setShowContractPreview((v) => !v)}
+                changingTemplate={changingTemplate}
+                setChangingTemplate={setChangingTemplate}
+                queryClient={queryClient}
+              />
+
               {/* Messages */}
               {msg && (
                 <div className={cn(
@@ -594,11 +626,281 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
               )}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sending ? "Sending..." : "Send to Client"}
+              {sending ? "Sending..." : hasPendingContract ? "Send Invoice & Contract" : "Send to Client"}
             </button>
           </div>
         )}
       </div>
     </>
+  );
+}
+
+/* ──────────────────────────────────────────
+   Contract Section (template selector + preview)
+   ────────────────────────────────────────── */
+
+interface DocuSealTemplateOption {
+  id: number;
+  name: string;
+}
+
+interface ContractTemplateOption {
+  id: string;
+  name: string;
+  docusealTemplateId: number;
+}
+
+function ContractSection({
+  dealId,
+  contract,
+  hasPendingContract,
+  showPreview,
+  onTogglePreview,
+  changingTemplate,
+  setChangingTemplate,
+  queryClient,
+}: {
+  dealId: string | null;
+  contract: { id?: string; status: string; contractTemplateId?: string | null; signedAt?: string | null; signingUrl?: string | null; documentUrls?: string[] | null } | null;
+  hasPendingContract: boolean;
+  showPreview: boolean;
+  onTogglePreview: () => void;
+  changingTemplate: boolean;
+  setChangingTemplate: (v: boolean) => void;
+  queryClient: QueryClient;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  // Fetch contract templates (our local mapping table)
+  const { data: contractTemplates = [] } = useQuery<ContractTemplateOption[]>({
+    queryKey: ["contract-templates"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/contract-templates");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  // Fetch DocuSeal templates directly
+  const { data: docusealTemplates = [] } = useQuery<DocuSealTemplateOption[]>({
+    queryKey: ["docuseal-templates"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/docuseal-templates");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+    enabled: changingTemplate,
+  });
+
+  // Find the current template name
+  const currentTemplate = contract?.contractTemplateId
+    ? contractTemplates.find((t) => t.id === contract.contractTemplateId)
+    : null;
+
+  const currentDocusealId = currentTemplate?.docusealTemplateId;
+
+  async function handleTemplateChange(templateId: string) {
+    if (!dealId) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/deal-contracts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, contractTemplateId: templateId || null }),
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        setChangingTemplate(false);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Already sent/signed contract
+  if (contract && !hasPendingContract) {
+    return (
+      <div className="rounded-xl border border-border/50 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileSignature className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contract</span>
+          </div>
+          <span className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+            contract.status === "signed" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+            contract.status === "sent" && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
+            contract.status === "viewed" && "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400",
+            (contract.status === "expired" || contract.status === "declined") && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+          )}>
+            {contract.status === "signed" ? "Signed" :
+             contract.status === "sent" ? "Awaiting Signature" :
+             contract.status === "viewed" ? "Viewed" :
+             contract.status === "expired" ? "Expired" :
+             contract.status === "declined" ? "Declined" : contract.status}
+          </span>
+        </div>
+        {currentTemplate && (
+          <p className="text-xs text-muted-foreground">Template: {currentTemplate.name}</p>
+        )}
+        {contract.signedAt && (
+          <p className="text-xs text-emerald-600 dark:text-emerald-400">
+            Signed {new Date(contract.signedAt).toLocaleDateString()}
+          </p>
+        )}
+        {contract.documentUrls && contract.documentUrls.length > 0 && (
+          <div className="space-y-1">
+            {contract.documentUrls.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                <ExternalLink className="h-3 w-3" />
+                Signed Document {i + 1}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Pending or no contract — show selector + preview
+  return (
+    <div className="rounded-xl border border-border/50 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileSignature className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contract</span>
+        </div>
+        {hasPendingContract && (
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+            Will send with invoice
+          </span>
+        )}
+      </div>
+
+      {/* Template selector */}
+      {changingTemplate ? (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-foreground">Choose Contract Template</label>
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+            value={contract?.contractTemplateId || ""}
+            onChange={(e) => handleTemplateChange(e.target.value)}
+            disabled={saving}
+          >
+            <option value="">No contract</option>
+            {contractTemplates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          {docusealTemplates.length > 0 && contractTemplates.length === 0 && (
+            <p className="text-[10px] text-muted-foreground">
+              No templates mapped yet. Go to Closers &rarr; Contracts to map DocuSeal templates.
+            </p>
+          )}
+          <button
+            onClick={() => setChangingTemplate(false)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-foreground">
+            {currentTemplate ? currentTemplate.name : contract ? "Template selected" : "No contract template"}
+          </p>
+          <button
+            onClick={() => setChangingTemplate(true)}
+            className="text-xs text-primary hover:underline"
+          >
+            {contract ? "Change" : "Select template"}
+          </button>
+        </div>
+      )}
+
+      {/* Preview button & embedded preview */}
+      {currentDocusealId && (
+        <>
+          <button
+            onClick={onTogglePreview}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            {showPreview ? "Hide Contract Preview" : "Preview Contract"}
+          </button>
+          {showPreview && (
+            <ContractPreviewEmbed docusealTemplateId={currentDocusealId} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ContractPreviewEmbed({ docusealTemplateId }: { docusealTemplateId: number }) {
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchToken() {
+      try {
+        const res = await fetch("/api/admin/docuseal-templates/builder-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ templateId: docusealTemplateId }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(json.error || "Failed to load preview");
+          return;
+        }
+        setToken(json.data.token);
+      } catch {
+        if (!cancelled) setError("Network error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchToken();
+    return () => { cancelled = true; };
+  }, [docusealTemplateId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error || !token) {
+    return <p className="text-xs text-red-500 py-2">{error || "Preview unavailable"}</p>;
+  }
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden" style={{ maxHeight: "50vh" }}>
+      <Suspense fallback={<div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+        <DocusealBuilder
+          token={token}
+          preview={true}
+          withSendButton={false}
+          withSignYourselfButton={false}
+          withUploadButton={false}
+          withAddPageButton={false}
+          withTitle={false}
+          className="w-full"
+          style={{ minHeight: "300px", maxHeight: "50vh" }}
+        />
+      </Suspense>
+    </div>
   );
 }

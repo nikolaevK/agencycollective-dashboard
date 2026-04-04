@@ -9,6 +9,9 @@ import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
+import { findTemplateForServices } from "@/lib/contractTemplates";
+import { insertDealContract } from "@/lib/dealContracts";
+import { parseServiceCategory } from "@/lib/serviceCategory";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
@@ -89,6 +92,26 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     } catch (err) {
       console.error("[createDealAction] Invoice generation failed:", err instanceof Error ? err.message : err);
       // Don't fail deal creation if invoice generation fails
+    }
+  }
+
+  // Prepare contract record for closed deals with email (NOT sent yet — admin sends with invoice)
+  if (status === "closed" && dealValue > 0 && clientEmail) {
+    try {
+      const serviceKeys = parseServiceCategory(serviceCategory);
+      const template = await findTemplateForServices(serviceKeys);
+      if (template) {
+        await insertDealContract({
+          id: crypto.randomUUID(),
+          dealId: id,
+          contractTemplateId: template.id,
+          status: "pending",
+          clientEmail,
+          createdBy: session.closerId,
+        });
+      }
+    } catch (err) {
+      console.error("[createDealAction] Contract record creation failed:", err instanceof Error ? err.message : err);
     }
   }
 
