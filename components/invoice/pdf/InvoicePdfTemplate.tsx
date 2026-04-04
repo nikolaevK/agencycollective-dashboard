@@ -251,7 +251,34 @@ export function InvoicePdfDocument({ data }: Props) {
           </View>
         </View>
 
-        {/* ── Note to customer ── */}
+        {/* ── Payment Information (expanded) ── */}
+        {details.paymentInfo && (
+          <View style={s.noteSection}>
+            <Text style={{ ...s.noteSectionTitle, color: themeColor }}>Payment Information</Text>
+            {details.paymentInfo.paymentType === "local" && details.paymentInfo.zelleContact ? (
+              <View style={{ marginBottom: 4 }}>
+                <Text style={{ ...s.noteText, fontFamily: "Helvetica-Bold", color: "#333" }}>Zelle</Text>
+                <Text style={s.noteText}>Phone / Email: {details.paymentInfo.zelleContact}</Text>
+              </View>
+            ) : null}
+            <View style={{ marginBottom: 2 }}>
+              <Text style={{ ...s.noteText, fontFamily: "Helvetica-Bold", color: "#333" }}>
+                {details.paymentInfo.paymentType === "international" ? "International Wire" : "Wire"}
+              </Text>
+            </View>
+            {details.paymentInfo.swiftBic ? <Text style={s.noteText}>SWIFT / BIC: {details.paymentInfo.swiftBic}</Text> : null}
+            {details.paymentInfo.accountNumber ? <Text style={s.noteText}>Account No: {details.paymentInfo.accountNumber}</Text> : null}
+            {details.paymentInfo.routingNumber ? <Text style={s.noteText}>Routing No: {details.paymentInfo.routingNumber}</Text> : null}
+            {details.paymentInfo.alternateRoutingNumber ? <Text style={s.noteText}>Alt. Routing: {details.paymentInfo.alternateRoutingNumber}</Text> : null}
+            {details.paymentInfo.bankName ? <Text style={s.noteText}>Bank: {details.paymentInfo.bankName}</Text> : null}
+            {details.paymentInfo.bankAddress ? <Text style={s.noteText}>Bank Address: {details.paymentInfo.bankAddress}</Text> : null}
+            {details.paymentInfo.beneficiaryName ? <Text style={s.noteText}>Beneficiary: {details.paymentInfo.beneficiaryName}</Text> : null}
+            {details.paymentInfo.beneficiaryAddress ? <Text style={s.noteText}>Beneficiary Address: {details.paymentInfo.beneficiaryAddress}</Text> : null}
+            {details.paymentInfo.memo ? <Text style={{ ...s.noteText, fontStyle: "italic", marginTop: 4 }}>{details.paymentInfo.memo}</Text> : null}
+          </View>
+        )}
+
+        {/* ── Note to customer (legacy / general) ── */}
         {details.noteToCustomer ? (
           <View style={s.noteSection}>
             <Text style={{ ...s.noteSectionTitle, color: themeColor }}>Note to customer</Text>
@@ -274,16 +301,6 @@ export function InvoicePdfDocument({ data }: Props) {
             <Text style={s.footerText}>{details.additionalNotes}</Text>
           </View>
         ) : null}
-
-        {/* ── Payment info ── */}
-        {details.paymentInfo && (
-          <View style={s.footerSection}>
-            <Text style={{ ...s.footerLabel, color: themeColor }}>Payment Information</Text>
-            {details.paymentInfo.bankName ? <Text style={s.footerText}>Bank: {details.paymentInfo.bankName}</Text> : null}
-            {details.paymentInfo.accountName ? <Text style={s.footerText}>Account: {details.paymentInfo.accountName}</Text> : null}
-            {details.paymentInfo.accountNumber ? <Text style={s.footerText}>Account No: {details.paymentInfo.accountNumber}</Text> : null}
-          </View>
-        )}
 
         {/* ── Signature ── */}
         {details.signature && details.signature.data && (

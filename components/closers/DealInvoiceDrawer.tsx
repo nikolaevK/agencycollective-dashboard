@@ -26,7 +26,8 @@ import { useDealContract } from "@/hooks/useDealContract";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { formatCurrencyValue, createEmptyItem } from "@/lib/invoice/validation";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
-import type { InvoiceData, InvoiceItem } from "@/types/invoice";
+import type { InvoiceData, InvoiceItem, PaymentInfo, PaymentType } from "@/types/invoice";
+import { loadPaymentInfoFromConfig, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
 import { cn } from "@/lib/utils";
 
 const DocusealBuilder = lazy(() =>
@@ -36,11 +37,16 @@ const DocusealBuilder = lazy(() =>
 interface Props {
   dealId: string | null;
   dealValue: number; // cents
+  dealPaymentType?: string;
   onClose: () => void;
 }
 
 const INPUT_CLS =
   "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
+
+function loadPaymentTemplate(config: Record<string, string>, type: PaymentType): PaymentInfo {
+  return loadPaymentInfoFromConfig(config, type) ?? emptyPaymentInfo(type);
+}
 
 function SortableDrawerRow({
   item,
@@ -101,7 +107,7 @@ function SortableDrawerRow({
   );
 }
 
-export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
+export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose }: Props) {
   const queryClient = useQueryClient();
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
@@ -110,7 +116,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
   const [showContractPreview, setShowContractPreview] = useState(false);
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [clientEmail, setClientEmail] = useState("");
-  const [drawerPaymentType, setDrawerPaymentType] = useState<"local" | "international">("local");
+  const [drawerPaymentType, setDrawerPaymentType] = useState<PaymentType>(dealPaymentType === "international" ? "international" : "local");
 
   const { data: agencyConfig } = useQuery<Record<string, string>>({
     queryKey: ["agency-config"],
@@ -128,12 +134,25 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    if (!invoice) return;
+    if (!invoice || !agencyConfig) return;
     const src = invoice.invoiceData;
-    const logo = src.details.invoiceLogo || agencyConfig?.default_logo || "";
+    const logo = src.details.invoiceLogo || agencyConfig.default_logo || "";
     const theme = (!src.details.themeColor || src.details.themeColor === "#2563eb")
-      ? (agencyConfig?.default_theme_color || "#475569")
+      ? (agencyConfig.default_theme_color || "#475569")
       : src.details.themeColor;
+
+    // Migrate: if paymentInfo is empty but noteToCustomer has old payment text, move it
+    let paymentInfo = src.details.paymentInfo;
+    let noteToCustomer = src.details.noteToCustomer;
+    const effectiveType: PaymentType = dealPaymentType === "international" ? "international" : "local";
+    if (!paymentInfo && noteToCustomer) {
+      paymentInfo = loadPaymentTemplate(agencyConfig, effectiveType);
+      noteToCustomer = "";
+    }
+
+    // Sync toggle from loaded payment info or deal payment type
+    const resolvedType: PaymentType = paymentInfo?.paymentType === "international" ? "international" : effectiveType;
+    setDrawerPaymentType(resolvedType);
 
     setInvoiceData({
       ...src,
@@ -141,10 +160,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
         ...src.details,
         invoiceLogo: logo,
         themeColor: theme,
+        paymentInfo,
+        noteToCustomer,
       },
     });
     setClientEmail(invoice.clientEmail || "");
-  }, [invoice, agencyConfig]);
+  }, [invoice, agencyConfig, dealPaymentType]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -402,14 +423,15 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
 
               {/* Payment Type Toggle */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Payment Note</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Payment Type</label>
                 <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
                   <button
                     type="button"
                     onClick={() => {
                       setDrawerPaymentType("local");
                       if (invoiceData && agencyConfig) {
-                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, noteToCustomer: agencyConfig.note_local ?? "" } });
+                        const template = loadPaymentTemplate(agencyConfig, "local");
+                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
                       }
                     }}
                     className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${drawerPaymentType === "local" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
@@ -421,7 +443,8 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
                     onClick={() => {
                       setDrawerPaymentType("international");
                       if (invoiceData && agencyConfig) {
-                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, noteToCustomer: agencyConfig.note_international ?? "" } });
+                        const template = loadPaymentTemplate(agencyConfig, "international");
+                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
                       }
                     }}
                     className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${drawerPaymentType === "international" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
@@ -435,6 +458,28 @@ export function DealInvoiceDrawer({ dealId, dealValue, onClose }: Props) {
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Client Email</label>
                 <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@example.com" className={INPUT_CLS} />
+              </div>
+
+              {/* Invoice Date & Due Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Invoice Date</label>
+                  <input
+                    type="date"
+                    value={invoiceData.details.invoiceDate}
+                    onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, invoiceDate: e.target.value } })}
+                    className={INPUT_CLS}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Due Date</label>
+                  <input
+                    type="date"
+                    value={invoiceData.details.dueDate}
+                    onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, dueDate: e.target.value } })}
+                    className={INPUT_CLS}
+                  />
+                </div>
               </div>
 
               {/* Bill To */}

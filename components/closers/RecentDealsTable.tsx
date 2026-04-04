@@ -423,6 +423,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
         <DealInvoiceDrawer
           dealId={invoiceDealId}
           dealValue={invoiceDeal?.dealValue ?? 0}
+          dealPaymentType={invoiceDeal?.paymentType}
           onClose={() => setInvoiceDealId(null)}
         />
       )}

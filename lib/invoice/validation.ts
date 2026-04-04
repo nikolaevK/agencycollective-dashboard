@@ -74,9 +74,18 @@ export const invoiceDataSchema = z.object({
       .nullable(),
     paymentInfo: z
       .object({
+        paymentType: z.enum(["local", "international"]).optional(),
         bankName: z.string(),
         accountName: z.string(),
         accountNumber: z.string(),
+        routingNumber: z.string().optional(),
+        bankAddress: z.string().optional(),
+        beneficiaryName: z.string().optional(),
+        beneficiaryAddress: z.string().optional(),
+        zelleContact: z.string().optional(),
+        swiftBic: z.string().optional(),
+        alternateRoutingNumber: z.string().optional(),
+        memo: z.string().optional(),
       })
       .nullable(),
     additionalNotes: z.string().max(2000),

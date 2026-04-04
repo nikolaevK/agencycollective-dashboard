@@ -2,6 +2,7 @@
 
 import type {
   PaymentInfo,
+  PaymentType,
   DiscountDetails,
   TaxDetails,
   ShippingDetails,
@@ -9,6 +10,7 @@ import type {
 } from "@/types/invoice";
 import { formatCurrencyValue } from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
+import { emptyPaymentInfo, loadPaymentInfoFromConfig } from "@/lib/invoice/paymentUtils";
 import { InvoiceSignature } from "./InvoiceSignature";
 import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
 
@@ -25,6 +27,7 @@ interface Props {
   tax: TaxDetails | null;
   shipping: ShippingDetails | null;
   currency: string;
+  agencyConfig?: Record<string, string> | null;
   onPaymentInfoChange: (info: PaymentInfo | null) => void;
   onNotesChange: (notes: string) => void;
   onNoteToCustomerChange: (note: string) => void;
@@ -46,6 +49,7 @@ export function InvoiceFooterForm({
   tax,
   shipping,
   currency,
+  agencyConfig,
   onPaymentInfoChange,
   onNotesChange,
   onNoteToCustomerChange,
@@ -70,6 +74,25 @@ export function InvoiceFooterForm({
       ? subTotal * (shipping.cost / 100)
       : shipping.cost
     : 0;
+
+  const paymentType: PaymentType = paymentInfo?.paymentType ?? "local";
+
+  const handleLoadTemplate = () => {
+    const template = loadPaymentInfoFromConfig(agencyConfig, paymentType);
+    if (template) {
+      onPaymentInfoChange(template);
+    }
+  };
+
+  const updateField = (field: keyof PaymentInfo, value: string) => {
+    if (!paymentInfo) return;
+    onPaymentInfoChange({ ...paymentInfo, [field]: value });
+  };
+
+  const handlePaymentTypeChange = (type: PaymentType) => {
+    if (!paymentInfo) return;
+    onPaymentInfoChange({ ...paymentInfo, paymentType: type });
+  };
 
   return (
     <div className="space-y-6">
@@ -143,7 +166,7 @@ export function InvoiceFooterForm({
         </label>
       </div>
 
-      {/* Payment info */}
+      {/* Payment Information */}
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -151,9 +174,7 @@ export function InvoiceFooterForm({
             checked={paymentInfo !== null}
             onChange={(e) =>
               onPaymentInfoChange(
-                e.target.checked
-                  ? { bankName: "", accountName: "", accountNumber: "" }
-                  : null
+                e.target.checked ? emptyPaymentInfo("local") : null
               )
             }
             className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
@@ -164,7 +185,74 @@ export function InvoiceFooterForm({
         </label>
 
         {paymentInfo && (
-          <div className="space-y-3 pl-6">
+          <div className="space-y-4 pl-6">
+            {/* Payment Type Toggle */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Payment Type
+              </label>
+              <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => handlePaymentTypeChange("local")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "local" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Local (Zelle + Wire)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePaymentTypeChange("international")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "international" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  International (Wire)
+                </button>
+              </div>
+            </div>
+
+            {/* Load from template */}
+            {agencyConfig && (
+              <button
+                type="button"
+                onClick={handleLoadTemplate}
+                className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              >
+                Load from agency template
+              </button>
+            )}
+
+            {/* Zelle Contact — Local only */}
+            {paymentType === "local" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Zelle Contact (Phone / Email)
+                </label>
+                <input
+                  type="text"
+                  value={paymentInfo.zelleContact ?? ""}
+                  onChange={(e) => updateField("zelleContact", e.target.value)}
+                  placeholder="Phone number or email for Zelle"
+                  className={INPUT_CLS}
+                />
+              </div>
+            )}
+
+            {/* SWIFT/BIC — International only */}
+            {paymentType === "international" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  SWIFT / BIC Code
+                </label>
+                <input
+                  type="text"
+                  value={paymentInfo.swiftBic ?? ""}
+                  onChange={(e) => updateField("swiftBic", e.target.value)}
+                  placeholder="e.g. CLNOUS66MER"
+                  className={INPUT_CLS}
+                />
+              </div>
+            )}
+
+            {/* Common fields */}
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
                 Bank Name
@@ -172,9 +260,7 @@ export function InvoiceFooterForm({
               <input
                 type="text"
                 value={paymentInfo.bankName}
-                onChange={(e) =>
-                  onPaymentInfoChange({ ...paymentInfo, bankName: e.target.value })
-                }
+                onChange={(e) => updateField("bankName", e.target.value)}
                 placeholder="Bank name"
                 className={INPUT_CLS}
               />
@@ -186,9 +272,7 @@ export function InvoiceFooterForm({
               <input
                 type="text"
                 value={paymentInfo.accountName}
-                onChange={(e) =>
-                  onPaymentInfoChange({ ...paymentInfo, accountName: e.target.value })
-                }
+                onChange={(e) => updateField("accountName", e.target.value)}
                 placeholder="Account holder name"
                 className={INPUT_CLS}
               />
@@ -200,10 +284,85 @@ export function InvoiceFooterForm({
               <input
                 type="text"
                 value={paymentInfo.accountNumber}
-                onChange={(e) =>
-                  onPaymentInfoChange({ ...paymentInfo, accountNumber: e.target.value })
-                }
+                onChange={(e) => updateField("accountNumber", e.target.value)}
                 placeholder="Account number / IBAN"
+                className={INPUT_CLS}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Routing Number
+              </label>
+              <input
+                type="text"
+                value={paymentInfo.routingNumber ?? ""}
+                onChange={(e) => updateField("routingNumber", e.target.value)}
+                placeholder="ABA routing number"
+                className={INPUT_CLS}
+              />
+            </div>
+
+            {/* Alternate Routing — International only */}
+            {paymentType === "international" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Alternate Routing Number
+                </label>
+                <input
+                  type="text"
+                  value={paymentInfo.alternateRoutingNumber ?? ""}
+                  onChange={(e) => updateField("alternateRoutingNumber", e.target.value)}
+                  placeholder="If sending bank doesn't recognize primary ABA"
+                  className={INPUT_CLS}
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Bank Address
+              </label>
+              <textarea
+                value={paymentInfo.bankAddress ?? ""}
+                onChange={(e) => updateField("bankAddress", e.target.value)}
+                placeholder="Bank address"
+                rows={2}
+                className={TEXTAREA_CLS}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Beneficiary Name
+              </label>
+              <input
+                type="text"
+                value={paymentInfo.beneficiaryName ?? ""}
+                onChange={(e) => updateField("beneficiaryName", e.target.value)}
+                placeholder="Beneficiary name"
+                className={INPUT_CLS}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Beneficiary Address
+              </label>
+              <textarea
+                value={paymentInfo.beneficiaryAddress ?? ""}
+                onChange={(e) => updateField("beneficiaryAddress", e.target.value)}
+                placeholder="Beneficiary address"
+                rows={2}
+                className={TEXTAREA_CLS}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Memo / Reference
+              </label>
+              <input
+                type="text"
+                value={paymentInfo.memo ?? ""}
+                onChange={(e) => updateField("memo", e.target.value)}
+                placeholder="e.g. Digital Service/Work - Non Refundable"
                 className={INPUT_CLS}
               />
             </div>
@@ -239,7 +398,7 @@ export function InvoiceFooterForm({
         />
       </div>
 
-      {/* Note to Customer (Ways to pay / payment instructions) */}
+      {/* Note to Customer */}
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
           Note to Customer
@@ -247,8 +406,8 @@ export function InvoiceFooterForm({
         <textarea
           value={noteToCustomer}
           onChange={(e) => onNoteToCustomerChange(e.target.value)}
-          placeholder="Payment instructions, wire/Zelle details, refund policy..."
-          rows={6}
+          placeholder="Any special instructions or notes for the customer..."
+          rows={4}
           className={TEXTAREA_CLS}
         />
       </div>

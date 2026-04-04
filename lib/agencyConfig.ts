@@ -1,5 +1,9 @@
 import { getDb, ensureMigrated } from "./db";
 import type { InvoiceSender } from "@/types/invoice";
+import type { PaymentType } from "@/types/invoice";
+import { emptyPaymentInfo, parsePaymentNoteToPaymentInfo } from "@/lib/invoice/paymentUtils";
+
+export { parsePaymentNoteToPaymentInfo } from "@/lib/invoice/paymentUtils";
 
 export interface AgencyConfigRecord {
   id: string;
@@ -31,8 +35,9 @@ export async function updateAgencyConfig(key: string, value: string): Promise<vo
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: "UPDATE agency_config SET config_value = ?, updated_at = datetime('now') WHERE config_key = ?",
-    args: [value, key],
+    sql: `INSERT INTO agency_config (id, config_key, config_value, updated_at) VALUES (lower(hex(randomblob(16))), ?, ?, datetime('now'))
+          ON CONFLICT(config_key) DO UPDATE SET config_value = excluded.config_value, updated_at = excluded.updated_at`,
+    args: [key, value],
   });
 }
 
@@ -61,6 +66,24 @@ export async function getAgencySender(): Promise<InvoiceSender> {
 export async function getPaymentNote(type: "local" | "international"): Promise<string> {
   const key = type === "international" ? "note_international" : "note_local";
   return (await getAgencyConfig(key)) ?? "";
+}
+
+export async function getPaymentTemplate(type: PaymentType) {
+  const key = type === "international" ? "payment_template_international" : "payment_template_local";
+  const raw = await getAgencyConfig(key);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return { ...emptyPaymentInfo(type), ...parsed, paymentType: type };
+    } catch { /* fall through */ }
+  }
+  // Fallback: parse old free-text template
+  const noteKey = type === "international" ? "note_international" : "note_local";
+  const noteText = (await getAgencyConfig(noteKey)) ?? "";
+  if (noteText) {
+    return parsePaymentNoteToPaymentInfo(noteText, type);
+  }
+  return emptyPaymentInfo(type);
 }
 
 export async function getDefaultLogo(): Promise<string> {

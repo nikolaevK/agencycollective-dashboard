@@ -14,6 +14,7 @@ import type {
   PaymentInfo,
   SignatureData,
 } from "@/types/invoice";
+
 import {
   INITIAL_INVOICE_DATA,
   calculateTotals,
@@ -22,6 +23,7 @@ import {
   clearDraft,
   createEmptyItem,
 } from "@/lib/invoice/validation";
+import { loadPaymentInfoFromConfig } from "@/lib/invoice/paymentUtils";
 import { InvoiceServiceManager } from "./InvoiceServiceManager";
 import { InvoiceAgencySettings } from "./InvoiceAgencySettings";
 import { InvoiceSenderForm } from "./InvoiceSenderForm";
@@ -39,7 +41,6 @@ export function InvoicePage() {
   const [loaded, setLoaded] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [paymentType, setPaymentType] = useState<"local" | "international">("local");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,7 +56,7 @@ export function InvoicePage() {
     staleTime: 60_000,
   });
 
-  // Load draft from localStorage on mount, apply agency sender from DB
+  // Load draft from localStorage on mount, apply agency sender + payment template from DB
   useEffect(() => {
     if (!agencyConfig) return;
 
@@ -65,10 +66,11 @@ export function InvoicePage() {
       sender = { name: s.name ?? "", address: s.address ?? "", city: s.city ?? "", zipCode: s.zipCode ?? "", country: s.country ?? "", email: s.email ?? "", phone: s.phone ?? "", customInputs: [] };
     } catch { /* use fallback */ }
 
-    const noteKey = paymentType === "international" ? "note_international" : "note_local";
-    const noteToCustomer = agencyConfig[noteKey] ?? "";
     const defaultLogo = agencyConfig.default_logo ?? "";
     const defaultTheme = agencyConfig.default_theme_color ?? "#475569";
+
+    // Build prefilled payment info from agency config (structured or parsed from free-text)
+    const defaultPaymentInfo = loadPaymentInfoFromConfig(agencyConfig, "local");
 
     const draft = loadDraft();
     if (draft) {
@@ -79,20 +81,27 @@ export function InvoicePage() {
         details: {
           ...INITIAL_INVOICE_DATA.details,
           ...draft.details,
-          noteToCustomer,
           invoiceLogo: draft.details?.invoiceLogo || defaultLogo,
           themeColor: draft.details?.themeColor || defaultTheme,
+          paymentInfo: draft.details?.paymentInfo ?? defaultPaymentInfo,
+          noteToCustomer: "",
         },
       });
     } else {
       setData((prev) => ({
         ...prev,
         sender,
-        details: { ...prev.details, noteToCustomer, invoiceLogo: defaultLogo, themeColor: defaultTheme },
+        details: {
+          ...prev.details,
+          invoiceLogo: defaultLogo,
+          themeColor: defaultTheme,
+          paymentInfo: prev.details.paymentInfo ?? defaultPaymentInfo,
+          noteToCustomer: "",
+        },
       }));
     }
     setLoaded(true);
-  }, [agencyConfig, paymentType]);
+  }, [agencyConfig]);
 
   // Debounced auto-save
   useEffect(() => {
@@ -219,7 +228,7 @@ export function InvoicePage() {
   const handleNewInvoice = () => {
     if (confirmReset) {
       if (resetTimer.current) clearTimeout(resetTimer.current);
-      setData({ ...INITIAL_INVOICE_DATA, sender: data.sender, details: { ...INITIAL_INVOICE_DATA.details, items: [createEmptyItem()], noteToCustomer: data.details.noteToCustomer } });
+      setData({ ...INITIAL_INVOICE_DATA, sender: data.sender, details: { ...INITIAL_INVOICE_DATA.details, items: [createEmptyItem()] } });
       clearDraft();
       setConfirmReset(false);
     } else {
@@ -237,7 +246,6 @@ export function InvoicePage() {
       details: {
         ...INITIAL_INVOICE_DATA.details,
         ...invoiceData.details,
-        noteToCustomer: data.details.noteToCustomer,
       },
     });
   };
@@ -304,6 +312,7 @@ export function InvoicePage() {
             tax={data.details.taxDetails}
             shipping={data.details.shippingDetails}
             currency={data.details.currency}
+            agencyConfig={agencyConfig}
             onPaymentInfoChange={updatePaymentInfo}
             onNotesChange={updateNotes}
             onNoteToCustomerChange={updateNoteToCustomer}
@@ -339,27 +348,6 @@ export function InvoicePage() {
             </button>
 
             {/* Service Manager */}
-            {/* Payment Type Toggle */}
-            <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-                Payment Note Template
-              </label>
-              <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
-                <button
-                  onClick={() => setPaymentType("local")}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "local" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  Local (Zelle + Wire)
-                </button>
-                <button
-                  onClick={() => setPaymentType("international")}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "international" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  International (Wire)
-                </button>
-              </div>
-            </div>
-
             <InvoiceServiceManager />
             <InvoiceAgencySettings />
 

@@ -206,7 +206,38 @@ export function InvoiceLivePreview({ data }: Props) {
             </div>
           </div>
 
-          {/* ── Note to customer ── */}
+          {/* ── Payment Information ── */}
+          {details.paymentInfo && (
+            <div style={{ padding: "16px 40px 10px" }}>
+              <div className="text-[12px] font-bold mb-1.5" style={{ color: theme }}>
+                Payment Information
+              </div>
+              <div className="text-[8px] text-gray-500 leading-relaxed space-y-0.5">
+                {details.paymentInfo.paymentType === "local" && details.paymentInfo.zelleContact && (
+                  <>
+                    <div className="text-[9px] font-semibold text-gray-700 mt-1">Zelle</div>
+                    <div>Phone / Email: {details.paymentInfo.zelleContact}</div>
+                  </>
+                )}
+                {(details.paymentInfo.paymentType === "international" || details.paymentInfo.paymentType === "local") && (
+                  <div className="text-[9px] font-semibold text-gray-700 mt-1">
+                    {details.paymentInfo.paymentType === "international" ? "International Wire" : "Wire"}
+                  </div>
+                )}
+                {details.paymentInfo.swiftBic && <div>SWIFT / BIC: {details.paymentInfo.swiftBic}</div>}
+                {details.paymentInfo.accountNumber && <div>Account No: {details.paymentInfo.accountNumber}</div>}
+                {details.paymentInfo.routingNumber && <div>Routing No: {details.paymentInfo.routingNumber}</div>}
+                {details.paymentInfo.alternateRoutingNumber && <div>Alt. Routing: {details.paymentInfo.alternateRoutingNumber}</div>}
+                {details.paymentInfo.bankName && <div>Bank: {details.paymentInfo.bankName}</div>}
+                {details.paymentInfo.bankAddress && <div className="whitespace-pre-line">Bank Address: {details.paymentInfo.bankAddress}</div>}
+                {details.paymentInfo.beneficiaryName && <div>Beneficiary: {details.paymentInfo.beneficiaryName}</div>}
+                {details.paymentInfo.beneficiaryAddress && <div className="whitespace-pre-line">Beneficiary Address: {details.paymentInfo.beneficiaryAddress}</div>}
+                {details.paymentInfo.memo && <div className="mt-1 italic">{details.paymentInfo.memo}</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ── Note to customer (legacy / general) ── */}
           {details.noteToCustomer && (
             <div style={{ padding: "16px 40px 10px" }}>
               <div className="text-[12px] font-bold mb-1.5" style={{ color: theme }}>

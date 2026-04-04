@@ -53,10 +53,21 @@ export interface ShippingDetails {
   costType: AmountType;
 }
 
+export type PaymentType = "local" | "international";
+
 export interface PaymentInfo {
+  paymentType?: PaymentType;
   bankName: string;
   accountName: string;
   accountNumber: string;
+  routingNumber?: string;
+  bankAddress?: string;
+  beneficiaryName?: string;
+  beneficiaryAddress?: string;
+  zelleContact?: string;
+  swiftBic?: string;
+  alternateRoutingNumber?: string;
+  memo?: string;
 }
 
 export interface SignatureData {

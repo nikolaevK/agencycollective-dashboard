@@ -7,14 +7,48 @@ import { Save, ChevronDown, Building2, Loader2, Upload, X, Check } from "lucide-
 import { THEME_COLORS } from "@/lib/invoice/validation";
 import { cn } from "@/lib/utils";
 import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
+import type { PaymentInfo } from "@/types/invoice";
+import { parsePaymentNoteToPaymentInfo, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
 
 interface AgencyConfigs {
   sender: string;
   note_local: string;
   note_international: string;
+  payment_template_local: string;
+  payment_template_international: string;
   default_logo: string;
   default_theme_color: string;
   [key: string]: string;
+}
+
+type TemplateFields = Omit<PaymentInfo, "paymentType">;
+
+function emptyTemplate(): TemplateFields {
+  const { paymentType: _, ...rest } = emptyPaymentInfo("local");
+  return rest;
+}
+
+/**
+ * Parse structured JSON template, or fall back to parsing old free-text note.
+ */
+function parseTemplate(
+  structuredRaw: string | undefined,
+  freeTextRaw: string | undefined,
+  type: "local" | "international"
+): TemplateFields {
+  // Try structured JSON first
+  if (structuredRaw) {
+    try {
+      const parsed = JSON.parse(structuredRaw);
+      return { ...emptyTemplate(), ...parsed };
+    } catch { /* fall through */ }
+  }
+  // Fallback: parse old free-text note
+  if (freeTextRaw) {
+    const { paymentType: _, ...rest } = parsePaymentNoteToPaymentInfo(freeTextRaw, type);
+    return rest;
+  }
+  return emptyTemplate();
 }
 
 export function InvoiceAgencySettings() {
@@ -27,7 +61,7 @@ export function InvoiceAgencySettings() {
     queryKey: ["agency-config"],
     queryFn: async () => {
       const res = await fetch("/api/agency-config");
-      if (!res.ok) return { sender: "{}", note_local: "", note_international: "" };
+      if (!res.ok) return { sender: "{}", note_local: "", note_international: "", payment_template_local: "", payment_template_international: "" };
       const json = await res.json();
       return json.data;
     },
@@ -41,8 +75,8 @@ export function InvoiceAgencySettings() {
   const [senderCountry, setSenderCountry] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [senderPhone, setSenderPhone] = useState("");
-  const [noteLocal, setNoteLocal] = useState("");
-  const [noteInternational, setNoteInternational] = useState("");
+  const [localTemplate, setLocalTemplate] = useState(emptyTemplate());
+  const [intlTemplate, setIntlTemplate] = useState(emptyTemplate());
   const [defaultLogo, setDefaultLogo] = useState("");
   const [defaultThemeColor, setDefaultThemeColor] = useState("#475569");
   const logoRef = useRef<HTMLInputElement>(null);
@@ -59,8 +93,8 @@ export function InvoiceAgencySettings() {
       setSenderEmail(s.email ?? "");
       setSenderPhone(s.phone ?? "");
     } catch { /* ignore */ }
-    setNoteLocal(configs.note_local ?? "");
-    setNoteInternational(configs.note_international ?? "");
+    setLocalTemplate(parseTemplate(configs.payment_template_local, configs.note_local, "local"));
+    setIntlTemplate(parseTemplate(configs.payment_template_international, configs.note_international, "international"));
     setDefaultLogo(configs.default_logo ?? "");
     setDefaultThemeColor(configs.default_theme_color ?? "#475569");
   }, [configs]);
@@ -82,8 +116,8 @@ export function InvoiceAgencySettings() {
       };
       await Promise.all([
         patch("sender", sender),
-        patch("note_local", noteLocal),
-        patch("note_international", noteInternational),
+        patch("payment_template_local", JSON.stringify(localTemplate)),
+        patch("payment_template_international", JSON.stringify(intlTemplate)),
         patch("default_logo", defaultLogo),
         patch("default_theme_color", defaultThemeColor),
       ]);
@@ -96,6 +130,9 @@ export function InvoiceAgencySettings() {
       setSaving(false);
     }
   };
+
+  const updateLocal = (field: string, value: string) => setLocalTemplate((prev) => ({ ...prev, [field]: value }));
+  const updateIntl = (field: string, value: string) => setIntlTemplate((prev) => ({ ...prev, [field]: value }));
 
   return (
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
@@ -215,16 +252,94 @@ export function InvoiceAgencySettings() {
             </div>
           </div>
 
-          {/* Note to Customer — Local */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Note to Customer — Local (Zelle + Wire)</h4>
-            <textarea value={noteLocal} onChange={(e) => setNoteLocal(e.target.value)} rows={8} className={TEXTAREA_CLS} />
+          {/* Payment Template — Local */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Template — Local (Zelle + Wire)</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Zelle Contact (Phone / Email)</label>
+                <input value={localTemplate.zelleContact ?? ""} onChange={(e) => updateLocal("zelleContact", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Bank Name</label>
+                <input value={localTemplate.bankName} onChange={(e) => updateLocal("bankName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Account Name</label>
+                <input value={localTemplate.accountName} onChange={(e) => updateLocal("accountName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Account Number</label>
+                <input value={localTemplate.accountNumber} onChange={(e) => updateLocal("accountNumber", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Routing Number</label>
+                <input value={localTemplate.routingNumber ?? ""} onChange={(e) => updateLocal("routingNumber", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Bank Address</label>
+                <textarea value={localTemplate.bankAddress ?? ""} onChange={(e) => updateLocal("bankAddress", e.target.value)} rows={2} className={TEXTAREA_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Name</label>
+                <input value={localTemplate.beneficiaryName ?? ""} onChange={(e) => updateLocal("beneficiaryName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Address</label>
+                <input value={localTemplate.beneficiaryAddress ?? ""} onChange={(e) => updateLocal("beneficiaryAddress", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Memo / Reference</label>
+                <input value={localTemplate.memo ?? ""} onChange={(e) => updateLocal("memo", e.target.value)} className={INPUT_CLS} />
+              </div>
+            </div>
           </div>
 
-          {/* Note to Customer — International */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Note to Customer — International (Wire)</h4>
-            <textarea value={noteInternational} onChange={(e) => setNoteInternational(e.target.value)} rows={8} className={TEXTAREA_CLS} />
+          {/* Payment Template — International */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Template — International (Wire)</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">SWIFT / BIC Code</label>
+                <input value={intlTemplate.swiftBic ?? ""} onChange={(e) => updateIntl("swiftBic", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Bank Name</label>
+                <input value={intlTemplate.bankName} onChange={(e) => updateIntl("bankName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Account Name</label>
+                <input value={intlTemplate.accountName} onChange={(e) => updateIntl("accountName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Account Number</label>
+                <input value={intlTemplate.accountNumber} onChange={(e) => updateIntl("accountNumber", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Routing Number</label>
+                <input value={intlTemplate.routingNumber ?? ""} onChange={(e) => updateIntl("routingNumber", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Alternate Routing Number</label>
+                <input value={intlTemplate.alternateRoutingNumber ?? ""} onChange={(e) => updateIntl("alternateRoutingNumber", e.target.value)} placeholder="If sending bank doesn't recognize primary ABA" className={INPUT_CLS} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Bank Address</label>
+                <textarea value={intlTemplate.bankAddress ?? ""} onChange={(e) => updateIntl("bankAddress", e.target.value)} rows={2} className={TEXTAREA_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Name</label>
+                <input value={intlTemplate.beneficiaryName ?? ""} onChange={(e) => updateIntl("beneficiaryName", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Address</label>
+                <input value={intlTemplate.beneficiaryAddress ?? ""} onChange={(e) => updateIntl("beneficiaryAddress", e.target.value)} className={INPUT_CLS} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted-foreground">Memo / Reference</label>
+                <input value={intlTemplate.memo ?? ""} onChange={(e) => updateIntl("memo", e.target.value)} className={INPUT_CLS} />
+              </div>
+            </div>
           </div>
 
           {/* Save */}

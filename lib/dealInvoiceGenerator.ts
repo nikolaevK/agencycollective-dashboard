@@ -4,7 +4,7 @@ import type { InvoiceServiceRecord } from "./invoiceServices";
 import { readInvoiceServices } from "./invoiceServices";
 import { parseServiceCategory } from "./serviceCategory";
 import { calculateTotals } from "./invoice/validation";
-import { getAgencySender, getPaymentNote, getDefaultLogo, getDefaultThemeColor } from "./agencyConfig";
+import { getAgencySender, getPaymentTemplate, getDefaultLogo, getDefaultThemeColor } from "./agencyConfig";
 
 /**
  * Generate an InvoiceData object from a closed deal.
@@ -19,10 +19,11 @@ export async function generateInvoiceFromDeal(
   clientEmail: string | null,
   invoiceNumber: string
 ): Promise<InvoiceData> {
-  const [services, sender, noteToCustomer, defaultLogo, defaultThemeColor] = await Promise.all([
+  const paymentType = (deal.paymentType === "international" ? "international" : "local") as "local" | "international";
+  const [services, sender, paymentTemplate, defaultLogo, defaultThemeColor] = await Promise.all([
     readInvoiceServices(),
     getAgencySender(),
-    getPaymentNote((deal.paymentType === "international" ? "international" : "local") as "local" | "international"),
+    getPaymentTemplate(paymentType),
     getDefaultLogo(),
     getDefaultThemeColor(),
   ]);
@@ -55,9 +56,9 @@ export async function generateInvoiceFromDeal(
       discountDetails: null,
       taxDetails: null,
       shippingDetails: null,
-      paymentInfo: null,
+      paymentInfo: paymentTemplate,
       additionalNotes: "",
-      noteToCustomer,
+      noteToCustomer: "",
       paymentTerms: "",
       signature: null,
       totalInWords: false,
