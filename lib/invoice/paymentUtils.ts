@@ -100,7 +100,9 @@ export function loadPaymentInfoFromConfig(
     try {
       const parsed = JSON.parse(structuredRaw);
       return { ...emptyPaymentInfo(type), ...parsed, paymentType: type };
-    } catch { /* fall through */ }
+    } catch (err) {
+      console.warn("[paymentUtils] Failed to parse structured template:", err);
+    }
   }
 
   // Fallback: parse old free-text note

@@ -63,6 +63,42 @@ function DealStatusBadge({ status }: { status: DealStatus }) {
   );
 }
 
+function PaidStatusBadge({ deal, adminMode }: { deal: DealWithInvoice; adminMode: boolean }) {
+  const queryClient = useQueryClient();
+  const isPaid = deal.paidStatus === "paid";
+
+  const toggle = async () => {
+    if (!adminMode) return;
+    const res = await fetch("/api/admin/deals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: deal.id, paidStatus: isPaid ? "unpaid" : "paid" }),
+    });
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
+      queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={adminMode ? toggle : undefined}
+      className={cn(
+        "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors",
+        isPaid
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+          : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
+        adminMode && "cursor-pointer hover:opacity-80"
+      )}
+      title={adminMode ? (isPaid ? "Mark as unpaid" : "Mark as paid") : undefined}
+    >
+      {isPaid ? "Paid" : "Unpaid"}
+    </button>
+  );
+}
+
 function formatDealDate(dateStr: string | null): string {
   if (!dateStr) return "---";
   try {
@@ -272,27 +308,39 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                   {recentDeals.map((deal) => (
                     <tr key={deal.id} className="border-b border-border/50 dark:border-white/[0.06] last:border-0 hover:bg-muted/50 transition-colors">
                       <td className="py-3 pr-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-foreground">
-                            {deal.clientUserId ? (
-                              <Link href={`/dashboard/users/${deal.clientUserId}`} className="hover:text-primary transition-colors">
-                                {deal.clientName}
-                              </Link>
-                            ) : (
-                              deal.clientName
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-foreground">
+                              {deal.clientUserId ? (
+                                <Link href={`/dashboard/users/${deal.clientUserId}`} className="hover:text-primary transition-colors">
+                                  {deal.clientName}
+                                </Link>
+                              ) : (
+                                deal.clientName
+                              )}
+                            </span>
+                            {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                            {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
+                            {deal.notes && (
+                              <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
+                                <StickyNote className="h-3.5 w-3.5" />
+                              </button>
                             )}
-                          </span>
-                          {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
-                          {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
-                          {deal.notes && (
-                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
-                              <StickyNote className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {deal.serviceCategory && (
-                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
-                              <Briefcase className="h-3.5 w-3.5" />
-                            </button>
+                            {deal.serviceCategory && (
+                              <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
+                                <Briefcase className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          {(deal.brandName || deal.website) && (
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {deal.brandName && <span className="text-xs text-muted-foreground">{deal.brandName}</span>}
+                              {deal.website && (
+                                <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[180px]">
+                                  {deal.website.replace(/^https?:\/\//, "")}
+                                </a>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
@@ -321,6 +369,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                               } : undefined}
                             />
                           )}
+                          <PaidStatusBadge deal={deal} adminMode={adminMode} />
                         </div>
                       </td>
                       <td className="py-3 pr-4 text-muted-foreground">
@@ -347,18 +396,30 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                 <div key={deal.id} className="rounded-lg border border-border/50 dark:border-white/[0.06] bg-background/50 p-4">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
-                        {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
-                        {deal.notes && (
-                          <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
-                            <StickyNote className="h-3 w-3" />
-                          </button>
-                        )}
-                        {deal.serviceCategory && (
-                          <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500" title="View services">
-                            <Briefcase className="h-3 w-3" />
-                          </button>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
+                          {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                          {deal.notes && (
+                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
+                              <StickyNote className="h-3 w-3" />
+                            </button>
+                          )}
+                          {deal.serviceCategory && (
+                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500" title="View services">
+                              <Briefcase className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {(deal.brandName || deal.website) && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {deal.brandName && <span className="text-xs text-muted-foreground">{deal.brandName}</span>}
+                            {deal.website && (
+                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[150px]">
+                                {deal.website.replace(/^https?:\/\//, "")}
+                              </a>
+                            )}
+                          </div>
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground">{formatDealDate(deal.closingDate || deal.createdAt)}</span>
@@ -394,6 +455,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                           } : undefined}
                         />
                       )}
+                      <PaidStatusBadge deal={deal} adminMode={adminMode} />
                     </div>
                   </div>
                 </div>

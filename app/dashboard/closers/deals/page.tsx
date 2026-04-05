@@ -24,6 +24,7 @@ export default function AdminDealsPage() {
       return json.data ?? [];
     },
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 
   const filtered = useMemo(() => {

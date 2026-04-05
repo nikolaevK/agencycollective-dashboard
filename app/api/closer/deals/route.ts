@@ -79,6 +79,8 @@ export async function PATCH(request: Request) {
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;
     if (body.clientEmail !== undefined) changes.clientEmail = body.clientEmail ? String(body.clientEmail).trim() : null;
     if (body.paymentType !== undefined) changes.paymentType = String(body.paymentType).trim() || "local";
+    if (body.brandName !== undefined) changes.brandName = body.brandName ? String(body.brandName).trim() : null;
+    if (body.website !== undefined) changes.website = body.website ? String(body.website).trim() : null;
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {

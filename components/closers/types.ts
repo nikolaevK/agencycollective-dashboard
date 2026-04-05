@@ -30,6 +30,9 @@ export interface DealPublic {
   notes: string | null;
   googleEventId: string | null;
   paymentType: string;
+  brandName: string | null;
+  website: string | null;
+  paidStatus: "paid" | "unpaid";
   createdAt: string;
   updatedAt: string;
 }

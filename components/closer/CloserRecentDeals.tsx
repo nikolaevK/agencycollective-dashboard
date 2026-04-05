@@ -109,20 +109,32 @@ export function CloserRecentDeals({ deals }: Props) {
                     className="border-b border-border/50 dark:border-white/[0.06] last:border-0 hover:bg-muted/50 transition-colors"
                   >
                     <td className="px-5 py-3 font-medium text-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        {deal.clientName}
-                        {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
-                        {deal.notes && (
-                          <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
-                            <StickyNote className="h-3.5 w-3.5" />
-                          </button>
+                      <div>
+                        <span className="inline-flex items-center gap-1.5">
+                          {deal.clientName}
+                          {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                          {deal.notes && (
+                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
+                              <StickyNote className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {deal.serviceCategory && (
+                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
+                              <Briefcase className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </span>
+                        {(deal.brandName || deal.website) && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {deal.brandName && <span className="text-xs text-muted-foreground font-normal">{deal.brandName}</span>}
+                            {deal.website && (
+                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[180px] font-normal">
+                                {deal.website.replace(/^https?:\/\//, "")}
+                              </a>
+                            )}
+                          </div>
                         )}
-                        {deal.serviceCategory && (
-                          <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
-                            <Briefcase className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </span>
+                      </div>
                     </td>
                     <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
                     <td className="px-5 py-3">
@@ -134,6 +146,14 @@ export function CloserRecentDeals({ deals }: Props) {
                         {deal.contractStatus && (
                           <DealContractStatusBadge status={deal.contractStatus} />
                         )}
+                        <span className={cn(
+                          "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap",
+                          deal.paidStatus === "paid"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                            : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
+                        )}>
+                          {deal.paidStatus === "paid" ? "Paid" : "Unpaid"}
+                        </span>
                       </div>
                     </td>
                     <td className="px-5 py-3 text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</td>
@@ -169,6 +189,16 @@ export function CloserRecentDeals({ deals }: Props) {
                       </button>
                     )}
                   </div>
+                  {(deal.brandName || deal.website) && (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {deal.brandName && <span className="text-xs text-muted-foreground">{deal.brandName}</span>}
+                      {deal.website && (
+                        <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[150px]">
+                          {deal.website.replace(/^https?:\/\//, "")}
+                        </a>
+                      )}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {formatDate(deal.closingDate || deal.createdAt)}
                   </p>
@@ -181,6 +211,14 @@ export function CloserRecentDeals({ deals }: Props) {
                   {deal.contractStatus && (
                     <DealContractStatusBadge status={deal.contractStatus} />
                   )}
+                  <span className={cn(
+                    "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap",
+                    deal.paidStatus === "paid"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                      : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
+                  )}>
+                    {deal.paidStatus === "paid" ? "Paid" : "Unpaid"}
+                  </span>
                   <span className="text-sm font-semibold text-foreground">
                     {formatCents(deal.dealValue)}
                   </span>

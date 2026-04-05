@@ -20,6 +20,9 @@ export interface DealRecord {
   notes: string | null;
   googleEventId: string | null;
   paymentType: string;
+  brandName: string | null;
+  website: string | null;
+  paidStatus: "paid" | "unpaid";
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +47,9 @@ function rowToDeal(row: Row): DealRecord {
     notes: row.notes != null ? String(row.notes) : null,
     googleEventId: row.google_event_id != null ? String(row.google_event_id) : null,
     paymentType: String(row.payment_type ?? "local"),
+    brandName: row.brand_name != null ? String(row.brand_name) : null,
+    website: row.website != null ? String(row.website) : null,
+    paidStatus: (String(row.paid_status ?? "unpaid")) as "paid" | "unpaid",
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -82,8 +88,8 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
@@ -99,6 +105,9 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.notes,
       deal.googleEventId,
       deal.paymentType ?? "local",
+      deal.brandName,
+      deal.website,
+      deal.paidStatus ?? "unpaid",
     ],
   });
 }
@@ -157,6 +166,18 @@ export async function updateDeal(
   if (changes.paymentType !== undefined) {
     fields.push("payment_type = ?");
     args.push(changes.paymentType);
+  }
+  if (changes.brandName !== undefined) {
+    fields.push("brand_name = ?");
+    args.push(changes.brandName);
+  }
+  if (changes.website !== undefined) {
+    fields.push("website = ?");
+    args.push(changes.website);
+  }
+  if (changes.paidStatus !== undefined) {
+    fields.push("paid_status = ?");
+    args.push(changes.paidStatus);
   }
 
   if (fields.length === 0) return;

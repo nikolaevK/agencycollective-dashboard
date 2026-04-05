@@ -351,6 +351,40 @@ export async function migrate(): Promise<void> {
     }
   }
 
+  // ── Add brand_name and website to deals (if not present) ────────
+  try {
+    await db.execute(`SELECT brand_name FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN brand_name TEXT`);
+      console.log("[migrate] Added brand_name column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add brand_name column:", err);
+    }
+  }
+  try {
+    await db.execute(`SELECT website FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN website TEXT`);
+      console.log("[migrate] Added website column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add website column:", err);
+    }
+  }
+
+  // ── Add paid_status to deals (if not present) ──────────────────
+  try {
+    await db.execute(`SELECT paid_status FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN paid_status TEXT DEFAULT 'unpaid'`);
+      console.log("[migrate] Added paid_status column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add paid_status column:", err);
+    }
+  }
+
   // ── Migrate old statuses to new ones ────────────────────────────
   try {
     await db.execute(`UPDATE deals SET status = 'follow_up' WHERE status = 'in_progress'`);

@@ -12,29 +12,39 @@ export async function GET() {
 
 /**
  * DocuSeal webhook handler.
- * Public endpoint — verified by URL token, NOT by session cookie.
+ * Public endpoint — verified by header secret, NOT by session cookie.
  * Not included in middleware matcher so it bypasses auth automatically.
  *
- * Set your webhook URL in DocuSeal as:
- *   https://your-domain.com/api/webhooks/docuseal?token=YOUR_DOCUSEAL_WEBHOOK_SECRET
+ * In DocuSeal webhook settings:
+ *   1. Set URL to: https://your-domain.com/api/webhooks/docuseal
+ *   2. Click "Add Secret" and set key/value matching your env vars:
+ *      - Header key = DOCUSEAL_WEBHOOK_SECRET_KEY (default: "x-docuseal-secret")
+ *      - Header value = DOCUSEAL_WEBHOOK_SECRET
+ *   3. If DOCUSEAL_WEBHOOK_SECRET is not set, all requests are accepted (dev mode).
  */
 export async function POST(req: NextRequest) {
   try {
+    // Verify webhook authenticity.
+    // DocuSeal sends configured secrets as request headers (key-value pairs).
+    // We also support ?token= query param as a fallback.
     const webhookSecret = process.env.DOCUSEAL_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      console.error("[docuseal-webhook] DOCUSEAL_WEBHOOK_SECRET not configured");
-      return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
-    }
+    if (webhookSecret) {
+      const secretKey = process.env.DOCUSEAL_WEBHOOK_SECRET_KEY || "x-docuseal-secret";
+      const headerValue = req.headers.get(secretKey) || "";
+      const urlToken = req.nextUrl.searchParams.get("token") || "";
+      const candidate = headerValue || urlToken;
 
-    const urlToken = req.nextUrl.searchParams.get("token") || "";
-    try {
-      const a = Buffer.from(webhookSecret, "utf8");
-      const b = Buffer.from(urlToken, "utf8");
-      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      try {
+        const a = Buffer.from(webhookSecret, "utf8");
+        const b = Buffer.from(candidate, "utf8");
+        if (!candidate || a.length !== b.length || !timingSafeEqual(a, b)) {
+          console.warn("[docuseal-webhook] Auth failed — header or token mismatch");
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      } catch {
+        console.warn("[docuseal-webhook] Auth failed — comparison error");
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-    } catch {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json();
@@ -45,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    console.log(`[docuseal-webhook] Received event: ${eventType}`);
+    console.log(`[docuseal-webhook] ${eventType}`);
 
     // Consistent submission ID extraction across all event types.
     // DocuSeal sends it in different places depending on the event.

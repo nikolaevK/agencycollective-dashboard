@@ -47,6 +47,7 @@ export default function CloserDashboardPage() {
       return json.data;
     },
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 
   if (isLoading || !data) {

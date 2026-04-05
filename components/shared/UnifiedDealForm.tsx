@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { DollarSign, Calendar, Tag, FileText, Send } from "lucide-react";
+import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
@@ -28,6 +28,8 @@ interface UnifiedDealFormProps {
     notes?: string | null;
     googleEventId?: string | null;
     paymentType?: string;
+    brandName?: string | null;
+    website?: string | null;
   };
   calendarEvent?: {
     id: string;
@@ -67,6 +69,8 @@ export function UnifiedDealForm({
   const [status, setStatus] = useState(initialData?.status ?? "closed");
   const [notes, setNotes] = useState(initialData?.notes ?? "");
   const [paymentType, setPaymentType] = useState(initialData?.paymentType ?? "local");
+  const [brandName, setBrandName] = useState(initialData?.brandName ?? "");
+  const [website, setWebsite] = useState(initialData?.website ?? "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -83,6 +87,8 @@ export function UnifiedDealForm({
     setStatus("closed");
     setNotes("");
     setPaymentType("local");
+    setBrandName("");
+    setWebsite("");
     setError(null);
     setSuccess(false);
   }
@@ -125,6 +131,8 @@ export function UnifiedDealForm({
           fd.set("status", status);
           fd.set("notes", notes);
           fd.set("paymentType", paymentType);
+          if (brandName) fd.set("brandName", brandName);
+          if (website) fd.set("website", website);
           if (googleEventId) fd.set("googleEventId", googleEventId);
           if (autoShowStatus) fd.set("showStatus", autoShowStatus);
 
@@ -153,6 +161,8 @@ export function UnifiedDealForm({
               clientUserId,
               clientEmail: clientEmail || null,
               paymentType,
+              brandName: brandName || null,
+              website: website || null,
             }),
           });
           const json = await res.json();
@@ -180,6 +190,8 @@ export function UnifiedDealForm({
           if (clientUserId !== undefined) body.clientUserId = clientUserId;
           body.clientEmail = clientEmail || null;
           body.paymentType = paymentType;
+          body.brandName = brandName || null;
+          body.website = website || null;
           if (autoShowStatus) body.showStatus = autoShowStatus;
 
           const res = await fetch(endpoint, {
@@ -249,6 +261,36 @@ export function UnifiedDealForm({
           placeholder="client@example.com"
           className={INPUT_CLS}
         />
+      </div>
+
+      {/* Brand Name */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-1.5 block">Brand Name <span className="text-muted-foreground font-normal">(optional)</span></label>
+        <div className="relative">
+          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={brandName}
+            onChange={(e) => setBrandName(e.target.value)}
+            placeholder="Brand or company name"
+            className={`${INPUT_CLS} pl-10`}
+          />
+        </div>
+      </div>
+
+      {/* Website */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-1.5 block">Website <span className="text-muted-foreground font-normal">(optional)</span></label>
+        <div className="relative">
+          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            placeholder="https://example.com"
+            className={`${INPUT_CLS} pl-10`}
+          />
+        </div>
       </div>
 
       {/* Payment Type */}

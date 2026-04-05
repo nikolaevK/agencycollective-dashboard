@@ -50,6 +50,8 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   const rawEmail = String(formData.get("clientEmail") ?? "").trim();
   const clientEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && rawEmail.length <= 254 ? rawEmail : null;
   const paymentType = String(formData.get("paymentType") ?? "local").trim() || "local";
+  const brandName = String(formData.get("brandName") ?? "").trim() || null;
+  const website = String(formData.get("website") ?? "").trim() || null;
 
   await insertDeal({
     id,
@@ -66,6 +68,9 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     notes,
     googleEventId,
     paymentType,
+    brandName,
+    website,
+    paidStatus: "unpaid",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -79,7 +84,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   if (status === "closed" && dealValue > 0) {
     try {
       const invoiceNumber = await generateInvoiceNumber();
-      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
       await insertDealInvoice({
         id: crypto.randomUUID(),

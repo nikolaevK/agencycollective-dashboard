@@ -16,5 +16,6 @@ export function useDealContract(dealId: string | null) {
     },
     enabled: !!dealId,
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }

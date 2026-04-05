@@ -31,6 +31,7 @@ export default function CloserDetailPage() {
       return json.data;
     },
     staleTime: 30_000,
+    refetchInterval: 30_000,
     enabled: !!closerId,
   });
 

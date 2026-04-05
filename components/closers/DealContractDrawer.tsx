@@ -74,6 +74,8 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
         setSyncMessage(`Status updated: ${json.data.previousStatus} → ${json.data.currentStatus}`);
         queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
         queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
       } else {
         setSyncMessage("Already up to date");
       }
