@@ -3,10 +3,9 @@
 import { useState, useTransition, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { MoreHorizontal, Eye, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, Trash2, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { CloserStatusBadge } from "@/components/closers/CloserStatusBadge";
 import { CloserRoleBadge } from "@/components/closers/CloserRoleBadge";
 import {
   formatBasisPoints,
@@ -52,10 +51,64 @@ function getInitials(name: string): string {
 
 function relativeDate(dateStr: string): string {
   try {
-    return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+    // SQLite datetime('now') returns UTC without Z suffix — append it so JS parses as UTC
+    const iso = dateStr.includes("T") || dateStr.endsWith("Z") ? dateStr : dateStr + "Z";
+    return formatDistanceToNow(new Date(iso), { addSuffix: true });
   } catch {
     return dateStr;
   }
+}
+
+/* ── Status toggle ── */
+function StatusToggle({ closerId, status }: { closerId: string; status: string }) {
+  const queryClient = useQueryClient();
+  const [toggling, setToggling] = useState(false);
+  const isActive = status === "active";
+
+  const toggle = async () => {
+    setToggling(true);
+    try {
+      const res = await fetch("/api/admin/closers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: closerId, status: isActive ? "inactive" : "active" }),
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["admin-closers"] });
+      }
+    } catch { /* ignore */ } finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={toggling}
+      className="flex items-center gap-2 group"
+      title={isActive ? "Deactivate closer" : "Activate closer"}
+    >
+      <div className={cn(
+        "relative w-8 h-[18px] rounded-full transition-colors",
+        isActive ? "bg-primary" : "bg-gray-300 dark:bg-gray-600"
+      )}>
+        {toggling ? (
+          <Loader2 className="absolute inset-0 m-auto h-3 w-3 animate-spin text-white" />
+        ) : (
+          <div className={cn(
+            "absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform",
+            isActive ? "translate-x-[16px]" : "translate-x-[2px]"
+          )} />
+        )}
+      </div>
+      <span className={cn(
+        "text-[10px] font-bold uppercase tracking-wide",
+        isActive ? "text-primary" : "text-gray-500 dark:text-gray-400"
+      )}>
+        {isActive ? "Active" : "Inactive"}
+      </span>
+    </button>
+  );
 }
 
 /* ── Portal-based dropdown that renders outside the table overflow ── */
@@ -247,7 +300,7 @@ export function CloserTable({ closers, onEdit }: CloserTableProps) {
 
                   {/* Status */}
                   <td className="px-4 py-3">
-                    <CloserStatusBadge status={closer.status} />
+                    <StatusToggle closerId={closer.id} status={closer.status} />
                   </td>
 
                   {/* Commission */}

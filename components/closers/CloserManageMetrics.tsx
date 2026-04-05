@@ -41,14 +41,13 @@ export function CloserManageMetrics({ closers }: CloserManageMetricsProps) {
       gradient: false,
     },
     {
-      label: "Active Now",
+      label: "Active Closers",
       value: String(active),
-      subtitle: "Currently active",
+      subtitle: `${total - active} inactive`,
       icon: Activity,
       iconBg: "bg-emerald-500/10",
       iconColor: "text-emerald-500",
       gradient: false,
-      pulse: true,
     },
     {
       label: "Total Quota",
@@ -104,12 +103,6 @@ export function CloserManageMetrics({ closers }: CloserManageMetricsProps) {
                   >
                     {card.value}
                   </p>
-                  {card.pulse && (
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    </span>
-                  )}
                 </div>
                 <p
                   className={cn(

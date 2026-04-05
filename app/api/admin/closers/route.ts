@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
-import { readClosers, findCloser, deleteCloser } from "@/lib/closers";
+import { readClosers, findCloser, deleteCloser, updateCloser } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 
 function unauthorized() {
@@ -47,6 +47,38 @@ export async function GET(request: Request) {
   }));
 
   return NextResponse.json({ data: safe });
+}
+
+export async function PATCH(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin) return unauthorized();
+
+  try {
+    const body = await request.json();
+    const { id, status } = body;
+    if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (status !== "active" && status !== "inactive") {
+      return NextResponse.json({ error: "status must be active or inactive" }, { status: 400 });
+    }
+
+    const target = await findCloser(id);
+    if (!target) return NextResponse.json({ error: "Closer not found" }, { status: 404 });
+
+    await updateCloser(id, { status });
+
+    logAuditEvent({
+      adminId: admin.id,
+      adminUsername: admin.username,
+      action: "closer.update",
+      targetType: "closer",
+      targetId: id,
+      details: JSON.stringify({ displayName: target.displayName, status }),
+    }).catch(() => {});
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(request: Request) {
