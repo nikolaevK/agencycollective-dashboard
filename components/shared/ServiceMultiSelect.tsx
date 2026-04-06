@@ -18,16 +18,17 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Fetch preset services from DB
-  const { data: serviceNames = [] } = useQuery<string[]>({
+  const { data: services = [] } = useQuery<Array<{ name: string; rate: number }>>({
     queryKey: ["service-names-for-deals"],
     queryFn: async () => {
       const res = await fetch("/api/services");
       if (!res.ok) return [];
       const json = await res.json();
-      return (json.data ?? []).map((s: { name: string }) => s.name);
+      return (json.data ?? []).map((s: { name: string; rate: number }) => ({ name: s.name, rate: s.rate }));
     },
     staleTime: 60_000,
   });
+  const serviceNames = services.map((s) => s.name);
 
   useEffect(() => {
     if (!open) return;
@@ -83,7 +84,7 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
       </button>
 
       {open && (
-        <div className="absolute z-[60] mt-1 w-full rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100">
+        <div className="absolute z-[60] mt-1 w-full rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100 max-h-60 overflow-y-auto">
           {/* Select All */}
           <button
             type="button"
@@ -102,13 +103,13 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
           </button>
 
           {/* Individual items */}
-          {serviceNames.map((item) => {
-            const checked = value.includes(item);
+          {services.map((svc) => {
+            const checked = value.includes(svc.name);
             return (
               <button
                 type="button"
-                key={item}
-                onClick={() => toggleItem(item)}
+                key={svc.name}
+                onClick={() => toggleItem(svc.name)}
                 className="flex w-full items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent transition-colors"
               >
                 <div className={cn(
@@ -119,12 +120,15 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
                 )}>
                   {checked && <Check className="h-3 w-3 text-primary-foreground" />}
                 </div>
-                <span className="text-sm text-foreground">{item}</span>
+                <span className="text-sm text-foreground flex-1 text-left">{svc.name}</span>
+                {svc.rate > 0 && (
+                  <span className="text-xs text-muted-foreground shrink-0">${(svc.rate / 100).toLocaleString()}</span>
+                )}
               </button>
             );
           })}
 
-          {serviceNames.length === 0 && (
+          {services.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">No services configured</p>
           )}
         </div>

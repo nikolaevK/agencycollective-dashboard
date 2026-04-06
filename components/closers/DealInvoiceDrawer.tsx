@@ -880,7 +880,10 @@ function ContractSection({
             {showPreview ? "Hide Contract Preview" : "Preview Contract"}
           </button>
           {showPreview && (
-            <ContractPreviewEmbed docusealTemplateId={currentDocusealId} />
+            <ContractPreviewOverlay
+              docusealTemplateId={currentDocusealId}
+              onClose={onTogglePreview}
+            />
           )}
         </>
       )}
@@ -888,7 +891,7 @@ function ContractSection({
   );
 }
 
-function ContractPreviewEmbed({ docusealTemplateId }: { docusealTemplateId: number }) {
+function ContractPreviewOverlay({ docusealTemplateId, onClose }: { docusealTemplateId: number; onClose: () => void }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -919,33 +922,43 @@ function ContractPreviewEmbed({ docusealTemplateId }: { docusealTemplateId: numb
     return () => { cancelled = true; };
   }, [docusealTemplateId]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (error || !token) {
-    return <p className="text-xs text-red-500 py-2">{error || "Preview unavailable"}</p>;
-  }
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden" style={{ maxHeight: "50vh" }}>
-      <Suspense fallback={<div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
-        <DocusealBuilder
-          token={token}
-          preview={true}
-          withSendButton={false}
-          withSignYourselfButton={false}
-          withUploadButton={false}
-          withAddPageButton={false}
-          withTitle={false}
-          className="w-full"
-          style={{ minHeight: "300px", maxHeight: "50vh" }}
-        />
-      </Suspense>
-    </div>
+    <>
+      <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-4 z-[70] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+          <h3 className="text-sm font-semibold text-foreground">Contract Preview</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {error && <p className="text-sm text-red-500 p-6">{error}</p>}
+          {token && (
+            <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+              <DocusealBuilder
+                token={token}
+                withSendButton={false}
+                withSignYourselfButton={false}
+                withTitle={false}
+                className="w-full h-full"
+                style={{ minHeight: "100%" }}
+              />
+            </Suspense>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

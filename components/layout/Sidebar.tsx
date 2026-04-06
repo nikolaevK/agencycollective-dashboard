@@ -24,7 +24,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/json-editor", label: "JSON Editor", icon: Braces, perm: "jsoneditor" },
   { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool, perm: "adcopy" },
   { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
-  { href: "/dashboard/users", label: "Users", icon: Users, perm: "users" },
+  { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
   { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
   { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
   { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },

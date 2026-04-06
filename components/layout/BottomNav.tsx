@@ -9,7 +9,7 @@ import type { PermissionKey } from "@/lib/permissions";
 
 const allTabs: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true, perm: "dashboard" },
-  { href: "/dashboard/users", label: "Users", icon: Users, exact: false, perm: "users" },
+  { href: "/dashboard/users", label: "Clients", icon: Users, exact: false, perm: "users" },
   { href: "/dashboard/admins", label: "Admins", icon: UserCog, exact: false, perm: "admin" },
   { href: "/dashboard/closers", label: "Closers", icon: Handshake, exact: false, perm: "closers" },
 ];
