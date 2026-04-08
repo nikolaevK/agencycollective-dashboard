@@ -124,18 +124,19 @@ export async function deleteDealInvoice(id: string): Promise<boolean> {
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** Generate next sequential invoice number for the current month. */
+/** Generate next sequential invoice number for the current day. */
 export async function generateInvoiceNumber(): Promise<string> {
   await ensureMigrated();
   const db = getDb();
   const now = new Date();
   const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
 
+  // Use MAX to find the highest existing sequence number (survives deletions)
   const result = await db.execute({
-    sql: `SELECT COUNT(*) as cnt FROM deal_invoices WHERE invoice_number LIKE ?`,
-    args: [`${prefix}%`],
+    sql: `SELECT MAX(CAST(SUBSTR(invoice_number, LENGTH(?) + 2) AS INTEGER)) as max_seq FROM deal_invoices WHERE invoice_number LIKE ?`,
+    args: [prefix, `${prefix}-%`],
   });
-  const seq = Number(result.rows[0]?.cnt ?? 0) + 1;
+  const seq = Number(result.rows[0]?.max_seq ?? 0) + 1;
   return `${prefix}-${String(seq).padStart(3, "0")}`;
 }
 
