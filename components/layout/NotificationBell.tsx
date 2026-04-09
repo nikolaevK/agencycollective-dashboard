@@ -3,14 +3,16 @@
 import { Bell, BellOff, BellRing, Loader2 } from "lucide-react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function NotificationBell() {
   const { isSupported, isSubscribed, isLoading, isPWA, subscribe, unsubscribe } = usePushNotifications();
   const [busy, setBusy] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Not supported at all — hide (after loading check)
-  if (!isLoading && !isSupported) return null;
+  useEffect(() => {
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
   // Render disabled placeholder while loading to prevent layout shift
   if (isLoading) {
@@ -25,6 +27,13 @@ export function NotificationBell() {
     );
   }
 
+  // On desktop, hide if not supported (e.g. very old browser)
+  // On mobile, always show — so we can display the install hint
+  if (!isSupported && !isMobile) return null;
+
+  const showInstallHint = isMobile && !isPWA;
+  const showSubscribeUI = isSupported && !showInstallHint;
+
   async function handleToggle() {
     setBusy(true);
     try {
@@ -37,9 +46,6 @@ export function NotificationBell() {
       setBusy(false);
     }
   }
-
-  const isMobile = typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const showInstallHint = isMobile && !isPWA;
 
   return (
     <Popover>
@@ -66,7 +72,7 @@ export function NotificationBell() {
               To receive push notifications, add this app to your Home Screen first. Tap the share button, then &quot;Add to Home Screen&quot;.
             </p>
           </div>
-        ) : (
+        ) : showSubscribeUI ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               {isSubscribed ? (
@@ -96,6 +102,13 @@ export function NotificationBell() {
                 "Enable notifications"
               )}
             </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Not Supported</p>
+            <p className="text-xs text-muted-foreground">
+              Push notifications are not supported in this browser.
+            </p>
           </div>
         )}
       </PopoverContent>
