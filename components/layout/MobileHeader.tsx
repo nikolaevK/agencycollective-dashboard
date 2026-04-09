@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Menu } from "lucide-react";
+import { AlertTriangle, Menu } from "lucide-react";
 import Image from "next/image";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -49,9 +49,9 @@ export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
           <Link
             href="/dashboard/alerts"
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            aria-label="Notifications"
+            aria-label="Alerts"
           >
-            <Bell className="h-4 w-4" />
+            <AlertTriangle className="h-4 w-4" />
           </Link>
           {/* Admin avatar */}
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-semibold overflow-hidden">
