@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
 import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
@@ -12,6 +13,7 @@ import type { DealPublic } from "@/components/closers/types";
 
 export default function CloserCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [calendarFilter, setCalendarFilter] = useState("all");
   const [linkingEvent, setLinkingEvent] = useState<CalendarEvent | null>(null);
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -109,6 +111,23 @@ export default function CloserCalendarPage() {
     }
   }
 
+  // Extract unique calendar owners for filter
+  const calendarOwners = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of events) {
+      if (e.calendarName) names.add(e.calendarName);
+    }
+    return [...names].sort();
+  }, [events]);
+
+  // Auto-reset filter if selected owner has no events in current week
+  const activeFilter = calendarFilter !== "all" && !calendarOwners.includes(calendarFilter) ? "all" : calendarFilter;
+
+  const filteredEvents = useMemo(() => {
+    if (activeFilter === "all") return events;
+    return events.filter((e) => e.calendarName === activeFilter);
+  }, [events, activeFilter]);
+
   const connected = status?.connected ?? false;
 
   return (
@@ -162,6 +181,41 @@ export default function CloserCalendarPage() {
               </button>
             </div>
 
+            {/* Calendar filter */}
+            {calendarOwners.length > 1 && (
+              <div className="flex items-center gap-2 flex-wrap mb-6">
+                <button
+                  onClick={() => setCalendarFilter("all")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                    activeFilter === "all"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  All ({events.length})
+                </button>
+                {calendarOwners.map((owner) => {
+                  const count = events.filter((e) => e.calendarName === owner).length;
+                  return (
+                    <button
+                      key={owner}
+                      onClick={() => setCalendarFilter(owner)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                        activeFilter === owner
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <UserRound className="h-3 w-3" />
+                      {owner} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Events */}
             {eventsLoading ? (
               <div className="space-y-3">
@@ -171,7 +225,7 @@ export default function CloserCalendarPage() {
               </div>
             ) : (
               <CalendarEventList
-                events={events}
+                events={filteredEvents}
                 linkedEventIds={linkedEventIds}
                 linkedDeals={linkedDeals}
                 attendance={attendance}
