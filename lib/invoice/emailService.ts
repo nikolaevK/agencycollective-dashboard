@@ -12,7 +12,7 @@ export async function sendInvoiceEmail(
   recipientEmail: string,
   pdfBuffer: Buffer,
   invoiceNumber: string,
-  options?: { includesContract?: boolean }
+  options?: { includesContract?: boolean; cc?: string }
 ): Promise<boolean> {
   if (!isEmailConfigured()) {
     console.warn("[invoice-email] SMTP not configured — skipping send");
@@ -53,6 +53,7 @@ export async function sendInvoiceEmail(
     await transport.sendMail({
       from: process.env.SMTP_USER,
       to: recipientEmail,
+      ...(options?.cc ? { cc: options.cc } : {}),
       subject: `Invoice #${safeNumber} — Agency Collective`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #333;">
@@ -60,14 +61,14 @@ export async function sendInvoiceEmail(
           <p style="line-height: 1.7; margin: 0 0 16px;">
             Great chatting with you today, excited to get started.
           </p>
-          <p style="line-height: 1.7; margin: 0 0 8px;">Attached you'll find:</p>
+          <p style="line-height: 1.7; margin: 0 0 8px;">We've sent you 2 separate emails. In those you'll find:</p>
           <ul style="line-height: 1.7; margin: 0 0 16px; padding-left: 20px;">
             <li><strong>Project Scope</strong> &mdash; an overview of what we'll be tackling together</li>
             <li><strong>Invoice</strong> &mdash; payment details for your month-to-month agreement</li>
           </ul>
           ${contractParagraph}
           <p style="line-height: 1.7; margin: 0 0 16px;">Looking forward to it!</p>
-          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Amber</strong></p>
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Onboarding Team</p>
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
             <strong style="color: #333;">Agency Collective</strong><br>
             White-Glove Advertising for Niche Verticals<br>

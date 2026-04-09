@@ -116,6 +116,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose 
   const [showContractPreview, setShowContractPreview] = useState(false);
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [clientEmail, setClientEmail] = useState("");
+  const [ccEmail, setCcEmail] = useState("");
   const [drawerPaymentType, setDrawerPaymentType] = useState<PaymentType>(dealPaymentType === "international" ? "international" : "local");
 
   const { data: agencyConfig } = useQuery<Record<string, string>>({
@@ -127,11 +128,30 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose 
     },
     staleTime: 60_000,
   });
+  // Fetch closer email for CC prefill
+  const { data: closerEmail } = useQuery<string | null>({
+    queryKey: ["deal-closer-email", dealId],
+    queryFn: async () => {
+      if (!dealId) return null;
+      const res = await fetch(`/api/admin/deals/closer-email?dealId=${dealId}`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data ?? null;
+    },
+    enabled: !!dealId,
+    staleTime: 60_000,
+  });
+
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [savingPreset, setSavingPreset] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Prefill CC with closer email once loaded
+  useEffect(() => {
+    if (closerEmail && !ccEmail) setCcEmail(closerEmail);
+  }, [closerEmail]);
 
   useEffect(() => {
     if (!invoice || !agencyConfig) return;
@@ -341,6 +361,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose 
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
       formData.append("email", clientEmail);
+      if (ccEmail.trim()) formData.append("cc", ccEmail.trim());
       formData.append("pdf", new File([blob], `invoice-${invoiceData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
       if (hasPendingContract) {
         formData.append("sendContract", "true");
@@ -458,6 +479,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose 
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Client Email</label>
                 <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@example.com" className={INPUT_CLS} />
+              </div>
+
+              {/* CC (closer email) */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">CC <span className="font-normal text-muted-foreground">(optional)</span></label>
+                <input type="email" value={ccEmail} onChange={(e) => setCcEmail(e.target.value)} placeholder="closer@example.com" className={INPUT_CLS} />
               </div>
 
               {/* Invoice Date & Due Date */}

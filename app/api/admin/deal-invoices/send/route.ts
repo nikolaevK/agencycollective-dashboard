@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     const email = formData.get("email") as string;
     const pdfFile = formData.get("pdf") as File;
     const sendContract = formData.get("sendContract") === "true";
+    const ccEmail = (formData.get("cc") as string | null)?.trim() || null;
 
     if (!invoiceId || !email || !pdfFile) {
       return NextResponse.json({ error: "invoiceId, email, and pdf required" }, { status: 400 });
@@ -48,8 +49,14 @@ export async function POST(req: NextRequest) {
     const safeNumber = invoice.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100);
 
     // Send invoice email (with or without contract mention)
+    // Validate CC email if provided
+    if (ccEmail && (!emailRegex.test(ccEmail) || ccEmail.length > 254)) {
+      return NextResponse.json({ error: "Invalid CC email" }, { status: 400 });
+    }
+
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       includesContract: !!hasPendingContract,
+      cc: ccEmail || undefined,
     });
     if (!sent) return NextResponse.json({ error: "Failed to send invoice email" }, { status: 500 });
 
