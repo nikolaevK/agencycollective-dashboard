@@ -250,8 +250,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
       (a, b) =>
         new Date(b.closingDate || b.createdAt).getTime() -
         new Date(a.closingDate || a.createdAt).getTime()
-    )
-    .slice(0, 20);
+    );
 
   function handleDelete(id: string) {
     startTransition(async () => {
