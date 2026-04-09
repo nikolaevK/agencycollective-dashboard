@@ -184,6 +184,12 @@ export function AddEditPayoutModal({
 
       if (isEdit && payout) {
         payload.id = payout.id;
+        // Sync payout month/year with dateJoined on edit
+        if (dateJoined) {
+          const [y, m] = dateJoined.split("-");
+          payload.payoutMonth = Number(m);
+          payload.payoutYear = Number(y);
+        }
         const res = await fetch("/api/admin/payouts", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -194,8 +200,15 @@ export function AddEditPayoutModal({
           throw new Error(d.error || "Update failed");
         }
       } else {
-        payload.payoutMonth = defaultMonth;
-        payload.payoutYear = defaultYear;
+        // Derive payout month/year from dateJoined when available
+        if (dateJoined) {
+          const [y, m] = dateJoined.split("-");
+          payload.payoutMonth = Number(m);
+          payload.payoutYear = Number(y);
+        } else {
+          payload.payoutMonth = defaultMonth;
+          payload.payoutYear = defaultYear;
+        }
         const res = await fetch("/api/admin/payouts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

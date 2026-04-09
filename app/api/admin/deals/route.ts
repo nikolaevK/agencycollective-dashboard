@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { readDeals, findDeal, updateDeal, deleteDeal } from "@/lib/deals";
+import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
@@ -44,17 +45,20 @@ export async function GET(request: Request) {
     );
   }
 
-  // Attach invoice and contract statuses
+  // Attach invoice/contract statuses and closer names
   const dealIds = deals.map((d) => d.id);
-  const [invoiceStatuses, contractStatuses] = await Promise.all([
+  const [invoiceStatuses, contractStatuses, closers] = await Promise.all([
     getDealInvoiceStatuses(dealIds),
     getDealContractStatuses(dealIds),
+    readClosers(),
   ]);
+  const closerNameMap = new Map(closers.map((c) => [c.id, c.displayName]));
   const dealsWithStatuses = deals.map((d) => ({
     ...d,
     invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
     invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
     contractStatus: contractStatuses[d.id]?.status ?? null,
+    closerName: closerNameMap.get(d.closerId) ?? null,
   }));
 
   return NextResponse.json({ data: dealsWithStatuses });

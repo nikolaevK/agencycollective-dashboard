@@ -4,7 +4,7 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
 import Link from "next/link";
-import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase } from "lucide-react";
+import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -21,6 +21,7 @@ interface DealWithInvoice extends DealPublic {
   invoiceStatus?: string | null;
   invoiceNumber?: string | null;
   contractStatus?: string | null;
+  closerName?: string | null;
 }
 
 interface RecentDealsTableProps {
@@ -320,6 +321,14 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                             </span>
                             {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
                             {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
+                            {deal.closerName && (
+                              <span className="relative shrink-0 text-muted-foreground group/closer">
+                                <UserRound className="h-3.5 w-3.5" />
+                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-foreground text-background text-[10px] font-medium whitespace-nowrap opacity-0 pointer-events-none group-hover/closer:opacity-100 transition-opacity z-50">
+                                  {deal.closerName}
+                                </span>
+                              </span>
+                            )}
                             {deal.notes && (
                               <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
                                 <StickyNote className="h-3.5 w-3.5" />
@@ -399,6 +408,14 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
                           {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                          {deal.closerName && (
+                            <span className="relative shrink-0 text-muted-foreground group/closer">
+                              <UserRound className="h-3 w-3" />
+                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-foreground text-background text-[10px] font-medium whitespace-nowrap opacity-0 pointer-events-none group-hover/closer:opacity-100 transition-opacity z-50">
+                                {deal.closerName}
+                              </span>
+                            </span>
+                          )}
                           {deal.notes && (
                             <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
                               <StickyNote className="h-3 w-3" />

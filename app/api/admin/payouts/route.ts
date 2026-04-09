@@ -301,6 +301,14 @@ export async function PATCH(request: Request) {
         changes.splitDetails = [];
       }
     }
+    if (body.payoutMonth !== undefined) {
+      const pm = Number(body.payoutMonth);
+      if (Number.isInteger(pm) && pm >= 1 && pm <= 12) changes.payoutMonth = pm;
+    }
+    if (body.payoutYear !== undefined) {
+      const py = Number(body.payoutYear);
+      if (Number.isInteger(py) && py >= 2000 && py <= 2100) changes.payoutYear = py;
+    }
     if (body.referral !== undefined)
       changes.referral = trimStr(body.referral, MAX_TEXT);
     if (body.referralPct !== undefined) {
