@@ -38,6 +38,7 @@ interface Props {
   dealId: string | null;
   dealValue: number; // cents
   dealPaymentType?: string;
+  dealNotes?: string | null;
   onClose: () => void;
 }
 
@@ -107,7 +108,7 @@ function SortableDrawerRow({
   );
 }
 
-export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose }: Props) {
+export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNotes, onClose }: Props) {
   const queryClient = useQueryClient();
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
@@ -439,6 +440,14 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, onClose 
                   <p className="text-xs text-amber-600">
                     Invoice total ({formatCurrencyValue(invoiceTotal, "USD")}) differs from deal value ({formatCurrencyValue(dealValueDollars, "USD")})
                   </p>
+                </div>
+              )}
+
+              {/* Deal Notes */}
+              {dealNotes && (
+                <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
+                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{dealNotes}</p>
                 </div>
               )}
 
