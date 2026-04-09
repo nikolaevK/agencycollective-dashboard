@@ -771,5 +771,24 @@ export async function migrate(): Promise<void> {
     // indexes may already exist
   }
 
+  // ── Push notification subscriptions ──────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id         TEXT PRIMARY KEY,
+      admin_id   TEXT NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+      endpoint   TEXT NOT NULL UNIQUE,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_push_subs_admin ON push_subscriptions(admin_id)`);
+  } catch {
+    // index may already exist
+  }
+
   console.log("[migrate] Database migration complete");
 }

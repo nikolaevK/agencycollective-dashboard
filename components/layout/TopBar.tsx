@@ -10,6 +10,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useAccounts } from "@/hooks/useAccounts";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useAdmin } from "@/components/providers/AdminProvider";
 
 interface TopBarProps {
@@ -99,6 +100,7 @@ export function TopBar({ onMenuClick, sidebarCollapsed, onToggleSidebar }: TopBa
         >
           <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
         </button>
+        <NotificationBell />
         <ThemeToggle />
 
         {/* Admin avatar dropdown */}

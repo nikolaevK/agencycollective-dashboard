@@ -6,6 +6,7 @@ import { Bell, Menu } from "lucide-react";
 import Image from "next/image";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAdmin } from "@/components/providers/AdminProvider";
@@ -43,6 +44,7 @@ export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
           <AgencyLogo />
         </div>
         <div className="flex items-center gap-1.5">
+          <NotificationBell />
           <ThemeToggle />
           <Link
             href="/dashboard/alerts"

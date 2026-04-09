@@ -104,6 +104,7 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/insights"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/alerts"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/settings"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/push"), perm: "dashboard" },
 ];
 
 export async function middleware(request: NextRequest) {
@@ -246,5 +247,6 @@ export const config = {
     "/api/insights/:path*",
     "/api/alerts/:path*",
     "/api/settings/:path*",
+    "/api/push/:path*",
   ],
 };

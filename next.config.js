@@ -16,6 +16,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' https://fonts.gstatic.com",
+      "worker-src 'self'",
       "connect-src 'self' data: https://graph.facebook.com https://fonts.googleapis.com https://docuseal.com https://*.docuseal.com",
       "frame-src 'self' https://docuseal.com https://*.docuseal.com",
       "frame-ancestors 'none'",
@@ -33,6 +34,13 @@ const nextConfig = {
       {
         source: "/(.*)",
         headers: securityHeaders,
+      },
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Service-Worker-Allowed", value: "/" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
       },
     ];
   },

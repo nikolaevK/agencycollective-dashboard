@@ -12,6 +12,7 @@ import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 import { findTemplateForServices } from "@/lib/contractTemplates";
 import { insertDealContract } from "@/lib/dealContracts";
 import { parseServiceCategory } from "@/lib/serviceCategory";
+import { sendPushToAllAdmins } from "@/lib/pushNotifications";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
@@ -121,6 +122,15 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   }
 
   revalidatePath("/closer/dashboard");
+
+  // Fire-and-forget push notification to admins
+  sendPushToAllAdmins({
+    title: `New Deal: ${clientName}`,
+    body: `${status === "closed" ? "Closed" : "New"} deal worth $${dealValueDollars.toLocaleString()} needs review`,
+    url: "/dashboard/closers/deals",
+    tag: `deal-${id}`,
+  }).catch((err) => console.error("[createDealAction] Push failed:", err));
+
   return {};
 }
 
