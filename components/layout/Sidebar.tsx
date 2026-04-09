@@ -72,7 +72,7 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
         </div>
         {collapsed && (
           <div className="hidden md:flex items-center justify-center">
-            <span className="text-lg font-bold text-primary">AC</span>
+            <img src="/ac-icon.png" alt="AC" className="h-8 w-8 dark:invert" />
           </div>
         )}
         <button
