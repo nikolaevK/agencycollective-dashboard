@@ -8,6 +8,7 @@ import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
+import { sendPushToAllAdmins } from "@/lib/pushNotifications";
 
 export async function POST(request: Request) {
   const session = getCloserSession();
@@ -93,6 +94,19 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error("[link-deal] Invoice generation failed:", err instanceof Error ? err.message : err);
       }
+    }
+
+    // Push notification to admins
+    try {
+      const dealValueDollars = dealValue;
+      await sendPushToAllAdmins({
+        title: `New Deal: ${eventTitle}`,
+        body: `${status === "closed" ? "Closed" : "New"} deal worth $${dealValueDollars.toLocaleString()} linked from calendar`,
+        url: "/dashboard/closers/deals",
+        tag: `deal-${id}`,
+      });
+    } catch (err) {
+      console.error("[link-deal] Push failed:", err);
     }
 
     return NextResponse.json({ data: { id } }, { status: 201 });
