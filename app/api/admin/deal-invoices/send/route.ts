@@ -41,9 +41,9 @@ export async function POST(req: NextRequest) {
     const invoice = await findDealInvoice(invoiceId);
     if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
-    // Check if there's a pending contract to send alongside
+    // Check if there's a contract to send/resend alongside
     const contract = sendContract ? await findDealContractByDealId(invoice.dealId) : null;
-    const hasPendingContract = contract?.status === "pending" && contract.contractTemplateId;
+    const canSendContract = contract && contract.status !== "signed" && contract.contractTemplateId;
 
     const buffer = Buffer.from(await pdfFile.arrayBuffer());
     const safeNumber = invoice.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100);
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
-      includesContract: !!hasPendingContract,
+      includesContract: !!canSendContract,
       cc: ccEmail || undefined,
     });
     if (!sent) return NextResponse.json({ error: "Failed to send invoice email" }, { status: 500 });
@@ -70,11 +70,11 @@ export async function POST(req: NextRequest) {
       pdfData: buffer,
     });
 
-    // Send contract via DocuSeal if pending
+    // Send/resend contract via DocuSeal if not signed
     let contractSent = false;
     let contractError: string | undefined;
 
-    if (hasPendingContract && contract) {
+    if (canSendContract && contract) {
       try {
         const deal = await findDeal(invoice.dealId);
         const template = contract.contractTemplateId

@@ -113,6 +113,8 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
   const hasPendingContract = contract?.status === "pending";
+  const canSendContract = !!contract && contract.status !== "signed" && !!contract.contractTemplateId;
+  const isSent = invoice?.status === "sent";
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
   const [showContractPreview, setShowContractPreview] = useState(false);
   const [changingTemplate, setChangingTemplate] = useState(false);
@@ -364,7 +366,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       formData.append("email", clientEmail);
       if (ccEmail.trim()) formData.append("cc", ccEmail.trim());
       formData.append("pdf", new File([blob], `invoice-${invoiceData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
-      if (hasPendingContract) {
+      if (canSendContract) {
         formData.append("sendContract", "true");
       }
       const res = await fetch("/api/admin/deal-invoices/send", { method: "POST", body: formData });
@@ -372,7 +374,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       if (res.ok) {
         if (json.contractSent) {
           setMsg({ type: "success", text: "Invoice & contract sent to " + clientEmail });
-        } else if (hasPendingContract && json.contractError) {
+        } else if (canSendContract && json.contractError) {
           setMsg({ type: "error", text: "Invoice sent, but contract failed: " + json.contractError });
         } else {
           setMsg({ type: "success", text: "Invoice sent to " + clientEmail });
@@ -674,15 +676,24 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         {/* Footer actions */}
         {invoiceData && (
           <div className="border-t border-border px-5 py-4 space-y-2 shrink-0">
-            {/* View sent PDF */}
-            {invoice?.hasPdf && (
-              <button
-                onClick={() => window.open(`/api/admin/deal-invoices/pdf?id=${invoice.id}`, "_blank")}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-              >
-                <FileCheck className="h-3.5 w-3.5" />
-                View Sent Invoice PDF
-              </button>
+            {/* Sent info + View PDF */}
+            {isSent && invoice && (
+              <div className="space-y-1.5">
+                {invoice.hasPdf && (
+                  <button
+                    onClick={() => window.open(`/api/admin/deal-invoices/pdf?id=${invoice.id}`, "_blank")}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                  >
+                    <FileCheck className="h-3.5 w-3.5" />
+                    View Sent Invoice PDF
+                  </button>
+                )}
+                <p className="text-[10px] text-muted-foreground text-center">
+                  Sent {invoice.sentCount} time{invoice.sentCount !== 1 ? "s" : ""}
+                  {invoice.sentAt && <> · Last sent {new Date(invoice.sentAt).toLocaleDateString()}</>}
+                  {invoice.clientEmail && <> · {invoice.clientEmail}</>}
+                </p>
+              </div>
             )}
             <div className="grid grid-cols-3 gap-2">
               <button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
@@ -707,7 +718,11 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
               )}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sending ? "Sending..." : hasPendingContract ? "Send Invoice & Contract" : "Send to Client"}
+              {sending
+                ? "Sending..."
+                : isSent
+                  ? canSendContract ? "Resend Invoice & Contract" : "Resend Invoice"
+                  : canSendContract ? "Send Invoice & Contract" : "Send to Client"}
             </button>
           </div>
         )}
@@ -807,8 +822,9 @@ function ContractSection({
     }
   }
 
-  // Already sent/signed contract
+  // Already sent/signed contract — show status + allow editing for resend (except signed)
   if (contract && !hasPendingContract) {
+    const canEdit = contract.status === "sent" || contract.status === "viewed" || contract.status === "expired" || contract.status === "declined";
     return (
       <div className="rounded-xl border border-border/50 p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -847,6 +863,27 @@ function ContractSection({
               </a>
             ))}
           </div>
+        )}
+        {/* Allow editing contract for resend (not for signed contracts) */}
+        {canEdit && currentDocusealId && (
+          <>
+            <button
+              onClick={onTogglePreview}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {showPreview ? "Hide Contract Preview" : "Preview / Edit Contract"}
+            </button>
+            {showPreview && (
+              <ContractPreviewOverlay
+                docusealTemplateId={currentDocusealId}
+                localTemplateId={contract.contractTemplateId ?? null}
+                alreadyCloned={docusealIdOverride !== null}
+                onClose={onTogglePreview}
+                onCloned={(newId) => setDocusealIdOverride(newId)}
+              />
+            )}
+          </>
         )}
       </div>
     );
@@ -1027,7 +1064,7 @@ function ContractPreviewOverlay({ docusealTemplateId, localTemplateId, alreadyCl
   return (
     <>
       <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={handleClose} />
-      <div className="fixed inset-4 z-[70] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+      <div className="fixed inset-0 md:inset-4 z-[70] flex flex-col md:rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
           <h3 className="text-sm font-semibold text-foreground">
             {editing ? "Contract Editor" : "Contract Preview"}
