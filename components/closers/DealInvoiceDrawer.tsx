@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, lazy, Suspense } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ChevronDown, ExternalLink } from "lucide-react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ChevronDown, ExternalLink, Pencil } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -782,7 +782,9 @@ function ContractSection({
     ? contractTemplates.find((t) => t.id === contract.contractTemplateId)
     : null;
 
-  const currentDocusealId = currentTemplate?.docusealTemplateId;
+  // Track the effective DocuSeal template ID — updated after clone-on-edit
+  const [docusealIdOverride, setDocusealIdOverride] = useState<number | null>(null);
+  const currentDocusealId = docusealIdOverride ?? currentTemplate?.docusealTemplateId;
 
   async function handleTemplateChange(templateId: string) {
     if (!dealId) return;
@@ -796,6 +798,7 @@ function ContractSection({
       if (res.ok) {
         queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
         setChangingTemplate(false);
+        setDocusealIdOverride(null); // Reset clone override when template changes
       }
     } catch {
       // ignore
@@ -918,7 +921,10 @@ function ContractSection({
           {showPreview && (
             <ContractPreviewOverlay
               docusealTemplateId={currentDocusealId}
+              localTemplateId={contract?.contractTemplateId ?? null}
+              alreadyCloned={docusealIdOverride !== null}
               onClose={onTogglePreview}
+              onCloned={(newId) => setDocusealIdOverride(newId)}
             />
           )}
         </>
@@ -927,11 +933,16 @@ function ContractSection({
   );
 }
 
-function ContractPreviewOverlay({ docusealTemplateId, onClose }: { docusealTemplateId: number; onClose: () => void }) {
+function ContractPreviewOverlay({ docusealTemplateId, localTemplateId, alreadyCloned, onClose, onCloned }: { docusealTemplateId: number; localTemplateId: string | null; alreadyCloned?: boolean; onClose: () => void; onCloned?: (newDocusealId: number) => void }) {
   const [token, setToken] = useState<string | null>(null);
+  const [clonedId, setClonedId] = useState<number | null>(null);
+  const [editing, setEditing] = useState(alreadyCloned ?? false);
   const [loading, setLoading] = useState(true);
+  const [switchingToEdit, setSwitchingToEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch builder token — initially without cloning (view mode)
+  // If alreadyCloned, we're reopening an existing clone (also no new clone needed)
   useEffect(() => {
     let cancelled = false;
     async function fetchToken() {
@@ -939,7 +950,7 @@ function ContractPreviewOverlay({ docusealTemplateId, onClose }: { docusealTempl
         const res = await fetch("/api/admin/docuseal-templates/builder-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ templateId: docusealTemplateId }),
+          body: JSON.stringify({ templateId: docusealTemplateId, clone: false }),
         });
         const json = await res.json();
         if (cancelled) return;
@@ -958,36 +969,100 @@ function ContractPreviewOverlay({ docusealTemplateId, onClose }: { docusealTempl
     return () => { cancelled = true; };
   }, [docusealTemplateId]);
 
+  // "Edit Contract" — clone the template and reload builder with the clone
+  async function handleStartEditing() {
+    setSwitchingToEdit(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/docuseal-templates/builder-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: docusealTemplateId, clone: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "Failed to create editable copy");
+        return;
+      }
+      setToken(json.data.token);
+      if (json.data.clonedTemplateId) {
+        setClonedId(json.data.clonedTemplateId);
+      }
+      setEditing(true);
+    } catch {
+      setError("Network error");
+    } finally {
+      setSwitchingToEdit(false);
+    }
+  }
+
+  async function handleClose() {
+    // Only update the template reference if we actually cloned (edited)
+    if (clonedId && localTemplateId) {
+      try {
+        const res = await fetch("/api/admin/contract-templates", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: localTemplateId, docusealTemplateId: clonedId }),
+        });
+        if (res.ok) {
+          onCloned?.(clonedId);
+        } else {
+          console.error("[ContractPreviewOverlay] PATCH failed:", res.status);
+        }
+      } catch (err) {
+        console.error("[ContractPreviewOverlay] Failed to update template reference:", err);
+      }
+    }
+    onClose();
+  }
+
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clonedId, localTemplateId, onClose]);
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={handleClose} />
       <div className="fixed inset-4 z-[70] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-semibold text-foreground">Contract Preview</h3>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+          <h3 className="text-sm font-semibold text-foreground">
+            {editing ? "Contract Editor" : "Contract Preview"}
+          </h3>
+          <div className="flex items-center gap-2">
+            {!editing && !loading && token && (
+              <button
+                onClick={handleStartEditing}
+                disabled={switchingToEdit}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {switchingToEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />}
+                Edit Contract
+              </button>
+            )}
+            <button onClick={handleClose} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-auto">
-          {loading && (
+          {(loading || switchingToEdit) && (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           )}
           {error && <p className="text-sm text-red-500 p-6">{error}</p>}
-          {token && (
+          {token && !switchingToEdit && (
             <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
               <DocusealBuilder
                 token={token}
                 withSendButton={false}
                 withSignYourselfButton={false}
                 withTitle={false}
+                autosave={editing}
                 className="w-full h-full"
                 style={{ minHeight: "100%" }}
               />

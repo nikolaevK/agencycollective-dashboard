@@ -173,6 +173,26 @@ export async function docusealPost<T>(
   throw new DocuSealApiError("Max retries exceeded", 0);
 }
 
+const CloneTemplateResponseSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+});
+
+/**
+ * Clone a DocuSeal template so edits don't affect existing submissions.
+ * Returns the new cloned template's id and name.
+ */
+export async function docusealCloneTemplate(
+  templateId: number,
+  name?: string
+): Promise<{ id: number; name: string }> {
+  return docusealPost(
+    `/templates/${templateId}/clone`,
+    { name: name || undefined },
+    CloneTemplateResponseSchema
+  );
+}
+
 export async function docusealPut<T>(
   path: string,
   body: Record<string, unknown>,

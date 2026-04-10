@@ -43,6 +43,7 @@ export default function ContractTemplatesPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [builderTemplateId, setBuilderTemplateId] = useState<number | null>(null);
   const [builderTemplateName, setBuilderTemplateName] = useState<string | null>(null);
+  const [builderLocalId, setBuilderLocalId] = useState<string | null>(null);
 
   const { data: templates = [], isLoading } = useQuery<ContractTemplate[]>({
     queryKey: ["contract-templates"],
@@ -80,7 +81,7 @@ export default function ContractTemplatesPage() {
             Upload Document
           </button>
           <button
-            onClick={() => { setBuilderTemplateId(-1); setBuilderTemplateName(null); }}
+            onClick={() => { setBuilderTemplateId(-1); setBuilderTemplateName(null); setBuilderLocalId(null); }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-accent transition-colors"
           >
             <Hammer className="h-4 w-4" />
@@ -150,7 +151,7 @@ export default function ContractTemplatesPage() {
                           <Eye className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); }}
+                          onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); setBuilderLocalId(tmpl.id); }}
                           className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
                           title="Open form builder"
                         >
@@ -213,10 +214,12 @@ export default function ContractTemplatesPage() {
           <TemplateBuilderModal
             templateId={builderTemplateId > 0 ? builderTemplateId : undefined}
             templateName={builderTemplateName}
-            onClose={() => { setBuilderTemplateId(null); setBuilderTemplateName(null); }}
+            localTemplateId={builderLocalId}
+            onClose={() => { setBuilderTemplateId(null); setBuilderTemplateName(null); setBuilderLocalId(null); }}
             onSaved={() => {
               setBuilderTemplateId(null);
               setBuilderTemplateName(null);
+              setBuilderLocalId(null);
               queryClient.invalidateQueries({ queryKey: ["docuseal-templates"] });
               queryClient.invalidateQueries({ queryKey: ["contract-templates"] });
             }}
@@ -649,15 +652,18 @@ function UploadTemplateModal({
 function TemplateBuilderModal({
   templateId,
   templateName,
+  localTemplateId,
   onClose,
   onSaved,
 }: {
   templateId?: number;
   templateName?: string | null;
+  localTemplateId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [token, setToken] = useState<string | null>(null);
+  const [clonedId, setClonedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -670,6 +676,7 @@ function TemplateBuilderModal({
           body: JSON.stringify({
             templateId,
             name: templateName || undefined,
+            clone: !!templateId,
           }),
         });
         const json = await res.json();
@@ -678,6 +685,9 @@ function TemplateBuilderModal({
           return;
         }
         setToken(json.data.token);
+        if (json.data.clonedTemplateId) {
+          setClonedId(json.data.clonedTemplateId);
+        }
       } catch {
         setError("Network error");
       } finally {
@@ -686,6 +696,25 @@ function TemplateBuilderModal({
     }
     fetchToken();
   }, [templateId, templateName]);
+
+  async function handleSaved() {
+    // Update local contract template to point to the cloned DocuSeal template
+    if (clonedId && localTemplateId) {
+      try {
+        const res = await fetch("/api/admin/contract-templates", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: localTemplateId, docusealTemplateId: clonedId }),
+        });
+        if (!res.ok) {
+          console.error("[TemplateBuilderModal] PATCH failed:", res.status);
+        }
+      } catch (err) {
+        console.error("[TemplateBuilderModal] Failed to update template reference:", err);
+      }
+    }
+    onSaved();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -697,12 +726,12 @@ function TemplateBuilderModal({
         </h2>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => { onSaved(); }}
+            onClick={() => { handleSaved(); }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Done
           </button>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={() => { handleSaved(); }} className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -740,7 +769,7 @@ function DocuSealBuilderEmbed({ token }: { token: string }) {
         withSignYourselfButton={false}
         withUploadButton={true}
         withAddPageButton={true}
-        autosave={true}
+        autosave={false}
         className="w-full h-full"
         style={{ height: "100%" }}
       />

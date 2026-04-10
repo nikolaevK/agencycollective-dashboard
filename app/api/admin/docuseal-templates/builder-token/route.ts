@@ -3,21 +3,14 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { SignJWT } from "jose";
+import { docusealCloneTemplate } from "@/lib/docuseal/client";
 
 /**
  * Generate a JWT token for the DocuSeal embedded builder.
- * The token authorizes the admin to create/edit templates in DocuSeal.
  *
- * JWT payload:
- *  - user_email: DocuSeal admin account email (from env)
- *  - integration_email: current admin's identifier
- *  - external_id: unique key for the template being edited
- *  - template_id: existing template to edit (optional)
- *  - document_urls: empty array to allow file upload (for new templates)
- *  - name: template name (optional)
- *
- * Signed with DOCUSEAL_API_KEY using HS256 (required by DocuSeal's embedded builder spec).
- * The API key is used as the HMAC secret — it cannot be extracted from the JWT.
+ * When `templateId` is provided and `clone` is true (default), the template
+ * is cloned first so edits don't affect existing submissions. The response
+ * includes the cloned template's ID so the client can update its records.
  */
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
@@ -25,10 +18,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { templateId, externalId, name } = body as {
+    const { templateId, externalId, name, clone = true } = body as {
       templateId?: number;
       externalId?: string;
       name?: string;
+      clone?: boolean;
     };
 
     // Validate inputs
@@ -46,16 +40,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "DocuSeal not configured" }, { status: 500 });
     }
 
+    // Clone existing template before editing so pending submissions are unaffected
+    let effectiveTemplateId = templateId;
+    let clonedTemplateId: number | null = null;
+    if (templateId && clone) {
+      const cloned = await docusealCloneTemplate(templateId, name ? `${name} (edit)` : undefined);
+      effectiveTemplateId = cloned.id;
+      clonedTemplateId = cloned.id;
+    }
+
     const secret = new TextEncoder().encode(apiKey);
 
     const payload: Record<string, unknown> = {
       user_email: userEmail,
       integration_email: `admin-${session.adminId}@agencycollective.ai`,
-      external_id: externalId ? String(externalId).slice(0, 100) : `ac-template-${templateId || Date.now()}`,
+      external_id: externalId ? String(externalId).slice(0, 100) : `ac-template-${effectiveTemplateId || Date.now()}`,
     };
 
-    if (templateId) {
-      payload.template_id = templateId;
+    if (effectiveTemplateId) {
+      payload.template_id = effectiveTemplateId;
     } else {
       payload.document_urls = [];
     }
@@ -70,7 +73,12 @@ export async function POST(req: NextRequest) {
       .setExpirationTime("1h")
       .sign(secret);
 
-    return NextResponse.json({ data: { token } });
+    return NextResponse.json({
+      data: {
+        token,
+        ...(clonedTemplateId ? { clonedTemplateId } : {}),
+      },
+    });
   } catch (err) {
     console.error("[builder-token]", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Builder unavailable" }, { status: 500 });
