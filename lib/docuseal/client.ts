@@ -193,6 +193,21 @@ export async function docusealCloneTemplate(
   );
 }
 
+const UpdateTemplateResponseSchema = z.object({
+  id: z.number(),
+}).passthrough();
+
+export async function docusealUpdateTemplate(
+  templateId: number,
+  fields: { name: string }
+): Promise<{ id: number }> {
+  return docusealPut(
+    `/templates/${templateId}`,
+    fields,
+    UpdateTemplateResponseSchema
+  );
+}
+
 export async function docusealPut<T>(
   path: string,
   body: Record<string, unknown>,

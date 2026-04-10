@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { SignJWT } from "jose";
-import { docusealCloneTemplate } from "@/lib/docuseal/client";
+import { docusealCloneTemplate, docusealUpdateTemplate } from "@/lib/docuseal/client";
 
 /**
  * Generate a JWT token for the DocuSeal embedded builder.
@@ -44,9 +44,19 @@ export async function POST(req: NextRequest) {
     let effectiveTemplateId = templateId;
     let clonedTemplateId: number | null = null;
     if (templateId && clone) {
-      const cloned = await docusealCloneTemplate(templateId, name ? `${name} (edit)` : undefined);
+      const cloned = await docusealCloneTemplate(templateId);
       effectiveTemplateId = cloned.id;
       clonedTemplateId = cloned.id;
+      // DocuSeal appends "(Clone)" on every clone — strip accumulated suffixes.
+      // Rename is cosmetic so don't let failures block the builder token.
+      const baseName = name
+        ? name.replace(/\s*\(Clone\)/gi, "").trim()
+        : cloned.name.replace(/\s*\(Clone\)/gi, "").trim();
+      if (baseName) {
+        docusealUpdateTemplate(cloned.id, { name: baseName }).catch((err) =>
+          console.error("[builder-token] rename failed:", err instanceof Error ? err.message : err)
+        );
+      }
     }
 
     const secret = new TextEncoder().encode(apiKey);

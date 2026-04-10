@@ -70,7 +70,7 @@ export function InvoiceServiceManager() {
                   <p className="text-xs text-muted-foreground line-clamp-1">{svc.description.split("\n")[0]}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-sm font-semibold text-foreground">
-                      ${(svc.rate / 100).toLocaleString()}
+                      ${(svc.rate / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     {svc.dealServiceKey && (
                       <span className="text-[10px] text-primary bg-primary/5 px-1.5 py-0.5 rounded">

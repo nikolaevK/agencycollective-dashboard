@@ -94,37 +94,37 @@ function mapServicesToItems(
     }
   }
 
-  const items: InvoiceItem[] = [];
-  let mappedTotal = 0;
-  const unmapped: string[] = [];
+  // Resolve each service to a preset (for name/description) or leave unmapped
+  const resolved: { name: string; preset: InvoiceServiceRecord | null }[] = [];
 
   for (const svc of dealServices) {
-    // Match by exact name first, then by dealServiceKey
     const preset =
       nameToPreset.get(svc.toLowerCase()) ??
       keyToPreset.get(svc.toLowerCase()) ??
       null;
-
-    if (preset) {
-      const rateDollars = preset.rate / 100;
-      items.push(createItemFromPreset(preset, rateDollars));
-      mappedTotal += rateDollars;
-    } else {
-      unmapped.push(svc);
-    }
+    resolved.push({ name: svc, preset });
   }
 
-  // For unmapped services, try amount-based matching
-  if (unmapped.length > 0) {
-    const remaining = Math.max(0, dealValueDollars - mappedTotal);
-    const perService = unmapped.length > 0 ? Math.round((remaining / unmapped.length) * 100) / 100 : 0;
+  // Distribute deal value evenly across all services using integer cents to avoid floating-point drift
+  const totalServices = resolved.length;
+  const perServiceCents = Math.floor(deal.dealValue / totalServices);
+  const remainderCents = deal.dealValue - perServiceCents * totalServices;
 
-    for (const svc of unmapped) {
-      const match = findBestMatchByAmount(presetServices, perService);
+  const items: InvoiceItem[] = [];
+  for (let i = 0; i < resolved.length; i++) {
+    const { name: svcName, preset } = resolved[i];
+    // First item absorbs remainder cent(s) so the total matches the deal value exactly
+    const cents = perServiceCents + (i === 0 ? remainderCents : 0);
+    const unitPrice = cents / 100;
+
+    if (preset) {
+      items.push(createItemFromPreset(preset, unitPrice));
+    } else {
+      const match = findBestMatchByAmount(presetServices, unitPrice);
       if (match) {
-        items.push(createItemFromPreset(match, perService));
+        items.push(createItemFromPreset(match, unitPrice));
       } else {
-        items.push(createCustomItem(svc, "", perService));
+        items.push(createCustomItem(svcName, "", unitPrice));
       }
     }
   }
