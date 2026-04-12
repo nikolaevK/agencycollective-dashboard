@@ -21,7 +21,7 @@ import { dateRangeToMetaParams } from "@/lib/utils";
 import type { DateRangeInput } from "@/types/api";
 
 const INSIGHT_FIELDS =
-  "spend,impressions,reach,clicks,ctr,cpc,cpm,actions,action_values,outbound_clicks,website_purchase_roas";
+  "spend,impressions,reach,clicks,ctr,cpc,cpm,actions,action_values,outbound_clicks,website_purchase_roas,frequency";
 
 const INSIGHT_FIELDS_WITH_DATE = INSIGHT_FIELDS + ",date_start,date_stop";
 
@@ -206,7 +206,7 @@ export async function fetchCampaigns(
   dateRange?: DateRangeInput
 ): Promise<MetaCampaign[]> {
   const cleanId = accountId.replace(/^act_/, "");
-  const fields = "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,account_id";
+  const fields = "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,account_id,smart_promotion_type";
 
   const insightFields = INSIGHT_FIELDS;
   const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_7d" };
@@ -276,7 +276,7 @@ export async function fetchAdSets(
   campaignId: string,
   dateRange?: DateRangeInput
 ): Promise<MetaAdSet[]> {
-  const fields = "id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,start_time,end_time";
+  const fields = "id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,is_adset_budget_sharing_enabled,start_time,end_time";
   const insightFields = INSIGHT_FIELDS;
   const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_7d" };
 

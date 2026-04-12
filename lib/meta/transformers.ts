@@ -15,6 +15,8 @@ import { percentChange } from "@/lib/utils";
 
 // Use only the pixel purchase event to avoid double-counting with omni_purchase / purchase
 const PURCHASE_ACTION_TYPES = ["offsite_conversion.fb_pixel_purchase"];
+// Use specific lead events to avoid double-counting with aggregate "lead" type
+const LEAD_ACTION_TYPES = ["offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped"];
 
 /**
  * Parse a raw Meta insight into domain InsightMetrics
@@ -51,6 +53,23 @@ export function transformInsight(raw: MetaInsight): InsightMetrics {
 
   const costPerPurchase = conversions > 0 ? spend / conversions : 0;
 
+  const frequency = typeof raw.frequency === "number" ? raw.frequency : parseFloat(raw.frequency as unknown as string) || 0;
+
+  const instagramProfileVisits =
+    raw.actions
+      ?.filter((a) => a.action_type === "instagram_profile_visits")
+      .reduce((sum, a) => sum + (typeof a.value === "number" ? a.value : parseFloat(a.value as unknown as string) || 0), 0) ?? 0;
+
+  const leads =
+    raw.actions
+      ?.filter((a) => LEAD_ACTION_TYPES.includes(a.action_type))
+      .reduce((sum, a) => sum + (typeof a.value === "number" ? a.value : parseFloat(a.value as unknown as string) || 0), 0) ?? 0;
+
+  const leadValue =
+    raw.action_values
+      ?.filter((a) => LEAD_ACTION_TYPES.includes(a.action_type))
+      .reduce((sum, a) => sum + (typeof a.value === "number" ? a.value : parseFloat(a.value as unknown as string) || 0), 0) ?? 0;
+
   return {
     spend,
     impressions,
@@ -63,6 +82,10 @@ export function transformInsight(raw: MetaInsight): InsightMetrics {
     conversions,
     conversionValue,
     costPerPurchase,
+    frequency,
+    instagramProfileVisits,
+    leads,
+    leadValue,
   };
 }
 
@@ -72,17 +95,10 @@ export function transformInsight(raw: MetaInsight): InsightMetrics {
 export function aggregateInsights(metrics: InsightMetrics[]): InsightMetrics {
   if (metrics.length === 0) {
     return {
-      spend: 0,
-      impressions: 0,
-      reach: 0,
-      clicks: 0,
-      ctr: 0,
-      cpc: 0,
-      cpm: 0,
-      roas: 0,
-      conversions: 0,
-      conversionValue: 0,
-      costPerPurchase: 0,
+      spend: 0, impressions: 0, reach: 0, clicks: 0,
+      ctr: 0, cpc: 0, cpm: 0, roas: 0,
+      conversions: 0, conversionValue: 0, costPerPurchase: 0,
+      frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
     };
   }
 
@@ -92,6 +108,13 @@ export function aggregateInsights(metrics: InsightMetrics[]): InsightMetrics {
   const totalClicks = metrics.reduce((s, m) => s + m.clicks, 0);
   const totalConversions = metrics.reduce((s, m) => s + m.conversions, 0);
   const totalConversionValue = metrics.reduce((s, m) => s + m.conversionValue, 0);
+  const totalInstagramProfileVisits = metrics.reduce((s, m) => s + m.instagramProfileVisits, 0);
+  const totalLeads = metrics.reduce((s, m) => s + m.leads, 0);
+  const totalLeadValue = metrics.reduce((s, m) => s + m.leadValue, 0);
+  // Frequency is per-person, so weighted average by impressions
+  const weightedFrequency = totalImpressions > 0
+    ? metrics.reduce((s, m) => s + m.frequency * m.impressions, 0) / totalImpressions
+    : 0;
 
   return {
     spend: totalSpend,
@@ -105,6 +128,10 @@ export function aggregateInsights(metrics: InsightMetrics[]): InsightMetrics {
     conversions: totalConversions,
     conversionValue: totalConversionValue,
     costPerPurchase: totalConversions > 0 ? totalSpend / totalConversions : 0,
+    frequency: weightedFrequency,
+    instagramProfileVisits: totalInstagramProfileVisits,
+    leads: totalLeads,
+    leadValue: totalLeadValue,
   };
 }
 
@@ -121,10 +148,12 @@ export function computeDelta(
     reach: percentChange(current.reach, previous.reach),
     ctr: percentChange(current.ctr, previous.ctr),
     cpc: percentChange(current.cpc, previous.cpc),
+    cpm: percentChange(current.cpm, previous.cpm),
     roas: percentChange(current.roas, previous.roas),
     conversions: percentChange(current.conversions, previous.conversions),
     conversionValue: percentChange(current.conversionValue, previous.conversionValue),
     costPerPurchase: percentChange(current.costPerPurchase, previous.costPerPurchase),
+    frequency: percentChange(current.frequency, previous.frequency),
   };
 }
 
@@ -151,7 +180,7 @@ export function transformAccount(
 ): AccountSummary {
   const delta = previousInsight
     ? computeDelta(currentInsight, previousInsight)
-    : { spend: null, impressions: null, reach: null, ctr: null, cpc: null, roas: null, conversions: null, conversionValue: null, costPerPurchase: null };
+    : { spend: null, impressions: null, reach: null, ctr: null, cpc: null, cpm: null, roas: null, conversions: null, conversionValue: null, costPerPurchase: null, frequency: null };
 
   return {
     id: account.id,
@@ -190,6 +219,7 @@ export function transformCampaign(raw: MetaCampaign): CampaignRow {
     budget,
     startTime: raw.start_time,
     stopTime: raw.stop_time,
+    advantagePlus: raw.smart_promotion_type === "SMART_AUTOMATED",
     insights: insight,
   };
 }
@@ -219,6 +249,7 @@ export function transformAdSet(raw: MetaAdSet): AdSetRow {
     budget,
     billingEvent: raw.billing_event,
     optimizationGoal: raw.optimization_goal,
+    budgetSharing: raw.is_adset_budget_sharing_enabled ?? false,
     insights: insight,
   };
 }
@@ -262,6 +293,10 @@ export function transformTimeSeries(
         conversions: m.conversions,
         conversionValue: m.conversionValue,
         costPerPurchase: m.costPerPurchase,
+        frequency: m.frequency,
+        instagramProfileVisits: m.instagramProfileVisits,
+        leads: m.leads,
+        leadValue: m.leadValue,
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -269,16 +304,9 @@ export function transformTimeSeries(
 
 function emptyInsights(): InsightMetrics {
   return {
-    spend: 0,
-    impressions: 0,
-    reach: 0,
-    clicks: 0,
-    ctr: 0,
-    cpc: 0,
-    cpm: 0,
-    roas: 0,
-    conversions: 0,
-    conversionValue: 0,
-    costPerPurchase: 0,
+    spend: 0, impressions: 0, reach: 0, clicks: 0,
+    ctr: 0, cpc: 0, cpm: 0, roas: 0,
+    conversions: 0, conversionValue: 0, costPerPurchase: 0,
+    frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
   };
 }

@@ -62,8 +62,8 @@ export function formatDelta(value: number | null): string {
 // Returns true if the delta is "good" for the metric
 export function isDeltaPositive(metric: string, delta: number | null): boolean | null {
   if (delta === null) return null;
-  // Lower is better for cost metrics
-  if (metric === "cpc" || metric === "costPerPurchase") return delta <= 0;
+  // Lower is better for cost metrics and frequency (ad fatigue)
+  if (metric === "cpc" || metric === "cpm" || metric === "costPerPurchase" || metric === "frequency") return delta <= 0;
   return delta >= 0;
 }
 

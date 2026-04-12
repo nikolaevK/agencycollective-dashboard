@@ -30,6 +30,10 @@ export function mergeTimeSeries(
         conversions: pt.conversions,
         conversionValue: pt.conversionValue,
         costPerPurchase: pt.costPerPurchase,
+        frequency: pt.frequency,
+        instagramProfileVisits: pt.instagramProfileVisits,
+        leads: pt.leads,
+        leadValue: pt.leadValue,
       });
     }
   }

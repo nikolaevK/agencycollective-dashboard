@@ -48,6 +48,7 @@ export const MetaInsightSchema = z.object({
   action_values: z.array(MetaActionValueSchema).nullish(),
   outbound_clicks: z.array(MetaActionSchema).nullish(),
   website_purchase_roas: z.array(MetaActionValueSchema).nullish(),
+  frequency: optionalNumericString,
 });
 
 export type MetaInsightParsed = z.infer<typeof MetaInsightSchema>;
@@ -73,6 +74,7 @@ export const MetaCampaignSchema = z.object({
   start_time: z.string().optional(),
   stop_time: z.string().optional(),
   account_id: z.string(),
+  smart_promotion_type: z.string().optional(),
   insights: z
     .object({ data: z.array(MetaInsightSchema) })
     .optional(),
@@ -88,6 +90,7 @@ export const MetaAdSetSchema = z.object({
   lifetime_budget: numericString.optional(),
   billing_event: z.string().default(""),
   optimization_goal: z.string().default(""),
+  is_adset_budget_sharing_enabled: z.boolean().optional(),
   start_time: z.string().optional(),
   end_time: z.string().optional(),
   insights: z

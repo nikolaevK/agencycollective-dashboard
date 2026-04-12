@@ -33,10 +33,12 @@ function OverviewContent() {
         reach: avg(accounts.map((a) => a.delta.reach)),
         ctr: avg(accounts.map((a) => a.delta.ctr)),
         cpc: avg(accounts.map((a) => a.delta.cpc)),
+        cpm: avg(accounts.map((a) => a.delta.cpm)),
         roas: avg(accounts.map((a) => a.delta.roas)),
         conversions: avg(accounts.map((a) => a.delta.conversions)),
         conversionValue: avg(accounts.map((a) => a.delta.conversionValue)),
         costPerPurchase: avg(accounts.map((a) => a.delta.costPerPurchase)),
+        frequency: avg(accounts.map((a) => a.delta.frequency)),
       }
     : undefined;
 

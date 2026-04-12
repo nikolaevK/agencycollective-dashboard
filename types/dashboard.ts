@@ -10,6 +10,10 @@ export interface InsightMetrics {
   conversions: number;
   conversionValue: number;
   costPerPurchase: number;
+  frequency: number;
+  instagramProfileVisits: number;
+  leads: number;
+  leadValue: number;
 }
 
 export interface InsightDelta {
@@ -18,10 +22,12 @@ export interface InsightDelta {
   reach: number | null;
   ctr: number | null;
   cpc: number | null;
+  cpm: number | null;
   roas: number | null;
   conversions: number | null;
   conversionValue: number | null;
   costPerPurchase: number | null;
+  frequency: number | null;
 }
 
 export interface AccountSummary {
@@ -46,6 +52,7 @@ export interface CampaignRow {
   budget: number;
   startTime?: string;
   stopTime?: string;
+  advantagePlus: boolean;
   insights: InsightMetrics;
 }
 
@@ -60,6 +67,7 @@ export interface AdSetRow {
   budget: number;
   billingEvent: string;
   optimizationGoal: string;
+  budgetSharing: boolean;
   insights: InsightMetrics;
 }
 
@@ -90,6 +98,10 @@ export interface TimeSeriesDataPoint {
   conversions: number;
   conversionValue: number;
   costPerPurchase: number;
+  frequency: number;
+  instagramProfileVisits: number;
+  leads: number;
+  leadValue: number;
 }
 
 export interface InsightRow {

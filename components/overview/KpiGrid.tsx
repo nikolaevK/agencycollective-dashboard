@@ -13,6 +13,9 @@ import {
   Users,
   MousePointerClick,
   CreditCard,
+  Repeat,
+  Info,
+  Instagram,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -38,6 +41,8 @@ interface KpiCardData {
   iconBg: string;
   iconHoverBg: string;
   iconColor: string;
+  tooltip?: string;
+  showWhenZero?: boolean; // defaults to true; set false to hide card when metric is 0
 }
 
 const KPI_CARDS: KpiCardData[] = [
@@ -51,6 +56,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-violet-50 dark:bg-violet-500/15",
     iconHoverBg: "group-hover:bg-violet-100 dark:group-hover:bg-violet-500/25",
     iconColor: "text-primary",
+    tooltip: "Total ad spend for the selected period. Compare against revenue to assess overall efficiency.",
   },
   {
     label: "Overall ROAS",
@@ -62,6 +68,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-blue-50 dark:bg-blue-500/15",
     iconHoverBg: "group-hover:bg-blue-100 dark:group-hover:bg-blue-500/25",
     iconColor: "text-blue-600 dark:text-blue-400",
+    tooltip: "Return on Ad Spend — revenue generated per dollar spent. Benchmark: <1x Poor · 2–4x Avg · >8x Excellent.",
   },
   {
     label: "Purchases",
@@ -73,6 +80,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-amber-50 dark:bg-amber-500/15",
     iconHoverBg: "group-hover:bg-amber-100 dark:group-hover:bg-amber-500/25",
     iconColor: "text-amber-600 dark:text-amber-400",
+    tooltip: "Total purchase conversions attributed to ads via Meta Pixel. Includes only fb_pixel_purchase events.",
   },
   {
     label: "Purchase Value",
@@ -84,6 +92,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-emerald-50 dark:bg-emerald-500/15",
     iconHoverBg: "group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/25",
     iconColor: "text-emerald-600 dark:text-emerald-400",
+    tooltip: "Total revenue from ad-attributed purchases. Used to calculate ROAS (Purchase Value ÷ Spend).",
   },
   {
     label: "Cost / Purchase",
@@ -95,6 +104,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-rose-50 dark:bg-rose-500/15",
     iconHoverBg: "group-hover:bg-rose-100 dark:group-hover:bg-rose-500/25",
     iconColor: "text-rose-600 dark:text-rose-400",
+    tooltip: "Average cost to acquire one purchase (Spend ÷ Purchases). Benchmark: >$80 Poor · $25–50 Avg · <$10 Excellent.",
   },
   // Secondary metrics
   {
@@ -106,6 +116,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-blue-50 dark:bg-blue-500/15",
     iconHoverBg: "group-hover:bg-blue-100 dark:group-hover:bg-blue-500/25",
     iconColor: "text-blue-600 dark:text-blue-400",
+    tooltip: "Total number of times your ads were shown. One person may see your ad multiple times (see Frequency).",
   },
   {
     label: "Reach",
@@ -116,6 +127,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-indigo-50 dark:bg-indigo-500/15",
     iconHoverBg: "group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/25",
     iconColor: "text-indigo-600 dark:text-indigo-400",
+    tooltip: "Number of unique people who saw your ads at least once. Reach = Impressions ÷ Frequency.",
   },
   {
     label: "CTR",
@@ -126,6 +138,7 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-teal-50 dark:bg-teal-500/15",
     iconHoverBg: "group-hover:bg-teal-100 dark:group-hover:bg-teal-500/25",
     iconColor: "text-teal-600 dark:text-teal-400",
+    tooltip: "Click-Through Rate — percentage of impressions that resulted in a click. Benchmark: <0.5% Poor · 0.8–1.2% Avg · >2% Excellent.",
   },
   {
     label: "CPC",
@@ -136,6 +149,29 @@ const KPI_CARDS: KpiCardData[] = [
     iconBg: "bg-orange-50 dark:bg-orange-500/15",
     iconHoverBg: "group-hover:bg-orange-100 dark:group-hover:bg-orange-500/25",
     iconColor: "text-orange-600 dark:text-orange-400",
+    tooltip: "Cost Per Click — average cost for each link click. Benchmark: >$3 Poor · $1–2 Avg · <$0.50 Excellent.",
+  },
+  {
+    label: "Frequency",
+    metricKey: "frequency",
+    formatter: (v: number) => v.toFixed(1),
+    deltaKey: "frequency",
+    icon: Repeat,
+    iconBg: "bg-purple-50 dark:bg-purple-500/15",
+    iconHoverBg: "group-hover:bg-purple-100 dark:group-hover:bg-purple-500/25",
+    iconColor: "text-purple-600 dark:text-purple-400",
+    tooltip: "Average times each person saw your ad. High frequency signals creative fatigue. Benchmark: >5 Poor · 2–3 Avg · 1–1.5 Excellent. Over 3 = consider refreshing creative.",
+  },
+  {
+    label: "IG Profile Visits",
+    metricKey: "instagramProfileVisits",
+    formatter: formatNumber,
+    icon: Instagram,
+    iconBg: "bg-pink-50 dark:bg-pink-500/15",
+    iconHoverBg: "group-hover:bg-pink-100 dark:group-hover:bg-pink-500/25",
+    iconColor: "text-pink-600 dark:text-pink-400",
+    tooltip: "Instagram profile visits attributed to your ads. Only tracked when an Instagram profile is connected to the ad account.",
+    showWhenZero: false,
   },
 ];
 
@@ -163,8 +199,8 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-4 lg:gap-6">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5 lg:gap-6">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="bg-card rounded-xl p-6 lg:p-5 border border-border/50">
               <div className="flex justify-between items-start mb-4 lg:mb-3">
                 <Skeleton className="h-11 lg:h-10 w-11 lg:w-10 rounded-xl" />
@@ -182,7 +218,11 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
   if (!metrics) return null;
 
   const primaryCards = KPI_CARDS.filter((c) => c.primary);
-  const secondaryCards = KPI_CARDS.filter((c) => !c.primary);
+  const secondaryCards = KPI_CARDS.filter((c) => {
+    if (c.primary) return false;
+    if (c.showWhenZero === false && (metrics![c.metricKey] as number) === 0) return false;
+    return true;
+  });
 
   function renderCard(card: KpiCardData) {
     const value = metrics![card.metricKey] as number;
@@ -233,9 +273,19 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
         {/* Mobile / tablet layout */}
         <div className="lg:hidden">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
-              {card.label}
-            </p>
+            <div className="relative group/tip flex items-center gap-1">
+              <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                {card.label}
+              </p>
+              {card.tooltip && (
+                <>
+                  <Info className="h-3 w-3 text-muted-foreground/50" tabIndex={0} role="button" aria-label={`Info: ${card.label}`} />
+                  <div className="absolute left-0 top-full mt-1.5 z-50 w-56 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-lg p-2.5 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity">
+                    {card.tooltip}
+                  </div>
+                </>
+              )}
+            </div>
             <div
               className={cn(
                 "p-2 rounded-lg transition-colors",
@@ -279,9 +329,19 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
             {deltaPill}
           </div>
           <div>
-            <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">
-              {card.label}
-            </p>
+            <div className="relative group/tip inline-flex items-center gap-1 mb-1">
+              <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                {card.label}
+              </p>
+              {card.tooltip && (
+                <>
+                  <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" tabIndex={0} role="button" aria-label={`Info: ${card.label}`} />
+                  <div className="absolute left-0 bottom-full mb-2 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-xl p-3 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity">
+                    {card.tooltip}
+                  </div>
+                </>
+              )}
+            </div>
             <h3
               className={cn(
                 "font-semibold text-foreground",
@@ -304,7 +364,10 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
       </div>
 
       {/* Secondary metrics row */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4 lg:gap-6">
+      <div className={cn(
+        "grid grid-cols-1 gap-4 lg:gap-6",
+        secondaryCards.length <= 5 ? "lg:grid-cols-5" : "lg:grid-cols-3 xl:grid-cols-6"
+      )}>
         {secondaryCards.map(renderCard)}
       </div>
     </div>

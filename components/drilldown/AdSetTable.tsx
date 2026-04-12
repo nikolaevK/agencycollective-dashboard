@@ -89,9 +89,19 @@ export function AdSetTable({ adsets, isLoading, accountId, campaignId }: AdSetTa
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-foreground truncate">{adset.name}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {adset.optimizationGoal || "No optimization goal"}
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-[10px] text-muted-foreground">
+                      {adset.optimizationGoal || "No optimization goal"}
+                    </p>
+                    {adset.budgetSharing && (
+                      <span className="relative group/cbo px-1.5 py-0.5 text-[8px] font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 uppercase cursor-help">
+                        CBO
+                        <span className="absolute left-0 top-full mt-1 z-50 w-52 rounded-lg bg-popover border border-border shadow-lg p-2 text-[10px] leading-relaxed text-foreground/80 font-normal normal-case opacity-0 pointer-events-none group-hover/cbo:opacity-100 transition-opacity">
+                          Campaign Budget Optimization — Meta distributes the campaign budget across ad sets automatically to maximize results.
+                        </span>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={cn("px-2 py-0.5 text-[9px] font-black rounded-full uppercase", statusStyle)}>
@@ -177,7 +187,19 @@ export function AdSetTable({ adsets, isLoading, accountId, campaignId }: AdSetTa
                       {adset.status}
                     </span>
                   </td>
-                  <td className="px-4 py-5 text-sm text-muted-foreground">{adset.optimizationGoal || "—"}</td>
+                  <td className="px-4 py-5 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      {adset.optimizationGoal || "—"}
+                      {adset.budgetSharing && (
+                        <span className="relative group/cbo px-1.5 py-0.5 text-[8px] font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 uppercase cursor-help">
+                        CBO
+                        <span className="absolute left-0 top-full mt-1 z-50 w-52 rounded-lg bg-popover border border-border shadow-lg p-2 text-[10px] leading-relaxed text-foreground/80 font-normal normal-case opacity-0 pointer-events-none group-hover/cbo:opacity-100 transition-opacity">
+                          Campaign Budget Optimization — Meta distributes the campaign budget across ad sets automatically to maximize results.
+                        </span>
+                      </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-5 text-sm font-medium text-foreground text-right tabular-nums">
                     {formatCurrency(adset.insights.spend)}
                   </td>

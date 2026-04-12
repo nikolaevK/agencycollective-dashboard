@@ -14,7 +14,7 @@ import type { InsightMetrics } from "@/types/dashboard";
 function emptyInsights(): InsightMetrics {
   return {
     spend: 0, impressions: 0, reach: 0, clicks: 0,
-    ctr: 0, cpc: 0, cpm: 0, roas: 0, conversions: 0, conversionValue: 0, costPerPurchase: 0,
+    ctr: 0, cpc: 0, cpm: 0, roas: 0, conversions: 0, conversionValue: 0, costPerPurchase: 0, frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
   };
 }
 

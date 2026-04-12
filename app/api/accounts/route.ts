@@ -88,6 +88,10 @@ function emptyInsights() {
     conversions: 0,
     conversionValue: 0,
     costPerPurchase: 0,
+    frequency: 0,
+    instagramProfileVisits: 0,
+    leads: 0,
+    leadValue: 0,
   };
 }
 

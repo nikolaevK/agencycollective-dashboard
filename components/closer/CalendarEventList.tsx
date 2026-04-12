@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { format, parseISO, isSameDay } from "date-fns";
 import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,16 @@ interface Props {
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const groups = new Map<string, CalendarEvent[]>();
   for (const event of events) {
-    const dayKey = event.start.slice(0, 10);
+    if (!event.start) continue;
+    // Use parseISO + format to convert to local timezone date, not raw string slicing
+    // which can mis-group events when the ISO string is in UTC or another offset
+    let dayKey: string;
+    try {
+      dayKey = format(parseISO(event.start), "yyyy-MM-dd");
+    } catch {
+      dayKey = event.start.slice(0, 10);
+    }
+    if (!dayKey) continue;
     const existing = groups.get(dayKey) ?? [];
     existing.push(event);
     groups.set(dayKey, existing);
@@ -85,6 +95,14 @@ export function CalendarEventList({
   onEditDeal,
   isAdmin,
 }: Props) {
+  const todayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (todayRef.current) {
+      todayRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [events]);
+
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-12 text-center">
@@ -97,8 +115,11 @@ export function CalendarEventList({
 
   return (
     <div className="space-y-6">
-      {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => (
-        <div key={dayKey}>
+      {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => {
+        let isToday = false;
+        try { isToday = isSameDay(parseISO(dayKey), new Date()); } catch {}
+        return (
+        <div key={dayKey} ref={isToday ? todayRef : undefined}>
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             {formatDayHeader(dayKey)}
           </h3>
@@ -240,7 +261,8 @@ export function CalendarEventList({
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

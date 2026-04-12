@@ -44,6 +44,7 @@ export interface MetaInsight {
   action_values?: MetaActionValue[];
   outbound_clicks?: MetaAction[];
   website_purchase_roas?: MetaActionValue[];
+  frequency?: number | string;  // numeric string from API, number after Zod parse
 }
 
 export interface MetaCampaign {
@@ -58,6 +59,7 @@ export interface MetaCampaign {
   start_time?: string;
   stop_time?: string;
   account_id: string;
+  smart_promotion_type?: string;  // "GUIDED_CREATION" | "SMART_AUTOMATED" | null
   insights?: { data: MetaInsight[] };
 }
 
@@ -71,6 +73,7 @@ export interface MetaAdSet {
   lifetime_budget?: string;
   billing_event: string;
   optimization_goal: string;
+  is_adset_budget_sharing_enabled?: boolean;
   start_time?: string;
   end_time?: string;
   insights?: { data: MetaInsight[] };

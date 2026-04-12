@@ -96,9 +96,19 @@ export function CampaignTable({ campaigns, isLoading, accountId }: CampaignTable
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-foreground truncate">{campaign.name}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {campaign.objective || "No objective"}
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-[10px] text-muted-foreground">
+                      {campaign.objective || "No objective"}
+                    </p>
+                    {campaign.advantagePlus && (
+                      <span className="relative group/aplus px-1.5 py-0.5 text-[8px] font-bold rounded-full bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300 uppercase cursor-help">
+                        A+
+                        <span className="absolute left-0 top-full mt-1 z-50 w-52 rounded-lg bg-popover border border-border shadow-lg p-2 text-[10px] leading-relaxed text-foreground/80 font-normal normal-case opacity-0 pointer-events-none group-hover/aplus:opacity-100 transition-opacity">
+                          Advantage+ campaign — Meta&apos;s AI fully automates audience targeting, placements, and creative optimization.
+                        </span>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={cn("px-2 py-0.5 text-[9px] font-black rounded-full uppercase", statusStyle)}>
@@ -187,7 +197,19 @@ export function CampaignTable({ campaigns, isLoading, accountId }: CampaignTable
                       {campaign.status}
                     </span>
                   </td>
-                  <td className="px-4 py-5 text-sm text-muted-foreground">{campaign.objective || "—"}</td>
+                  <td className="px-4 py-5 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      {campaign.objective || "—"}
+                      {campaign.advantagePlus && (
+                        <span className="relative group/aplus px-1.5 py-0.5 text-[8px] font-bold rounded-full bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300 uppercase cursor-help">
+                        A+
+                        <span className="absolute left-0 top-full mt-1 z-50 w-52 rounded-lg bg-popover border border-border shadow-lg p-2 text-[10px] leading-relaxed text-foreground/80 font-normal normal-case opacity-0 pointer-events-none group-hover/aplus:opacity-100 transition-opacity">
+                          Advantage+ campaign — Meta&apos;s AI fully automates audience targeting, placements, and creative optimization.
+                        </span>
+                      </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-5 text-sm font-medium text-foreground text-right tabular-nums">
                     {campaign.budget > 0 ? (
                       <span className="text-xs">

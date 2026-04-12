@@ -99,6 +99,7 @@ function emptyInsights() {
     spend: 0, impressions: 0, reach: 0, clicks: 0,
     ctr: 0, cpc: 0, cpm: 0, roas: 0,
     conversions: 0, conversionValue: 0, costPerPurchase: 0,
+    frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
   };
 }
 
@@ -151,7 +152,7 @@ function buildOverviewSection(
 
   return {
     title: "Performance Overview",
-    summary: `During this period, the account spent ${formatCurrency(m.spend, currency)} generating ${formatCurrency(m.conversionValue, currency)} in revenue at a ${formatRoas(m.roas)} ROAS. Total impressions reached ${formatNumber(m.impressions)} with a ${formatPercent(m.ctr)} click-through rate.`,
+    summary: `During this period, the account spent ${formatCurrency(m.spend, currency)} generating ${formatCurrency(m.conversionValue, currency)} in revenue at a ${formatRoas(m.roas)} ROAS. Total impressions reached ${formatNumber(m.impressions)} with a ${formatPercent(m.ctr)} click-through rate. Average frequency: ${m.frequency.toFixed(1)}.${m.leads > 0 ? ` Leads: ${Math.round(m.leads)}${m.leadValue > 0 ? ` (${formatCurrency(m.leadValue, currency)})` : ""}.` : ""}${m.instagramProfileVisits > 0 ? ` Instagram profile visits: ${formatNumber(m.instagramProfileVisits)}.` : ""}`,
     metrics,
   };
 }
@@ -491,11 +492,14 @@ function buildAndromedaSection(
   const creativeColor = creativeCount >= 10 ? "green" : creativeCount >= 5 ? "amber" : "red";
 
   // Check for signs of creative fatigue
-  const hasFatigueSignals = m.ctr < 0.8 || (account.delta?.ctr != null && account.delta.ctr < -15);
-  const fatigueStatus = hasFatigueSignals ? "Fatigue signals detected" : "No major fatigue signals";
+  const hasFatigueSignals = m.ctr < 0.8 || m.frequency > 3 || (account.delta?.ctr != null && account.delta.ctr < -15);
+  const fatigueStatus = hasFatigueSignals
+    ? m.frequency > 3 ? `Oversaturated — frequency ${m.frequency.toFixed(1)}` : "Fatigue signals detected"
+    : "No major fatigue signals";
 
-  // Targeting assessment — check campaign diversity of objectives
+  // Targeting assessment — check campaign diversity of objectives and Advantage+ usage
   const objectives = new Set(activeCampaigns.map((c) => c.objective));
+  const advantagePlusCount = activeCampaigns.filter((c) => c.advantagePlus).length;
 
   // Consolidation — fewer campaigns is better in Andromeda era
   const consolidationScore = activeCampaigns.length <= 3 ? "Well Consolidated" :
@@ -513,7 +517,7 @@ function buildAndromedaSection(
     { label: "Creative Volume", value: `${creativeCount} active`, subtitle: creativeHealth, color: creativeColor },
     { label: "Consolidation", value: `${activeCampaigns.length} campaigns`, subtitle: consolidationScore, color: consolidationColor },
     { label: "Creative Fatigue", value: hasFatigueSignals ? "At Risk" : "Healthy", color: hasFatigueSignals ? "red" : "green" },
-    { label: "Budget Focus", value: `${Math.round(topConcentration)}% in top 3`, subtitle: topConcentration > 70 ? "Good focus" : "Spread thin", color: topConcentration > 70 ? "green" : "amber" },
+    { label: "Advantage+", value: `${advantagePlusCount}/${activeCampaigns.length}`, subtitle: advantagePlusCount > 0 ? "Automation active" : "Manual campaigns", color: advantagePlusCount > 0 ? "green" : "amber" },
   ];
 
   const tableData: DisplayTableInput = {
@@ -532,10 +536,10 @@ function buildAndromedaSection(
         priority: creativeCount < 5 ? "High" : "Medium",
       },
       {
-        principle: "Broad Targeting",
-        status: `${objectives.size} objective type(s) across ${activeCampaigns.length} campaigns`,
-        recommendation: activeCampaigns.length > 5 ? "Consolidate campaigns — let the algorithm find buyers with broad targeting" : "Maintain broad targeting, avoid interest-based micro-segmentation",
-        priority: activeCampaigns.length > 5 ? "High" : "Low",
+        principle: "Broad Targeting / Advantage+",
+        status: `${advantagePlusCount} of ${activeCampaigns.length} campaigns use Advantage+. ${objectives.size} objective type(s).`,
+        recommendation: advantagePlusCount === 0 ? "Enable Advantage+ on prospecting campaigns for better algorithmic targeting" : "Good — Advantage+ active. Ensure broad targeting on remaining manual campaigns.",
+        priority: advantagePlusCount === 0 ? "High" : "Low",
       },
       {
         principle: "Creative Fatigue",

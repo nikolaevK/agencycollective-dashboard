@@ -35,7 +35,8 @@ function normalizeEvent(event: any, calendarName: string): CalendarEvent {
 
 export async function getCalendarEvents(
   timeMin: string,
-  timeMax: string
+  timeMax: string,
+  additionalCalendarIds?: string[]
 ): Promise<CalendarEvent[]> {
   const config = await getCalendarConfig();
   if (!config) return [];
@@ -49,35 +50,52 @@ export async function getCalendarEvents(
   const calendar = google.calendar({ version: "v3", auth });
 
   try {
-    // First, list all calendars the user has access to
-    const calListRes = await calendar.calendarList.list();
+    // List all calendars the user has subscribed to
+    const calListRes = await calendar.calendarList.list({ showHidden: true });
     const calendars = calListRes.data.items ?? [];
+
+    // Collect calendar IDs already in the list to avoid duplicate fetches
+    const knownCalIds = new Set(calendars.map((c) => c.id).filter(Boolean));
+
+    // Merge in additional calendar IDs (e.g. closer emails from the database)
+    // that the authenticated account can access via Workspace sharing
+    const extraCalIds = (additionalCalendarIds ?? []).filter((id) => !knownCalIds.has(id));
 
     // Fetch events from all calendars in parallel
     const allEvents: CalendarEvent[] = [];
 
-    const fetches = calendars.map(async (cal) => {
-      if (!cal.id) return;
+    async function fetchFromCalendar(calId: string, calName: string) {
       try {
-        const response = await calendar.events.list({
-          calendarId: cal.id,
-          timeMin,
-          timeMax,
-          maxResults: 50,
-          singleEvents: true,
-          orderBy: "startTime",
-        });
+        // Paginate to get ALL events (default maxResults is 250 but can be capped)
+        let pageToken: string | undefined;
+        do {
+          const response = await calendar.events.list({
+            calendarId: calId,
+            timeMin,
+            timeMax,
+            maxResults: 250,
+            singleEvents: true,
+            orderBy: "startTime",
+            pageToken,
+          });
 
-        const events = response.data.items ?? [];
-        const calName = cal.summary ?? cal.id;
-        for (const event of events) {
-          allEvents.push(normalizeEvent(event, calName));
-        }
+          const events = response.data.items ?? [];
+          for (const event of events) {
+            allEvents.push(normalizeEvent(event, calName));
+          }
+          pageToken = response.data.nextPageToken ?? undefined;
+        } while (pageToken);
       } catch (err) {
-        // Some calendars may not be accessible — skip silently
-        console.warn(`[google-calendar] Skipping calendar ${cal.id}:`, err);
+        console.warn(`[google-calendar] Skipping calendar ${calId}:`, err);
       }
-    });
+    }
+
+    const fetches = [
+      ...calendars.map((cal) =>
+        cal.id ? fetchFromCalendar(cal.id, cal.summary ?? cal.id) : Promise.resolve()
+      ),
+      ...extraCalIds.map((id) => fetchFromCalendar(id, id.split("@")[0])),
+    ];
 
     await Promise.all(fetches);
 

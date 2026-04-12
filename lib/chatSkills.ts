@@ -20,7 +20,7 @@ CPA (Purchase): >$80 Poor | $25-50 Avg | <$10 Excellent
 
 Industry CPA adjustments: E-commerce $15-45 (ROAS 3-5x) | SaaS/B2B CPL $50-200 | Local $20-75 | Education $30-100 | Real Estate CPL $20-80
 
-CREATIVE FATIGUE SIGNALS: CTR drop >20%/7d = Fatigued | Frequency >3/7d = Oversaturated | CPC rise >30%/7d = Auction pressure | Conv rate drop >15% = Message exhausted
+CREATIVE FATIGUE SIGNALS (use frequency data from context): CTR drop >20%/7d = Fatigued | Frequency >3/7d = Oversaturated | CPC rise >30%/7d = Auction pressure | Conv rate drop >15% = Message exhausted
 Severity: Mild (CTR -10-20%) → refresh copy/images | Moderate (-20-40%) → new concepts | Severe (>-40%, freq>5) → pause and relaunch
 
 FUNNEL ANALYSIS: Impressions → Link Clicks (creative issue) → LP Views (tech/load issue) → Add to Cart (offer/UX issue) → Purchase (checkout/trust issue). Flag the biggest drop-off as #1 fix.
@@ -40,7 +40,7 @@ Meta's Andromeda ML system changed how ads work. Apply these principles in every
 
 CORE: Creative determines audience now, not targeting. The algorithm analyzes creative signals (visuals, text, tone, engagement, conversions) and finds the right audience automatically. Each creative concept unlocks a different market segment.
 
-PRINCIPLE 1 — BROAD TARGETING: No detailed interests/behaviors/lookalikes needed. Use age + location + optional gender only. Interest targeting falls under "Suggest an Audience" which Meta overrides. Only location is a hard boundary (under "Controls").
+PRINCIPLE 1 — BROAD TARGETING: No detailed interests/behaviors/lookalikes needed. Use age + location + optional gender only. Interest targeting falls under "Suggest an Audience" which Meta overrides. Only location is a hard boundary (under "Controls"). Check the advantagePlus flag on campaigns — Advantage+ campaigns use Meta's full algorithmic targeting automatically.
 
 PRINCIPLE 2 — CREATIVE DIVERSITY > AUDIENCE TESTING: Each creative concept = an audience test. Need 5-10+ diverse concepts per campaign (different hooks, angles, formats — not just text/color tweaks). Minor variations = same ad to Meta's algorithm. <5 creatives = critical growth limiter.
 

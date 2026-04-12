@@ -86,8 +86,8 @@ function formatAccountContext(account: AccountSummary): string {
     `**${account.name}** (${account.id}) — Status: ${account.status} | Currency: ${cur}`,
     `  Spend: ${formatCurrency(m.spend, cur)} | ROAS: ${formatRoas(m.roas)} | Revenue: ${formatCurrency(m.conversionValue, cur)}`,
     `  Impressions: ${formatNumber(m.impressions)} | Clicks: ${formatNumber(m.clicks)} | CTR: ${formatPercent(m.ctr)}`,
-    `  CPC: ${formatCurrency(m.cpc, cur)} | CPM: ${formatCurrency(m.cpm, cur)}`,
-    `  Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, cur) : "N/A"}`,
+    `  CPC: ${formatCurrency(m.cpc, cur)} | CPM: ${formatCurrency(m.cpm, cur)} | Frequency: ${m.frequency.toFixed(1)}`,
+    `  Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, cur) : "N/A"}${m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}` : ""}${m.leadValue > 0 ? ` | Lead Value: ${formatCurrency(m.leadValue, cur)}` : ""}${m.instagramProfileVisits > 0 ? ` | IG Profile Visits: ${formatNumber(m.instagramProfileVisits)}` : ""}`,
   ].join("\n");
 }
 
@@ -97,9 +97,9 @@ function formatCampaignContext(campaign: CampaignRow, currency: string): string 
     ? `${formatCurrency(campaign.budget, currency)}/${campaign.budgetType === "daily" ? "day" : "lifetime"}`
     : "No budget";
   return [
-    `  - **${campaign.name}** — ${campaign.status} | ${campaign.objective}`,
+    `  - **${campaign.name}** — ${campaign.status} | ${campaign.objective}${campaign.advantagePlus ? " | Advantage+" : ""}`,
     `    Budget: ${budget} | Spend: ${formatCurrency(m.spend, currency)} | Revenue: ${formatCurrency(m.conversionValue, currency)} | ROAS: ${formatRoas(m.roas)}`,
-    `    CTR: ${formatPercent(m.ctr)} | CPC: ${formatCurrency(m.cpc, currency)} | Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, currency) : "N/A"}`,
+    `    CTR: ${formatPercent(m.ctr)} | CPC: ${formatCurrency(m.cpc, currency)} | Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, currency) : "N/A"}${m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}${m.leadValue > 0 ? ` (${formatCurrency(m.leadValue, currency)})` : ""}` : ""}`,
   ].join("\n");
 }
 
@@ -108,7 +108,8 @@ function formatAdSetContext(adSet: import("@/types/dashboard").AdSetRow, currenc
   const budget = adSet.budget > 0
     ? `${formatCurrency(adSet.budget, currency)}/${adSet.budgetType === "daily" ? "day" : "lifetime"}`
     : "No budget";
-  return `    - **${adSet.name}** — ${adSet.status} | ${adSet.optimizationGoal} | Budget: ${budget} | Spend: ${formatCurrency(m.spend, currency)} | ROAS: ${formatRoas(m.roas)} | ${activeAdCount} active ads (${adCount} total)`;
+  const leadStr = m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}` : "";
+  return `    - **${adSet.name}** — ${adSet.status} | ${adSet.optimizationGoal}${adSet.budgetSharing ? " | CBO" : ""} | Budget: ${budget} | Spend: ${formatCurrency(m.spend, currency)} | ROAS: ${formatRoas(m.roas)} | Freq: ${m.frequency.toFixed(1)}${leadStr} | ${activeAdCount} active ads (${adCount} total)`;
 }
 
 const MAX_CONTEXT_CHARS = 8000;
@@ -146,6 +147,7 @@ function emptyInsights() {
     spend: 0, impressions: 0, reach: 0, clicks: 0,
     ctr: 0, cpc: 0, cpm: 0, roas: 0,
     conversions: 0, conversionValue: 0, costPerPurchase: 0,
+    frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
   };
 }
 
