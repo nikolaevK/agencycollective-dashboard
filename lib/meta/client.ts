@@ -3,7 +3,7 @@ import { z } from "zod";
 const API_BASE = "https://graph.facebook.com";
 
 function getApiVersion(): string {
-  return process.env.META_API_VERSION || "v21.0";
+  return process.env.META_API_VERSION || "v25.0";
 }
 
 function getAccessToken(): string {

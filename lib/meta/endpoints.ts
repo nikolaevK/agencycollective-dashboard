@@ -209,7 +209,7 @@ export async function fetchCampaigns(
   const fields = "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,account_id";
 
   const insightFields = INSIGHT_FIELDS;
-  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_30d" };
+  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_7d" };
 
   // Build insight fields param for nested request — Meta requires parentheses syntax
   const dateParam = metaParams.date_preset
@@ -278,7 +278,7 @@ export async function fetchAdSets(
 ): Promise<MetaAdSet[]> {
   const fields = "id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,start_time,end_time";
   const insightFields = INSIGHT_FIELDS;
-  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_30d" };
+  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_7d" };
 
   const dateParam = metaParams.date_preset
     ? `date_preset(${metaParams.date_preset})`
@@ -319,7 +319,7 @@ export async function fetchAds(
 ): Promise<MetaAd[]> {
   const fields = "id,name,status,effective_status,adset_id,campaign_id,creative,preview_shareable_link";
   const insightFields = INSIGHT_FIELDS;
-  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_30d" };
+  const metaParams = dateRange ? dateRangeToMetaParams(dateRange) : { date_preset: "last_7d" };
 
   const dateParam = metaParams.date_preset
     ? `date_preset(${metaParams.date_preset})`

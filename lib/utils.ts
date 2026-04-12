@@ -94,8 +94,8 @@ export function dateRangeToMetaParams(input: DateRangeInput): {
     };
   }
 
-  // Default: last 30 days
-  return { date_preset: "last_30d" };
+  // Default: last 7 days
+  return { date_preset: "last_7d" };
 }
 
 /**
@@ -163,7 +163,7 @@ export function getPreviousPeriod(input: DateRangeInput): DateRangeInput {
   }
 
   // Default fallback
-  return { preset: "last_30d" };
+  return { preset: "last_7d" };
 }
 
 /**
@@ -180,7 +180,7 @@ export function percentChange(current: number, previous: number): number | null 
 export function dateRangeCacheKey(input: DateRangeInput): string {
   if (input.preset) return input.preset;
   if (input.since && input.until) return `${input.since}_${input.until}`;
-  return "last_30d";
+  return "last_7d";
 }
 
 /**
@@ -195,5 +195,5 @@ export function parseDateRangeFromParams(
 
   if (preset) return { preset };
   if (since && until) return { since, until };
-  return { preset: "last_30d" };
+  return { preset: "last_7d" };
 }

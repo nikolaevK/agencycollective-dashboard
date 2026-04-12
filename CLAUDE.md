@@ -13,7 +13,7 @@ SaaS dashboard for managing Meta (Facebook) ad accounts with AI-powered analytic
 - **Data Fetching:** TanStack React Query 5 (4-min stale time, retry except 401/403)
 - **Validation:** Zod (Meta API responses), manual validation elsewhere
 - **AI:** Anthropic SDK (Claude for chat/analysis), Google GenAI (Gemini for image gen)
-- **External APIs:** Meta Graph API v21.0, Google Calendar (OAuth 2.0)
+- **External APIs:** Meta Graph API v25.0, Google Calendar (OAuth 2.0)
 - **Charts:** Recharts 2.12
 - **Icons:** Lucide React
 
@@ -208,7 +208,7 @@ GOOGLE_REDIRECT_URI      # Google OAuth callback URL
 
 Optional:
 ```
-META_API_VERSION         # Default: v21.0
+META_API_VERSION         # Default: v25.0
 META_CONCURRENCY_LIMIT   # Default: 5
 META_CACHE_TTL_SECONDS   # Default: 300
 ```

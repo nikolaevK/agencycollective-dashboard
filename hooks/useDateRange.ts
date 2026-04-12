@@ -5,7 +5,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { DateRangeInput, DatePreset } from "@/types/api";
 import { parseDateRangeFromParams } from "@/lib/utils";
 
-const DEFAULT_PRESET: DatePreset = "last_30d";
+const DEFAULT_PRESET: DatePreset = "last_7d";
 
 export function useDateRange() {
   const searchParams = useSearchParams();
