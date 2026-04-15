@@ -11,6 +11,7 @@ import type { DealPublic } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
 
 type StatusFilter = "all" | "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
+type PaidFilter = "all" | "paid" | "unpaid";
 
 function getMonthOptions(deals: DealPublic[]): { value: string; label: string }[] {
   const months = new Set<string>();
@@ -30,6 +31,7 @@ export default function AdminDealsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
 
   const { data: deals = [], isLoading } = useQuery<DealPublic[]>({
     queryKey: ["admin-all-deals"],
@@ -62,27 +64,49 @@ export default function AdminDealsPage() {
     return result;
   }, [deals, monthFilter, search]);
 
-  // Stage 2: + status filter (used for table display)
+  // Stage 2: + status + paid filter (used for table display)
   const filtered = useMemo(() => {
+    let result = baseFiltered;
+    if (statusFilter !== "all") result = result.filter((d) => d.status === statusFilter);
+    if (paidFilter !== "all") result = result.filter((d) => d.paidStatus === paidFilter);
+    return result;
+  }, [baseFiltered, statusFilter, paidFilter]);
+
+  // For status pill counts: apply paid filter so counts reflect the paid selection
+  const statusBase = useMemo(() => {
+    if (paidFilter === "all") return baseFiltered;
+    return baseFiltered.filter((d) => d.paidStatus === paidFilter);
+  }, [baseFiltered, paidFilter]);
+
+  // For paid pill counts: apply status filter so counts reflect the status selection
+  const paidBase = useMemo(() => {
     if (statusFilter === "all") return baseFiltered;
     return baseFiltered.filter((d) => d.status === statusFilter);
   }, [baseFiltered, statusFilter]);
 
-  // Stats based on month+search filtered deals (before status filter)
+  // Stats based on month+search filtered deals
   const totalValue = baseFiltered.filter((d) => d.status === "closed").reduce((s, d) => s + d.dealValue, 0);
-  const closedCount = baseFiltered.filter((d) => d.status === "closed").length;
-  const notClosedCount = baseFiltered.filter((d) => d.status === "not_closed").length;
-  const pendingCount = baseFiltered.filter((d) => d.status === "pending_signature").length;
-  const rescheduledCount = baseFiltered.filter((d) => d.status === "rescheduled").length;
-  const followUpCount = baseFiltered.filter((d) => d.status === "follow_up").length;
+  const closedCount = statusBase.filter((d) => d.status === "closed").length;
+  const notClosedCount = statusBase.filter((d) => d.status === "not_closed").length;
+  const pendingCount = statusBase.filter((d) => d.status === "pending_signature").length;
+  const rescheduledCount = statusBase.filter((d) => d.status === "rescheduled").length;
+  const followUpCount = statusBase.filter((d) => d.status === "follow_up").length;
+  const paidCount = paidBase.filter((d) => d.paidStatus === "paid").length;
+  const unpaidCount = paidBase.filter((d) => d.paidStatus === "unpaid").length;
 
   const filters: { value: StatusFilter; label: string; count: number }[] = [
-    { value: "all", label: "All", count: baseFiltered.length },
+    { value: "all", label: "All", count: statusBase.length },
     { value: "closed", label: "Closed", count: closedCount },
     { value: "not_closed", label: "Not Closed", count: notClosedCount },
     { value: "pending_signature", label: "Pending", count: pendingCount },
     { value: "rescheduled", label: "Rescheduled", count: rescheduledCount },
     { value: "follow_up", label: "Follow Up", count: followUpCount },
+  ];
+
+  const paidFilters: { value: PaidFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: paidBase.length },
+    { value: "paid", label: "Paid", count: paidCount },
+    { value: "unpaid", label: "Unpaid", count: unpaidCount },
   ];
 
   return (
@@ -150,6 +174,22 @@ export default function AdminDealsPage() {
                 className={cn(
                   "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
                   statusFilter === f.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+            {paidFilters.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setPaidFilter(f.value)}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+                  paidFilter === f.value
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
