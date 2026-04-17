@@ -208,6 +208,72 @@ export async function docusealUpdateTemplate(
   );
 }
 
+const ArchiveSubmissionResponseSchema = z.object({
+  id: z.number(),
+  archived_at: z.string().nullable().optional(),
+}).passthrough();
+
+/**
+ * Archive a DocuSeal submission. Archiving is reversible — the submission is
+ * moved to the archive folder and the signing link is invalidated. Use this
+ * when an admin removes an additional contract locally so the client can no
+ * longer use the signing link that was previously sent.
+ */
+export async function docusealArchiveSubmission(
+  submissionId: number
+): Promise<{ id: number; archived_at?: string | null }> {
+  const base = getApiUrl();
+  const key = getApiKey();
+  const url = `${base}/submissions/${submissionId}`;
+
+  const retries = 3;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: "DELETE",
+        headers: { "X-Auth-Token": key, "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        throw new DocuSealAuthError();
+      }
+      if (response.status === 404) {
+        throw new DocuSealApiError("Submission not found", 404);
+      }
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get("Retry-After") || "60", 10);
+        throw new DocuSealApiError(`Rate limit exceeded. Retry after ${retryAfter}s`, 429);
+      }
+      if (response.status >= 500 && attempt < retries) {
+        await sleep(Math.pow(2, attempt) * 1000);
+        continue;
+      }
+
+      const body = await response.json();
+      if (!response.ok) {
+        const msg = body?.error || body?.message || `HTTP ${response.status}`;
+        throw new DocuSealApiError(String(msg), response.status);
+      }
+
+      const parsed = ArchiveSubmissionResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        throw new DocuSealApiError(`Response validation failed: ${parsed.error.message}`, 0);
+      }
+      return parsed.data;
+    } catch (err) {
+      if (err instanceof DocuSealAuthError) throw err;
+      if (err instanceof DocuSealApiError) throw err;
+      if (attempt < retries) {
+        await sleep(Math.pow(2, attempt) * 1000);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new DocuSealApiError("Max retries exceeded", 0);
+}
+
 export async function docusealPut<T>(
   path: string,
   body: Record<string, unknown>,

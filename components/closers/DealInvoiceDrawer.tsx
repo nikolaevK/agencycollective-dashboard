@@ -24,6 +24,7 @@ import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { useDealInvoice } from "@/hooks/useDealInvoice";
 import { useDealContract } from "@/hooks/useDealContract";
 import { useAdditionalInvoices, type AdditionalInvoiceRecord } from "@/hooks/useAdditionalInvoices";
+import { useAdditionalContracts, type AdditionalContractRecord } from "@/hooks/useAdditionalContracts";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { formatCurrencyValue, createEmptyItem } from "@/lib/invoice/validation";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
@@ -114,8 +115,15 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
   const { data: additionalInvoices = [] } = useAdditionalInvoices(dealId);
+  const { data: additionalContracts = [] } = useAdditionalContracts(dealId);
   const hasPendingContract = contract?.status === "pending";
-  const canSendContract = !!contract && contract.status !== "signed" && !!contract.contractTemplateId;
+  const sendableAdditionalContracts = additionalContracts.filter(
+    (c) => c.status !== "signed" && !!c.contractTemplateId
+  );
+  const canSendPrimaryContract = !!contract && contract.status !== "signed" && !!contract.contractTemplateId;
+  const totalSendableContracts =
+    (canSendPrimaryContract ? 1 : 0) + sendableAdditionalContracts.length;
+  const canSendContract = totalSendableContracts > 0;
   const isSent = invoice?.status === "sent";
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
   const [addlData, setAddlData] = useState<Map<string, InvoiceData>>(new Map());
@@ -123,8 +131,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const primaryDataRef = useRef<InvoiceData | null>(null);
   const [addingInvoice, setAddingInvoice] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [showContractPreview, setShowContractPreview] = useState(false);
-  const [changingTemplate, setChangingTemplate] = useState(false);
+  const [addingContract, setAddingContract] = useState(false);
+  const [deletingContractId, setDeletingContractId] = useState<string | null>(null);
+  // Which contract's preview/edit overlay is open, keyed by "primary" or an additional contract id
+  const [previewingContractKey, setPreviewingContractKey] = useState<string | null>(null);
+  // Which contract's template dropdown is open (same keying)
+  const [changingTemplateKey, setChangingTemplateKey] = useState<string | null>(null);
   const [clientEmail, setClientEmail] = useState("");
   const [ccEmail, setCcEmail] = useState("");
   const [drawerPaymentType, setDrawerPaymentType] = useState<PaymentType>(dealPaymentType === "international" ? "international" : "local");
@@ -385,6 +397,55 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
+  const handleAddContract = async () => {
+    if (!dealId) return;
+    setAddingContract(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/deal-contracts/additional", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId }),
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+        setMsg({ type: "success", text: "Additional contract added — select a template" });
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setMsg({ type: "error", text: json.error || "Failed to add contract" });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Failed to add contract" });
+    } finally {
+      setAddingContract(false);
+    }
+  };
+
+  const handleDeleteContract = async (id: string) => {
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm("Delete this additional contract? If it was already sent, the Docuseal submission will be archived and the signing link will no longer work.")
+      : false;
+    if (!confirmed) return;
+    setDeletingContractId(id);
+    setMsg(null);
+    try {
+      if (previewingContractKey === id) setPreviewingContractKey(null);
+      if (changingTemplateKey === id) setChangingTemplateKey(null);
+      const res = await fetch(`/api/admin/deal-contracts/additional?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+        setMsg({ type: "success", text: "Contract deleted" });
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setMsg({ type: "error", text: json.error || "Failed to delete contract" });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Failed to delete contract" });
+    } finally {
+      setDeletingContractId(null);
+    }
+  };
+
   const handleDeleteAdditional = async (id: string) => {
     setDeletingId(id);
     try {
@@ -543,16 +604,28 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       const invoiceCount = 1 + additionalIds.length;
       const invoiceLabel = invoiceCount > 1 ? `${invoiceCount} invoices` : "Invoice";
       if (res.ok) {
-        if (json.contractSent) {
-          setMsg({ type: "success", text: `${invoiceLabel} & contract sent to ${clientEmail}` });
-        } else if (canSendContract && json.contractError) {
-          setMsg({ type: "error", text: `${invoiceLabel} sent, but contract failed: ${json.contractError}` });
+        const sentCount: number = Number(json.contractsSent ?? 0);
+        const failedCount: number = Number(json.contractsFailed ?? 0);
+        const contractNoun = (n: number) => (n === 1 ? "contract" : "contracts");
+        if (sentCount > 0 && failedCount === 0) {
+          setMsg({
+            type: "success",
+            text: `${invoiceLabel} & ${sentCount} ${contractNoun(sentCount)} sent to ${clientEmail}`,
+          });
+        } else if (sentCount > 0 && failedCount > 0) {
+          setMsg({
+            type: "error",
+            text: `${invoiceLabel} sent. ${sentCount} ${contractNoun(sentCount)} sent, ${failedCount} failed: ${json.contractError || "see console"}`,
+          });
+        } else if (failedCount > 0) {
+          setMsg({ type: "error", text: `${invoiceLabel} sent, but contracts failed: ${json.contractError || "see console"}` });
         } else {
           setMsg({ type: "success", text: `${invoiceLabel} sent to ${clientEmail}` });
         }
         queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
         queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
         queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
         queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
         queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
       } else {
@@ -893,17 +966,55 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 </button>
               )}
 
-              {/* Contract Section */}
-              <ContractSection
-                dealId={dealId}
-                contract={contract ?? null}
-                hasPendingContract={hasPendingContract}
-                showPreview={showContractPreview}
-                onTogglePreview={() => setShowContractPreview((v) => !v)}
-                changingTemplate={changingTemplate}
-                setChangingTemplate={setChangingTemplate}
-                queryClient={queryClient}
-              />
+              {/* Contracts */}
+              <div className="space-y-3">
+                <ContractSection
+                  dealId={dealId}
+                  contract={contract ?? null}
+                  hasPendingContract={hasPendingContract}
+                  showPreview={previewingContractKey === "primary"}
+                  onTogglePreview={() =>
+                    setPreviewingContractKey((k) => (k === "primary" ? null : "primary"))
+                  }
+                  changingTemplate={changingTemplateKey === "primary"}
+                  setChangingTemplate={(v) =>
+                    setChangingTemplateKey(v ? "primary" : null)
+                  }
+                  queryClient={queryClient}
+                  label="Contract"
+                />
+                {additionalContracts.map((ac, idx) => (
+                  <ContractSection
+                    key={ac.id}
+                    dealId={dealId}
+                    contract={ac}
+                    hasPendingContract={ac.status === "pending"}
+                    showPreview={previewingContractKey === ac.id}
+                    onTogglePreview={() =>
+                      setPreviewingContractKey((k) => (k === ac.id ? null : ac.id))
+                    }
+                    changingTemplate={changingTemplateKey === ac.id}
+                    setChangingTemplate={(v) =>
+                      setChangingTemplateKey(v ? ac.id : null)
+                    }
+                    queryClient={queryClient}
+                    additionalContractId={ac.id}
+                    onDelete={() => handleDeleteContract(ac.id)}
+                    deleting={deletingContractId === ac.id}
+                    label={`Contract ${idx + 2}`}
+                  />
+                ))}
+                {additionalContracts.length < 10 && (
+                  <button
+                    onClick={handleAddContract}
+                    disabled={addingContract}
+                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                  >
+                    {addingContract ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Add Additional Contract
+                  </button>
+                )}
+              </div>
 
               {/* Messages */}
               {msg && (
@@ -979,8 +1090,18 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 if (sending) return "Sending...";
                 const hasAddl = additionalInvoices.length > 0;
                 const label = hasAddl ? "All Invoices" : "Invoice";
-                if (isSent) return canSendContract ? `Resend ${label} & Contract` : `Resend ${label}`;
-                return canSendContract ? `Send ${label} & Contract` : hasAddl ? `Send ${label}` : "Send to Client";
+                const contractSuffix =
+                  totalSendableContracts === 0
+                    ? ""
+                    : totalSendableContracts === 1
+                    ? " & Contract"
+                    : ` & ${totalSendableContracts} Contracts`;
+                if (isSent) return `Resend ${label}${contractSuffix}`;
+                return contractSuffix
+                  ? `Send ${label}${contractSuffix}`
+                  : hasAddl
+                  ? `Send ${label}`
+                  : "Send to Client";
               })()}
             </button>
           </div>
@@ -1014,15 +1135,23 @@ function ContractSection({
   changingTemplate,
   setChangingTemplate,
   queryClient,
+  additionalContractId,
+  onDelete,
+  deleting,
+  label = "Contract",
 }: {
   dealId: string | null;
-  contract: { id?: string; status: string; contractTemplateId?: string | null; signedAt?: string | null; signingUrl?: string | null; documentUrls?: string[] | null } | null;
+  contract: { id?: string; status: string; contractTemplateId?: string | null; signedAt?: string | null; signingUrl?: string | null; documentUrls?: string[] | null; docusealTemplateOverrideId?: number | null } | null;
   hasPendingContract: boolean;
   showPreview: boolean;
   onTogglePreview: () => void;
   changingTemplate: boolean;
   setChangingTemplate: (v: boolean) => void;
   queryClient: QueryClient;
+  additionalContractId?: string;
+  onDelete?: () => void;
+  deleting?: boolean;
+  label?: string;
 }) {
   const [saving, setSaving] = useState(false);
 
@@ -1056,21 +1185,66 @@ function ContractSection({
     ? contractTemplates.find((t) => t.id === contract.contractTemplateId)
     : null;
 
-  // Track the effective DocuSeal template ID — updated after clone-on-edit
+  // Per-contract override for the Docuseal template, set when admin edits THIS contract's copy.
+  // Precedence: persisted override (from DB) > in-flight override (from just-completed clone) > base template.
   const [docusealIdOverride, setDocusealIdOverride] = useState<number | null>(null);
-  const currentDocusealId = docusealIdOverride ?? currentTemplate?.docusealTemplateId;
+  const persistedOverride = contract?.docusealTemplateOverrideId ?? null;
+  const currentDocusealId = persistedOverride ?? docusealIdOverride ?? currentTemplate?.docusealTemplateId;
+  const hasOverride = persistedOverride !== null || docusealIdOverride !== null;
+
+  async function persistCloneOverride(newDocusealId: number): Promise<void> {
+    // Optimistic local update so UI flips to "edit mode" immediately on next open
+    setDocusealIdOverride(newDocusealId);
+    try {
+      const res = additionalContractId
+        ? await fetch("/api/admin/deal-contracts/additional", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: additionalContractId, docusealTemplateOverrideId: newDocusealId }),
+          })
+        : await fetch("/api/admin/deal-contracts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dealId, docusealTemplateOverrideId: newDocusealId }),
+          });
+      if (!res.ok) {
+        // Roll back optimistic state so UI matches server; admin can retry Edit
+        setDocusealIdOverride(null);
+        console.error("[ContractSection] Failed to persist override:", res.status);
+        return;
+      }
+      if (additionalContractId) {
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+      }
+    } catch (err) {
+      setDocusealIdOverride(null);
+      console.error("[ContractSection] Override PATCH threw:", err);
+    }
+  }
 
   async function handleTemplateChange(templateId: string) {
     if (!dealId) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/admin/deal-contracts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, contractTemplateId: templateId || null }),
-      });
+      const res = additionalContractId
+        ? await fetch("/api/admin/deal-contracts/additional", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: additionalContractId, contractTemplateId: templateId || null }),
+          })
+        : await fetch("/api/admin/deal-contracts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dealId, contractTemplateId: templateId || null }),
+          });
       if (res.ok) {
-        queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        if (additionalContractId) {
+          queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        }
         setChangingTemplate(false);
         setDocusealIdOverride(null); // Reset clone override when template changes
       }
@@ -1089,21 +1263,33 @@ function ContractSection({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileSignature className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contract</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
           </div>
-          <span className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
-            contract.status === "signed" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-            contract.status === "sent" && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-            contract.status === "viewed" && "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400",
-            (contract.status === "expired" || contract.status === "declined") && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"
-          )}>
-            {contract.status === "signed" ? "Signed" :
-             contract.status === "sent" ? "Awaiting Signature" :
-             contract.status === "viewed" ? "Viewed" :
-             contract.status === "expired" ? "Expired" :
-             contract.status === "declined" ? "Declined" : contract.status}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+              contract.status === "signed" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+              contract.status === "sent" && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
+              contract.status === "viewed" && "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400",
+              (contract.status === "expired" || contract.status === "declined") && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+            )}>
+              {contract.status === "signed" ? "Signed" :
+               contract.status === "sent" ? "Awaiting Signature" :
+               contract.status === "viewed" ? "Viewed" :
+               contract.status === "expired" ? "Expired" :
+               contract.status === "declined" ? "Declined" : contract.status}
+            </span>
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                disabled={deleting}
+                className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                title="Delete contract"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              </button>
+            )}
+          </div>
         </div>
         {currentTemplate && (
           <p className="text-xs text-muted-foreground">Template: {currentTemplate.name}</p>
@@ -1136,10 +1322,9 @@ function ContractSection({
             {showPreview && (
               <ContractPreviewOverlay
                 docusealTemplateId={currentDocusealId}
-                localTemplateId={contract.contractTemplateId ?? null}
-                alreadyCloned={docusealIdOverride !== null}
+                alreadyCloned={hasOverride}
                 onClose={onTogglePreview}
-                onCloned={(newId) => setDocusealIdOverride(newId)}
+                onPersistClone={persistCloneOverride}
               />
             )}
           </>
@@ -1154,13 +1339,25 @@ function ContractSection({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FileSignature className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contract</span>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
         </div>
-        {hasPendingContract && (
-          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-            Will send with invoice
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {hasPendingContract && (
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+              Will send with invoice
+            </span>
+          )}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              disabled={deleting}
+              className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+              title="Delete contract"
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Template selector */}
@@ -1217,10 +1414,9 @@ function ContractSection({
           {showPreview && (
             <ContractPreviewOverlay
               docusealTemplateId={currentDocusealId}
-              localTemplateId={contract?.contractTemplateId ?? null}
-              alreadyCloned={docusealIdOverride !== null}
+              alreadyCloned={hasOverride}
               onClose={onTogglePreview}
-              onCloned={(newId) => setDocusealIdOverride(newId)}
+              onPersistClone={persistCloneOverride}
             />
           )}
         </>
@@ -1229,7 +1425,7 @@ function ContractSection({
   );
 }
 
-function ContractPreviewOverlay({ docusealTemplateId, localTemplateId, alreadyCloned, onClose, onCloned }: { docusealTemplateId: number; localTemplateId: string | null; alreadyCloned?: boolean; onClose: () => void; onCloned?: (newDocusealId: number) => void }) {
+function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, onPersistClone }: { docusealTemplateId: number; alreadyCloned?: boolean; onClose: () => void; onPersistClone?: (newDocusealId: number) => Promise<void> }) {
   const [token, setToken] = useState<string | null>(null);
   const [clonedId, setClonedId] = useState<number | null>(null);
   const [editing, setEditing] = useState(alreadyCloned ?? false);
@@ -1293,21 +1489,12 @@ function ContractPreviewOverlay({ docusealTemplateId, localTemplateId, alreadyCl
   }
 
   async function handleClose() {
-    // Only update the template reference if we actually cloned (edited)
-    if (clonedId && localTemplateId) {
+    // Persist the per-contract override if we actually cloned (edited)
+    if (clonedId && onPersistClone) {
       try {
-        const res = await fetch("/api/admin/contract-templates", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: localTemplateId, docusealTemplateId: clonedId }),
-        });
-        if (res.ok) {
-          onCloned?.(clonedId);
-        } else {
-          console.error("[ContractPreviewOverlay] PATCH failed:", res.status);
-        }
+        await onPersistClone(clonedId);
       } catch (err) {
-        console.error("[ContractPreviewOverlay] Failed to update template reference:", err);
+        console.error("[ContractPreviewOverlay] Failed to persist clone:", err);
       }
     }
     onClose();
@@ -1318,7 +1505,7 @@ function ContractPreviewOverlay({ docusealTemplateId, localTemplateId, alreadyCl
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clonedId, localTemplateId, onClose]);
+  }, [clonedId, onClose]);
 
   return (
     <>

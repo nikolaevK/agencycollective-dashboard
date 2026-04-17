@@ -27,14 +27,16 @@ const CreateSubmissionResponseSchema = z.array(
 export async function generateContractFromDeal(
   deal: DealRecord,
   clientEmail: string,
-  templateRecord: ContractTemplateRecord
+  templateRecord: ContractTemplateRecord,
+  docusealTemplateIdOverride?: number | null
 ): Promise<{ submissionId: number; submitterId: number; signingUrl: string }> {
   const services = parseServiceCategory(deal.serviceCategory);
   const dealValueDollars = (deal.dealValue / 100).toFixed(2);
+  const effectiveDocusealTemplateId = docusealTemplateIdOverride ?? templateRecord.docusealTemplateId;
 
   // Fetch the template to get the actual submitter roles
   const template = await docusealFetch(
-    `/templates/${templateRecord.docusealTemplateId}`,
+    `/templates/${effectiveDocusealTemplateId}`,
     DocuSealTemplateSchema,
     { retries: 1 }
   );
@@ -42,10 +44,10 @@ export async function generateContractFromDeal(
   // Determine the client-facing role from the template's submitters
   const rawSubmitters = Array.isArray(template.submitters) ? template.submitters : [];
   if (rawSubmitters.length === 0) {
-    throw new Error(`Template ${templateRecord.docusealTemplateId} has no submitter roles defined`);
+    throw new Error(`Template ${effectiveDocusealTemplateId} has no submitter roles defined`);
   }
   if (rawSubmitters.length > 1) {
-    console.warn(`[dealContractGenerator] Template ${templateRecord.docusealTemplateId} has ${rawSubmitters.length} submitter roles — only the first role will receive the signing request`);
+    console.warn(`[dealContractGenerator] Template ${effectiveDocusealTemplateId} has ${rawSubmitters.length} submitter roles — only the first role will receive the signing request`);
   }
   const clientRole = (rawSubmitters[0] as { name?: string } | undefined)?.name || "First Party";
 
@@ -85,7 +87,7 @@ export async function generateContractFromDeal(
   const submitters = await docusealPost(
     "/submissions",
     {
-      template_id: templateRecord.docusealTemplateId,
+      template_id: effectiveDocusealTemplateId,
       send_email: true,
       submitters: [
         {

@@ -1,11 +1,10 @@
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
-
-export type DealContractStatus = "pending" | "sent" | "viewed" | "signed" | "expired" | "declined";
+import type { DealContractStatus } from "./dealContracts";
 
 const VALID_STATUSES = new Set<string>(["pending", "sent", "viewed", "signed", "expired", "declined"]);
 
-export interface DealContractRecord {
+export interface DealAdditionalContractRecord {
   id: string;
   dealId: string;
   contractTemplateId: string | null;
@@ -17,13 +16,14 @@ export interface DealContractRecord {
   signingUrl: string | null;
   sentAt: string | null;
   signedAt: string | null;
-  documentUrls: string[] | null; // parsed JSON array of signed doc URLs
+  documentUrls: string[] | null;
+  sortOrder: number;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-function rowToContract(row: Row): DealContractRecord {
+function rowToRecord(row: Row): DealAdditionalContractRecord {
   let documentUrls: string[] | null = null;
   if (row.document_urls) {
     try {
@@ -46,72 +46,66 @@ function rowToContract(row: Row): DealContractRecord {
     sentAt: row.sent_at != null ? String(row.sent_at) : null,
     signedAt: row.signed_at != null ? String(row.signed_at) : null,
     documentUrls,
+    sortOrder: Number(row.sort_order ?? 0),
     createdBy: row.created_by != null ? String(row.created_by) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
 }
 
-export async function findDealContractByDealId(dealId: string): Promise<DealContractRecord | null> {
+export async function findAdditionalContractsByDealId(dealId: string): Promise<DealAdditionalContractRecord[]> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM deal_contracts WHERE deal_id = ?", args: [dealId] });
-  return result.rows[0] ? rowToContract(result.rows[0]) : null;
+  const result = await db.execute({
+    sql: "SELECT * FROM deal_additional_contracts WHERE deal_id = ? ORDER BY sort_order ASC, created_at ASC",
+    args: [dealId],
+  });
+  return result.rows.map(rowToRecord);
 }
 
-export async function findDealContract(id: string): Promise<DealContractRecord | null> {
+export async function findAdditionalContract(id: string): Promise<DealAdditionalContractRecord | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM deal_contracts WHERE id = ?", args: [id] });
-  return result.rows[0] ? rowToContract(result.rows[0]) : null;
+  const result = await db.execute({ sql: "SELECT * FROM deal_additional_contracts WHERE id = ?", args: [id] });
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
 }
 
-export async function insertDealContract(record: {
+export async function insertAdditionalContract(record: {
   id: string;
   dealId: string;
   contractTemplateId?: string | null;
-  docusealSubmissionId?: number | null;
-  docusealSubmitterId?: number | null;
-  status?: DealContractStatus;
-  clientEmail?: string | null;
-  signingUrl?: string | null;
-  sentAt?: string | null;
+  sortOrder?: number;
   createdBy?: string | null;
 }): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deal_contracts (id, deal_id, contract_template_id, docuseal_submission_id, docuseal_submitter_id, status, client_email, signing_url, sent_at, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deal_additional_contracts (id, deal_id, contract_template_id, sort_order, created_by)
+          VALUES (?, ?, ?, ?, ?)`,
     args: [
       record.id,
       record.dealId,
       record.contractTemplateId ?? null,
-      record.docusealSubmissionId ?? null,
-      record.docusealSubmitterId ?? null,
-      record.status ?? "pending",
-      record.clientEmail ?? null,
-      record.signingUrl ?? null,
-      record.sentAt ?? null,
+      record.sortOrder ?? 0,
       record.createdBy ?? null,
     ],
   });
-
 }
 
-export async function updateDealContract(
+export async function updateAdditionalContract(
   id: string,
   changes: {
     status?: DealContractStatus;
+    contractTemplateId?: string | null;
+    docusealSubmissionId?: number | null;
+    docusealSubmitterId?: number | null;
+    docusealTemplateOverrideId?: number | null;
     signingUrl?: string | null;
     sentAt?: string | null;
     signedAt?: string | null;
     documentUrls?: string[] | null;
-    docusealSubmissionId?: number | null;
-    docusealSubmitterId?: number | null;
-    docusealTemplateOverrideId?: number | null;
     clientEmail?: string | null;
-    contractTemplateId?: string | null;
+    sortOrder?: number;
   }
 ): Promise<void> {
   const fields: string[] = [];
@@ -119,14 +113,15 @@ export async function updateDealContract(
 
   if (changes.status !== undefined) { fields.push("status = ?"); args.push(changes.status); }
   if (changes.contractTemplateId !== undefined) { fields.push("contract_template_id = ?"); args.push(changes.contractTemplateId); }
+  if (changes.docusealSubmissionId !== undefined) { fields.push("docuseal_submission_id = ?"); args.push(changes.docusealSubmissionId); }
+  if (changes.docusealSubmitterId !== undefined) { fields.push("docuseal_submitter_id = ?"); args.push(changes.docusealSubmitterId); }
+  if (changes.docusealTemplateOverrideId !== undefined) { fields.push("docuseal_template_override_id = ?"); args.push(changes.docusealTemplateOverrideId); }
   if (changes.signingUrl !== undefined) { fields.push("signing_url = ?"); args.push(changes.signingUrl); }
   if (changes.sentAt !== undefined) { fields.push("sent_at = ?"); args.push(changes.sentAt); }
   if (changes.signedAt !== undefined) { fields.push("signed_at = ?"); args.push(changes.signedAt); }
   if (changes.documentUrls !== undefined) { fields.push("document_urls = ?"); args.push(changes.documentUrls ? JSON.stringify(changes.documentUrls) : null); }
-  if (changes.docusealSubmissionId !== undefined) { fields.push("docuseal_submission_id = ?"); args.push(changes.docusealSubmissionId); }
-  if (changes.docusealSubmitterId !== undefined) { fields.push("docuseal_submitter_id = ?"); args.push(changes.docusealSubmitterId); }
-  if (changes.docusealTemplateOverrideId !== undefined) { fields.push("docuseal_template_override_id = ?"); args.push(changes.docusealTemplateOverrideId); }
   if (changes.clientEmail !== undefined) { fields.push("client_email = ?"); args.push(changes.clientEmail); }
+  if (changes.sortOrder !== undefined) { fields.push("sort_order = ?"); args.push(changes.sortOrder); }
 
   if (fields.length === 0) return;
   fields.push("updated_at = datetime('now')");
@@ -134,48 +129,32 @@ export async function updateDealContract(
 
   await ensureMigrated();
   const db = getDb();
-  await db.execute({ sql: `UPDATE deal_contracts SET ${fields.join(", ")} WHERE id = ?`, args });
-
+  await db.execute({ sql: `UPDATE deal_additional_contracts SET ${fields.join(", ")} WHERE id = ?`, args });
 }
 
-export async function deleteDealContract(id: string): Promise<boolean> {
+export async function deleteAdditionalContract(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "DELETE FROM deal_contracts WHERE id = ?", args: [id] });
-
+  const result = await db.execute({ sql: "DELETE FROM deal_additional_contracts WHERE id = ?", args: [id] });
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** Batch fetch contract statuses for a list of deal IDs. */
-export async function getDealContractStatuses(
-  dealIds: string[]
-): Promise<Record<string, { status: DealContractStatus; signingUrl: string | null }>> {
-  if (dealIds.length === 0) return {};
-  const capped = dealIds.slice(0, 500);
+export async function countAdditionalContracts(dealId: string): Promise<number> {
   await ensureMigrated();
   const db = getDb();
-  const placeholders = capped.map(() => "?").join(",");
   const result = await db.execute({
-    sql: `SELECT deal_id, status, signing_url FROM deal_contracts WHERE deal_id IN (${placeholders})`,
-    args: capped,
+    sql: "SELECT COUNT(*) as cnt FROM deal_additional_contracts WHERE deal_id = ?",
+    args: [dealId],
   });
-  const map: Record<string, { status: DealContractStatus; signingUrl: string | null }> = {};
-  for (const row of result.rows) {
-    map[String(row.deal_id)] = {
-      status: VALID_STATUSES.has(String(row.status)) ? (String(row.status) as DealContractStatus) : "pending",
-      signingUrl: row.signing_url != null ? String(row.signing_url) : null,
-    };
-  }
-  return map;
+  return Number(result.rows[0]?.cnt ?? 0);
 }
 
-/** Find contract by DocuSeal submission ID (used by webhooks). */
-export async function findDealContractBySubmissionId(submissionId: number): Promise<DealContractRecord | null> {
+export async function findAdditionalContractBySubmissionId(submissionId: number): Promise<DealAdditionalContractRecord | null> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
-    sql: "SELECT * FROM deal_contracts WHERE docuseal_submission_id = ?",
+    sql: "SELECT * FROM deal_additional_contracts WHERE docuseal_submission_id = ?",
     args: [submissionId],
   });
-  return result.rows[0] ? rowToContract(result.rows[0]) : null;
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
 }

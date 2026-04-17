@@ -6,6 +6,7 @@ import { findDealInvoice, updateDealInvoice } from "@/lib/dealInvoices";
 import { updateAdditionalInvoice } from "@/lib/dealAdditionalInvoices";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
 import { findDealContractByDealId, updateDealContract } from "@/lib/dealContracts";
+import { findAdditionalContractsByDealId, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
 import { findContractTemplate } from "@/lib/contractTemplates";
 import { generateContractFromDeal } from "@/lib/dealContractGenerator";
 import { findDeal, updateDeal } from "@/lib/deals";
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
     // Check if there's a contract to send/resend alongside
     const contract = sendContract ? await findDealContractByDealId(invoice.dealId) : null;
     const canSendContract = contract && contract.status !== "signed" && contract.contractTemplateId;
+    const additionalContractsForEmail = sendContract
+      ? await findAdditionalContractsByDealId(invoice.dealId)
+      : [];
+    const anyContractEligible =
+      !!canSendContract ||
+      additionalContractsForEmail.some((ac) => ac.status !== "signed" && !!ac.contractTemplateId);
 
     const buffer = Buffer.from(await pdfFile.arrayBuffer());
     const safeNumber = invoice.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100);
@@ -86,7 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
-      includesContract: !!canSendContract,
+      includesContract: anyContractEligible,
       cc: ccEmail || undefined,
       additionalPdfs: additionalPdfs.length > 0
         ? additionalPdfs.map((p) => ({ buffer: p.buffer, invoiceNumber: p.invoiceNumber }))
@@ -115,53 +122,110 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Send/resend contract via DocuSeal if not signed
-    let contractSent = false;
-    let contractError: string | undefined;
+    // Send/resend primary contract + any additional contracts via DocuSeal
+    let contractsSent = 0;
+    let contractsFailed = 0;
+    const contractErrors: string[] = [];
 
-    if (canSendContract && contract) {
-      try {
-        const deal = await findDeal(invoice.dealId);
-        const template = contract.contractTemplateId
-          ? await findContractTemplate(contract.contractTemplateId)
-          : null;
+    if (sendContract) {
+      // Build the list of contracts to send: primary (if eligible) + additionals with a template
+      type SendTarget =
+        | { kind: "primary"; record: NonNullable<typeof contract>; templateId: string; overrideId: number | null }
+        | { kind: "additional"; id: string; templateId: string; overrideId: number | null };
 
-        if (deal && template) {
-          const result = await generateContractFromDeal(deal, email, template);
+      const targets: SendTarget[] = [];
+      if (canSendContract && contract && contract.contractTemplateId) {
+        targets.push({
+          kind: "primary",
+          record: contract,
+          templateId: contract.contractTemplateId,
+          overrideId: contract.docusealTemplateOverrideId ?? null,
+        });
+      }
 
-          try {
-            await updateDealContract(contract.id, {
-              docusealSubmissionId: result.submissionId,
-              docusealSubmitterId: result.submitterId,
-              signingUrl: result.signingUrl,
-              status: "sent",
-              clientEmail: email,
-              sentAt: new Date().toISOString(),
-            });
-            await updateDeal(invoice.dealId, { status: "pending_signature" });
-          } catch (dbErr) {
-            // DocuSeal submission was created but DB update failed — log for recovery
-            console.error(
-              `[deal-invoices/send] ORPHAN: DocuSeal submission ${result.submissionId} created for deal ${invoice.dealId} but DB update failed:`,
-              dbErr instanceof Error ? dbErr.message : dbErr
-            );
-            throw dbErr;
-          }
-          contractSent = true;
-        } else {
-          contractError = !deal ? "Deal not found" : "Contract template not found";
+      for (const ac of additionalContractsForEmail) {
+        if (ac.status !== "signed" && ac.contractTemplateId) {
+          targets.push({
+            kind: "additional",
+            id: ac.id,
+            templateId: ac.contractTemplateId,
+            overrideId: ac.docusealTemplateOverrideId ?? null,
+          });
         }
-      } catch (err) {
-        console.error("[deal-invoices/send] Contract send failed:", err instanceof Error ? err.message : err);
-        contractError = "Contract send failed. You can retry from the contract drawer.";
+      }
+
+      // Parallel fetch: deal + all referenced templates (dedup by templateId)
+      const uniqueTemplateIds = Array.from(new Set(targets.map((t) => t.templateId)));
+      const [deal, ...templates] = await Promise.all([
+        findDeal(invoice.dealId),
+        ...uniqueTemplateIds.map((tid) => findContractTemplate(tid)),
+      ]);
+      const templateById = new Map(uniqueTemplateIds.map((tid, i) => [tid, templates[i]]));
+
+      if (targets.length > 0 && !deal) {
+        contractErrors.push("Deal not found");
+        contractsFailed += targets.length;
+      } else if (deal) {
+        // Send all contracts in parallel — each gets its own Docuseal submission / signing email
+        const sendResults = await Promise.allSettled(
+          targets.map(async (t) => {
+            const template = templateById.get(t.templateId);
+            if (!template) throw new Error("Contract template not found");
+            const result = await generateContractFromDeal(deal, email, template, t.overrideId);
+            const now = new Date().toISOString();
+            if (t.kind === "primary") {
+              await updateDealContract(t.record.id, {
+                docusealSubmissionId: result.submissionId,
+                docusealSubmitterId: result.submitterId,
+                signingUrl: result.signingUrl,
+                status: "sent",
+                clientEmail: email,
+                sentAt: now,
+              });
+            } else {
+              await updateAdditionalContract(t.id, {
+                docusealSubmissionId: result.submissionId,
+                docusealSubmitterId: result.submitterId,
+                signingUrl: result.signingUrl,
+                status: "sent",
+                clientEmail: email,
+                sentAt: now,
+              });
+            }
+            return result;
+          })
+        );
+
+        for (let i = 0; i < sendResults.length; i++) {
+          const r = sendResults[i];
+          if (r.status === "fulfilled") {
+            contractsSent += 1;
+          } else {
+            contractsFailed += 1;
+            const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+            const target = targets[i];
+            const label = target.kind === "primary" ? "primary contract" : `additional contract ${target.id}`;
+            console.error(`[deal-invoices/send] Contract send failed for ${label}:`, msg);
+            contractErrors.push(msg);
+          }
+        }
+
+        if (contractsSent > 0) {
+          try {
+            await updateDeal(invoice.dealId, { status: "pending_signature" });
+          } catch (err) {
+            console.error("[deal-invoices/send] Deal status update failed:", err instanceof Error ? err.message : err);
+          }
+        }
       }
     }
 
     return NextResponse.json({
       success: true,
       invoiceSent: true,
-      contractSent,
-      contractError,
+      contractsSent,
+      contractsFailed,
+      contractError: contractErrors.length > 0 ? contractErrors.join("; ") : undefined,
       dbUpdateErrors: dbFailures.length > 0 ? dbFailures.length : undefined,
     });
   } catch (err) {

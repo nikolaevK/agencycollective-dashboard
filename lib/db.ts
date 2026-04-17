@@ -771,6 +771,13 @@ export async function migrate(): Promise<void> {
     // indexes may already exist
   }
 
+  // Per-contract Docuseal template override (set when admin edits this contract's template via clone-on-edit)
+  try {
+    await db.execute(`ALTER TABLE deal_contracts ADD COLUMN docuseal_template_override_id INTEGER`);
+  } catch {
+    // column already exists
+  }
+
   // ── Additional invoices per deal ─────────────────────────────────────
   // Drop and recreate if the table has a stale schema (e.g. a 'title' column from earlier dev)
   try {
@@ -800,6 +807,50 @@ export async function migrate(): Promise<void> {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_add_inv_deal_id ON deal_additional_invoices(deal_id)`);
   } catch {
     // index may already exist
+  }
+
+  // ── Additional contracts per deal (DocuSeal submissions beyond primary) ──
+  // Drop and recreate if the table has a stale schema (e.g. a 'title' column from earlier dev)
+  try {
+    await db.execute(`SELECT title FROM deal_additional_contracts LIMIT 0`);
+    await db.execute(`DROP TABLE IF EXISTS deal_additional_contracts`);
+    console.log("[migrate] Dropped deal_additional_contracts (stale schema with title column)");
+  } catch {
+    // no title column — schema is correct or table doesn't exist
+  }
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS deal_additional_contracts (
+      id                      TEXT PRIMARY KEY,
+      deal_id                 TEXT NOT NULL,
+      contract_template_id    TEXT REFERENCES contract_templates(id) ON DELETE SET NULL,
+      docuseal_submission_id  INTEGER,
+      docuseal_submitter_id   INTEGER,
+      status                  TEXT NOT NULL DEFAULT 'pending',
+      client_email            TEXT,
+      signing_url             TEXT,
+      sent_at                 TEXT,
+      signed_at               TEXT,
+      document_urls           TEXT,
+      sort_order              INTEGER NOT NULL DEFAULT 0,
+      created_by              TEXT,
+      created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_add_contracts_deal_id ON deal_additional_contracts(deal_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_add_contracts_submission_id ON deal_additional_contracts(docuseal_submission_id)`);
+  } catch {
+    // indexes may already exist
+  }
+
+  // Per-contract Docuseal template override (set when admin edits this contract's template via clone-on-edit)
+  try {
+    await db.execute(`ALTER TABLE deal_additional_contracts ADD COLUMN docuseal_template_override_id INTEGER`);
+  } catch {
+    // column already exists
   }
 
   // ── Push notification subscriptions ──────────────────────────────────────

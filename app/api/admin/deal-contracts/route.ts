@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findDealContractByDealId } from "@/lib/dealContracts";
 import { findDeal } from "@/lib/deals";
-import { findTemplateForServices } from "@/lib/contractTemplates";
+import { findTemplateForServices, findContractTemplate } from "@/lib/contractTemplates";
 import { generateContractFromDeal } from "@/lib/dealContractGenerator";
 import { insertDealContract, updateDealContract } from "@/lib/dealContracts";
 import { updateDeal } from "@/lib/deals";
@@ -26,36 +26,65 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data: contract });
 }
 
-/** Update contract template selection (before sending). */
+/** Update contract template selection or per-contract Docuseal override. */
 export async function PATCH(req: NextRequest) {
   const session = getAdminSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { dealId, contractTemplateId } = await req.json();
+    const body = await req.json();
+    const { dealId, contractTemplateId, docusealTemplateOverrideId } = body as {
+      dealId?: string;
+      contractTemplateId?: string | null;
+      docusealTemplateOverrideId?: number | null;
+    };
     if (!dealId || !UUID_RE.test(dealId)) {
       return NextResponse.json({ error: "Invalid dealId" }, { status: 400 });
     }
 
+    const isOverrideUpdate = docusealTemplateOverrideId !== undefined;
+    const isTemplateUpdate = contractTemplateId !== undefined;
+
     const contract = await findDealContractByDealId(dealId);
-    if (!contract) {
-      // Create a new pending contract if none exists
-      await insertDealContract({
-        id: crypto.randomUUID(),
-        dealId,
-        contractTemplateId: contractTemplateId || null,
-        status: "pending",
-        createdBy: session.adminId,
-      });
-    } else if (contract.status === "pending") {
-      await updateDealContract(contract.id, {
-        contractTemplateId: contractTemplateId || null,
-      });
-    } else {
-      return NextResponse.json({ error: "Cannot change template after contract is sent" }, { status: 400 });
+
+    if (isOverrideUpdate) {
+      // Per-contract Docuseal clone pointer — allowed even after send (for resend edits),
+      // but not once the contract is signed.
+      if (!contract) {
+        return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+      }
+      if (contract.status === "signed") {
+        return NextResponse.json({ error: "Cannot edit a signed contract" }, { status: 400 });
+      }
+      if (docusealTemplateOverrideId !== null && !Number.isFinite(docusealTemplateOverrideId)) {
+        return NextResponse.json({ error: "Invalid override id" }, { status: 400 });
+      }
+      await updateDealContract(contract.id, { docusealTemplateOverrideId });
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ success: true });
+    if (isTemplateUpdate) {
+      if (!contract) {
+        await insertDealContract({
+          id: crypto.randomUUID(),
+          dealId,
+          contractTemplateId: contractTemplateId || null,
+          status: "pending",
+          createdBy: session.adminId,
+        });
+      } else if (contract.status === "pending") {
+        // Switching templates clears any prior per-contract override
+        await updateDealContract(contract.id, {
+          contractTemplateId: contractTemplateId || null,
+          docusealTemplateOverrideId: null,
+        });
+      } else {
+        return NextResponse.json({ error: "Cannot change template after contract is sent" }, { status: 400 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "No changes provided" }, { status: 400 });
   } catch (err) {
     console.error("[deal-contracts PATCH]", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -82,16 +111,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Client email is required to send a contract" }, { status: 400 });
     }
 
-    const serviceKeys = parseServiceCategory(deal.serviceCategory);
-    const template = await findTemplateForServices(serviceKeys);
+    // Check if contract already exists for this deal — use its selected template + override if present,
+    // else fall back to service-key template matching
+    const existing = await findDealContractByDealId(dealId);
+    let template = existing?.contractTemplateId
+      ? await findContractTemplate(existing.contractTemplateId)
+      : null;
+    if (!template) {
+      const serviceKeys = parseServiceCategory(deal.serviceCategory);
+      template = await findTemplateForServices(serviceKeys);
+    }
     if (!template) {
       return NextResponse.json({ error: "No matching contract template found" }, { status: 400 });
     }
 
-    const result = await generateContractFromDeal(deal, clientEmail, template);
-
-    // Check if contract already exists for this deal
-    const existing = await findDealContractByDealId(dealId);
+    const result = await generateContractFromDeal(
+      deal,
+      clientEmail,
+      template,
+      existing?.docusealTemplateOverrideId ?? null
+    );
     if (existing) {
       await updateDealContract(existing.id, {
         docusealSubmissionId: result.submissionId,
