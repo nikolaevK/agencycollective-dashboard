@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Link2, Pencil, StickyNote, Briefcase } from "lucide-react";
+import { Link2, Pencil, StickyNote, Briefcase, Search } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,7 +10,9 @@ import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
-import { format } from "date-fns";
+import { format, startOfWeek, startOfMonth } from "date-fns";
+
+type RangeFilter = "all" | "week" | "month";
 
 const STATUS_STYLES: Record<string, string> = {
   closed: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
@@ -41,17 +43,24 @@ function DealStatusBadge({ status }: { status: string }) {
   );
 }
 
+function parseDealDate(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  // Date-only "YYYY-MM-DD" → construct as local midnight so timezone doesn't shift the date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const dt = new Date(raw);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "\u2014";
+  const d = parseDealDate(dateStr);
+  if (!d) return "\u2014";
   try {
-    const parts = dateStr.slice(0, 10).split("-");
-    if (parts.length === 3) {
-      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-      return format(d, "MMM d, yyyy");
-    }
-    return format(new Date(dateStr), "MMM d, yyyy");
+    return format(d, "MMM d, yyyy");
   } catch {
-    return dateStr;
+    return dateStr ?? "";
   }
 }
 
@@ -68,8 +77,33 @@ interface Props {
 export function CloserRecentDeals({ deals }: Props) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
+  const [range, setRange] = useState<RangeFilter>("all");
+  const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
-  const recent = deals.slice(0, 10);
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(now);
+    const q = search.trim().toLowerCase();
+
+    return deals.filter((d) => {
+      if (q) {
+        const name = d.clientName.toLowerCase();
+        const brand = (d.brandName ?? "").toLowerCase();
+        if (!name.includes(q) && !brand.includes(q)) return false;
+      }
+      if (range === "all") return true;
+      const dt = parseDealDate(d.closingDate) ?? parseDealDate(d.createdAt);
+      if (!dt) return false;
+      if (range === "week") return dt >= weekStart;
+      if (range === "month") return dt >= monthStart;
+      return true;
+    });
+  }, [deals, range, search]);
+
+  const totalCount = deals.length;
+  const showingCount = filtered.length;
 
   function handleSaved() {
     setEditDeal(null);
@@ -80,18 +114,55 @@ export function CloserRecentDeals({ deals }: Props) {
   return (
     <>
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card">
-      <div className="p-5 border-b border-border/50 dark:border-white/[0.06]">
-        <h3 className="text-sm font-semibold text-foreground">Recent Closings</h3>
+      <div className="p-5 border-b border-border/50 dark:border-white/[0.06] space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-foreground">Deals</h3>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {showingCount === totalCount ? `${totalCount}` : `${showingCount} of ${totalCount}`}
+          </span>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="inline-flex items-center rounded-lg bg-muted/60 p-0.5 text-xs font-medium">
+            {(["all", "week", "month"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRange(key)}
+                aria-pressed={range === key}
+                className={cn(
+                  "rounded-md px-3 py-1.5 transition-colors",
+                  range === key
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {key === "all" ? "All" : key === "week" ? "This Week" : "This Month"}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by client or brand"
+              className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+            />
+          </div>
+        </div>
       </div>
 
-      {recent.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="p-8 text-center">
-          <p className="text-sm text-muted-foreground">No deals yet. Create your first deal!</p>
+          <p className="text-sm text-muted-foreground">
+            {totalCount === 0 ? "No deals yet. Create your first deal!" : "No deals match your filters."}
+          </p>
         </div>
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block max-h-[60vh] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/50 dark:border-white/[0.06]">
@@ -103,7 +174,7 @@ export function CloserRecentDeals({ deals }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {recent.map((deal) => (
+                {filtered.map((deal) => (
                   <tr
                     key={deal.id}
                     className="border-b border-border/50 dark:border-white/[0.06] last:border-0 hover:bg-muted/50 transition-colors"
@@ -172,8 +243,8 @@ export function CloserRecentDeals({ deals }: Props) {
           </div>
 
           {/* Mobile cards */}
-          <div className="md:hidden divide-y divide-border/50 dark:divide-white/[0.06]">
-            {recent.map((deal) => (
+          <div className="md:hidden max-h-[60vh] overflow-y-auto divide-y divide-border/50 dark:divide-white/[0.06]">
+            {filtered.map((deal) => (
               <div key={deal.id} className="p-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">

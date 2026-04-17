@@ -44,13 +44,12 @@ export async function GET() {
         noShowCount: showRateStats.noShowCount,
       },
       recentDeals: await (async () => {
-        const recent = deals.slice(0, 10);
-        const recentIds = recent.map((d) => d.id);
+        const dealIds = deals.map((d) => d.id);
         const [invoiceStatuses, contractStatuses] = await Promise.all([
-          getDealInvoiceStatuses(recentIds),
-          getDealContractStatuses(recentIds),
+          getDealInvoiceStatuses(dealIds),
+          getDealContractStatuses(dealIds),
         ]);
-        return recent.map((d) => ({
+        return deals.map((d) => ({
           ...d,
           invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
           invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
