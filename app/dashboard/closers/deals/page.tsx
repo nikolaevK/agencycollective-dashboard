@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Search, Calendar } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search, Calendar, RefreshCw } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { RecentDealsTable } from "@/components/closers/RecentDealsTable";
@@ -33,7 +33,8 @@ export default function AdminDealsPage() {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
 
-  const { data: deals = [], isLoading } = useQuery<DealPublic[]>({
+  const queryClient = useQueryClient();
+  const { data: deals = [], isLoading, isFetching } = useQuery<DealPublic[]>({
     queryKey: ["admin-all-deals"],
     queryFn: async () => {
       const res = await fetch("/api/admin/deals");
@@ -112,11 +113,21 @@ export default function AdminDealsPage() {
   return (
     <DashboardShell>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">All Deals</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            View and manage all deals across your sales team
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl lg:text-3xl font-black text-foreground">All Deals</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              View and manage all deals across your sales team
+            </p>
+          </div>
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] })}
+            disabled={isFetching}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            Refresh
+          </button>
         </div>
 
         <CloserSubNav />
