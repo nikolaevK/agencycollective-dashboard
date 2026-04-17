@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, lazy, Suspense } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ChevronDown, ExternalLink, Pencil } from "lucide-react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { useDealInvoice } from "@/hooks/useDealInvoice";
 import { useDealContract } from "@/hooks/useDealContract";
+import { useAdditionalInvoices, type AdditionalInvoiceRecord } from "@/hooks/useAdditionalInvoices";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { formatCurrencyValue, createEmptyItem } from "@/lib/invoice/validation";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
@@ -112,10 +113,16 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const queryClient = useQueryClient();
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
+  const { data: additionalInvoices = [] } = useAdditionalInvoices(dealId);
   const hasPendingContract = contract?.status === "pending";
   const canSendContract = !!contract && contract.status !== "signed" && !!contract.contractTemplateId;
   const isSent = invoice?.status === "sent";
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [addlData, setAddlData] = useState<Map<string, InvoiceData>>(new Map());
+  const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
+  const primaryDataRef = useRef<InvoiceData | null>(null);
+  const [addingInvoice, setAddingInvoice] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showContractPreview, setShowContractPreview] = useState(false);
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [clientEmail, setClientEmail] = useState("");
@@ -156,6 +163,20 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     if (closerEmail && !ccEmail) setCcEmail(closerEmail);
   }, [closerEmail]);
 
+  // Sync additional invoices from server into local state
+  useEffect(() => {
+    if (additionalInvoices.length === 0) return;
+    setAddlData((prev) => {
+      const next = new Map(prev);
+      for (const inv of additionalInvoices) {
+        if (!next.has(inv.id)) {
+          next.set(inv.id, inv.invoiceData);
+        }
+      }
+      return next;
+    });
+  }, [additionalInvoices]);
+
   useEffect(() => {
     if (!invoice || !agencyConfig) return;
     const src = invoice.invoiceData;
@@ -177,7 +198,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     const resolvedType: PaymentType = paymentInfo?.paymentType === "international" ? "international" : effectiveType;
     setDrawerPaymentType(resolvedType);
 
-    setInvoiceData({
+    const built: InvoiceData = {
       ...src,
       details: {
         ...src.details,
@@ -186,7 +207,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         paymentInfo,
         noteToCustomer,
       },
-    });
+    };
+    primaryDataRef.current = built;
+    // Only load into editor if primary tab is active — don't overwrite additional invoice edits
+    if (activeInvoiceId === null) {
+      setInvoiceData(built);
+    }
     setClientEmail(invoice.clientEmail || "");
   }, [invoice, agencyConfig, dealPaymentType]);
 
@@ -293,21 +319,136 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
+  const switchToInvoice = (targetId: string | null) => {
+    if (targetId === activeInvoiceId) return;
+    // Flush current invoiceData to its storage
+    if (invoiceData) {
+      if (activeInvoiceId === null) {
+        primaryDataRef.current = invoiceData;
+      } else {
+        setAddlData((prev) => new Map(prev).set(activeInvoiceId, invoiceData));
+      }
+    }
+    // Load target data
+    if (targetId === null) {
+      setInvoiceData(primaryDataRef.current);
+      const pt = primaryDataRef.current?.details.paymentInfo?.paymentType;
+      setDrawerPaymentType(pt === "international" ? "international" : "local");
+      setActiveInvoiceId(null);
+    } else {
+      const data = addlData.get(targetId);
+      if (data) {
+        setInvoiceData(data);
+        const pt = data.details.paymentInfo?.paymentType;
+        setDrawerPaymentType(pt === "international" ? "international" : "local");
+        setActiveInvoiceId(targetId);
+      }
+    }
+  };
+
+  const handleAddInvoice = async () => {
+    if (!dealId) return;
+    setAddingInvoice(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/deal-invoices/additional", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const newInv = json.data as AdditionalInvoiceRecord;
+        // Flush current tab before switching
+        if (invoiceData) {
+          if (activeInvoiceId === null) {
+            primaryDataRef.current = invoiceData;
+          } else {
+            setAddlData((prev) => new Map(prev).set(activeInvoiceId, invoiceData));
+          }
+        }
+        setAddlData((prev) => new Map(prev).set(newInv.id, newInv.invoiceData));
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
+        setInvoiceData(newInv.invoiceData);
+        const pt = newInv.invoiceData.details.paymentInfo?.paymentType;
+        setDrawerPaymentType(pt === "international" ? "international" : "local");
+        setActiveInvoiceId(newInv.id);
+        setMsg({ type: "success", text: `Additional invoice #${newInv.invoiceNumber} created` });
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setMsg({ type: "error", text: json.error || "Failed to create invoice" });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Failed to create invoice" });
+    } finally {
+      setAddingInvoice(false);
+    }
+  };
+
+  const handleDeleteAdditional = async (id: string) => {
+    setDeletingId(id);
+    try {
+      // If deleting the active tab, switch to primary first
+      if (activeInvoiceId === id) {
+        setInvoiceData(primaryDataRef.current);
+        const pt = primaryDataRef.current?.details.paymentInfo?.paymentType;
+        setDrawerPaymentType(pt === "international" ? "international" : "local");
+        setActiveInvoiceId(null);
+      }
+      const res = await fetch(`/api/admin/deal-invoices/additional?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setAddlData((prev) => { const next = new Map(prev); next.delete(id); return next; });
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
+        setMsg({ type: "success", text: "Invoice deleted" });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Failed to delete invoice" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!invoice || !invoiceData) return;
     setSaving(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/admin/deal-invoices", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: invoice.id, invoiceData, clientEmail }),
-      });
-      if (res.ok) {
-        setMsg({ type: "success", text: "Invoice saved" });
-        queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
+      // Resolve primary and additional data from current tab state
+      const primaryData = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
+      const finalAddl = new Map(addlData);
+      if (activeInvoiceId !== null && invoiceData) {
+        finalAddl.set(activeInvoiceId, invoiceData);
+      }
+      // Also flush to refs/state so they stay in sync
+      if (activeInvoiceId === null) {
+        primaryDataRef.current = invoiceData;
       } else {
-        setMsg({ type: "error", text: "Failed to save" });
+        setAddlData(finalAddl);
+      }
+
+      // Save primary + additional invoices in parallel
+      const saveResults = await Promise.all([
+        fetch("/api/admin/deal-invoices", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: invoice.id, invoiceData: primaryData, clientEmail }),
+        }),
+        ...[...finalAddl].map(([id, data]) =>
+          fetch("/api/admin/deal-invoices/additional", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, invoiceData: data }),
+          })
+        ),
+      ]);
+      const allOk = saveResults.every((r) => r.ok);
+
+      if (allOk) {
+        setMsg({ type: "success", text: finalAddl.size > 0 ? "All invoices saved" : "Invoice saved" });
+        queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
+        if (finalAddl.size > 0) queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
+      } else {
+        setMsg({ type: "error", text: "Failed to save some invoices" });
       }
     } catch {
       setMsg({ type: "error", text: "Failed to save" });
@@ -359,27 +500,58 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     setSending(true);
     setMsg(null);
     try {
-      const blob = await generateBlob();
-      if (!blob) return;
+      // Resolve data after save flushed everything
+      const primaryData = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
+      const finalAddl = new Map(addlData);
+      if (activeInvoiceId !== null && invoiceData) {
+        finalAddl.set(activeInvoiceId, invoiceData);
+      }
+
+      if (!primaryData) return;
+
+      // Generate all PDFs in parallel
+      const addlEntries = additionalInvoices
+        .map((inv) => ({ inv, data: finalAddl.get(inv.id) }))
+        .filter((e): e is { inv: typeof additionalInvoices[0]; data: InvoiceData } => !!e.data);
+
+      const [primaryBlob, ...addlBlobs] = await Promise.all([
+        pdf(<InvoicePdfDocument data={primaryData} />).toBlob(),
+        ...addlEntries.map((e) => pdf(<InvoicePdfDocument data={e.data} />).toBlob()),
+      ]);
+
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
       formData.append("email", clientEmail);
       if (ccEmail.trim()) formData.append("cc", ccEmail.trim());
-      formData.append("pdf", new File([blob], `invoice-${invoiceData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+      formData.append("pdf", new File([primaryBlob], `invoice-${primaryData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
       if (canSendContract) {
         formData.append("sendContract", "true");
       }
+
+      const additionalIds: string[] = [];
+      for (let i = 0; i < addlEntries.length; i++) {
+        const { inv, data } = addlEntries[i];
+        formData.append("additionalPdfs", new File([addlBlobs[i]], `invoice-${data.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+        additionalIds.push(inv.id);
+      }
+      if (additionalIds.length > 0) {
+        formData.append("additionalInvoiceIds", JSON.stringify(additionalIds));
+      }
+
       const res = await fetch("/api/admin/deal-invoices/send", { method: "POST", body: formData });
       const json = await res.json().catch(() => ({}));
+      const invoiceCount = 1 + additionalIds.length;
+      const invoiceLabel = invoiceCount > 1 ? `${invoiceCount} invoices` : "Invoice";
       if (res.ok) {
         if (json.contractSent) {
-          setMsg({ type: "success", text: "Invoice & contract sent to " + clientEmail });
+          setMsg({ type: "success", text: `${invoiceLabel} & contract sent to ${clientEmail}` });
         } else if (canSendContract && json.contractError) {
-          setMsg({ type: "error", text: "Invoice sent, but contract failed: " + json.contractError });
+          setMsg({ type: "error", text: `${invoiceLabel} sent, but contract failed: ${json.contractError}` });
         } else {
-          setMsg({ type: "success", text: "Invoice sent to " + clientEmail });
+          setMsg({ type: "success", text: `${invoiceLabel} sent to ${clientEmail}` });
         }
         queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
+        queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
         queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
         queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
         queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
@@ -402,19 +574,24 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
           <div>
             <h3 className="text-lg font-semibold text-foreground">Invoice Review</h3>
-            {invoice && (
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-muted-foreground">#{invoice.invoiceNumber}</span>
-                <span className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
-                  invoice.status === "sent"
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                    : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-                )}>
-                  {invoice.status === "sent" ? "Sent" : "Draft"}
-                </span>
-              </div>
-            )}
+            {invoice && (() => {
+              const activeAddl = activeInvoiceId ? additionalInvoices.find(i => i.id === activeInvoiceId) : null;
+              const displayNumber = activeAddl ? activeAddl.invoiceNumber : invoice.invoiceNumber;
+              const displayStatus = activeAddl ? activeAddl.status : invoice.status;
+              return (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted-foreground">#{displayNumber}</span>
+                  <span className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    displayStatus === "sent"
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+                  )}>
+                    {displayStatus === "sent" ? "Sent" : "Draft"}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
             <X className="h-4 w-4" />
@@ -435,8 +612,8 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
           {invoiceData && (
             <>
-              {/* Mismatch warning */}
-              {mismatch && (
+              {/* Mismatch warning — primary invoice only */}
+              {activeInvoiceId === null && mismatch && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
                   <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-600">
@@ -450,6 +627,63 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
                   <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{dealNotes}</p>
+                </div>
+              )}
+
+              {/* Invoice Tabs */}
+              {(additionalInvoices.length > 0 || addingInvoice || activeInvoiceId !== null) && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Invoice</label>
+                  <div className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
+                    <button
+                      type="button"
+                      onClick={() => switchToInvoice(null)}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                        activeInvoiceId === null ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      #{invoice?.invoiceNumber}
+                    </button>
+                    {additionalInvoices.map((inv) => (
+                      <div key={inv.id} className="relative flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => switchToInvoice(inv.id)}
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-7",
+                            activeInvoiceId === inv.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            #{inv.invoiceNumber}
+                            <span className={cn(
+                              "inline-block h-1.5 w-1.5 rounded-full",
+                              inv.status === "sent" ? "bg-emerald-500" : "bg-amber-500"
+                            )} />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteAdditional(inv.id); }}
+                          disabled={deletingId === inv.id}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                          title="Delete invoice"
+                        >
+                          {deletingId === inv.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleAddInvoice}
+                      disabled={addingInvoice}
+                      className="rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                      title="Add invoice"
+                    >
+                      {addingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -648,6 +882,17 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 </span>
               </div>
 
+              {/* Add Invoice button — shown when no additional invoices exist yet */}
+              {additionalInvoices.length === 0 && activeInvoiceId === null && !addingInvoice && (
+                <button
+                  onClick={handleAddInvoice}
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Additional Invoice
+                </button>
+              )}
+
               {/* Contract Section */}
               <ContractSection
                 dealId={dealId}
@@ -677,7 +922,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         {invoiceData && (
           <div className="border-t border-border px-5 py-4 space-y-2 shrink-0">
             {/* Sent info + View PDF */}
-            {isSent && invoice && (
+            {activeInvoiceId === null && isSent && invoice && (
               <div className="space-y-1.5">
                 {invoice.hasPdf && (
                   <button
@@ -695,6 +940,18 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 </p>
               </div>
             )}
+            {activeInvoiceId && (() => {
+              const activeAddl = additionalInvoices.find(i => i.id === activeInvoiceId);
+              return activeAddl?.status === "sent" && activeAddl?.hasPdf ? (
+                <button
+                  onClick={() => window.open(`/api/admin/deal-invoices/additional/pdf?id=${activeInvoiceId}`, "_blank")}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                >
+                  <FileCheck className="h-3.5 w-3.5" />
+                  View Sent Invoice PDF
+                </button>
+              ) : null;
+            })()}
             <div className="grid grid-cols-3 gap-2">
               <button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -718,11 +975,13 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
               )}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sending
-                ? "Sending..."
-                : isSent
-                  ? canSendContract ? "Resend Invoice & Contract" : "Resend Invoice"
-                  : canSendContract ? "Send Invoice & Contract" : "Send to Client"}
+              {(() => {
+                if (sending) return "Sending...";
+                const hasAddl = additionalInvoices.length > 0;
+                const label = hasAddl ? "All Invoices" : "Invoice";
+                if (isSent) return canSendContract ? `Resend ${label} & Contract` : `Resend ${label}`;
+                return canSendContract ? `Send ${label} & Contract` : hasAddl ? `Send ${label}` : "Send to Client";
+              })()}
             </button>
           </div>
         )}

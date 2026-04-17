@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findDealInvoice, updateDealInvoice } from "@/lib/dealInvoices";
+import { updateAdditionalInvoice } from "@/lib/dealAdditionalInvoices";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
 import { findDealContractByDealId, updateDealContract } from "@/lib/dealContracts";
 import { findContractTemplate } from "@/lib/contractTemplates";
@@ -25,6 +26,19 @@ export async function POST(req: NextRequest) {
     const sendContract = formData.get("sendContract") === "true";
     const ccEmail = (formData.get("cc") as string | null)?.trim() || null;
 
+    // Additional invoice PDFs
+    const additionalPdfFiles = formData.getAll("additionalPdfs") as File[];
+    const additionalIdsRaw = formData.get("additionalInvoiceIds") as string | null;
+    let additionalInvoiceIds: string[] = [];
+    if (additionalIdsRaw) {
+      try {
+        const parsed = JSON.parse(additionalIdsRaw);
+        if (Array.isArray(parsed)) {
+          additionalInvoiceIds = parsed.filter((v): v is string => typeof v === "string");
+        }
+      } catch { /* ignore */ }
+    }
+
     if (!invoiceId || !email || !pdfFile) {
       return NextResponse.json({ error: "invoiceId, email, and pdf required" }, { status: 400 });
     }
@@ -34,6 +48,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid email" }, { status: 400 });
     }
 
+    // Validate total size across all PDFs (25MB limit)
+    let totalSize = pdfFile.size;
+    for (const f of additionalPdfFiles) totalSize += f.size;
+    if (totalSize > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: "Total PDF size exceeds 25MB" }, { status: 413 });
+    }
     if (pdfFile.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: "PDF too large" }, { status: 413 });
     }
@@ -48,7 +68,18 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await pdfFile.arrayBuffer());
     const safeNumber = invoice.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100);
 
-    // Send invoice email (with or without contract mention)
+    // Build additional PDF buffers
+    const additionalPdfs: Array<{ buffer: Buffer; invoiceNumber: string; id: string }> = [];
+    for (let i = 0; i < additionalPdfFiles.length; i++) {
+      const file = additionalPdfFiles[i];
+      if (file.size > 10 * 1024 * 1024) {
+        return NextResponse.json({ error: `Additional PDF ${i + 1} too large` }, { status: 413 });
+      }
+      const buf = Buffer.from(await file.arrayBuffer());
+      const invNumber = file.name.replace(/^invoice-/, "").replace(/\.pdf$/, "") || `additional-${i + 1}`;
+      additionalPdfs.push({ buffer: buf, invoiceNumber: invNumber, id: additionalInvoiceIds[i] || "" });
+    }
+
     // Validate CC email if provided
     if (ccEmail && (!emailRegex.test(ccEmail) || ccEmail.length > 254)) {
       return NextResponse.json({ error: "Invalid CC email" }, { status: 400 });
@@ -57,18 +88,32 @@ export async function POST(req: NextRequest) {
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       includesContract: !!canSendContract,
       cc: ccEmail || undefined,
+      additionalPdfs: additionalPdfs.length > 0
+        ? additionalPdfs.map((p) => ({ buffer: p.buffer, invoiceNumber: p.invoiceNumber }))
+        : undefined,
     });
     if (!sent) return NextResponse.json({ error: "Failed to send invoice email" }, { status: 500 });
 
-    // Update invoice record
-    await updateDealInvoice(invoiceId, {
-      status: "sent",
-      sentAt: new Date().toISOString(),
-      sentCount: invoice.sentCount + 1,
-      sentBy: session.adminId,
-      clientEmail: email,
-      pdfData: buffer,
-    });
+    // Update all invoice records in parallel (best-effort — email already sent)
+    const dbResults = await Promise.allSettled([
+      updateDealInvoice(invoiceId, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+        sentCount: invoice.sentCount + 1,
+        sentBy: session.adminId,
+        clientEmail: email,
+        pdfData: buffer,
+      }),
+      ...additionalPdfs
+        .filter((ap) => ap.id)
+        .map((ap) => updateAdditionalInvoice(ap.id, { status: "sent", pdfData: ap.buffer })),
+    ]);
+    const dbFailures = dbResults.filter((r) => r.status === "rejected");
+    if (dbFailures.length > 0) {
+      for (const f of dbFailures) {
+        console.error("[deal-invoices/send] DB update failed:", (f as PromiseRejectedResult).reason);
+      }
+    }
 
     // Send/resend contract via DocuSeal if not signed
     let contractSent = false;
@@ -117,6 +162,7 @@ export async function POST(req: NextRequest) {
       invoiceSent: true,
       contractSent,
       contractError,
+      dbUpdateErrors: dbFailures.length > 0 ? dbFailures.length : undefined,
     });
   } catch (err) {
     console.error("[deal-invoices/send]", err instanceof Error ? err.message : err);

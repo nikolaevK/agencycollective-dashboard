@@ -771,6 +771,37 @@ export async function migrate(): Promise<void> {
     // indexes may already exist
   }
 
+  // ── Additional invoices per deal ─────────────────────────────────────
+  // Drop and recreate if the table has a stale schema (e.g. a 'title' column from earlier dev)
+  try {
+    await db.execute(`SELECT title FROM deal_additional_invoices LIMIT 0`);
+    await db.execute(`DROP TABLE IF EXISTS deal_additional_invoices`);
+    console.log("[migrate] Dropped deal_additional_invoices (stale schema with title column)");
+  } catch {
+    // no title column — schema is correct or table doesn't exist
+  }
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS deal_additional_invoices (
+      id              TEXT PRIMARY KEY,
+      deal_id         TEXT NOT NULL,
+      invoice_number  TEXT NOT NULL UNIQUE,
+      invoice_data    TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'draft',
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      pdf_data        BLOB,
+      created_by      TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deal_add_inv_deal_id ON deal_additional_invoices(deal_id)`);
+  } catch {
+    // index may already exist
+  }
+
   // ── Push notification subscriptions ──────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (

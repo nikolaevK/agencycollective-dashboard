@@ -74,6 +74,7 @@ export async function insertDealInvoice(record: {
       record.createdBy ?? null,
     ],
   });
+
 }
 
 export async function updateDealInvoice(
@@ -106,6 +107,7 @@ export async function updateDealInvoice(
   await ensureMigrated();
   const db = getDb();
   await db.execute({ sql: `UPDATE deal_invoices SET ${fields.join(", ")} WHERE id = ?`, args });
+
 }
 
 export async function getDealInvoicePdf(id: string): Promise<Buffer | null> {
@@ -121,20 +123,26 @@ export async function deleteDealInvoice(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({ sql: "DELETE FROM deal_invoices WHERE id = ?", args: [id] });
+
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** Generate next sequential invoice number for the current day. */
+/** Generate next sequential invoice number for the current day (checks both tables). */
 export async function generateInvoiceNumber(): Promise<string> {
   await ensureMigrated();
   const db = getDb();
   const now = new Date();
   const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
 
-  // Use MAX to find the highest existing sequence number (survives deletions)
   const result = await db.execute({
-    sql: `SELECT MAX(CAST(SUBSTR(invoice_number, LENGTH(?) + 2) AS INTEGER)) as max_seq FROM deal_invoices WHERE invoice_number LIKE ?`,
-    args: [prefix, `${prefix}-%`],
+    sql: `SELECT MAX(max_seq) as max_seq FROM (
+      SELECT MAX(CAST(SUBSTR(invoice_number, LENGTH(?) + 2) AS INTEGER)) as max_seq
+      FROM deal_invoices WHERE invoice_number LIKE ?
+      UNION ALL
+      SELECT MAX(CAST(SUBSTR(invoice_number, LENGTH(?) + 2) AS INTEGER)) as max_seq
+      FROM deal_additional_invoices WHERE invoice_number LIKE ?
+    )`,
+    args: [prefix, `${prefix}-%`, prefix, `${prefix}-%`],
   });
   const seq = Number(result.rows[0]?.max_seq ?? 0) + 1;
   return `${prefix}-${String(seq).padStart(3, "0")}`;

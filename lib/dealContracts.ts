@@ -94,6 +94,7 @@ export async function insertDealContract(record: {
       record.createdBy ?? null,
     ],
   });
+
 }
 
 export async function updateDealContract(
@@ -130,12 +131,14 @@ export async function updateDealContract(
   await ensureMigrated();
   const db = getDb();
   await db.execute({ sql: `UPDATE deal_contracts SET ${fields.join(", ")} WHERE id = ?`, args });
+
 }
 
 export async function deleteDealContract(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({ sql: "DELETE FROM deal_contracts WHERE id = ?", args: [id] });
+
   return (result.rowsAffected ?? 0) > 0;
 }
 

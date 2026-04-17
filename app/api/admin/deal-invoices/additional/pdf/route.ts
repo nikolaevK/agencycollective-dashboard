@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { findDealInvoice, getDealInvoicePdf } from "@/lib/dealInvoices";
+import { findAdditionalInvoice, getAdditionalInvoicePdf } from "@/lib/dealAdditionalInvoices";
 
 export async function GET(req: NextRequest) {
   const session = getAdminSession();
@@ -11,10 +11,10 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const invoice = await findDealInvoice(id);
+  const invoice = await findAdditionalInvoice(id);
   if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
-  const pdfBuffer = await getDealInvoicePdf(id);
+  const pdfBuffer = await getAdditionalInvoicePdf(id);
   if (!pdfBuffer || pdfBuffer.length === 0) {
     return NextResponse.json({ error: "No PDF stored" }, { status: 404 });
   }
