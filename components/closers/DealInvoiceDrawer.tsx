@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil } from "lucide-react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil, XCircle } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -138,7 +138,10 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   // Which contract's template dropdown is open (same keying)
   const [changingTemplateKey, setChangingTemplateKey] = useState<string | null>(null);
   const [clientEmail, setClientEmail] = useState("");
-  const [ccEmail, setCcEmail] = useState("");
+  const [ccEmails, setCcEmails] = useState<string[]>([]);
+  const [ccInput, setCcInput] = useState("");
+  const [ccError, setCcError] = useState<string | null>(null);
+  const [prefilledForDealId, setPrefilledForDealId] = useState<string | null>(null);
   const [drawerPaymentType, setDrawerPaymentType] = useState<PaymentType>(dealPaymentType === "international" ? "international" : "local");
 
   const { data: agencyConfig } = useQuery<Record<string, string>>({
@@ -150,18 +153,25 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     },
     staleTime: 60_000,
   });
-  // Fetch closer email for CC prefill
-  const { data: closerEmail } = useQuery<string | null>({
-    queryKey: ["deal-closer-email", dealId],
+  // Fetch closer email + additional CCs for prefill
+  const { data: ccPrefill } = useQuery<{ closerEmail: string | null; additionalCcEmails: string[] } | null>({
+    queryKey: ["deal-cc-prefill", dealId],
     queryFn: async () => {
       if (!dealId) return null;
       const res = await fetch(`/api/admin/deals/closer-email?dealId=${dealId}`);
       if (!res.ok) return null;
       const json = await res.json();
-      return json.data ?? null;
+      const data = json.data;
+      if (!data) return null;
+      if (typeof data === "string") return { closerEmail: data, additionalCcEmails: [] };
+      return {
+        closerEmail: data.closerEmail ?? null,
+        additionalCcEmails: Array.isArray(data.additionalCcEmails) ? data.additionalCcEmails : [],
+      };
     },
     enabled: !!dealId,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const [saving, setSaving] = useState(false);
@@ -170,10 +180,83 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const [savingPreset, setSavingPreset] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Prefill CC with closer email once loaded
+  // Reset CC state when switching deals
   useEffect(() => {
-    if (closerEmail && !ccEmail) setCcEmail(closerEmail);
-  }, [closerEmail]);
+    setPrefilledForDealId(null);
+    setCcEmails([]);
+    setCcInput("");
+    setCcError(null);
+  }, [dealId]);
+
+  // Prefill CC chip list once per dealId, from fresh closer email + deal's additional CCs.
+  // Only runs the first time the query resolves for a given dealId — admin's subsequent
+  // add/remove edits within the drawer are preserved.
+  useEffect(() => {
+    if (!dealId || !ccPrefill) return;
+    if (prefilledForDealId === dealId) return;
+    const seen = new Set<string>();
+    const list: string[] = [];
+    if (ccPrefill.closerEmail) {
+      const v = ccPrefill.closerEmail.trim().toLowerCase();
+      if (v) { list.push(v); seen.add(v); }
+    }
+    for (const addr of ccPrefill.additionalCcEmails) {
+      const v = (addr || "").trim().toLowerCase();
+      if (v && !seen.has(v)) { list.push(v); seen.add(v); }
+    }
+    setCcEmails(list);
+    setPrefilledForDealId(dealId);
+  }, [dealId, ccPrefill, prefilledForDealId]);
+
+  function commitCc(raw: string): boolean {
+    const v = raw.trim().toLowerCase();
+    if (!v) return false;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
+      setCcError("Enter a valid email address");
+      return false;
+    }
+    if (ccEmails.includes(v)) {
+      setCcError("Already added");
+      return false;
+    }
+    if (ccEmails.length >= 10) {
+      setCcError("Maximum 10 CCs");
+      return false;
+    }
+    setCcEmails((prev) => [...prev, v]);
+    setCcInput("");
+    setCcError(null);
+    return true;
+  }
+
+  function removeCc(addr: string) {
+    setCcEmails((prev) => prev.filter((e) => e !== addr));
+    setCcError(null);
+  }
+
+  function commitCcBatch(tokens: string[]) {
+    const next = [...ccEmails];
+    const seen = new Set(next);
+    let firstError: string | null = null;
+    for (const raw of tokens) {
+      const v = raw.trim().toLowerCase();
+      if (!v) continue;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
+        if (firstError === null) firstError = "Some entries were invalid and skipped";
+        continue;
+      }
+      if (seen.has(v)) continue;
+      if (next.length >= 10) {
+        if (firstError === null) firstError = "Maximum 10 CCs";
+        break;
+      }
+      next.push(v);
+      seen.add(v);
+    }
+    if (next.length !== ccEmails.length) setCcEmails(next);
+    setCcInput("");
+    setCcError(firstError);
+  }
 
   // Sync additional invoices from server into local state
   useEffect(() => {
@@ -580,10 +663,37 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         ...addlEntries.map((e) => pdf(<InvoicePdfDocument data={e.data} />).toBlob()),
       ]);
 
+      // Commit any pending CC input so it isn't silently dropped.
+      // If the pending value is invalid or would be dropped (dup/cap), surface the error
+      // and abort the send so the user can fix or clear the field.
+      let finalCcs = ccEmails;
+      if (ccInput.trim()) {
+        const pending = ccInput.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pending) || pending.length > 254) {
+          setCcError("Clear or fix the pending CC before sending");
+          setSending(false);
+          return;
+        }
+        if (finalCcs.includes(pending)) {
+          setCcError("Pending CC is already in the list — remove it from the input");
+          setSending(false);
+          return;
+        }
+        if (finalCcs.length >= 10) {
+          setCcError("Maximum 10 CCs — clear the pending input");
+          setSending(false);
+          return;
+        }
+        finalCcs = [...finalCcs, pending];
+        setCcEmails(finalCcs);
+        setCcInput("");
+        setCcError(null);
+      }
+
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
       formData.append("email", clientEmail);
-      if (ccEmail.trim()) formData.append("cc", ccEmail.trim());
+      for (const addr of finalCcs) formData.append("cc", addr);
       formData.append("pdf", new File([primaryBlob], `invoice-${primaryData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
       if (canSendContract) {
         formData.append("sendContract", "true");
@@ -799,10 +909,66 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@example.com" className={INPUT_CLS} />
               </div>
 
-              {/* CC (closer email) */}
+              {/* CC list (closer email + deal's additional CCs + admin-added) */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">CC <span className="font-normal text-muted-foreground">(optional)</span></label>
-                <input type="email" value={ccEmail} onChange={(e) => setCcEmail(e.target.value)} placeholder="closer@example.com" className={INPUT_CLS} />
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  CC <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-within:ring-2 focus-within:ring-ring">
+                  {ccEmails.map((addr) => (
+                    <span
+                      key={addr}
+                      className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+                    >
+                      {addr}
+                      <button
+                        type="button"
+                        onClick={() => removeCc(addr)}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={`Remove ${addr}`}
+                      >
+                        <XCircle className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    type="text"
+                    inputMode="email"
+                    autoComplete="off"
+                    value={ccInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/[,;]$/.test(v)) {
+                        const raw = v.replace(/[,;]+$/, "").trim();
+                        if (raw) commitCc(raw); else setCcInput("");
+                      } else {
+                        setCcInput(v);
+                        if (ccError) setCcError(null);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        if (ccInput.trim()) {
+                          e.preventDefault();
+                          commitCc(ccInput);
+                        }
+                      } else if (e.key === "Backspace" && !ccInput && ccEmails.length > 0) {
+                        e.preventDefault();
+                        removeCc(ccEmails[ccEmails.length - 1]);
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData("text");
+                      if (!/[\s,;]/.test(text)) return;
+                      e.preventDefault();
+                      commitCcBatch(text.split(/[\s,;]+/));
+                    }}
+                    onBlur={() => { if (ccInput.trim()) commitCc(ccInput); }}
+                    placeholder={ccEmails.length === 0 ? "closer@example.com" : ""}
+                    className="flex-1 min-w-[140px] bg-transparent px-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  />
+                </div>
+                {ccError && <p className="mt-1 text-xs text-destructive">{ccError}</p>}
               </div>
 
               {/* Invoice Date & Due Date */}

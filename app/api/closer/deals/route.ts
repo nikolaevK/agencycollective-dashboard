@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";
-import { readDealsByCloser, findDeal, deleteDeal, updateDeal } from "@/lib/deals";
+import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
@@ -81,6 +81,7 @@ export async function PATCH(request: Request) {
     if (body.paymentType !== undefined) changes.paymentType = String(body.paymentType).trim() || "local";
     if (body.brandName !== undefined) changes.brandName = body.brandName ? String(body.brandName).trim() : null;
     if (body.website !== undefined) changes.website = body.website ? String(body.website).trim() : null;
+    if (body.additionalCcEmails !== undefined) changes.additionalCcEmails = sanitizeCcEmails(body.additionalCcEmails);
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {

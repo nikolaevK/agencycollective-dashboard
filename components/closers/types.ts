@@ -33,6 +33,7 @@ export interface DealPublic {
   brandName: string | null;
   website: string | null;
   paidStatus: "paid" | "unpaid";
+  additionalCcEmails: string[];
   createdAt: string;
   updatedAt: string;
 }

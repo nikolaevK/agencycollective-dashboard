@@ -853,6 +853,18 @@ export async function migrate(): Promise<void> {
     // column already exists
   }
 
+  // ── Add additional_cc_emails to deals (JSON array of extra CCs) ─
+  try {
+    await db.execute(`SELECT additional_cc_emails FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN additional_cc_emails TEXT`);
+      console.log("[migrate] Added additional_cc_emails column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add additional_cc_emails column:", err);
+    }
+  }
+
   // ── Push notification subscriptions ──────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (

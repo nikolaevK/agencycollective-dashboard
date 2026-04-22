@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const email = formData.get("email") as string;
     const pdfFile = formData.get("pdf") as File;
     const sendContract = formData.get("sendContract") === "true";
-    const ccEmail = (formData.get("cc") as string | null)?.trim() || null;
+    const ccRaw = formData.getAll("cc").filter((v): v is string => typeof v === "string");
 
     // Additional invoice PDFs
     const additionalPdfFiles = formData.getAll("additionalPdfs") as File[];
@@ -87,14 +87,26 @@ export async function POST(req: NextRequest) {
       additionalPdfs.push({ buffer: buf, invoiceNumber: invNumber, id: additionalInvoiceIds[i] || "" });
     }
 
-    // Validate CC email if provided
-    if (ccEmail && (!emailRegex.test(ccEmail) || ccEmail.length > 254)) {
-      return NextResponse.json({ error: "Invalid CC email" }, { status: 400 });
+    // Validate + dedupe CC emails; exclude the primary recipient (case-insensitive)
+    // to prevent the client from being sent duplicate copies.
+    const toLower = email.trim().toLowerCase();
+    const ccEmails: string[] = [];
+    const seenCc = new Set<string>([toLower]);
+    for (const raw of ccRaw) {
+      const v = raw.trim().toLowerCase();
+      if (!v) continue;
+      if (!emailRegex.test(v) || v.length > 254) {
+        return NextResponse.json({ error: "Invalid CC email" }, { status: 400 });
+      }
+      if (seenCc.has(v)) continue;
+      seenCc.add(v);
+      ccEmails.push(v);
+      if (ccEmails.length >= 10) break;
     }
 
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       includesContract: anyContractEligible,
-      cc: ccEmail || undefined,
+      cc: ccEmails.length > 0 ? ccEmails : undefined,
       additionalPdfs: additionalPdfs.length > 0
         ? additionalPdfs.map((p) => ({ buffer: p.buffer, invoiceNumber: p.invoiceNumber }))
         : undefined,

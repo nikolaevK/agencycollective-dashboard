@@ -16,8 +16,13 @@ export async function GET(req: NextRequest) {
   if (!dealId) return NextResponse.json({ error: "dealId required" }, { status: 400 });
 
   const deal = await findDeal(dealId);
-  if (!deal) return NextResponse.json({ data: null });
+  if (!deal) return NextResponse.json({ data: { closerEmail: null, additionalCcEmails: [] } });
 
   const closer = await findCloser(deal.closerId);
-  return NextResponse.json({ data: closer?.email ?? null });
+  return NextResponse.json({
+    data: {
+      closerEmail: closer?.email ?? null,
+      additionalCcEmails: deal.additionalCcEmails ?? [],
+    },
+  });
 }

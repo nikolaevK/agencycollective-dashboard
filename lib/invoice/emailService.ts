@@ -14,7 +14,7 @@ export async function sendInvoiceEmail(
   invoiceNumber: string,
   options?: {
     includesContract?: boolean;
-    cc?: string;
+    cc?: string | string[];
     additionalPdfs?: Array<{ buffer: Buffer; invoiceNumber: string }>;
   }
 ): Promise<boolean> {
@@ -75,7 +75,9 @@ export async function sendInvoiceEmail(
     await transport.sendMail({
       from: process.env.SMTP_USER,
       to: recipientEmail,
-      ...(options?.cc ? { cc: options.cc } : {}),
+      ...(options?.cc && (Array.isArray(options.cc) ? options.cc.length > 0 : options.cc.length > 0)
+        ? { cc: options.cc }
+        : {}),
       subject,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #333;">

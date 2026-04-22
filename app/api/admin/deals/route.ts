@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
-import { readDeals, findDeal, updateDeal, deleteDeal } from "@/lib/deals";
+import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
@@ -108,6 +108,7 @@ export async function PATCH(request: Request) {
       const ps = String(body.paidStatus).trim();
       if (ps === "paid" || ps === "unpaid") changes.paidStatus = ps;
     }
+    if (body.additionalCcEmails !== undefined) changes.additionalCcEmails = sanitizeCcEmails(body.additionalCcEmails);
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {

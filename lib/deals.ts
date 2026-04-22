@@ -23,8 +23,44 @@ export interface DealRecord {
   brandName: string | null;
   website: string | null;
   paidStatus: "paid" | "unpaid";
+  additionalCcEmails: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+function parseCcEmails(raw: unknown): string[] {
+  if (raw == null) return [];
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === "string" && v.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+const CC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_CC_EMAILS = 10;
+
+export function sanitizeCcEmails(input: unknown): string[] {
+  const raw: unknown[] = Array.isArray(input)
+    ? input
+    : typeof input === "string" && input.length > 0
+      ? (() => { try { const p = JSON.parse(input); return Array.isArray(p) ? p : [input]; } catch { return [input]; } })()
+      : [];
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== "string") continue;
+    const trimmed = v.trim().toLowerCase();
+    if (!trimmed || trimmed.length > 254) continue;
+    if (!CC_EMAIL_REGEX.test(trimmed)) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    cleaned.push(trimmed);
+    if (cleaned.length >= MAX_CC_EMAILS) break;
+  }
+  return cleaned;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +86,7 @@ function rowToDeal(row: Row): DealRecord {
     brandName: row.brand_name != null ? String(row.brand_name) : null,
     website: row.website != null ? String(row.website) : null,
     paidStatus: (String(row.paid_status ?? "unpaid")) as "paid" | "unpaid",
+    additionalCcEmails: parseCcEmails(row.additional_cc_emails),
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -88,8 +125,8 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
@@ -108,6 +145,7 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.brandName,
       deal.website,
       deal.paidStatus ?? "unpaid",
+      deal.additionalCcEmails && deal.additionalCcEmails.length > 0 ? JSON.stringify(deal.additionalCcEmails) : null,
     ],
   });
 }
@@ -178,6 +216,10 @@ export async function updateDeal(
   if (changes.paidStatus !== undefined) {
     fields.push("paid_status = ?");
     args.push(changes.paidStatus);
+  }
+  if (changes.additionalCcEmails !== undefined) {
+    fields.push("additional_cc_emails = ?");
+    args.push(changes.additionalCcEmails.length > 0 ? JSON.stringify(changes.additionalCcEmails) : null);
   }
 
   if (fields.length === 0) return;

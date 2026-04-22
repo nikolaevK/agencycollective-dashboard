@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import crypto from "crypto";
 import { getCloserSession } from "@/lib/closerSession";
-import { findDeal, insertDeal, updateDeal, deleteDeal } from "@/lib/deals";
+import { findDeal, insertDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
@@ -53,6 +53,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   const paymentType = String(formData.get("paymentType") ?? "local").trim() || "local";
   const brandName = String(formData.get("brandName") ?? "").trim() || null;
   const website = String(formData.get("website") ?? "").trim() || null;
+  const additionalCcEmails = sanitizeCcEmails(formData.getAll("additionalCcEmails"));
 
   await insertDeal({
     id,
@@ -72,6 +73,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     brandName,
     website,
     paidStatus: "unpaid",
+    additionalCcEmails,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -85,7 +87,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   if (status === "closed" && dealValue > 0) {
     try {
       const invoiceNumber = await generateInvoiceNumber();
-      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
       await insertDealInvoice({
         id: crypto.randomUUID(),
@@ -193,6 +195,10 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
   const notes = formData.get("notes") as string | null;
   if (notes !== null) {
     changes.notes = notes.trim() || null;
+  }
+
+  if (formData.has("additionalCcEmails")) {
+    changes.additionalCcEmails = sanitizeCcEmails(formData.getAll("additionalCcEmails"));
   }
 
   await updateDeal(id, changes);

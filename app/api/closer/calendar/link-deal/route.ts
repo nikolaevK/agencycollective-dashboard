@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getCloserSession } from "@/lib/closerSession";
-import { insertDeal } from "@/lib/deals";
+import { insertDeal, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     const paymentType = String(body.paymentType ?? "local").trim() || "local";
     const brandName = String(body.brandName ?? "").trim() || null;
     const website = String(body.website ?? "").trim() || null;
+    const additionalCcEmails = sanitizeCcEmails(body.additionalCcEmails);
 
     if (!eventTitle) {
       return NextResponse.json({ error: "Event title is required" }, { status: 400 });
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
       brandName,
       website,
       paidStatus: "unpaid",
+      additionalCcEmails,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -81,7 +83,7 @@ export async function POST(request: Request) {
       try {
         const dealValueCents = Math.round(dealValue * 100);
         const invoiceNumber = await generateInvoiceNumber();
-        const deal = { id, closerId: session.closerId, clientName: eventTitle, clientUserId, clientEmail, dealValue: dealValueCents, serviceCategory, industry, closingDate: eventDate, status: status as "closed", showStatus: "showed" as const, notes, googleEventId: eventId || null, paymentType, brandName, website, paidStatus: "unpaid" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const deal = { id, closerId: session.closerId, clientName: eventTitle, clientUserId, clientEmail, dealValue: dealValueCents, serviceCategory, industry, closingDate: eventDate, status: status as "closed", showStatus: "showed" as const, notes, googleEventId: eventId || null, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
         await insertDealInvoice({
           id: crypto.randomUUID(),

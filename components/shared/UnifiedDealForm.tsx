@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe } from "lucide-react";
+import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
@@ -30,6 +30,7 @@ interface UnifiedDealFormProps {
     paymentType?: string;
     brandName?: string | null;
     website?: string | null;
+    additionalCcEmails?: string[];
   };
   calendarEvent?: {
     id: string;
@@ -71,8 +72,61 @@ export function UnifiedDealForm({
   const [paymentType, setPaymentType] = useState(initialData?.paymentType ?? "local");
   const [brandName, setBrandName] = useState(initialData?.brandName ?? "");
   const [website, setWebsite] = useState(initialData?.website ?? "");
+  const [additionalCcEmails, setAdditionalCcEmails] = useState<string[]>(initialData?.additionalCcEmails ?? []);
+  const [ccInputValue, setCcInputValue] = useState("");
+  const [ccInputError, setCcInputError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  function tryCommitCc(raw: string): boolean {
+    const trimmed = raw.trim().toLowerCase();
+    if (!trimmed) return false;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) || trimmed.length > 254) {
+      setCcInputError("Enter a valid email address");
+      return false;
+    }
+    if (additionalCcEmails.includes(trimmed)) {
+      setCcInputError("Already added");
+      return false;
+    }
+    if (additionalCcEmails.length >= 10) {
+      setCcInputError("Maximum 10 additional CCs");
+      return false;
+    }
+    setAdditionalCcEmails((prev) => [...prev, trimmed]);
+    setCcInputValue("");
+    setCcInputError(null);
+    return true;
+  }
+
+  function removeCc(email: string) {
+    setAdditionalCcEmails((prev) => prev.filter((e) => e !== email));
+    setCcInputError(null);
+  }
+
+  function commitCcBatch(tokens: string[]) {
+    const next = [...additionalCcEmails];
+    const seen = new Set(next);
+    let firstError: string | null = null;
+    for (const raw of tokens) {
+      const v = raw.trim().toLowerCase();
+      if (!v) continue;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
+        if (firstError === null) firstError = "Some entries were invalid and skipped";
+        continue;
+      }
+      if (seen.has(v)) continue;
+      if (next.length >= 10) {
+        if (firstError === null) firstError = "Maximum 10 additional CCs";
+        break;
+      }
+      next.push(v);
+      seen.add(v);
+    }
+    if (next.length !== additionalCcEmails.length) setAdditionalCcEmails(next);
+    setCcInputValue("");
+    setCcInputError(firstError);
+  }
 
   const googleEventId = calendarEvent?.id ?? initialData?.googleEventId ?? null;
 
@@ -89,6 +143,9 @@ export function UnifiedDealForm({
     setPaymentType("local");
     setBrandName("");
     setWebsite("");
+    setAdditionalCcEmails([]);
+    setCcInputValue("");
+    setCcInputError(null);
     setError(null);
     setSuccess(false);
   }
@@ -97,6 +154,22 @@ export function UnifiedDealForm({
     e.preventDefault();
     setError(null);
     setSuccess(false);
+
+    // Commit any pending CC input (so typed-but-unconfirmed values aren't dropped)
+    let ccList = additionalCcEmails;
+    if (ccInputValue.trim()) {
+      const pending = ccInputValue.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pending) || pending.length > 254) {
+        setCcInputError("Enter a valid email address");
+        return;
+      }
+      if (!ccList.includes(pending) && ccList.length < 10) {
+        ccList = [...ccList, pending];
+        setAdditionalCcEmails(ccList);
+        setCcInputValue("");
+        setCcInputError(null);
+      }
+    }
 
     // Validation
     if (!clientName.trim()) {
@@ -135,6 +208,7 @@ export function UnifiedDealForm({
           if (website) fd.set("website", website);
           if (googleEventId) fd.set("googleEventId", googleEventId);
           if (autoShowStatus) fd.set("showStatus", autoShowStatus);
+          for (const addr of ccList) fd.append("additionalCcEmails", addr);
 
           const result = await createDealAction(fd);
           if (result.error) {
@@ -163,6 +237,7 @@ export function UnifiedDealForm({
               paymentType,
               brandName: brandName || null,
               website: website || null,
+              additionalCcEmails: ccList,
             }),
           });
           const json = await res.json();
@@ -192,6 +267,7 @@ export function UnifiedDealForm({
           body.paymentType = paymentType;
           body.brandName = brandName || null;
           body.website = website || null;
+          body.additionalCcEmails = ccList;
           if (autoShowStatus) body.showStatus = autoShowStatus;
 
           const res = await fetch(endpoint, {
@@ -261,6 +337,74 @@ export function UnifiedDealForm({
           placeholder="client@example.com"
           className={INPUT_CLS}
         />
+      </div>
+
+      {/* Additional CCs */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-1.5 block">
+          Additional CCs <span className="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <div className="flex flex-wrap gap-1.5 rounded-lg border border-input bg-background px-2 py-2 text-sm focus-within:ring-2 focus-within:ring-ring">
+          {additionalCcEmails.map((addr) => (
+            <span
+              key={addr}
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+            >
+              {addr}
+              <button
+                type="button"
+                onClick={() => removeCc(addr)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label={`Remove ${addr}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            inputMode="email"
+            autoComplete="off"
+            value={ccInputValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              // Auto-commit if the user types a separator character
+              if (/[,;]$/.test(v)) {
+                const raw = v.replace(/[,;]+$/, "").trim();
+                if (raw) tryCommitCc(raw); else setCcInputValue("");
+              } else {
+                setCcInputValue(v);
+                if (ccInputError) setCcInputError(null);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === "Tab") {
+                if (ccInputValue.trim()) {
+                  e.preventDefault();
+                  tryCommitCc(ccInputValue);
+                }
+              } else if (e.key === "Backspace" && !ccInputValue && additionalCcEmails.length > 0) {
+                e.preventDefault();
+                removeCc(additionalCcEmails[additionalCcEmails.length - 1]);
+              }
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text");
+              if (!/[\s,;]/.test(text)) return; // single email — normal paste
+              e.preventDefault();
+              commitCcBatch(text.split(/[\s,;]+/));
+            }}
+            onBlur={() => { if (ccInputValue.trim()) tryCommitCc(ccInputValue); }}
+            placeholder={additionalCcEmails.length === 0 ? "manager@example.com" : ""}
+            className="flex-1 min-w-[160px] bg-transparent px-1 py-0.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          />
+        </div>
+        {ccInputError && (
+          <p className="mt-1 text-xs text-destructive">{ccInputError}</p>
+        )}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Press Enter or comma to add. These are CC&apos;d on the client invoice email (your own email is always CC&apos;d automatically).
+        </p>
       </div>
 
       {/* Brand Name */}
