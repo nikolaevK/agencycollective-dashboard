@@ -493,13 +493,6 @@ export async function migrate(): Promise<void> {
     )
   `);
 
-  // Seed from existing payout data (idempotent)
-  await db.execute(`
-    INSERT OR IGNORE INTO sales_rep_options (name)
-    SELECT DISTINCT sales_rep FROM payouts
-    WHERE sales_rep IS NOT NULL AND sales_rep != ''
-  `);
-
   // ── Vertical options table ──────────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS vertical_options (
@@ -508,26 +501,12 @@ export async function migrate(): Promise<void> {
     )
   `);
 
-  // Seed from existing payout data (idempotent)
-  await db.execute(`
-    INSERT OR IGNORE INTO vertical_options (name)
-    SELECT DISTINCT vertical FROM payouts
-    WHERE vertical IS NOT NULL AND vertical != ''
-  `);
-
   // ── Referral options table ────────────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS referral_options (
       id   INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE
     )
-  `);
-
-  // Seed from existing payout data (idempotent)
-  await db.execute(`
-    INSERT OR IGNORE INTO referral_options (name)
-    SELECT DISTINCT referral FROM payouts
-    WHERE referral IS NOT NULL AND referral != ''
   `);
 
   // ── Onboarding progress (per-user step tracking) ─────────────────────
