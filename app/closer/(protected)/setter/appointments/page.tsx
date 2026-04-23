@@ -1,31 +1,33 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { addWeeks, endOfWeek, format, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
-import { DashboardShell } from "@/components/layout/DashboardShell";
-import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
-import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
-import type { DealPublic } from "@/components/closers/types";
-import type { AppointmentIndexEntry } from "@/lib/appointments";
+import type { CalendarEvent } from "@/components/closer/CalendarEventList";
+import { SetterCalendarEventList } from "@/components/closer/SetterCalendarEventList";
+import { SetterAppointmentEditor } from "@/components/closer/SetterAppointmentEditor";
+import type { AppointmentRecord } from "@/lib/appointments";
 
-interface DealWithCloserName extends DealPublic {
-  closerName?: string;
+interface AppointmentsResponse {
+  appointments: AppointmentRecord[];
+  byEvent: Record<string, AppointmentRecord>;
 }
 
-export default function AdminCalendarPage() {
+export default function SetterAppointmentsPage() {
+  const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0);
-  const [closerFilter, setCloserFilter] = useState("all");
+  const [calendarFilter, setCalendarFilter] = useState("all");
+  const [editing, setEditing] = useState<{ event: CalendarEvent; appt: AppointmentRecord } | null>(null);
 
-  const currentWeekStart = useMemo(() => {
+  const weekStart = useMemo(() => {
     const base = startOfWeek(new Date(), { weekStartsOn: 1 });
     return weekOffset === 0 ? base : addWeeks(base, weekOffset);
   }, [weekOffset]);
 
-  const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
 
   const { data: status } = useQuery<{ connected: boolean; email?: string }>({
     queryKey: ["google-calendar-status"],
@@ -38,10 +40,10 @@ export default function AdminCalendarPage() {
   });
 
   const { data: events = [], isLoading: eventsLoading } = useQuery<CalendarEvent[]>({
-    queryKey: ["calendar-events", currentWeekStart.toISOString()],
+    queryKey: ["calendar-events", weekStart.toISOString()],
     queryFn: async () => {
       const res = await fetch(
-        `/api/calendar/events?timeMin=${currentWeekStart.toISOString()}&timeMax=${currentWeekEnd.toISOString()}`
+        `/api/calendar/events?timeMin=${weekStart.toISOString()}&timeMax=${weekEnd.toISOString()}`
       );
       const json = await res.json();
       return json.data ?? [];
@@ -50,46 +52,21 @@ export default function AdminCalendarPage() {
     staleTime: 30_000,
   });
 
-  // Fetch all deals to show linked indicators
-  const { data: allDeals = [] } = useQuery<DealWithCloserName[]>({
-    queryKey: ["admin-all-deals-calendar"],
+  const { data: appointments } = useQuery<AppointmentsResponse>({
+    queryKey: ["setter-appointments"],
     queryFn: async () => {
-      const [dealsRes, closersRes] = await Promise.all([
-        fetch("/api/admin/deals"),
-        fetch("/api/admin/closers/stats"),
-      ]);
-      const dealsJson = await dealsRes.json();
-      const closersJson = await closersRes.json();
-      const deals: DealPublic[] = dealsJson.data ?? [];
-      const breakdowns: Array<{ closerId: string; displayName: string }> = closersJson.data?.closerBreakdowns ?? [];
-      const closerNameMap = new Map(breakdowns.map((b) => [b.closerId, b.displayName]));
-      return deals.map((d) => ({ ...d, closerName: closerNameMap.get(d.closerId) }));
-    },
-    staleTime: 30_000,
-  });
-
-  // Fetch attendance data
-  const { data: attendance = {} } = useQuery<Record<string, string>>({
-    queryKey: ["admin-attendance"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/attendance");
+      const res = await fetch("/api/closer/setter/appointments");
       const json = await res.json();
-      // Convert { eventId: { showStatus, closerId } } to { eventId: showStatus }
-      const raw = json.data ?? {};
-      const result: Record<string, string> = {};
-      for (const [eventId, val] of Object.entries(raw)) {
-        result[eventId] = (val as { showStatus: string }).showStatus;
-      }
-      return result;
+      return json.data;
     },
     staleTime: 30_000,
   });
 
-  // Setter claims per event (shared endpoint used by admin + closer surfaces)
-  const { data: setterAppointments = {} } = useQuery<Record<string, AppointmentIndexEntry>>({
-    queryKey: ["calendar-appointments"],
+  // Team-wide attendance (read-only for setters — closers write to it).
+  const { data: attendance = {} } = useQuery<Record<string, string>>({
+    queryKey: ["team-attendance"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/appointments");
+      const res = await fetch("/api/calendar/attendance");
       if (!res.ok) return {};
       const json = await res.json();
       return json.data ?? {};
@@ -97,26 +74,38 @@ export default function AdminCalendarPage() {
     staleTime: 30_000,
   });
 
-  const linkedEventIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const deal of allDeals) {
-      if (deal.googleEventId) ids.add(deal.googleEventId);
+  const apptByEvent = appointments?.byEvent ?? {};
+
+  async function handleClaim(event: CalendarEvent) {
+    const res = await fetch("/api/closer/setter/appointments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        googleEventId: event.id,
+        clientName: event.title,
+        clientEmail: event.attendees[0]?.email ?? null,
+        scheduledAt: event.start,
+      }),
+    });
+    if (res.ok) {
+      await queryClient.invalidateQueries({ queryKey: ["setter-appointments"] });
     }
-    return ids;
-  }, [allDeals]);
+  }
 
-  const linkedDeals: LinkedDealInfo[] = useMemo(() => {
-    return allDeals
-      .filter((d) => d.googleEventId)
-      .map((d) => ({
-        dealId: d.id,
-        googleEventId: d.googleEventId!,
-        closerId: d.closerId,
-        closerName: d.closerName,
-      }));
-  }, [allDeals]);
+  async function handleUnclaim(event: CalendarEvent) {
+    const res = await fetch(
+      `/api/closer/setter/appointments?eventId=${encodeURIComponent(event.id)}`,
+      { method: "DELETE" }
+    );
+    if (res.ok) {
+      await queryClient.invalidateQueries({ queryKey: ["setter-appointments"] });
+    }
+  }
 
-  // Extract unique calendar owners for filter dropdown
+  function handleEdit(event: CalendarEvent, appt: AppointmentRecord) {
+    setEditing({ event, appt });
+  }
+
   const calendarOwners = useMemo(() => {
     const names = new Set<string>();
     for (const e of events) {
@@ -125,10 +114,9 @@ export default function AdminCalendarPage() {
     return [...names].sort();
   }, [events]);
 
-  // Reset filter if selected closer has no events in the current week
-  const activeFilter = closerFilter !== "all" && !calendarOwners.includes(closerFilter) ? "all" : closerFilter;
+  const activeFilter =
+    calendarFilter !== "all" && !calendarOwners.includes(calendarFilter) ? "all" : calendarFilter;
 
-  // Filter events by selected closer/calendar
   const filteredEvents = useMemo(() => {
     if (activeFilter === "all") return events;
     return events.filter((e) => e.calendarName === activeFilter);
@@ -137,28 +125,22 @@ export default function AdminCalendarPage() {
   const connected = status?.connected ?? false;
 
   return (
-    <DashboardShell>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">
-            Team Calendar
-          </h2>
+    <main className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-foreground">Appointments</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            View and manage team appointments from Google Calendar
+            Claim calendar events you&apos;re setting for and track pre/post-call status.
           </p>
         </div>
 
-        <CloserSubNav />
-
-        <GoogleConnectCard
-          connected={connected}
-          email={status?.email}
-          isAdmin={true}
-        />
+        <div className="mb-6">
+          <GoogleConnectCard connected={connected} email={status?.email} isAdmin={false} />
+        </div>
 
         {connected && (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-6">
               <button
                 onClick={() => setWeekOffset((w) => w - 1)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
@@ -167,7 +149,7 @@ export default function AdminCalendarPage() {
               </button>
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground">
-                  {format(currentWeekStart, "MMM d")} – {format(currentWeekEnd, "MMM d, yyyy")}
+                  {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
                 </p>
                 {weekOffset !== 0 && (
                   <button
@@ -186,11 +168,10 @@ export default function AdminCalendarPage() {
               </button>
             </div>
 
-            {/* Closer filter */}
             {calendarOwners.length > 1 && (
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap mb-6">
                 <button
-                  onClick={() => setCloserFilter("all")}
+                  onClick={() => setCalendarFilter("all")}
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
                     activeFilter === "all"
@@ -205,7 +186,7 @@ export default function AdminCalendarPage() {
                   return (
                     <button
                       key={owner}
-                      onClick={() => setCloserFilter(owner)}
+                      onClick={() => setCalendarFilter(owner)}
                       className={cn(
                         "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
                         activeFilter === owner
@@ -228,18 +209,30 @@ export default function AdminCalendarPage() {
                 ))}
               </div>
             ) : (
-              <CalendarEventList
+              <SetterCalendarEventList
                 events={filteredEvents}
-                linkedEventIds={linkedEventIds}
-                linkedDeals={linkedDeals}
+                appointmentsByEvent={apptByEvent}
                 attendance={attendance}
-                appointments={setterAppointments}
-                isAdmin={true}
+                onClaim={handleClaim}
+                onUnclaim={handleUnclaim}
+                onEdit={handleEdit}
               />
             )}
           </>
         )}
+
+        {editing && (
+          <SetterAppointmentEditor
+            event={editing.event}
+            appointment={editing.appt}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              queryClient.invalidateQueries({ queryKey: ["setter-appointments"] });
+            }}
+          />
+        )}
       </div>
-    </DashboardShell>
+    </main>
   );
 }

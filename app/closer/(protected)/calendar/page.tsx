@@ -10,6 +10,7 @@ import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/co
 import { LinkEventDealModal } from "@/components/closer/LinkEventDealModal";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import type { DealPublic } from "@/components/closers/types";
+import type { AppointmentIndexEntry } from "@/lib/appointments";
 
 export default function CloserCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
@@ -59,11 +60,25 @@ export default function CloserCalendarPage() {
     staleTime: 30_000,
   });
 
-  // Attendance records (show/no-show per event)
+  // Team-wide attendance (read): closers see every mark, not only their own.
+  // Writes still go through /api/closer/attendance, scoped to this closer_id.
   const { data: attendance = {} } = useQuery<Record<string, string>>({
-    queryKey: ["closer-attendance"],
+    queryKey: ["team-attendance"],
     queryFn: async () => {
-      const res = await fetch("/api/closer/attendance");
+      const res = await fetch("/api/calendar/attendance");
+      if (!res.ok) return {};
+      const json = await res.json();
+      return json.data ?? {};
+    },
+    staleTime: 30_000,
+  });
+
+  // Setter claims per event (notes, pre/post-call flags) — team-wide view
+  const { data: setterAppointments = {} } = useQuery<Record<string, AppointmentIndexEntry>>({
+    queryKey: ["calendar-appointments"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/appointments");
+      if (!res.ok) return {};
       const json = await res.json();
       return json.data ?? {};
     },
@@ -95,7 +110,7 @@ export default function CloserCalendarPage() {
         method: "DELETE",
       });
       if (res.ok) {
-        queryClient.invalidateQueries({ queryKey: ["closer-attendance"] });
+        queryClient.invalidateQueries({ queryKey: ["team-attendance"] });
         queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
       }
     } else {
@@ -105,7 +120,7 @@ export default function CloserCalendarPage() {
         body: JSON.stringify({ eventId, showStatus }),
       });
       if (res.ok) {
-        queryClient.invalidateQueries({ queryKey: ["closer-attendance"] });
+        queryClient.invalidateQueries({ queryKey: ["team-attendance"] });
         queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
       }
     }
@@ -229,6 +244,7 @@ export default function CloserCalendarPage() {
                 linkedEventIds={linkedEventIds}
                 linkedDeals={linkedDeals}
                 attendance={attendance}
+                appointments={setterAppointments}
                 onLinkDeal={(event) => setLinkingEvent(event)}
                 onAttendanceChange={handleAttendanceChange}
                 onEditDeal={(dealId) => setEditingDealId(dealId)}

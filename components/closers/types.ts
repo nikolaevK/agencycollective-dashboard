@@ -18,6 +18,7 @@ export interface CloserPublic {
 export interface DealPublic {
   id: string;
   closerId: string;
+  setterId: string | null;
   clientName: string;
   clientUserId: string | null;
   clientEmail: string | null;
@@ -43,6 +44,7 @@ export const CLOSER_ROLES = [
   { value: "account_executive" as const, label: "Account Executive" },
   { value: "inbound_specialist" as const, label: "Inbound Specialist" },
   { value: "closer" as const, label: "Closer" },
+  { value: "setter" as const, label: "Setter" },
 ];
 
 export const SERVICES_PURCHASED = [

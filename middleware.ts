@@ -172,6 +172,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Closer portal (/closer/*) ────────────────────────────────────────────
+  // Middleware only enforces session validity. Role-based routing (setter vs
+  // closer) is handled authoritatively in the layout's DB check. Mixing the
+  // two produced redirect loops when an admin changed a user's role and
+  // middleware's stale-token role fought the layout's fresh-DB role.
   if (pathname.startsWith("/closer/") && pathname !== "/closer/login") {
     const token = request.cookies.get(CLOSER_COOKIE)?.value;
     if (!token) {

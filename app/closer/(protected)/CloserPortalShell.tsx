@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import type { CloserRole } from "@/lib/closers";
 import { CloserSidebar } from "@/components/closer/CloserSidebar";
 import { CloserTopBar } from "@/components/closer/CloserTopBar";
 
 interface Props {
   displayName: string;
+  role: CloserRole;
   children: React.ReactNode;
 }
 
-function Shell({ displayName, children }: Props) {
+function Shell({ displayName, role, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -24,6 +26,7 @@ function Shell({ displayName, children }: Props) {
 
       <CloserSidebar
         displayName={displayName}
+        role={role}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
@@ -31,6 +34,7 @@ function Shell({ displayName, children }: Props) {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <CloserTopBar
           displayName={displayName}
+          role={role}
           onMenuClick={() => setSidebarOpen(true)}
         />
         {children}
@@ -39,7 +43,7 @@ function Shell({ displayName, children }: Props) {
   );
 }
 
-export function CloserPortalShell({ displayName, children }: Props) {
+export function CloserPortalShell({ displayName, role, children }: Props) {
   return (
     <Suspense
       fallback={
@@ -51,7 +55,7 @@ export function CloserPortalShell({ displayName, children }: Props) {
         </div>
       }
     >
-      <Shell displayName={displayName}>{children}</Shell>
+      <Shell displayName={displayName} role={role}>{children}</Shell>
     </Suspense>
   );
 }

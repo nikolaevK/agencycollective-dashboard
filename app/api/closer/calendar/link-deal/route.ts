@@ -6,6 +6,7 @@ import { getCloserSession } from "@/lib/closerSession";
 import { insertDeal, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 import { sendPushToAllAdmins } from "@/lib/pushNotifications";
@@ -49,10 +50,12 @@ export async function POST(request: Request) {
     }
 
     const id = crypto.randomUUID();
+    const setterId = eventId ? await resolveSetterForEvent(eventId) : null;
 
     await insertDeal({
       id,
       closerId: session.closerId,
+      setterId,
       clientName: eventTitle,
       clientUserId,
       clientEmail,
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
       try {
         const dealValueCents = Math.round(dealValue * 100);
         const invoiceNumber = await generateInvoiceNumber();
-        const deal = { id, closerId: session.closerId, clientName: eventTitle, clientUserId, clientEmail, dealValue: dealValueCents, serviceCategory, industry, closingDate: eventDate, status: status as "closed", showStatus: "showed" as const, notes, googleEventId: eventId || null, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const deal = { id, closerId: session.closerId, setterId, clientName: eventTitle, clientUserId, clientEmail, dealValue: dealValueCents, serviceCategory, industry, closingDate: eventDate, status: status as "closed", showStatus: "showed" as const, notes, googleEventId: eventId || null, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
         await insertDealInvoice({
           id: crypto.randomUUID(),

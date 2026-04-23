@@ -80,6 +80,7 @@ export const TTL = {
   PAGES: 300,       // 5 minutes
   PIXEL_HEALTH: 600, // 10 minutes
   ACTIVITIES: 180,   // 3 minutes
+  GOOGLE_EVENTS: 120, // 2 minutes — shared across all dashboard loads
 } as const;
 
 // Cache key builders
@@ -104,4 +105,6 @@ export const CacheKeys = {
   pixelHealth: (accountId: string) => `pixel_health:${accountId}`,
   activities: (accountId: string, dateRange: string) =>
     `activities:${accountId}:${dateRange}`,
+  googleEvents: (timeMin: string, timeMax: string, scope: string) =>
+    `google_events:${scope}:${timeMin}:${timeMax}`,
 } as const;

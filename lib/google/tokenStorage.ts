@@ -22,15 +22,37 @@ function encrypt(plaintext: string): string {
 }
 
 function decrypt(encoded: string): string {
-  const key = getEncryptionKey();
   const parts = encoded.split(":");
-  if (parts.length !== 3) throw new Error("Invalid encrypted token format");
+  // Our format is iv:tag:ciphertext, all lowercase hex. Anything else is a
+  // legacy plaintext token stored before encryption was added — return it
+  // unchanged. If it *looks* like our format but fails to decrypt, throw
+  // loudly so we never send ciphertext to Google as if it were a plaintext
+  // refresh_token (that silently-swallowed failure was a real production bug).
+  const isOurFormat = parts.length === 3 && parts.every((p) => /^[0-9a-f]+$/i.test(p));
+  if (!isOurFormat) return encoded;
+
+  const key = getEncryptionKey();
   const iv = Buffer.from(parts[0], "hex");
   const tag = Buffer.from(parts[1], "hex");
   const ciphertext = Buffer.from(parts[2], "hex");
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
-  return decipher.update(ciphertext) + decipher.final("utf8");
+  try {
+    return decipher.update(ciphertext) + decipher.final("utf8");
+  } catch {
+    throw new Error(
+      "Failed to decrypt Google Calendar token. SESSION_SECRET likely differs from the one that stored it — reconnect Google Calendar for this environment."
+    );
+  }
+}
+
+/**
+ * NODE_ENV-keyed scope, so dev and prod coexist on the same Turso database
+ * instead of thrashing each other's tokens. Unknown values fall back to
+ * "development" (never inherit prod's row by accident).
+ */
+function getScope(): string {
+  return process.env.NODE_ENV === "production" ? "production" : "development";
 }
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -64,12 +86,18 @@ export async function saveCalendarConfig(
     ? Math.floor(tokens.expiry_date / 1000)
     : Math.floor(Date.now() / 1000) + 3600;
 
-  // Delete existing config (only one shared connection)
-  await db.execute("DELETE FROM google_calendar_config");
+  const scope = getScope();
+
+  // Only delete the row for this scope — leaves the other environment's
+  // connection intact.
+  await db.execute({
+    sql: "DELETE FROM google_calendar_config WHERE scope = ?",
+    args: [scope],
+  });
 
   await db.execute({
-    sql: `INSERT INTO google_calendar_config (label, email, access_token, refresh_token, expires_at, calendar_id, connected_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO google_calendar_config (label, email, access_token, refresh_token, expires_at, calendar_id, connected_by, scope)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       "Main Calendar",
       email,
@@ -78,6 +106,7 @@ export async function saveCalendarConfig(
       expiresAt,
       "primary",
       connectedBy,
+      scope,
     ],
   });
 }
@@ -85,7 +114,11 @@ export async function saveCalendarConfig(
 export async function getCalendarConfig(): Promise<CalendarConfig | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute("SELECT * FROM google_calendar_config LIMIT 1");
+  const scope = getScope();
+  const result = await db.execute({
+    sql: "SELECT * FROM google_calendar_config WHERE scope = ? LIMIT 1",
+    args: [scope],
+  });
   const row = result.rows[0];
   if (!row) return null;
 
@@ -94,10 +127,12 @@ export async function getCalendarConfig(): Promise<CalendarConfig | null> {
   try {
     accessToken = decrypt(String(row.access_token));
     refreshToken = decrypt(String(row.refresh_token));
-  } catch {
-    // Tokens may be stored in plaintext from before encryption was added
-    accessToken = String(row.access_token);
-    refreshToken = String(row.refresh_token);
+  } catch (err) {
+    // Decryption failed for what looked like a properly-encrypted token. The
+    // row is unusable in this environment — report as "not connected" so the
+    // UI prompts a fresh Google connect instead of trying to refresh garbage.
+    console.error("[google] Calendar token unreadable in this environment:", err instanceof Error ? err.message : err);
+    return null;
   }
 
   const config: CalendarConfig = {
@@ -140,13 +175,19 @@ export async function getCalendarConfig(): Promise<CalendarConfig | null> {
 export async function deleteCalendarConfig(): Promise<void> {
   await ensureMigrated();
   const db = getDb();
-  await db.execute("DELETE FROM google_calendar_config");
+  await db.execute({
+    sql: "DELETE FROM google_calendar_config WHERE scope = ?",
+    args: [getScope()],
+  });
 }
 
 export async function isCalendarConnected(): Promise<{ connected: boolean; email?: string }> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute("SELECT email FROM google_calendar_config LIMIT 1");
+  const result = await db.execute({
+    sql: "SELECT email FROM google_calendar_config WHERE scope = ? LIMIT 1",
+    args: [getScope()],
+  });
   if (result.rows.length === 0) return { connected: false };
   return {
     connected: true,

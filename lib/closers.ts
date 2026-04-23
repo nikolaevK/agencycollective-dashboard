@@ -8,7 +8,8 @@ export type CloserRole =
   | "senior_closer"
   | "account_executive"
   | "inbound_specialist"
-  | "closer";
+  | "closer"
+  | "setter";
 
 export interface CloserRecord {
   id: string;
@@ -188,6 +189,19 @@ export async function updateCloser(
 export async function deleteCloser(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
+  // libSQL does not guarantee FK CASCADE fires, so clear setter-side links
+  // explicitly before removing the closer row. Setter-owned appointments are
+  // deleted outright (they're worthless without the setter). Deals keep their
+  // data but get their setter_id nulled — losing attribution is better than
+  // a dangling reference that silently misattributes a future setter.
+  await db.execute({
+    sql: "DELETE FROM appointments WHERE setter_id = ?",
+    args: [id],
+  });
+  await db.execute({
+    sql: "UPDATE deals SET setter_id = NULL, updated_at = datetime('now') WHERE setter_id = ?",
+    args: [id],
+  });
   const result = await db.execute({
     sql: "DELETE FROM closers WHERE id = ?",
     args: [id],

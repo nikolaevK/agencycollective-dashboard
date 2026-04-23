@@ -7,6 +7,7 @@ import { findDeal, insertDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 import { findTemplateForServices } from "@/lib/contractTemplates";
@@ -55,9 +56,13 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   const website = String(formData.get("website") ?? "").trim() || null;
   const additionalCcEmails = sanitizeCcEmails(formData.getAll("additionalCcEmails"));
 
+  // Auto-attribute setter if a setter has already claimed this calendar event
+  const setterId = googleEventId ? await resolveSetterForEvent(googleEventId) : null;
+
   await insertDeal({
     id,
     closerId: session.closerId,
+    setterId,
     clientName,
     clientUserId,
     clientEmail,
@@ -87,7 +92,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   if (status === "closed" && dealValue > 0) {
     try {
       const invoiceNumber = await generateInvoiceNumber();
-      const deal = { id, closerId: session.closerId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const deal = { id, closerId: session.closerId, setterId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
       await insertDealInvoice({
         id: crypto.randomUUID(),

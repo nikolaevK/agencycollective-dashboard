@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { CloserBentoGrid } from "@/components/closer/CloserBentoGrid";
 import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
+import { NoShowFollowUpList } from "@/components/closer/NoShowFollowUpList";
+import type { NoShowFollowUp } from "@/lib/eventAttendance";
 
 interface StatsResponse {
   closer: {
@@ -36,6 +38,7 @@ interface StatsResponse {
     createdAt: string;
     updatedAt: string;
   }>;
+  noShowFollowUps: NoShowFollowUp[];
 }
 
 export default function CloserDashboardPage() {
@@ -46,8 +49,10 @@ export default function CloserDashboardPage() {
       const json = await res.json();
       return json.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 30_000,
+    // Paired stale/refetch: 2 min aligns with the Google Calendar cache
+    // TTL used by no-show enrichment on this endpoint.
+    staleTime: 120_000,
+    refetchInterval: 120_000,
   });
 
   if (isLoading || !data) {
@@ -96,6 +101,17 @@ export default function CloserDashboardPage() {
 
         {/* Recent deals */}
         <CloserRecentDeals deals={data.recentDeals as never[]} />
+
+        {/* No-show follow-ups (scoped to this closer's own marks) */}
+        <section className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-foreground">No-show follow-ups</h2>
+            <span className="text-xs text-muted-foreground">
+              {data.noShowFollowUps.length} to re-engage
+            </span>
+          </div>
+          <NoShowFollowUpList items={data.noShowFollowUps} variant="closer" />
+        </section>
 
         {/* Mobile FAB */}
         <Link

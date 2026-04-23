@@ -8,6 +8,7 @@ export type ShowStatus = "showed" | "no_show" | null;
 export interface DealRecord {
   id: string;
   closerId: string;
+  setterId: string | null;
   clientName: string;
   clientUserId: string | null;
   clientEmail: string | null;
@@ -71,6 +72,7 @@ function rowToDeal(row: Row): DealRecord {
   return {
     id: String(row.id),
     closerId: String(row.closer_id),
+    setterId: row.setter_id != null ? String(row.setter_id) : null,
     clientName: String(row.client_name),
     clientUserId: row.client_user_id != null ? String(row.client_user_id) : null,
     clientEmail: row.client_email != null ? String(row.client_email) : null,
@@ -125,11 +127,12 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
+      deal.setterId,
       deal.clientName,
       deal.clientUserId,
       deal.clientEmail,
@@ -220,6 +223,10 @@ export async function updateDeal(
   if (changes.additionalCcEmails !== undefined) {
     fields.push("additional_cc_emails = ?");
     args.push(changes.additionalCcEmails.length > 0 ? JSON.stringify(changes.additionalCcEmails) : null);
+  }
+  if (changes.setterId !== undefined) {
+    fields.push("setter_id = ?");
+    args.push(changes.setterId);
   }
 
   if (fields.length === 0) return;
@@ -346,7 +353,7 @@ export async function getTeamStats(): Promise<TeamStats> {
        COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
      FROM closers c
      LEFT JOIN deals d ON d.closer_id = c.id
-     WHERE c.status = 'active'
+     WHERE c.status = 'active' AND c.role != 'setter'
      GROUP BY c.id
      ORDER BY revenue DESC`
   );

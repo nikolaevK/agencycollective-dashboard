@@ -393,6 +393,36 @@ export async function migrate(): Promise<void> {
     // Ignore if already migrated
   }
 
+  // ── Appointments table (setter-claimed calendar events + call flags) ──
+  // A setter "claims" a Google Calendar event by creating a row keyed on
+  // (setter_id, google_event_id). Pre/post-call statuses and notes track
+  // the setter's work on the appointment. Deal auto-assignment (Phase 3)
+  // matches deals.google_event_id → appointments.google_event_id to credit
+  // the setter.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id                 TEXT PRIMARY KEY,
+      setter_id          TEXT NOT NULL REFERENCES closers(id) ON DELETE CASCADE,
+      google_event_id    TEXT NOT NULL,
+      client_name        TEXT,
+      client_email       TEXT,
+      scheduled_at       TEXT,
+      pre_call_status    TEXT NOT NULL DEFAULT 'not_called',
+      post_call_status   TEXT NOT NULL DEFAULT 'not_called',
+      notes              TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (setter_id, google_event_id)
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_appointments_setter ON appointments(setter_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_appointments_event ON appointments(google_event_id)`);
+  } catch {
+    // indexes may already exist
+  }
+
   // ── Event attendance table (show/no-show per calendar event) ──────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS event_attendance (
@@ -404,6 +434,15 @@ export async function migrate(): Promise<void> {
       PRIMARY KEY (google_event_id, closer_id)
     )
   `);
+
+  // Supports no-show CTE lookups (filter by status, latest-per-event via
+  // updated_at) and the closer-scoped no-show list (closer_id + status).
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendance_status_updated ON event_attendance(show_status, updated_at DESC)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_event_attendance_closer_status ON event_attendance(closer_id, show_status)`);
+  } catch {
+    // Indexes may already exist.
+  }
 
   // ── Backfill attendance from closed deals with calendar links ─────
   try {
@@ -432,6 +471,23 @@ export async function migrate(): Promise<void> {
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // ── Add scope column to isolate dev vs prod tokens in a shared DB ──
+  // Different NODE_ENVs use different SESSION_SECRETs, so their encrypted
+  // tokens can't be decrypted across environments. Without a scope, the
+  // single row thrashes between dev and prod. Existing rows are stamped as
+  // 'production' — that's where the working connection came from.
+  try {
+    await db.execute(`SELECT scope FROM google_calendar_config LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE google_calendar_config ADD COLUMN scope TEXT`);
+      await db.execute(`UPDATE google_calendar_config SET scope = 'production' WHERE scope IS NULL`);
+      console.log("[migrate] Added scope column to google_calendar_config (existing rows → 'production')");
+    } catch (err) {
+      console.warn("[migrate] Could not add scope column to google_calendar_config:", err);
+    }
+  }
 
   // ── Payouts table (payout tracker) ───────────────────────────────
   await db.execute(`
@@ -842,6 +898,24 @@ export async function migrate(): Promise<void> {
     } catch (err) {
       console.warn("[migrate] Could not add additional_cc_emails column:", err);
     }
+  }
+
+  // ── Add setter_id to deals (auto-assigned from appointments) ─────
+  try {
+    await db.execute(`SELECT setter_id FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN setter_id TEXT`);
+      console.log("[migrate] Added setter_id column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add setter_id column:", err);
+    }
+  }
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_deals_setter_id ON deals(setter_id)`);
+  } catch {
+    // index may already exist
   }
 
   // ── Push notification subscriptions ──────────────────────────────────────

@@ -1,17 +1,37 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { format, parseISO, isSameDay } from "date-fns";
-import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil } from "lucide-react";
+import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  PRE_CALL_BADGE,
+  PRE_CALL_LABELS,
+  POST_CALL_BADGE,
+  POST_CALL_LABELS,
+  type AppointmentIndexEntry,
+} from "@/lib/appointments";
+
+export type AttendeeResponseStatus =
+  | "needsAction"
+  | "declined"
+  | "tentative"
+  | "accepted";
+
+export interface CalendarAttendee {
+  email: string;
+  displayName: string | null;
+  responseStatus: AttendeeResponseStatus | null;
+}
 
 export interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
+  location: string | null;
   start: string;
   end: string;
-  attendees: string[];
+  attendees: CalendarAttendee[];
   meetLink: string | null;
   status: string;
   allDay: boolean;
@@ -33,6 +53,8 @@ interface Props {
   linkedDeals?: LinkedDealInfo[];
   /** Attendance status per event ID: "showed" | "no_show" */
   attendance?: Record<string, string>;
+  /** Setter-claim info per event ID (notes, flags, client info). */
+  appointments?: Record<string, AppointmentIndexEntry>;
   /** Create a deal from this event */
   onLinkDeal?: (event: CalendarEvent) => void;
   /** Toggle showed/no-show for any event. Pass null to clear. */
@@ -42,6 +64,18 @@ interface Props {
   /** Admin view (read-only attendance, shows closer name) */
   isAdmin?: boolean;
 }
+
+const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
+  accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
+  tentative: { label: "Maybe", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+  needsAction: { label: "Pending", cls: "bg-muted/60 text-muted-foreground" },
+};
+
+const STATUS_PILL: Record<string, { label: string; cls: string }> = {
+  tentative: { label: "Tentative", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+  cancelled: { label: "Cancelled", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
+};
 
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const groups = new Map<string, CalendarEvent[]>();
@@ -90,18 +124,29 @@ export function CalendarEventList({
   linkedEventIds,
   linkedDeals,
   attendance,
+  appointments,
   onLinkDeal,
   onAttendanceChange,
   onEditDeal,
   isAdmin,
 }: Props) {
   const todayRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (todayRef.current) {
       todayRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [events]);
+
+  function toggleExpanded(eventId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  }
 
   if (events.length === 0) {
     return (
@@ -128,6 +173,7 @@ export function CalendarEventList({
               const isLinked = linkedEventIds?.has(event.id);
               const dealInfo = linkedDeals?.find((d) => d.googleEventId === event.id);
               const eventAttendance = attendance?.[event.id] as "showed" | "no_show" | undefined;
+              const setterClaim = appointments?.[event.id];
 
               return (
                 <div
@@ -156,6 +202,20 @@ export function CalendarEventList({
                             Deal Linked
                           </span>
                         )}
+                        {setterClaim && (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-sky-500/10 text-sky-700 dark:text-sky-400">
+                            <Flag className="h-2.5 w-2.5" />
+                            Setter: {setterClaim.setterName ?? "Unknown"}
+                          </span>
+                        )}
+                        {STATUS_PILL[event.status] && (
+                          <span className={cn(
+                            "shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
+                            STATUS_PILL[event.status].cls
+                          )}>
+                            {STATUS_PILL[event.status].label}
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 mt-1.5">
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -180,6 +240,12 @@ export function CalendarEventList({
                             Meet
                           </a>
                         )}
+                        {event.location && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground max-w-[16rem] truncate" title={event.location}>
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            {event.location}
+                          </span>
+                        )}
                         {isAdmin && dealInfo?.closerName && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <User className="h-3 w-3" />
@@ -200,6 +266,101 @@ export function CalendarEventList({
                       </button>
                     )}
                   </div>
+
+                  {/* Details expander — shown only when there's something to expand */}
+                  {(event.description || event.attendees.length > 0) && (() => {
+                    const isOpen = expanded.has(event.id);
+                    return (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(event.id)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                          {isOpen ? "Hide details" : "Details"}
+                        </button>
+                        {isOpen && (
+                          <div className="mt-2 space-y-2.5 rounded-lg border border-border/40 bg-muted/20 p-3">
+                            {event.description && (
+                              <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />
+                                <p className="whitespace-pre-wrap break-words">{event.description}</p>
+                              </div>
+                            )}
+                            {event.attendees.length > 0 && (
+                              <div className="flex items-start gap-1.5 text-xs">
+                                <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                                <ul className="space-y-1 flex-1 min-w-0">
+                                  {event.attendees.map((a) => (
+                                    <li key={a.email} className="flex items-center gap-2 flex-wrap">
+                                      <a
+                                        href={`mailto:${a.email}`}
+                                        className="text-muted-foreground hover:text-foreground truncate"
+                                      >
+                                        {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
+                                      </a>
+                                      {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
+                                        <span className={cn(
+                                          "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
+                                          RESPONSE_BADGE[a.responseStatus].cls
+                                        )}>
+                                          {RESPONSE_BADGE[a.responseStatus].label}
+                                        </span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Setter claim panel — read-only view of pre/post-call notes */}
+                  {setterClaim && (
+                    <div className="mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04] space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
+                          PRE_CALL_BADGE[setterClaim.preCallStatus]
+                        )}>
+                          <PhoneCall className="h-3 w-3" />
+                          Pre: {PRE_CALL_LABELS[setterClaim.preCallStatus]}
+                        </span>
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
+                          POST_CALL_BADGE[setterClaim.postCallStatus]
+                        )}>
+                          <PhoneOff className="h-3 w-3" />
+                          Post: {POST_CALL_LABELS[setterClaim.postCallStatus]}
+                        </span>
+                        {setterClaim.clientName && setterClaim.clientName !== event.title && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <User className="h-3 w-3" />
+                            {setterClaim.clientName}
+                          </span>
+                        )}
+                        {setterClaim.clientEmail && (
+                          <a
+                            href={`mailto:${setterClaim.clientEmail}`}
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Mail className="h-3 w-3" />
+                            {setterClaim.clientEmail}
+                          </a>
+                        )}
+                      </div>
+                      {setterClaim.notes && (
+                        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                          <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
+                          <p className="whitespace-pre-wrap">{setterClaim.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Bottom row: Show/No-Show buttons on EVERY card */}
                   {onAttendanceChange && (

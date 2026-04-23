@@ -26,6 +26,7 @@ const VALID_ROLES: CloserRole[] = [
   "account_executive",
   "inbound_specialist",
   "closer",
+  "setter",
 ];
 
 async function saveAvatar(

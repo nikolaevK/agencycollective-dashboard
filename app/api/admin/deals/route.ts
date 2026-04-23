@@ -52,6 +52,8 @@ export async function GET(request: Request) {
     getDealContractStatuses(dealIds),
     readClosers(),
   ]);
+  // closers list already contains setter-role rows (setters live in the
+  // closers table), so one name map covers both closer_id and setter_id.
   const closerNameMap = new Map(closers.map((c) => [c.id, c.displayName]));
   const dealsWithStatuses = deals.map((d) => ({
     ...d,
@@ -59,6 +61,7 @@ export async function GET(request: Request) {
     invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
     contractStatus: contractStatuses[d.id]?.status ?? null,
     closerName: closerNameMap.get(d.closerId) ?? null,
+    setterName: d.setterId ? (closerNameMap.get(d.setterId) ?? null) : null,
   }));
 
   return NextResponse.json({ data: dealsWithStatuses });

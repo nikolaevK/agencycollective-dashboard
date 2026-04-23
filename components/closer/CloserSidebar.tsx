@@ -4,23 +4,32 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, PlusCircle, CalendarDays, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CloserRole } from "@/lib/closers";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface CloserSidebarProps {
   displayName?: string;
+  role?: CloserRole;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-const navItems = [
+const CLOSER_NAV = [
   { href: "/closer/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/closer/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/closer/new-deal", label: "New Deal", icon: PlusCircle },
 ];
 
-export function CloserSidebar({ displayName, isOpen = false, onClose }: CloserSidebarProps) {
+const SETTER_NAV = [
+  { href: "/closer/setter", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/closer/setter/appointments", label: "Appointments", icon: CalendarDays },
+];
+
+export function CloserSidebar({ displayName, role, isOpen = false, onClose }: CloserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const isSetter = role === "setter";
+  const navItems = isSetter ? SETTER_NAV : CLOSER_NAV;
 
   async function handleLogout() {
     await fetch("/api/auth/closer/logout", { method: "POST" });
@@ -55,7 +64,7 @@ export function CloserSidebar({ displayName, isOpen = false, onClose }: CloserSi
       {displayName && (
         <div className="px-5 py-3 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
           <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40 mb-0.5">
-            Closer
+            {isSetter ? "Setter" : "Closer"}
           </p>
           <p className="text-sm font-medium truncate" style={{ color: "hsl(var(--sidebar-hover-fg))" }}>
             {displayName}
@@ -66,7 +75,7 @@ export function CloserSidebar({ displayName, isOpen = false, onClose }: CloserSi
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40">
-          Sales
+          {isSetter ? "Appointments" : "Sales"}
         </p>
         {navItems.map((item) => {
           const isActive = item.exact

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
+import type { CloserRole } from "./closers";
 
 const CLOSER_COOKIE = "c_sess";
 
@@ -15,6 +16,7 @@ export interface CloserSessionData {
   closerId: string;
   slug: string;
   displayName: string;
+  role?: CloserRole;
 }
 
 export function createCloserSession(data: CloserSessionData): string {

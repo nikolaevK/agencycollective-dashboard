@@ -6,6 +6,7 @@ const ROLE_COLORS: Record<string, string> = {
   account_executive: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
   inbound_specialist: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-400",
   closer: "bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-400",
+  setter: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
 };
 
 export function CloserRoleBadge({ role }: { role: string }) {

@@ -39,6 +39,7 @@ export async function closerLoginAction(
     closerId: closer.id,
     slug: closer.slug,
     displayName: closer.displayName,
+    role: closer.role,
   });
   cookies().set(CLOSER_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
@@ -48,7 +49,7 @@ export async function closerLoginAction(
     path: "/",
   });
 
-  redirect("/closer/dashboard");
+  redirect(closer.role === "setter" ? "/closer/setter" : "/closer/dashboard");
 }
 
 export async function closerSetPasswordAction(
@@ -73,6 +74,7 @@ export async function closerSetPasswordAction(
     closerId: closer.id,
     slug: closer.slug,
     displayName: closer.displayName,
+    role: closer.role,
   });
   cookies().set(CLOSER_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
@@ -82,5 +84,5 @@ export async function closerSetPasswordAction(
     path: "/",
   });
 
-  redirect("/closer/dashboard");
+  redirect(closer.role === "setter" ? "/closer/setter" : "/closer/dashboard");
 }

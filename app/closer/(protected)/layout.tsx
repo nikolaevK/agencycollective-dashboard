@@ -17,7 +17,7 @@ export default async function CloserProtectedLayout({
   if (!closer) redirect("/?portal=closer");
 
   return (
-    <CloserPortalShell displayName={closer.displayName}>
+    <CloserPortalShell displayName={closer.displayName} role={closer.role}>
       {children}
     </CloserPortalShell>
   );

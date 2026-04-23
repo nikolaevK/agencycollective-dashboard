@@ -68,6 +68,7 @@ interface DealWithInvoice extends DealPublic {
   invoiceStatus?: string | null;
   invoiceNumber?: string | null;
   contractStatus?: string | null;
+  setterName?: string | null;
 }
 
 interface Props {
@@ -205,6 +206,11 @@ export function CloserRecentDeals({ deals }: Props) {
                             )}
                           </div>
                         )}
+                        {deal.setterName && (
+                          <div className="text-[11px] text-muted-foreground font-normal mt-0.5">
+                            Set by {deal.setterName}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
@@ -269,6 +275,11 @@ export function CloserRecentDeals({ deals }: Props) {
                         </a>
                       )}
                     </div>
+                  )}
+                  {deal.setterName && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Set by {deal.setterName}
+                    </p>
                   )}
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {formatDate(deal.closingDate || deal.createdAt)}
