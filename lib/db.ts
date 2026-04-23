@@ -918,6 +918,69 @@ export async function migrate(): Promise<void> {
     // index may already exist
   }
 
+  // ── Notes (per-user scratchpad: priority, due date, tags, lead linkage) ──
+  // Owned by a closer-or-setter (both live in the `closers` table). Linked
+  // leads are stored loosely — we don't enforce FK on google_event_id /
+  // deal_id so a deleted deal doesn't orphan the note; the UI resolves
+  // linked lead info at read time.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS notes (
+      id                      TEXT PRIMARY KEY,
+      owner_id                TEXT NOT NULL,
+      title                   TEXT NOT NULL DEFAULT 'Untitled',
+      body                    TEXT NOT NULL DEFAULT '',
+      priority                TEXT NOT NULL DEFAULT 'medium',
+      due_date                TEXT,
+      tags                    TEXT,
+      linked_google_event_id  TEXT,
+      linked_deal_id          TEXT,
+      created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_notes_owner_updated ON notes(owner_id, updated_at DESC)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_notes_owner_priority ON notes(owner_id, priority)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_notes_owner_due ON notes(owner_id, due_date)`);
+  } catch {
+    // Indexes may already exist.
+  }
+
+  // ── Note sharing (setter ↔ closer) ────────────────────────────────────
+  // Junction table: one row per (note, recipient). Owner keeps full control;
+  // recipients get read-only visibility. Deleting the note cascades so we
+  // don't leave dangling share rows.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS note_shares (
+      note_id        TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      shared_with_id TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (note_id, shared_with_id)
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_note_shares_recipient ON note_shares(shared_with_id)`);
+  } catch {
+    // Index may already exist.
+  }
+
+  // ── Recipient-side archive flag on note_shares ──────────────────────
+  // Soft-dismiss for the recipient. Null = active (shown on their board),
+  // timestamp = archived (hidden by default, reachable via the archive
+  // section). Owner's copy and other recipients are unaffected.
+  try {
+    await db.execute(`SELECT archived_at FROM note_shares LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE note_shares ADD COLUMN archived_at TEXT`);
+      console.log("[migrate] Added archived_at column to note_shares");
+    } catch (err) {
+      console.warn("[migrate] Could not add archived_at column:", err);
+    }
+  }
+
   // ── Push notification subscriptions ──────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (

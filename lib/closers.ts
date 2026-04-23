@@ -202,6 +202,18 @@ export async function deleteCloser(id: string): Promise<boolean> {
     sql: "UPDATE deals SET setter_id = NULL, updated_at = datetime('now') WHERE setter_id = ?",
     args: [id],
   });
+  // Notes are strictly private — delete with the owner to avoid orphans
+  // that no one can access but still occupy rows. The cascade on note_shares
+  // handles shares from THEIR notes; we still need to clean rows where they
+  // were a RECIPIENT (no FK on shared_with_id, so no automatic cleanup).
+  await db.execute({
+    sql: "DELETE FROM notes WHERE owner_id = ?",
+    args: [id],
+  });
+  await db.execute({
+    sql: "DELETE FROM note_shares WHERE shared_with_id = ?",
+    args: [id],
+  });
   const result = await db.execute({
     sql: "DELETE FROM closers WHERE id = ?",
     args: [id],
