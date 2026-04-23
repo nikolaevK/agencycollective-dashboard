@@ -353,6 +353,40 @@ export async function isShareRecipient(noteId: string, recipientId: string): Pro
   return result.rows.length > 0;
 }
 
+// ── Unread shared notes (sidebar badge) ───────────────────────────────
+
+/**
+ * Count of active shares for this user created after their last notes-page
+ * visit. Archived shares don't count (they've dismissed those). First-time
+ * users have a null last-visit timestamp → everything is unread.
+ */
+export async function getUnreadSharedNotesCount(userId: string): Promise<number> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT COUNT(*) AS c
+            FROM note_shares ns
+           WHERE ns.shared_with_id = ?
+             AND ns.archived_at IS NULL
+             AND ns.created_at > COALESCE(
+               (SELECT notes_last_viewed_at FROM closers WHERE id = ?),
+               '1970-01-01 00:00:00'
+             )`,
+    args: [userId, userId],
+  });
+  return Number(result.rows[0]?.c ?? 0);
+}
+
+/** Stamp the user's last notes-page visit so future shares arrive as "new". */
+export async function markNotesViewed(userId: string): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: "UPDATE closers SET notes_last_viewed_at = datetime('now') WHERE id = ?",
+    args: [userId],
+  });
+}
+
 /**
  * Get all shares grouped by note_id for a set of notes. Used by the list
  * endpoint so the owner's UI can show who they've shared each note with.

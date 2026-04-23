@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NoteRecord, SharedNoteRecord } from "@/lib/notes";
+import { NoteCard } from "@/components/closer/NoteCard";
+import { NoteEditor } from "@/components/closer/NoteEditor";
+import { LeadContextModal } from "@/components/closer/LeadContextModal";
 
 interface OwnNote extends NoteRecord {
   sharedWith: string[];
@@ -15,9 +18,6 @@ interface NotesResponse {
   sharedWithMe: SharedNoteRecord[];
   sharedArchived: SharedNoteRecord[];
 }
-import { NoteCard } from "@/components/closer/NoteCard";
-import { NoteEditor } from "@/components/closer/NoteEditor";
-import { LeadContextModal } from "@/components/closer/LeadContextModal";
 
 type GroupMode = "priority" | "due" | "tag" | "lead";
 
@@ -53,6 +53,23 @@ export function NotesBoard({ heading }: { heading: string }) {
     },
     staleTime: 30_000,
   });
+
+  // Visiting the notes page clears the sidebar badge. We mark-viewed on
+  // every successful load (including subsequent refetches) so a user who
+  // stays on the page doesn't get a stale badge when a new share arrives
+  // while they're looking at the list.
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    fetch("/api/closer/notes/mark-viewed", { method: "POST" }).then(() => {
+      if (!cancelled) {
+        queryClient.invalidateQueries({ queryKey: ["notes-unread"] });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, queryClient]);
 
   // Merge for grouping. Each note carries a stable marker so card render
   // can distinguish owner vs recipient and surface the correct badge.

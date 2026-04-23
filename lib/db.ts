@@ -290,6 +290,18 @@ export async function migrate(): Promise<void> {
     )
   `);
 
+  // ── Add notes_last_viewed_at to closers for unread-shares badge ────
+  try {
+    await db.execute(`SELECT notes_last_viewed_at FROM closers LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE closers ADD COLUMN notes_last_viewed_at TEXT`);
+      console.log("[migrate] Added notes_last_viewed_at column to closers");
+    } catch (err) {
+      console.warn("[migrate] Could not add notes_last_viewed_at column:", err);
+    }
+  }
+
   // ── Deals table ───────────────────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS deals (

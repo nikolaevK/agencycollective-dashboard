@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { LayoutDashboard, PlusCircle, CalendarDays, LogOut, X, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CloserRole } from "@/lib/closers";
@@ -32,6 +33,20 @@ export function CloserSidebar({ displayName, role, isOpen = false, onClose }: Cl
   const router = useRouter();
   const isSetter = role === "setter";
   const navItems = isSetter ? SETTER_NAV : CLOSER_NAV;
+
+  // Unread shared-notes count for the sidebar badge. Cleared by the notes
+  // page on mount via /api/closer/notes/mark-viewed (invalidates this query).
+  const { data: unreadNotes = 0 } = useQuery<number>({
+    queryKey: ["notes-unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/closer/notes/unread-count");
+      if (!res.ok) return 0;
+      const json = await res.json();
+      return Number(json.data?.count ?? 0);
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
 
   async function handleLogout() {
     await fetch("/api/auth/closer/logout", { method: "POST" });
@@ -83,6 +98,9 @@ export function CloserSidebar({ displayName, role, isOpen = false, onClose }: Cl
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
+          // Badge shown next to the Notes item when the user has unseen
+          // shared notes. Disappears as soon as they visit the notes page.
+          const showNotesBadge = item.label === "Notes" && unreadNotes > 0;
           return (
             <Link
               key={item.href}
@@ -94,7 +112,15 @@ export function CloserSidebar({ displayName, role, isOpen = false, onClose }: Cl
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {showNotesBadge && (
+                <span
+                  className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"
+                  aria-label={`${unreadNotes} unread shared note${unreadNotes === 1 ? "" : "s"}`}
+                >
+                  {unreadNotes > 99 ? "99+" : unreadNotes}
+                </span>
+              )}
             </Link>
           );
         })}
