@@ -10,11 +10,49 @@ import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
-type PaidFilter = "all" | "paid" | "unpaid";
+type StatusFilter = "all" | "closed" | "pending_signature" | "rescheduled" | "follow_up";
+// Second group combines payment + review state since they're mutually-picked
+// filters (one pill lights up at a time). "needs_review" short-circuits the
+// paid check and matches deals whose invoice is still a draft.
+type PaidFilter = "all" | "paid" | "unpaid" | "needs_review";
+
+interface AdminDeal extends DealPublic {
+  invoiceStatus?: string | null;
+  invoiceNumber?: string | null;
+  contractStatus?: string | null;
+  closerName?: string | null;
+  setterName?: string | null;
+}
+
+/**
+ * A deal "needs review" when its auto-generated invoice is still a draft —
+ * admin needs to approve and send. Matches the "Review" label used by
+ * DealInvoiceStatusBadge in admin mode.
+ */
+function needsReview(d: AdminDeal): boolean {
+  return d.invoiceStatus === "draft";
+}
+
+function currentMonthStartISO(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}-01`;
+}
+
+/** Current year-month in YYYY-MM, matching how deal dates are sliced. */
+function currentMonthKey(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
 
 function getMonthOptions(deals: DealPublic[]): { value: string; label: string }[] {
   const months = new Set<string>();
+  // Current month is always selectable even if it has no deals yet — the
+  // page defaults to it.
+  months.add(currentMonthKey());
   for (const d of deals) {
     const dateStr = d.closingDate || d.createdAt;
     if (dateStr) months.add(dateStr.slice(0, 7)); // YYYY-MM
@@ -30,20 +68,47 @@ function getMonthOptions(deals: DealPublic[]): { value: string; label: string }[
 export default function AdminDealsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [monthFilter, setMonthFilter] = useState<string>("all");
+  // Default to the current month so admins see the working set first. "all"
+  // stays available in the dropdown for when they want the full history.
+  const [monthFilter, setMonthFilter] = useState<string>(() => currentMonthKey());
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
 
   const queryClient = useQueryClient();
-  const { data: deals = [], isLoading, isFetching } = useQuery<DealPublic[]>({
-    queryKey: ["admin-all-deals"],
+  // Stable-for-the-session boundary so both queries use the same cutoff.
+  const [monthStart] = useState<string>(() => currentMonthStartISO());
+
+  // Two-phase load for perf: fetch current month first (small, fast —
+  // what admins interact with most), then older deals in the background.
+  // Merging is client-side.
+  const currentQuery = useQuery<AdminDeal[]>({
+    queryKey: ["admin-deals", "current", monthStart],
     queryFn: async () => {
-      const res = await fetch("/api/admin/deals");
+      const res = await fetch(`/api/admin/deals?since=${monthStart}`);
       const json = await res.json();
       return json.data ?? [];
     },
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
+  const olderQuery = useQuery<AdminDeal[]>({
+    queryKey: ["admin-deals", "older", monthStart],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/deals?until=${monthStart}`);
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    // Older data changes less frequently — longer cache, slower refresh.
+    staleTime: 2 * 60_000,
+    refetchInterval: 2 * 60_000,
+  });
+
+  const deals = useMemo<AdminDeal[]>(
+    () => [...(currentQuery.data ?? []), ...(olderQuery.data ?? [])],
+    [currentQuery.data, olderQuery.data]
+  );
+  const isLoading = currentQuery.isLoading;
+  const isFetching = currentQuery.isFetching || olderQuery.isFetching;
+  const olderLoading = olderQuery.isLoading;
 
   const monthOptions = useMemo(() => getMonthOptions(deals), [deals]);
 
@@ -65,17 +130,21 @@ export default function AdminDealsPage() {
     return result;
   }, [deals, monthFilter, search]);
 
-  // Stage 2: + status + paid filter (used for table display)
+  // Stage 2: + status + paid/review filter (used for table display). The
+  // "needs_review" value in paidFilter short-circuits the payment check —
+  // it's a review predicate, not a paid-status predicate.
   const filtered = useMemo(() => {
     let result = baseFiltered;
     if (statusFilter !== "all") result = result.filter((d) => d.status === statusFilter);
-    if (paidFilter !== "all") result = result.filter((d) => d.paidStatus === paidFilter);
+    if (paidFilter === "needs_review") result = result.filter(needsReview);
+    else if (paidFilter !== "all") result = result.filter((d) => d.paidStatus === paidFilter);
     return result;
   }, [baseFiltered, statusFilter, paidFilter]);
 
-  // For status pill counts: apply paid filter so counts reflect the paid selection
+  // For status pill counts: apply paid/review filter so counts reflect the selection.
   const statusBase = useMemo(() => {
     if (paidFilter === "all") return baseFiltered;
+    if (paidFilter === "needs_review") return baseFiltered.filter(needsReview);
     return baseFiltered.filter((d) => d.paidStatus === paidFilter);
   }, [baseFiltered, paidFilter]);
 
@@ -88,7 +157,6 @@ export default function AdminDealsPage() {
   // Stats based on month+search filtered deals
   const totalValue = baseFiltered.filter((d) => d.status === "closed").reduce((s, d) => s + d.dealValue, 0);
   const closedCount = statusBase.filter((d) => d.status === "closed").length;
-  const notClosedCount = statusBase.filter((d) => d.status === "not_closed").length;
   const pendingCount = statusBase.filter((d) => d.status === "pending_signature").length;
   const rescheduledCount = statusBase.filter((d) => d.status === "rescheduled").length;
   const followUpCount = statusBase.filter((d) => d.status === "follow_up").length;
@@ -98,16 +166,17 @@ export default function AdminDealsPage() {
   const filters: { value: StatusFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: statusBase.length },
     { value: "closed", label: "Closed", count: closedCount },
-    { value: "not_closed", label: "Not Closed", count: notClosedCount },
     { value: "pending_signature", label: "Pending", count: pendingCount },
     { value: "rescheduled", label: "Rescheduled", count: rescheduledCount },
     { value: "follow_up", label: "Follow Up", count: followUpCount },
   ];
 
+  const reviewCount = paidBase.filter(needsReview).length;
   const paidFilters: { value: PaidFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: paidBase.length },
     { value: "paid", label: "Paid", count: paidCount },
     { value: "unpaid", label: "Unpaid", count: unpaidCount },
+    { value: "needs_review", label: "Needs review", count: reviewCount },
   ];
 
   return (
@@ -121,7 +190,7 @@ export default function AdminDealsPage() {
             </p>
           </div>
           <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] })}
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-deals"] })}
             disabled={isFetching}
             className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
           >
@@ -204,12 +273,17 @@ export default function AdminDealsPage() {
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
+                title={f.value === "needs_review" ? "Deals with invoice awaiting admin review" : undefined}
               >
                 {f.label} ({f.count})
               </button>
             ))}
           </div>
         </div>
+
+        {olderLoading && !isLoading && (
+          <p className="text-xs text-muted-foreground">Loading older deals in the background…</p>
+        )}
 
         {/* Deals table */}
         {isLoading ? (

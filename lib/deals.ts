@@ -94,12 +94,32 @@ function rowToDeal(row: Row): DealRecord {
   };
 }
 
-export async function readDeals(): Promise<DealRecord[]> {
+/**
+ * `since` / `until` are YYYY-MM-DD boundaries applied to a deal's effective
+ * date: `closing_date` when set, else the `created_at` day. Both bounds are
+ * optional so the default call (`readDeals()`) still returns everything —
+ * admin surfaces use the window for progressive loading.
+ */
+export async function readDeals(
+  options: { since?: string; until?: string } = {}
+): Promise<DealRecord[]> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute(
-    "SELECT * FROM deals ORDER BY created_at DESC"
-  );
+  const clauses: string[] = [];
+  const args: string[] = [];
+  if (options.since) {
+    clauses.push("COALESCE(closing_date, SUBSTR(created_at, 1, 10)) >= ?");
+    args.push(options.since);
+  }
+  if (options.until) {
+    clauses.push("COALESCE(closing_date, SUBSTR(created_at, 1, 10)) < ?");
+    args.push(options.until);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const result = await db.execute({
+    sql: `SELECT * FROM deals ${where} ORDER BY created_at DESC`,
+    args,
+  });
   return result.rows.map(rowToDeal);
 }
 

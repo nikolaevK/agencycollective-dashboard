@@ -30,8 +30,15 @@ export async function GET(request: Request) {
   const closerId = searchParams.get("closerId");
   const status = searchParams.get("status");
   const search = searchParams.get("search")?.toLowerCase();
+  // YYYY-MM-DD window bounds used by the admin deals page to load
+  // current-month deals first and older deals in a second request.
+  const sinceRaw = searchParams.get("since");
+  const untilRaw = searchParams.get("until");
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
+  const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
-  let deals = await readDeals();
+  let deals = await readDeals({ since, until });
 
   if (closerId) {
     deals = deals.filter((d) => d.closerId === closerId);
