@@ -2,6 +2,26 @@ import { getDb, ensureMigrated } from "./db";
 
 export type AttendanceStatus = "showed" | "no_show";
 
+/**
+ * Google Calendar descriptions arrive as HTML (links, line-break tags,
+ * entities). The card renders plain text, so collapse the markup to
+ * newlines and decode the handful of entities Google actually emits.
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export interface EventAttendance {
   googleEventId: string;
   closerId: string;
@@ -132,6 +152,12 @@ export async function getLatestAttendanceByEvent(): Promise<Record<string, Atten
   return out;
 }
 
+export interface FollowUpAttendee {
+  email: string;
+  displayName: string | null;
+  responseStatus: string | null;
+}
+
 export interface NoShowFollowUp {
   googleEventId: string;
   markedAt: string;
@@ -157,19 +183,28 @@ export interface NoShowFollowUp {
    * has zero information on whom to call. Populated by enrichNoShowsFromCalendar.
    */
   eventTitle: string | null;
+  eventDescription: string | null;
+  eventEnd: string | null;
+  eventStatus: string | null;
+  allDay: boolean;
   calendarName: string | null;
   meetLink: string | null;
   eventLocation: string | null;
-  attendeeEmails: string[];
+  attendees: FollowUpAttendee[];
 }
 
 /**
- * No-shows that belong to this closer. Used on the closer dashboard —
- * each closer only sees events they marked no_show themselves.
+ * Attendance follow-ups (no_show OR showed) that belong to this closer. Used
+ * on the closer dashboard — each closer only sees events they themselves
+ * marked. The `NoShowFollowUp` type is reused for both statuses since the
+ * card layout is identical.
  */
-export async function getNoShowFollowUpsForCloser(
+export async function getAttendanceFollowUpsForCloser(
   closerId: string,
-  limit: number = 20
+  status: AttendanceStatus,
+  // 200 covers ~2 years for an active closer; the dashboard paginates
+  // client-side, so this is the working set, not a page size.
+  limit: number = 200
 ): Promise<NoShowFollowUp[]> {
   await ensureMigrated();
   const db = getDb();
@@ -179,6 +214,12 @@ export async function getNoShowFollowUpsForCloser(
                    scheduled_at, notes, pre_call_status, post_call_status, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
+          ),
+          latest_deal AS (
+            SELECT id, google_event_id, client_name, client_email, closing_date,
+                   ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
+              FROM deals
+             WHERE google_event_id IS NOT NULL
           )
           SELECT
              ea.google_event_id,
@@ -200,11 +241,11 @@ export async function getNoShowFollowUpsForCloser(
        LEFT JOIN closers mc ON mc.id = ea.closer_id
        LEFT JOIN latest_appt ap ON ap.google_event_id = ea.google_event_id AND ap.rn = 1
        LEFT JOIN closers sc ON sc.id = ap.setter_id
-       LEFT JOIN deals d ON d.google_event_id = ea.google_event_id
-           WHERE ea.show_status = 'no_show' AND ea.closer_id = ?
+       LEFT JOIN latest_deal d ON d.google_event_id = ea.google_event_id AND d.rn = 1
+           WHERE ea.show_status = ? AND ea.closer_id = ?
         ORDER BY ea.updated_at DESC
            LIMIT ?`,
-    args: [closerId, limit],
+    args: [status, closerId, limit],
   });
   return result.rows.map((row) => ({
     googleEventId: String(row.google_event_id),
@@ -235,10 +276,14 @@ export async function getNoShowFollowUpsForCloser(
     preCallStatus: row.pre_call_status != null ? String(row.pre_call_status) : null,
     postCallStatus: row.post_call_status != null ? String(row.post_call_status) : null,
     eventTitle: null,
+    eventDescription: null,
+    eventEnd: null,
+    eventStatus: null,
+    allDay: false,
     calendarName: null,
     meetLink: null,
     eventLocation: null,
-    attendeeEmails: [],
+    attendees: [],
   }));
 }
 
@@ -267,6 +312,12 @@ export async function getNoShowFollowUpsTeamWide(
                    scheduled_at, notes, pre_call_status, post_call_status, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
+          ),
+          latest_deal AS (
+            SELECT id, google_event_id, client_name, client_email, closing_date,
+                   ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
+              FROM deals
+             WHERE google_event_id IS NOT NULL
           )
           SELECT
              la.google_event_id,
@@ -288,7 +339,7 @@ export async function getNoShowFollowUpsTeamWide(
        LEFT JOIN closers mc ON mc.id = la.closer_id
        LEFT JOIN latest_appt ap ON ap.google_event_id = la.google_event_id AND ap.rn = 1
        LEFT JOIN closers sc ON sc.id = ap.setter_id
-       LEFT JOIN deals d ON d.google_event_id = la.google_event_id
+       LEFT JOIN latest_deal d ON d.google_event_id = la.google_event_id AND d.rn = 1
            WHERE la.rn = 1
         ORDER BY la.updated_at DESC
            LIMIT ?`,
@@ -323,22 +374,31 @@ export async function getNoShowFollowUpsTeamWide(
     preCallStatus: row.pre_call_status != null ? String(row.pre_call_status) : null,
     postCallStatus: row.post_call_status != null ? String(row.post_call_status) : null,
     eventTitle: null,
+    eventDescription: null,
+    eventEnd: null,
+    eventStatus: null,
+    allDay: false,
     calendarName: null,
     meetLink: null,
     eventLocation: null,
-    attendeeEmails: [],
+    attendees: [],
   }));
 }
 
 /**
- * Enrich no-show rows with Google Calendar event data (title, attendees,
- * meet link, location, scheduled time). Essential when a no-show has no
- * appointment and no linked deal — the Google event is the only source of
- * "who to follow up with".
+ * Enrich attendance-follow-up rows (no_show OR showed) with Google Calendar
+ * event data — title, attendees, meet link, location, scheduled time.
+ * Essential when a row has no appointment and no linked deal; the Google
+ * event is then the only source of "who is this".
  *
- * Fetches events starting from the oldest no-show's markedAt (bounded to 2
- * years back so the Google window isn't unbounded) through now. Joins by
- * google_event_id; rows whose Google event isn't in range stay un-enriched.
+ * Window: oldest markedAt minus a 30-day buffer (events end BEFORE they're
+ * marked; without buffer Google's events.list excludes them and rows render
+ * bare), capped at 2 years back, rounded to UTC day boundaries so concurrent
+ * dashboard loads share the same `getCalendarEvents` cache key.
+ *
+ * Joins by google_event_id; rows whose Google event isn't in range stay
+ * un-enriched. Input order is preserved so callers can split a combined
+ * input (e.g. no-shows + showed) by index.
  */
 export async function enrichNoShowsFromCalendar(
   noShows: NoShowFollowUp[]
@@ -349,17 +409,25 @@ export async function enrichNoShowsFromCalendar(
   const { getCalendarEvents } = await import("./google/calendar");
 
   const now = Date.now();
-  const twoYearsAgoMs = now - 2 * 365 * 24 * 60 * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const twoYearsAgoMs = now - 2 * 365 * dayMs;
   const oldestMarkedMs = Math.min(
     ...noShows.map((n) => {
       const t = Date.parse(n.markedAt);
       return Number.isNaN(t) ? now : t;
     })
   );
-  const timeMin = new Date(Math.max(oldestMarkedMs, twoYearsAgoMs)).toISOString();
-  // Add a day of headroom on each end — markedAt can land after the event,
-  // and future-scheduled events could exist for recent marks.
-  const timeMax = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+  // Events end BEFORE they're marked no-show (often hours, sometimes days
+  // later). Google's events.list timeMin is exclusive on event end time, so
+  // anchoring timeMin at oldestMarked silently drops the event from the
+  // fetch and the card renders with no client name/time/email — looks empty.
+  // Subtract a 30-day buffer to cover late marks; cap at 2 years.
+  const candidateMinMs = Math.max(oldestMarkedMs - 30 * dayMs, twoYearsAgoMs);
+  // Round to UTC day boundaries so concurrent dashboard loads share one
+  // cache key — without this, ms-precision timeMin/timeMax made the 2-min
+  // Google cache useless across requests.
+  const timeMin = new Date(Math.floor(candidateMinMs / dayMs) * dayMs).toISOString();
+  const timeMax = new Date((Math.floor(now / dayMs) + 1) * dayMs).toISOString();
 
   let events: Awaited<ReturnType<typeof getCalendarEvents>> = [];
   try {
@@ -380,10 +448,20 @@ export async function enrichNoShowsFromCalendar(
       clientEmail: n.clientEmail ?? firstAttendee,
       scheduledAt: n.scheduledAt ?? evt.start,
       eventTitle: evt.title,
+      // Google descriptions are HTML; strip tags + decode core entities so
+      // the card renders readable text instead of literal markup.
+      eventDescription: evt.description ? stripHtml(evt.description) : null,
+      eventEnd: evt.end || null,
+      eventStatus: evt.status ?? null,
+      allDay: evt.allDay,
       calendarName: evt.calendarName ?? null,
       meetLink: evt.meetLink,
       eventLocation: evt.location,
-      attendeeEmails: evt.attendees.map((a) => a.email),
+      attendees: evt.attendees.map((a) => ({
+        email: a.email,
+        displayName: a.displayName,
+        responseStatus: a.responseStatus,
+      })),
     };
   });
 }

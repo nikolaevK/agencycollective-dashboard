@@ -39,7 +39,7 @@ export interface NoteLead {
   googleEventId: string | null;
   dealId: string | null;
   clientEmail: string | null;
-  kind: "appointment" | "deal" | "no_show";
+  kind: "appointment" | "deal" | "no_show" | "showed";
 }
 
 interface Selected {
@@ -58,12 +58,14 @@ const KIND_LABEL: Record<NoteLead["kind"], string> = {
   appointment: "Appointment",
   deal: "Deal",
   no_show: "No-show",
+  showed: "Showed",
 };
 
 const KIND_BADGE: Record<NoteLead["kind"], string> = {
   appointment: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
   deal: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
   no_show: "bg-red-500/15 text-red-700 dark:text-red-400",
+  showed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
 };
 
 function leadKey(lead: Pick<NoteLead, "googleEventId" | "dealId">): string {
@@ -75,15 +77,21 @@ function selectedKey(sel: Selected | null): string | null {
   return `${sel.googleEventId ?? ""}|${sel.dealId ?? ""}`;
 }
 
+type KindFilter = "all" | NoteLead["kind"];
+
+// Order chips by the natural pipeline stage: prep → close → outcome.
+const KIND_FILTER_ORDER: NoteLead["kind"][] = ["appointment", "deal", "showed", "no_show"];
+
 export function LeadPicker({ value, onChange }: Props) {
   const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [page, setPage] = useState(0);
 
-  // Reset to page 1 whenever the search input changes so the user doesn't
-  // land on an empty page after typing.
+  // Reset to first page when search or kind filter changes — otherwise the
+  // user can land on an empty page after narrowing the set.
   useEffect(() => {
     setPage(0);
-  }, [search]);
+  }, [search, kindFilter]);
 
   const { data: leads = [], isLoading } = useQuery<NoteLead[]>({
     queryKey: ["note-leads"],
@@ -96,15 +104,32 @@ export function LeadPicker({ value, onChange }: Props) {
     staleTime: 60_000,
   });
 
-  // Search first, then paginate so "Page X of Y" matches the filtered set.
+  // Per-kind counts drive both chip badges and which chips render at all
+  // (kinds with zero items stay hidden so closers don't see an "Appointments"
+  // chip they can never use).
+  const counts = useMemo<Record<KindFilter, number>>(() => {
+    const c: Record<KindFilter, number> = {
+      all: leads.length,
+      appointment: 0,
+      deal: 0,
+      no_show: 0,
+      showed: 0,
+    };
+    for (const l of leads) c[l.kind]++;
+    return c;
+  }, [leads]);
+
+  // Kind filter first, then text search, so the chip and the search field
+  // compose: "deals containing 'acme'" reads cleanly.
   const matching = useMemo(() => {
+    const byKind = kindFilter === "all" ? leads : leads.filter((l) => l.kind === kindFilter);
     const q = search.trim().toLowerCase();
-    if (!q) return leads;
-    return leads.filter((lead) => {
+    if (!q) return byKind;
+    return byKind.filter((lead) => {
       const haystack = `${lead.label} ${lead.subLabel ?? ""} ${lead.clientEmail ?? ""}`.toLowerCase();
       return haystack.includes(q);
     });
-  }, [leads, search]);
+  }, [leads, search, kindFilter]);
 
   const pageCount = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -149,16 +174,40 @@ export function LeadPicker({ value, onChange }: Props) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search prospects, deals, no-shows…"
+          placeholder="Search prospects, deals, showed, no-shows…"
+          aria-label="Search leads"
           className="w-full h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
+      </div>
+
+      <div role="tablist" aria-label="Filter by lead kind" className="flex flex-wrap items-center gap-1">
+        <FilterChip
+          active={kindFilter === "all"}
+          count={counts.all}
+          onClick={() => setKindFilter("all")}
+        >
+          All
+        </FilterChip>
+        {KIND_FILTER_ORDER.map((k) =>
+          counts[k] > 0 ? (
+            <FilterChip
+              key={k}
+              active={kindFilter === k}
+              count={counts[k]}
+              kind={k}
+              onClick={() => setKindFilter(k)}
+            >
+              {KIND_LABEL[k]}
+            </FilterChip>
+          ) : null
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
         <span>
           {matching.length === 0
-            ? search ? "No matches." : "No leads yet."
-            : `${matching.length} total${search ? " matching" : ""} · page ${safePage + 1} of ${pageCount}`}
+            ? search || kindFilter !== "all" ? "No matches." : "No leads yet."
+            : `${matching.length} ${search || kindFilter !== "all" ? "matching" : "total"} · page ${safePage + 1} of ${pageCount}`}
         </span>
         {pageCount > 1 && (
           <div className="flex items-center gap-1">
@@ -189,7 +238,9 @@ export function LeadPicker({ value, onChange }: Props) {
           <div className="p-3 text-xs text-muted-foreground">Loading leads…</div>
         ) : filtered.length === 0 ? (
           <div className="p-3 text-xs text-muted-foreground">
-            {search ? "No matches." : "No leads yet. Claim an appointment or close a deal first."}
+            {search || kindFilter !== "all"
+              ? "No matches."
+              : "No leads yet. Claim an appointment or close a deal first."}
           </div>
         ) : (
           filtered.map((lead) => {
@@ -230,5 +281,37 @@ export function LeadPicker({ value, onChange }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+interface FilterChipProps {
+  active: boolean;
+  count: number;
+  onClick: () => void;
+  /** When set, the active state borrows the kind's badge color so the chip
+   *  reads consistent with the row badge below. "All" omits this. */
+  kind?: NoteLead["kind"];
+  children: React.ReactNode;
+}
+
+function FilterChip({ active, count, onClick, kind, children }: FilterChipProps) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-medium transition-colors",
+        active
+          ? kind
+            ? KIND_BADGE[kind]
+            : "bg-foreground/10 text-foreground"
+          : "text-muted-foreground hover:bg-muted/40"
+      )}
+    >
+      <span>{children}</span>
+      <span className={cn("tabular-nums", active ? "opacity-80" : "opacity-60")}>{count}</span>
+    </button>
   );
 }

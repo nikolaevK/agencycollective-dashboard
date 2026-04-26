@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { CloserBentoGrid } from "@/components/closer/CloserBentoGrid";
 import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
-import { NoShowFollowUpList } from "@/components/closer/NoShowFollowUpList";
+import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 
 interface StatsResponse {
@@ -39,6 +39,7 @@ interface StatsResponse {
     updatedAt: string;
   }>;
   noShowFollowUps: NoShowFollowUp[];
+  showedFollowUps: NoShowFollowUp[];
 }
 
 export default function CloserDashboardPage() {
@@ -102,15 +103,23 @@ export default function CloserDashboardPage() {
         {/* Recent deals */}
         <CloserRecentDeals deals={data.recentDeals as never[]} />
 
-        {/* No-show follow-ups (scoped to this closer's own marks) */}
+        {/* No-show follow-ups (scoped to this closer's own marks).
+            Count moved into PaginatedFollowUpList so it stays consistent
+            with any active search filter. */}
         <section className="mt-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">No-show follow-ups</h2>
-            <span className="text-xs text-muted-foreground">
-              {data.noShowFollowUps.length} to re-engage
-            </span>
-          </div>
-          <NoShowFollowUpList items={data.noShowFollowUps} variant="closer" />
+          <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
+          <PaginatedFollowUpList items={data.noShowFollowUps} variant="closer" />
+        </section>
+
+        {/* Showed leads (scoped to this closer's own marks) */}
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold text-foreground mb-3">Showed leads</h2>
+          <PaginatedFollowUpList
+            items={data.showedFollowUps}
+            variant="closer"
+            tone="showed"
+            emptyText="No showed leads marked yet."
+          />
         </section>
 
         {/* Mobile FAB */}

@@ -5,7 +5,7 @@ import { getCloserSession } from "@/lib/closerSession";
 import { findCloser } from "@/lib/closers";
 import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
-import { enrichNoShowsFromCalendar, getCloserShowRate, getNoShowFollowUpsForCloser } from "@/lib/eventAttendance";
+import { enrichNoShowsFromCalendar, getAttendanceFollowUpsForCloser, getCloserShowRate } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 
@@ -20,13 +20,18 @@ export async function GET() {
     return NextResponse.json({ error: "Closer not found" }, { status: 404 });
   }
 
-  const [deals, stats, showRateStats, rawNoShows] = await Promise.all([
+  const [deals, stats, showRateStats, rawNoShows, rawShowed] = await Promise.all([
     readDealsByCloser(session.closerId),
     getCloserDealStats(session.closerId),
     getCloserShowRate(session.closerId),
-    getNoShowFollowUpsForCloser(session.closerId),
+    getAttendanceFollowUpsForCloser(session.closerId, "no_show"),
+    getAttendanceFollowUpsForCloser(session.closerId, "showed"),
   ]);
-  const noShowFollowUps = await enrichNoShowsFromCalendar(rawNoShows);
+  // One enrichment pass for both lists keeps us inside a single Google
+  // Calendar fetch / cache hit.
+  const enriched = await enrichNoShowsFromCalendar([...rawNoShows, ...rawShowed]);
+  const noShowFollowUps = enriched.slice(0, rawNoShows.length);
+  const showedFollowUps = enriched.slice(rawNoShows.length);
 
   return NextResponse.json({
     data: {
@@ -64,6 +69,7 @@ export async function GET() {
         }));
       })(),
       noShowFollowUps,
+      showedFollowUps,
     },
   });
 }

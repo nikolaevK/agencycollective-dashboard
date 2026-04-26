@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { CalendarPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SetterBentoGrid } from "@/components/closer/SetterBentoGrid";
 import { SetterFollowUpList } from "@/components/closer/SetterFollowUpList";
 import { SetterRecentDeals } from "@/components/closer/SetterRecentDeals";
-import { NoShowFollowUpList } from "@/components/closer/NoShowFollowUpList";
+import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
 import { SetterAppointmentEditor } from "@/components/closer/SetterAppointmentEditor";
 import type { CalendarEvent } from "@/components/closer/CalendarEventList";
 import type {
@@ -43,13 +43,11 @@ const WINDOW_CHOICES: { value: NoShowWindow; label: string }[] = [
   { value: 90, label: "Last 90 days" },
   { value: "all", label: "All time" },
 ];
-const NO_SHOW_PAGE_SIZE = 10;
 
 export default function SetterDashboardPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<NoShowFollowUp | null>(null);
   const [noShowWindow, setNoShowWindow] = useState<NoShowWindow>(30);
-  const [noShowPage, setNoShowPage] = useState(0);
 
   const { data, isLoading } = useQuery<StatsResponse>({
     queryKey: ["setter-stats"],
@@ -80,6 +78,8 @@ export default function SetterDashboardPage() {
 
   // Date-window filter on active no-shows. Backend already returns newest-
   // first (ORDER BY updated_at DESC), so filtering preserves that order.
+  // Search/sort/pagination over the filtered list is delegated to
+  // PaginatedFollowUpList; this hook only narrows by window.
   const filteredActiveNoShows = useMemo(() => {
     if (noShowWindow === "all") return activeNoShows;
     const cutoffMs = Date.now() - noShowWindow * 24 * 60 * 60 * 1000;
@@ -88,13 +88,6 @@ export default function SetterDashboardPage() {
       return Number.isFinite(t) && t >= cutoffMs;
     });
   }, [activeNoShows, noShowWindow]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredActiveNoShows.length / NO_SHOW_PAGE_SIZE));
-  const safePage = Math.min(noShowPage, pageCount - 1);
-  const pagedNoShows = useMemo(
-    () => filteredActiveNoShows.slice(safePage * NO_SHOW_PAGE_SIZE, (safePage + 1) * NO_SHOW_PAGE_SIZE),
-    [filteredActiveNoShows, safePage]
-  );
 
   // Build a minimal CalendarEvent + AppointmentRecord from the follow-up row
   // so we can hand them to the existing SetterAppointmentEditor. The editor
@@ -203,15 +196,11 @@ export default function SetterDashboardPage() {
           <SetterFollowUpList followUps={followUps} />
         </section>
 
-        {/* Successful recoveries */}
+        {/* Successful recoveries — count moved into PaginatedFollowUpList so
+            the displayed total tracks any active search/sort. */}
         <section className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">Successful recoveries</h2>
-            <span className="text-xs text-muted-foreground">
-              {recoveredNoShows.length} recovered
-            </span>
-          </div>
-          <NoShowFollowUpList
+          <h2 className="text-sm font-semibold text-foreground mb-3">Successful recoveries</h2>
+          <PaginatedFollowUpList
             items={recoveredNoShows}
             variant="setter"
             tone="recovered"
@@ -231,23 +220,17 @@ export default function SetterDashboardPage() {
           <SetterRecentDeals deals={recentDeals} />
         </section>
 
-        {/* Active no-show follow-ups — filtered by date + paginated */}
+        {/* Active no-show follow-ups — date-window pills above, then
+            search/sort/pagination handled by PaginatedFollowUpList. The
+            wrapper's safePage clamp handles window-narrowing without an
+            explicit page reset (preserves any active search/sort). */}
         <section>
-          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-foreground">No-show follow-ups</h2>
-            <span className="text-xs text-muted-foreground">
-              {filteredActiveNoShows.length} of {activeNoShows.length} in window
-            </span>
-          </div>
-          {/* Window pills */}
+          <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
           <div className="flex items-center gap-2 flex-wrap mb-4">
             {WINDOW_CHOICES.map((c) => (
               <button
                 key={String(c.value)}
-                onClick={() => {
-                  setNoShowWindow(c.value);
-                  setNoShowPage(0);
-                }}
+                onClick={() => setNoShowWindow(c.value)}
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
                   noShowWindow === c.value
@@ -260,8 +243,8 @@ export default function SetterDashboardPage() {
             ))}
           </div>
 
-          <NoShowFollowUpList
-            items={pagedNoShows}
+          <PaginatedFollowUpList
+            items={filteredActiveNoShows}
             variant="setter"
             tone="active"
             onEdit={(item) => setEditing(item)}
@@ -271,31 +254,6 @@ export default function SetterDashboardPage() {
                 : "No no-shows in this window. Try a wider range."
             }
           />
-
-          {/* Paginator — hidden when a single page covers the list */}
-          {pageCount > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <button
-                onClick={() => setNoShowPage((p) => Math.max(0, p - 1))}
-                disabled={safePage === 0}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Prev
-              </button>
-              <p className="text-xs text-muted-foreground">
-                Page {safePage + 1} of {pageCount}
-              </p>
-              <button
-                onClick={() => setNoShowPage((p) => Math.min(pageCount - 1, p + 1))}
-                disabled={safePage >= pageCount - 1}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          )}
         </section>
 
         {/* Mobile FAB */}

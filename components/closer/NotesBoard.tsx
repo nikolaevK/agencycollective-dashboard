@@ -25,7 +25,7 @@ interface LeadRef {
   googleEventId: string | null;
   dealId: string | null;
   label: string;
-  kind: "appointment" | "deal" | "no_show";
+  kind: "appointment" | "deal" | "no_show" | "showed";
 }
 
 /**

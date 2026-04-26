@@ -16,7 +16,7 @@ interface NoteWithShares extends NoteRecord {
 interface Props {
   note?: NoteWithShares | null;
   initialLeadLabel?: string | null;
-  initialLeadKind?: "appointment" | "deal" | "no_show" | null;
+  initialLeadKind?: "appointment" | "deal" | "no_show" | "showed" | null;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -28,7 +28,7 @@ type LinkedLead = {
   googleEventId: string | null;
   dealId: string | null;
   label: string;
-  kind: "appointment" | "deal" | "no_show";
+  kind: "appointment" | "deal" | "no_show" | "showed";
 } | null;
 
 const PRIORITY_OPTIONS: { value: NotePriority; label: string }[] = [
@@ -44,7 +44,7 @@ export function NoteEditor({ note, initialLeadLabel, initialLeadKind, onClose, o
   // note only has a dealId (no google_event_id), it's a deal; otherwise an
   // appointment. Prevents the chip from always showing "Appointment" for
   // stored deal/no-show references.
-  function inferredKind(): "appointment" | "deal" | "no_show" {
+  function inferredKind(): NonNullable<LinkedLead>["kind"] {
     if (initialLeadKind) return initialLeadKind;
     if (note?.linkedDealId && !note?.linkedGoogleEventId) return "deal";
     return "appointment";

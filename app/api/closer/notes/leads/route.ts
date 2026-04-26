@@ -12,7 +12,7 @@ export interface NoteLead {
   googleEventId: string | null;
   dealId: string | null;
   clientEmail: string | null;
-  kind: "appointment" | "deal" | "no_show";
+  kind: "appointment" | "deal" | "no_show" | "showed";
 }
 
 /**
@@ -109,9 +109,14 @@ export async function GET() {
     });
   }
 
-  // 3. No-shows the user needs to follow up on. Setters see team-wide;
-  //    closers see just the events they marked.
-  const noShowSql = isSetter
+  // 3+4. Attendance-marked events. Setters see team-wide; closers see only
+  // the events they marked. Same SQL shape for both statuses; only the
+  // WHERE clause and the placeholder/kind change. Pushed in order
+  // showed → no_show so a setter following up sees the no-show context
+  // last (most actionable) but neither hides the other from the picker.
+  // Status is parameterized (not interpolated) per CLAUDE.md's no-string-
+  // concatenation rule, even though TS narrows it to two literals.
+  const attendanceSql = isSetter
     ? `SELECT DISTINCT ea.google_event_id,
               COALESCE(a.client_name, d.client_name) AS client_name,
               COALESCE(a.client_email, d.client_email) AS client_email,
@@ -120,7 +125,7 @@ export async function GET() {
          FROM event_attendance ea
          LEFT JOIN appointments a ON a.google_event_id = ea.google_event_id
          LEFT JOIN deals d ON d.google_event_id = ea.google_event_id
-         WHERE ea.show_status = 'no_show'
+         WHERE ea.show_status = ?
          ORDER BY ea.updated_at DESC
          LIMIT 500`
     : `SELECT DISTINCT ea.google_event_id,
@@ -131,22 +136,26 @@ export async function GET() {
          FROM event_attendance ea
          LEFT JOIN appointments a ON a.google_event_id = ea.google_event_id
          LEFT JOIN deals d ON d.google_event_id = ea.google_event_id
-         WHERE ea.show_status = 'no_show' AND ea.closer_id = ?
+         WHERE ea.show_status = ? AND ea.closer_id = ?
          ORDER BY ea.updated_at DESC
          LIMIT 500`;
-  const noShowArgs = isSetter ? [] : [session.closerId];
-  const noShowRes = await db.execute({ sql: noShowSql, args: noShowArgs });
-  for (const row of noShowRes.rows) {
-    pushLead({
-      // Placeholder when we don't have appointment/deal client info yet.
-      // Enriched below from Google Calendar before we respond.
-      label: row.client_name != null ? String(row.client_name) : "No-show",
-      subLabel: row.scheduled_at != null ? String(row.scheduled_at) : null,
-      googleEventId: String(row.google_event_id),
-      dealId: null,
-      clientEmail: row.client_email != null ? String(row.client_email) : null,
-      kind: "no_show",
-    });
+
+  for (const status of ["showed", "no_show"] as const) {
+    const args = isSetter ? [status] : [status, session.closerId];
+    const res = await db.execute({ sql: attendanceSql, args });
+    const placeholder = status === "showed" ? "Showed" : "No-show";
+    for (const row of res.rows) {
+      pushLead({
+        // Placeholder when we don't have appointment/deal client info yet.
+        // Enriched below from Google Calendar before we respond.
+        label: row.client_name != null ? String(row.client_name) : placeholder,
+        subLabel: row.scheduled_at != null ? String(row.scheduled_at) : null,
+        googleEventId: String(row.google_event_id),
+        dealId: null,
+        clientEmail: row.client_email != null ? String(row.client_email) : null,
+        kind: status,
+      });
+    }
   }
 
   // Raised from 300 → 1500 so a setter with deep history can still find old
@@ -160,7 +169,13 @@ export async function GET() {
   // setter has no way to know whom to call. Same pattern used by the
   // no-show follow-up list (enrichNoShowsFromCalendar).
   const needsEnrichment = bounded.filter(
-    (l) => l.googleEventId && (l.label === "No-show" || l.label === "Appointment" || l.label === "Deal" || !l.clientEmail)
+    (l) =>
+      l.googleEventId &&
+      (l.label === "No-show" ||
+        l.label === "Showed" ||
+        l.label === "Appointment" ||
+        l.label === "Deal" ||
+        !l.clientEmail)
   );
   if (needsEnrichment.length > 0) {
     try {
@@ -175,7 +190,12 @@ export async function GET() {
         if (!lead.googleEventId) continue;
         const evt = byId.get(lead.googleEventId);
         if (!evt) continue;
-        if (lead.label === "No-show" || lead.label === "Appointment" || lead.label === "Deal") {
+        if (
+          lead.label === "No-show" ||
+          lead.label === "Showed" ||
+          lead.label === "Appointment" ||
+          lead.label === "Deal"
+        ) {
           lead.label = evt.title;
         }
         if (!lead.clientEmail) {
