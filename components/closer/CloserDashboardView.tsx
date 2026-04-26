@@ -1,0 +1,115 @@
+"use client";
+
+import Link from "next/link";
+import { Plus } from "lucide-react";
+import { CloserBentoGrid } from "@/components/closer/CloserBentoGrid";
+import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
+import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
+import type { NoShowFollowUp } from "@/lib/eventAttendance";
+
+export interface CloserDashboardData {
+  closer: {
+    id: string;
+    displayName: string;
+    role: string;
+    quota: number;
+    commissionRate: number;
+  };
+  stats: {
+    totalRevenue: number;
+    dealCount: number;
+    closedCount: number;
+    avgDealValue: number;
+    showRate: number;
+    showCount: number;
+    noShowCount: number;
+  };
+  recentDeals: Array<{
+    id: string;
+    closerId: string;
+    clientName: string;
+    clientUserId: string | null;
+    dealValue: number;
+    serviceCategory: string | null;
+    closingDate: string | null;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  noShowFollowUps: NoShowFollowUp[];
+  showedFollowUps: NoShowFollowUp[];
+}
+
+interface Props {
+  data: CloserDashboardData;
+  /** When true, hide mutation-only UI (mobile new-deal FAB). Used by the
+   *  admin "view as" surface where mutations would 401 anyway. */
+  readOnly?: boolean;
+}
+
+/** Pure presentational dashboard. Caller owns the fetch + loading/error
+ *  states so the same component renders for the closer's own session and
+ *  for an admin viewing them, without a self-fetch race or eternal-skeleton
+ *  failure mode. */
+export function CloserDashboardView({ data, readOnly }: Props) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground">
+          Welcome back, {data.closer.displayName.split(" ")[0]}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Here&apos;s your sales performance overview
+        </p>
+      </div>
+
+      {/* Metrics */}
+      <CloserBentoGrid
+        totalRevenue={data.stats.totalRevenue}
+        dealCount={data.stats.dealCount}
+        closedCount={data.stats.closedCount}
+        avgDealValue={data.stats.avgDealValue}
+        showRate={data.stats.showRate}
+        showCount={data.stats.showCount}
+        noShowCount={data.stats.noShowCount}
+        quota={data.closer.quota}
+      />
+
+      {/* Recent deals */}
+      <CloserRecentDeals deals={data.recentDeals as never[]} />
+
+      {/* No-show follow-ups (scoped to this closer's own marks).
+          Count moved into PaginatedFollowUpList so it stays consistent
+          with any active search filter. */}
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
+        <PaginatedFollowUpList items={data.noShowFollowUps} variant="closer" />
+      </section>
+
+      {/* Showed leads (scoped to this closer's own marks) */}
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-foreground mb-3">Showed leads</h2>
+        <PaginatedFollowUpList
+          items={data.showedFollowUps}
+          variant="closer"
+          tone="showed"
+          emptyText="No showed leads marked yet."
+        />
+      </section>
+
+      {/* Mobile FAB — hidden in read-only admin view since /closer/new-deal
+          requires a c_sess cookie the admin doesn't have. */}
+      {!readOnly && (
+        <Link
+          href="/closer/new-deal"
+          className="md:hidden fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg shadow-primary/25 active:scale-95 transition-transform"
+          aria-label="New deal"
+        >
+          <Plus className="h-6 w-6" />
+        </Link>
+      )}
+    </div>
+  );
+}

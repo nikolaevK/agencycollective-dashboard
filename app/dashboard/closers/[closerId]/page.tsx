@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserDetailMetrics } from "@/components/closers/CloserDetailMetrics";
 import { CloserPerformanceChart } from "@/components/closers/CloserPerformanceChart";
@@ -70,7 +70,7 @@ export default function CloserDetailPage() {
                   </span>
                 )}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3 flex-wrap">
                   <h2 className="text-2xl lg:text-3xl font-black text-foreground">
                     {data.closer.displayName}
@@ -82,6 +82,16 @@ export default function CloserDetailPage() {
                   {data.closer.email}
                 </p>
               </div>
+              <Link
+                href={`/dashboard/closers/${data.closer.id}/dashboard`}
+                aria-label={`View ${data.closer.displayName}'s dashboard`}
+                className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-primary/30 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+              >
+                <Eye className="h-4 w-4" />
+                {/* Full label on tablet+, short on phones. */}
+                <span className="hidden sm:inline">View their dashboard</span>
+                <span className="sm:hidden">View</span>
+              </Link>
             </div>
           ) : null}
         </div>
