@@ -29,6 +29,31 @@ export interface CalendarEvent {
   calendarName: string;
 }
 
+/**
+ * Google Calendar descriptions arrive as HTML (paragraph tags, line-break
+ * tags, entities, sometimes inline styles) — most loudly from iClosed-style
+ * integrations that paste a full email body. Consumers render the field as
+ * plain text, so collapse markup to readable text at the source rather than
+ * making every surface re-strip.
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    // &amp; decoded last so a literal `&amp;lt;` stays as `&lt;` instead of
+    // collapsing to `<`. Other entities are decoded first while the `&` is
+    // still in escaped form.
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeEvent(event: any, calendarName: string): CalendarEvent {
   const rawAttendees: Array<{
@@ -40,7 +65,7 @@ function normalizeEvent(event: any, calendarName: string): CalendarEvent {
   return {
     id: event.id ?? "",
     title: event.summary ?? "(No title)",
-    description: event.description ?? null,
+    description: event.description ? stripHtml(String(event.description)) : null,
     location: event.location ?? null,
     start: event.start?.dateTime ?? event.start?.date ?? "",
     end: event.end?.dateTime ?? event.end?.date ?? "",

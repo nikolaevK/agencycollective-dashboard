@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { format, isSameDay, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   AlignLeft,
   CheckCircle2,
@@ -31,6 +31,7 @@ import {
   POST_CALL_LABELS,
   POST_CALL_STATUSES,
 } from "@/lib/appointments";
+import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
 
 interface Props {
   events: CalendarEvent[];
@@ -70,19 +71,6 @@ function formatTime(dateStr: string, allDay: boolean): string {
   }
 }
 
-function formatDayHeader(dateStr: string): string {
-  try {
-    const date = parseISO(dateStr);
-    if (isSameDay(date, new Date())) return "Today";
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (isSameDay(date, tomorrow)) return "Tomorrow";
-    return format(date, "EEEE, MMMM d");
-  } catch {
-    return dateStr;
-  }
-}
-
 const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
   accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
   declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
@@ -103,9 +91,12 @@ export function SetterCalendarEventList({
   onUnclaim,
   onEdit,
 }: Props) {
-  const todayRef = useRef<HTMLDivElement>(null);
+  const todayRef = useRef<HTMLElement>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Re-render at midnight so the "Today" badge tracks the calendar day,
+  // not just the data refetch cadence.
+  useMidnightTick();
 
   useEffect(() => {
     if (todayRef.current) {
@@ -131,6 +122,7 @@ export function SetterCalendarEventList({
   }
 
   const grouped = groupByDay(events);
+  const calendarRefs = makeCalendarRefs();
 
   async function handleClaim(event: CalendarEvent) {
     setPending(event.id);
@@ -151,15 +143,17 @@ export function SetterCalendarEventList({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => {
-        let isToday = false;
-        try { isToday = isSameDay(parseISO(dayKey), new Date()); } catch {}
+        const info = dayHeaderInfo(dayKey, calendarRefs);
         return (
-          <div key={dayKey} ref={isToday ? todayRef : undefined}>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              {formatDayHeader(dayKey)}
-            </h3>
+          <section
+            key={dayKey}
+            ref={info.isToday ? todayRef : undefined}
+            aria-label={info.longLabel || undefined}
+            className={info.isToday ? "scroll-mt-28" : undefined}
+          >
+            <DayHeader info={info} eventCount={dayEvents.length} />
             <div className="space-y-2">
               {dayEvents.map((event) => {
                 const appt = appointmentsByEvent[event.id];
@@ -357,7 +351,7 @@ export function SetterCalendarEventList({
                 );
               })}
             </div>
-          </div>
+          </section>
         );
       })}
     </div>

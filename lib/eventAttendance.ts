@@ -2,26 +2,6 @@ import { getDb, ensureMigrated } from "./db";
 
 export type AttendanceStatus = "showed" | "no_show";
 
-/**
- * Google Calendar descriptions arrive as HTML (links, line-break tags,
- * entities). The card renders plain text, so collapse the markup to
- * newlines and decode the handful of entities Google actually emits.
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 export interface EventAttendance {
   googleEventId: string;
   closerId: string;
@@ -448,9 +428,8 @@ export async function enrichNoShowsFromCalendar(
       clientEmail: n.clientEmail ?? firstAttendee,
       scheduledAt: n.scheduledAt ?? evt.start,
       eventTitle: evt.title,
-      // Google descriptions are HTML; strip tags + decode core entities so
-      // the card renders readable text instead of literal markup.
-      eventDescription: evt.description ? stripHtml(evt.description) : null,
+      // getCalendarEvents already strips description HTML at the source.
+      eventDescription: evt.description,
       eventEnd: evt.end || null,
       eventStatus: evt.status ?? null,
       allDay: evt.allDay,

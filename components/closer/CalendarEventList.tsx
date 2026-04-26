@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { format, parseISO, isSameDay } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +11,7 @@ import {
   POST_CALL_LABELS,
   type AppointmentIndexEntry,
 } from "@/lib/appointments";
+import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
 
 export type AttendeeResponseStatus =
   | "needsAction"
@@ -106,18 +107,6 @@ function formatTime(dateStr: string, allDay: boolean): string {
   }
 }
 
-function formatDayHeader(dateStr: string): string {
-  try {
-    const date = parseISO(dateStr);
-    if (isSameDay(date, new Date())) return "Today";
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (isSameDay(date, tomorrow)) return "Tomorrow";
-    return format(date, "EEEE, MMMM d");
-  } catch {
-    return dateStr;
-  }
-}
 
 export function CalendarEventList({
   events,
@@ -130,8 +119,11 @@ export function CalendarEventList({
   onEditDeal,
   isAdmin,
 }: Props) {
-  const todayRef = useRef<HTMLDivElement>(null);
+  const todayRef = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Re-render at midnight so the "Today" badge tracks the calendar day,
+  // not just the data refetch cadence.
+  useMidnightTick();
 
   useEffect(() => {
     if (todayRef.current) {
@@ -157,17 +149,23 @@ export function CalendarEventList({
   }
 
   const grouped = groupByDay(events);
+  const calendarRefs = makeCalendarRefs();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => {
-        let isToday = false;
-        try { isToday = isSameDay(parseISO(dayKey), new Date()); } catch {}
+        const info = dayHeaderInfo(dayKey, calendarRefs);
         return (
-        <div key={dayKey} ref={isToday ? todayRef : undefined}>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            {formatDayHeader(dayKey)}
-          </h3>
+        <section
+          key={dayKey}
+          ref={info.isToday ? todayRef : undefined}
+          aria-label={info.longLabel || undefined}
+          // scroll-mt offsets scrollIntoView so the sticky week nav above
+          // doesn't cover today's header on initial load. ~112px covers the
+          // nav plus the (optional) calendar-owner filter row.
+          className={info.isToday ? "scroll-mt-28" : undefined}
+        >
+          <DayHeader info={info} eventCount={dayEvents.length} />
           <div className="space-y-2">
             {dayEvents.map((event) => {
               const isLinked = linkedEventIds?.has(event.id);
@@ -421,7 +419,7 @@ export function CalendarEventList({
               );
             })}
           </div>
-        </div>
+        </section>
         );
       })}
     </div>

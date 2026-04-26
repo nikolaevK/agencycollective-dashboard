@@ -140,67 +140,74 @@ export default function SetterAppointmentsPage() {
 
         {connected && (
           <>
-            <div className="flex items-center justify-between mb-6">
-              <button
-                onClick={() => setWeekOffset((w) => w - 1)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div className="text-center">
-                <p className="text-sm font-semibold text-foreground">
-                  {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
-                </p>
-                {weekOffset !== 0 && (
-                  <button
-                    onClick={() => setWeekOffset(0)}
-                    className="text-xs text-primary hover:underline mt-0.5"
-                  >
-                    Back to this week
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={() => setWeekOffset((w) => w + 1)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-
-            {calendarOwners.length > 1 && (
-              <div className="flex items-center gap-2 flex-wrap mb-6">
+            {/* Sticky week navigator + filter — same pattern as the closer
+                and admin calendar pages so prev/next stays reachable from
+                any scroll position. */}
+            <div className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40">
+              <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setCalendarFilter("all")}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    activeFilter === "all"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                  )}
+                  onClick={() => setWeekOffset((w) => w - 1)}
+                  aria-label="Previous week"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  All ({events.length})
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
-                {calendarOwners.map((owner) => {
-                  const count = events.filter((e) => e.calendarName === owner).length;
-                  return (
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">
+                    {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
+                  </p>
+                  {weekOffset !== 0 && (
                     <button
-                      key={owner}
-                      onClick={() => setCalendarFilter(owner)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                        activeFilter === owner
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                      )}
+                      onClick={() => setWeekOffset(0)}
+                      className="text-xs text-primary hover:underline mt-0.5"
                     >
-                      <UserRound className="h-3 w-3" />
-                      {owner} ({count})
+                      Back to this week
                     </button>
-                  );
-                })}
+                  )}
+                </div>
+                <button
+                  onClick={() => setWeekOffset((w) => w + 1)}
+                  aria-label="Next week"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            )}
+
+              {calendarOwners.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap mt-3">
+                  <button
+                    onClick={() => setCalendarFilter("all")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                      activeFilter === "all"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    All ({events.length})
+                  </button>
+                  {calendarOwners.map((owner) => {
+                    const count = events.filter((e) => e.calendarName === owner).length;
+                    return (
+                      <button
+                        key={owner}
+                        onClick={() => setCalendarFilter(owner)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                          activeFilter === owner
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <UserRound className="h-3 w-3" />
+                        {owner} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {eventsLoading ? (
               <div className="space-y-3">
