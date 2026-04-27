@@ -36,7 +36,7 @@ function unauthorized() {
  * (including the same Google Calendar enrichment cache hit).
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { closerId: string } }
 ) {
   const session = getAdminSession();
@@ -49,9 +49,20 @@ export async function GET(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  // Time-frame passthrough — admin's selected window flows into the same
+  // lib helpers the user-facing endpoints call, so the data matches the
+  // user's portal byte-for-byte.
+  const { searchParams } = new URL(request.url);
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  const sinceRaw = searchParams.get("since");
+  const untilRaw = searchParams.get("until");
+  const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
+  const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
+  const timeFrame = { since: since ?? null, until: until ?? null };
+
   if (target.role === "setter") {
     const [stats, recentDeals, followUps, rawNoShows] = await Promise.all([
-      getSetterStats(target.id, target.commissionRate),
+      getSetterStats(target.id, target.commissionRate, { since, until }),
       getSetterRecentDeals(target.id),
       getSetterFollowUps(target.id),
       getNoShowFollowUpsTeamWide(),
@@ -68,6 +79,7 @@ export async function GET(
             commissionRate: target.commissionRate,
           },
           stats,
+          timeFrame,
           recentDeals,
           followUps,
           noShowFollowUps,
@@ -77,13 +89,24 @@ export async function GET(
   }
 
   // Closer (default for any non-setter role).
-  const [deals, stats, showRateStats, rawNoShows, rawShowed] = await Promise.all([
+  const [deals, stats, lifetimeShow, windowResult, rawNoShows, rawShowed] = await Promise.all([
     readDealsByCloser(target.id),
-    getCloserDealStats(target.id),
+    getCloserDealStats(target.id, { since, until }),
     getCloserShowRate(target.id),
+    since && until ? getCloserShowRate(target.id, { since, until }) : null,
     getAttendanceFollowUpsForCloser(target.id, "no_show"),
     getAttendanceFollowUpsForCloser(target.id, "showed"),
   ]);
+  const windowShow = windowResult ?? lifetimeShow;
+  // Splice in attendance-sourced show metrics so the admin sees the same
+  // numbers the closer sees in their own dashboard.
+  stats.lifetime.showCount = lifetimeShow.showCount;
+  stats.lifetime.noShowCount = lifetimeShow.noShowCount;
+  stats.lifetime.showRate = lifetimeShow.showRate;
+  stats.window.showCount = windowShow.showCount;
+  stats.window.noShowCount = windowShow.noShowCount;
+  stats.window.showRate = windowShow.showRate;
+
   const enriched = await enrichNoShowsFromCalendar([...rawNoShows, ...rawShowed]);
   const noShowFollowUps = enriched.slice(0, rawNoShows.length);
   const showedFollowUps = enriched.slice(rawNoShows.length);
@@ -107,15 +130,8 @@ export async function GET(
           quota: target.quota,
           commissionRate: target.commissionRate,
         },
-        stats: {
-          totalRevenue: stats.totalRevenue,
-          dealCount: stats.dealCount,
-          closedCount: stats.closedCount,
-          avgDealValue: stats.avgDealValue,
-          showRate: showRateStats.showRate,
-          showCount: showRateStats.showCount,
-          noShowCount: showRateStats.noShowCount,
-        },
+        stats,
+        timeFrame,
         recentDeals: deals.map((d) => ({
           ...d,
           invoiceStatus: invoiceStatuses[d.id]?.status ?? null,

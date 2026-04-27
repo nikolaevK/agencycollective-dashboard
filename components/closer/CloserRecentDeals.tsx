@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Link2, Pencil, StickyNote, Briefcase, Search } from "lucide-react";
+import { Link2, Pencil, StickyNote, Briefcase, Search, Trash2 } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
+import type { DealStatus } from "@/lib/deals";
 import { useQueryClient } from "@tanstack/react-query";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
@@ -75,11 +76,23 @@ interface Props {
   deals: DealWithInvoice[];
 }
 
+// Closers can delete in-flight deals; closed and pending_signature deals
+// belong to the admin queue (server enforces the same rule). Typed against
+// DealStatus so a future status addition gets a TS nudge here too.
+const DELETABLE_STATUSES: ReadonlySet<DealStatus> = new Set([
+  "rescheduled",
+  "follow_up",
+  "not_closed",
+]);
+
 export function CloserRecentDeals({ deals }: Props) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
   const [range, setRange] = useState<RangeFilter>("all");
   const [search, setSearch] = useState("");
+  // Set instead of single string so two concurrent deletes don't visually
+  // re-enable each other's buttons mid-flight.
+  const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(new Set());
   const queryClient = useQueryClient();
 
   const filtered = useMemo(() => {
@@ -110,6 +123,34 @@ export function CloserRecentDeals({ deals }: Props) {
     setEditDeal(null);
     queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
     queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+  }
+
+  async function handleDelete(deal: DealPublic) {
+    if (!DELETABLE_STATUSES.has(deal.status)) return;
+    if (!window.confirm(`Delete the deal for ${deal.clientName}? This cannot be undone.`)) return;
+    setDeletingIds((prev) => new Set(prev).add(deal.id));
+    try {
+      const res = await fetch(`/api/closer/deals?id=${encodeURIComponent(deal.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        window.alert(json.error ?? "Failed to delete deal.");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+    } catch {
+      // Network failure / abort. Without this catch the rejection escapes,
+      // the button quietly re-enables, and the user sees no feedback at all.
+      window.alert("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deal.id);
+        return next;
+      });
+    }
   }
 
   return (
@@ -234,13 +275,26 @@ export function CloserRecentDeals({ deals }: Props) {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => setEditDeal(deal)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          onClick={() => setEditDeal(deal)}
+                          aria-label="Edit deal"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        {DELETABLE_STATUSES.has(deal.status) && (
+                          <button
+                            onClick={() => handleDelete(deal)}
+                            disabled={deletingIds.has(deal.id)}
+                            aria-label="Delete deal"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -306,10 +360,21 @@ export function CloserRecentDeals({ deals }: Props) {
                   </span>
                   <button
                     onClick={() => setEditDeal(deal)}
+                    aria-label="Edit deal"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
+                  {DELETABLE_STATUSES.has(deal.status) && (
+                    <button
+                      onClick={() => handleDelete(deal)}
+                      disabled={deletingIds.has(deal.id)}
+                      aria-label="Delete deal"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

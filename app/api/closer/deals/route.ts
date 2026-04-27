@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";
-import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails } from "@/lib/deals";
+import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
@@ -128,6 +128,24 @@ export async function DELETE(request: Request) {
   const deal = await findDeal(id);
   if (!deal || deal.closerId !== session.closerId) {
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
+
+  // Closers can only delete their in-flight deals. Once a deal is closed
+  // (with its generated invoice) or sitting at pending_signature awaiting
+  // DocuSeal, it's the admin's queue — closer must escalate to delete.
+  // Mirrors the visibility split on the admin side.
+  const PROTECTED_STATUSES: ReadonlySet<DealStatus> = new Set([
+    "closed",
+    "pending_signature",
+  ]);
+  if (PROTECTED_STATUSES.has(deal.status)) {
+    return NextResponse.json(
+      {
+        error:
+          "Closed and pending-signature deals can only be removed by an admin.",
+      },
+      { status: 403 }
+    );
   }
 
   const deleted = await deleteDeal(id);

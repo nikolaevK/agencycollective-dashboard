@@ -17,6 +17,8 @@ import type {
 } from "@/lib/appointments";
 import type { SetterFollowUp, SetterRecentDeal, SetterStats } from "@/lib/setterStats";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
+import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
+import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
 
 // Post-call states that count as a successful re-engagement. Anything else
 // (needs_followup, not_called, no_answer, disqualified) stays in the active
@@ -30,6 +32,7 @@ export interface SetterDashboardData {
     commissionRate: number;
   };
   stats: SetterStats;
+  timeFrame: { since: string | null; until: string | null };
   recentDeals: SetterRecentDeal[];
   followUps: SetterFollowUp[];
   noShowFollowUps: NoShowFollowUp[];
@@ -45,6 +48,9 @@ const WINDOW_CHOICES: { value: NoShowWindow; label: string }[] = [
 
 interface Props {
   data: SetterDashboardData;
+  /** Selected time frame, owned by the page so it survives polling. */
+  timeFrame: TimeFrame;
+  onTimeFrameChange: (next: TimeFrame) => void;
   /** When true, hide the appointment editor entry points and the FAB / nav
    *  link to /closer/setter/appointments — those need a c_sess and would
    *  401 for an admin viewer anyway. */
@@ -54,10 +60,15 @@ interface Props {
   onMutated?: () => void;
 }
 
+function windowLabel(tf: TimeFrame): string {
+  if (tf.key === "custom" && tf.since && tf.until) return `${tf.since} → ${tf.until}`;
+  return TIME_FRAME_LABELS[tf.key as TimeFrameKey] ?? "Selected window";
+}
+
 /** Pure presentational dashboard. Caller owns the fetch + loading/error
  *  states so the same component renders for the setter's own session and
  *  for an admin viewing them. */
-export function SetterDashboardView({ data, readOnly, onMutated }: Props) {
+export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOnly, onMutated }: Props) {
   const [editing, setEditing] = useState<NoShowFollowUp | null>(null);
   const [noShowWindow, setNoShowWindow] = useState<NoShowWindow>(30);
 
@@ -150,17 +161,17 @@ export function SetterDashboardView({ data, readOnly, onMutated }: Props) {
         )}
       </div>
 
-      {/* Metrics */}
+      {/* Time-frame selector */}
+      <div className="mb-6">
+        <TimeFrameSelector value={timeFrame} onChange={onTimeFrameChange} />
+      </div>
+
+      {/* Metrics — lifetime + selected window */}
       <SetterBentoGrid
-        appointmentsSet={stats.appointmentsSet}
-        showRate={stats.showRate}
-        showCount={stats.showCount}
-        noShowCount={stats.noShowCount}
-        dealsLinked={stats.dealsLinked}
-        dealsClosed={stats.dealsClosed}
-        revenueAttributed={stats.revenueAttributed}
-        commissionEarned={stats.commissionEarned}
-        pendingDeals={stats.pendingDeals}
+        lifetime={stats.lifetime}
+        window={stats.window}
+        windowLabel={windowLabel(timeFrame)}
+        isLifetimeWindow={timeFrame.key === "all"}
         followUpCount={stats.followUpCount}
       />
 
@@ -195,7 +206,7 @@ export function SetterDashboardView({ data, readOnly, onMutated }: Props) {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-foreground">Deals credited to you</h2>
           <span className="text-xs text-muted-foreground">
-            {stats.dealsLinked} total
+            {stats.lifetime.dealsLinked} total
           </span>
         </div>
         <SetterRecentDeals deals={recentDeals} />

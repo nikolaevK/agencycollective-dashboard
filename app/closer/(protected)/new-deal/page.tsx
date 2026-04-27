@@ -3,6 +3,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DealEntryForm } from "@/components/closer/DealEntryForm";
 import { DealSidebar } from "@/components/closer/DealSidebar";
+import type { CloserDealStats } from "@/lib/deals";
+import { appendTimeFrameParams, buildTimeFrame } from "@/lib/timeFrame";
 
 interface StatsResponse {
   closer: {
@@ -12,12 +14,7 @@ interface StatsResponse {
     quota: number;
     commissionRate: number;
   };
-  stats: {
-    totalRevenue: number;
-    dealCount: number;
-    closedCount: number;
-    avgDealValue: number;
-  };
+  stats: CloserDealStats;
   recentDeals: Array<{
     id: string;
     closerId: string;
@@ -33,12 +30,19 @@ interface StatsResponse {
   }>;
 }
 
+// Quota is a monthly target, so progress should be measured against
+// THIS-MONTH closed revenue, not lifetime. This page hardcodes the window
+// rather than exposing a selector — there's nowhere on the form to pivot.
+const MONTH_FRAME = buildTimeFrame("month");
+
 export default function NewDealPage() {
   const queryClient = useQueryClient();
   const { data } = useQuery<StatsResponse>({
-    queryKey: ["closer-stats"],
+    queryKey: ["closer-stats", "month-progress", MONTH_FRAME.since, MONTH_FRAME.until],
     queryFn: async () => {
-      const res = await fetch("/api/closer/stats");
+      const url = appendTimeFrameParams("/api/closer/stats", MONTH_FRAME);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to load stats: ${res.status}`);
       const json = await res.json();
       return json.data;
     },
@@ -48,6 +52,9 @@ export default function NewDealPage() {
   function handleSuccess() {
     queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
   }
+
+  // closedRevenue THIS MONTH — what counts toward the monthly quota.
+  const monthRevenue = data?.stats.window.closedRevenue ?? 0;
 
   return (
     <main className="flex-1 overflow-y-auto">
@@ -72,7 +79,7 @@ export default function NewDealPage() {
           <div className="hidden lg:block lg:col-span-4">
             <DealSidebar
               quota={data?.closer.quota ?? 0}
-              totalRevenue={data?.stats.totalRevenue ?? 0}
+              totalRevenue={monthRevenue}
               recentDeals={
                 (data?.recentDeals ?? [])
                   .filter((d) => d.status === "closed")
@@ -97,7 +104,7 @@ export default function NewDealPage() {
                 <span className="text-sm font-semibold text-foreground">Monthly Target</span>
                 <span className="text-xs text-muted-foreground">
                   {data.closer.quota > 0
-                    ? `${Math.min(Math.round((data.stats.totalRevenue / data.closer.quota) * 100), 100)}%`
+                    ? `${Math.min(Math.round((monthRevenue / data.closer.quota) * 100), 100)}%`
                     : "—"}
                 </span>
               </div>
@@ -105,7 +112,7 @@ export default function NewDealPage() {
                 <div
                   className="h-full rounded-full ac-gradient transition-all duration-500"
                   style={{
-                    width: `${data.closer.quota > 0 ? Math.min((data.stats.totalRevenue / data.closer.quota) * 100, 100) : 0}%`,
+                    width: `${data.closer.quota > 0 ? Math.min((monthRevenue / data.closer.quota) * 100, 100) : 0}%`,
                   }}
                 />
               </div>

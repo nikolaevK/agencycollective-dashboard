@@ -2,16 +2,27 @@ import { getDb, ensureMigrated } from "./db";
 import { getDealInvoiceStatuses } from "./dealInvoices";
 import { getDealContractStatuses } from "./dealContracts";
 
-export interface SetterStats {
+export interface SetterMetricBucket {
   appointmentsSet: number;
   showCount: number;
   noShowCount: number;
   showRate: number;
   dealsLinked: number;
   dealsClosed: number;
-  revenueAttributed: number; // cents
+  revenueAttributed: number; // cents — closed deal value attributed to setter
+  paidRevenueAttributed: number; // cents — closed AND paid
+  outstandingRevenueAttributed: number; // cents — closed AND unpaid
   commissionEarned: number; // cents; paid deals only
+  commissionPending: number; // cents; closed-unpaid deals
   pendingDeals: number;
+}
+
+export interface SetterStats {
+  /** Lifetime totals across the setter's whole tenure. */
+  lifetime: SetterMetricBucket;
+  /** Time-frame-scoped bucket. Equals lifetime when no since/until passed. */
+  window: SetterMetricBucket;
+  /** Always lifetime — needs_followup queue length doesn't bucket by date. */
   followUpCount: number;
 }
 
@@ -53,21 +64,58 @@ export interface SetterFollowUp {
  */
 export async function getSetterStats(
   setterId: string,
-  commissionRateBasisPoints: number
+  commissionRateBasisPoints: number,
+  opts: { since?: string; until?: string } = {}
 ): Promise<SetterStats> {
   await ensureMigrated();
   const db = getDb();
 
-  const apptCount = await db.execute({
-    sql: "SELECT COUNT(*) AS c FROM appointments WHERE setter_id = ?",
+  const lifetime = await aggregateSetterBucket(db, setterId, commissionRateBasisPoints, {});
+  const window =
+    opts.since && opts.until
+      ? await aggregateSetterBucket(db, setterId, commissionRateBasisPoints, opts)
+      : lifetime;
+
+  const followUps = await db.execute({
+    sql: `SELECT COUNT(*) AS c FROM appointments
+          WHERE setter_id = ? AND post_call_status = 'needs_followup'`,
     args: [setterId],
   });
 
-  // Count each event at most once, using the *latest* attendance mark. If two
-  // closers disagree on the same event, the most recent one wins — matches
-  // the latest-wins rule we use everywhere else (setter attribution, team
-  // attendance index). A plain DISTINCT would have double-counted events
-  // where closers disagreed.
+  return {
+    lifetime,
+    window,
+    followUpCount: Number(followUps.rows[0]?.c ?? 0),
+  };
+}
+
+async function aggregateSetterBucket(
+  db: ReturnType<typeof getDb>,
+  setterId: string,
+  commissionRateBasisPoints: number,
+  bounds: { since?: string; until?: string }
+): Promise<SetterMetricBucket> {
+  // Appointments are bucketed by scheduled_at when present, falling back to
+  // created_at. Same fallback the deals helper uses for closing_date.
+  const apptDateConditions: string[] = [];
+  const apptValues: (string | number)[] = [setterId];
+  if (bounds.since) {
+    apptDateConditions.push("AND COALESCE(substr(scheduled_at,1,10), substr(created_at,1,10)) >= ?");
+    apptValues.push(bounds.since);
+  }
+  if (bounds.until) {
+    apptDateConditions.push("AND COALESCE(substr(scheduled_at,1,10), substr(created_at,1,10)) <= ?");
+    apptValues.push(bounds.until);
+  }
+  const apptDateClause = apptDateConditions.join(" ");
+
+  const apptCount = await db.execute({
+    sql: `SELECT COUNT(*) AS c FROM appointments WHERE setter_id = ? ${apptDateClause}`,
+    args: apptValues,
+  });
+
+  // Attendance restricted to events the setter actually claimed in-window.
+  // Latest-mark-wins per event — same rule as the rest of the project.
   const attendance = await db.execute({
     sql: `SELECT
             SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
@@ -80,30 +128,38 @@ export async function getSetterStats(
                    ) AS rn
               FROM event_attendance ea
              WHERE ea.google_event_id IN (
-               SELECT DISTINCT google_event_id FROM appointments WHERE setter_id = ?
+               SELECT DISTINCT google_event_id
+                 FROM appointments
+                WHERE setter_id = ? ${apptDateClause}
              )
           ) WHERE rn = 1`,
-    args: [setterId],
+    args: apptValues,
   });
 
-  // "Pending" = anything not yet resolved: awaiting signature, on hold, or
-  // rescheduled. Explicitly excludes closed and not_closed (both terminal).
+  // Deals are bucketed by closing_date with created_at fallback (same as the
+  // closer-side helper) so all surfaces agree on which deal lives in which
+  // month.
+  const dealConditions: string[] = ["setter_id = ?"];
+  const dealValues: (string | number)[] = [setterId];
+  if (bounds.since) {
+    dealConditions.push("COALESCE(closing_date, substr(created_at,1,10)) >= ?");
+    dealValues.push(bounds.since);
+  }
+  if (bounds.until) {
+    dealConditions.push("COALESCE(closing_date, substr(created_at,1,10)) <= ?");
+    dealValues.push(bounds.until);
+  }
   const dealAggregates = await db.execute({
     sql: `SELECT
             COUNT(*) AS deals_linked,
-            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS deals_closed,
-            SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END) AS revenue_attributed,
-            SUM(CASE WHEN status = 'closed' AND paid_status = 'paid' THEN deal_value ELSE 0 END) AS paid_revenue,
-            SUM(CASE WHEN status IN ('pending_signature', 'follow_up', 'rescheduled') THEN 1 ELSE 0 END) AS pending_deals
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0) AS deals_closed,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS revenue_attributed,
+            COALESCE(SUM(CASE WHEN status IN ('closed', 'pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS paid_revenue,
+            COALESCE(SUM(CASE WHEN status = 'closed' AND IFNULL(paid_status, 'unpaid') = 'unpaid' THEN deal_value ELSE 0 END), 0) AS outstanding_revenue,
+            COALESCE(SUM(CASE WHEN status IN ('pending_signature', 'follow_up', 'rescheduled') THEN 1 ELSE 0 END), 0) AS pending_deals
           FROM deals
-          WHERE setter_id = ?`,
-    args: [setterId],
-  });
-
-  const followUps = await db.execute({
-    sql: `SELECT COUNT(*) AS c FROM appointments
-          WHERE setter_id = ? AND post_call_status = 'needs_followup'`,
-    args: [setterId],
+          WHERE ${dealConditions.join(" AND ")}`,
+    args: dealValues,
   });
 
   const a = attendance.rows[0];
@@ -112,6 +168,7 @@ export async function getSetterStats(
   const noShowCount = Number(a?.no_show_count ?? 0);
   const tracked = showCount + noShowCount;
   const paidRevenue = Number(d?.paid_revenue ?? 0);
+  const outstandingRevenue = Number(d?.outstanding_revenue ?? 0);
 
   return {
     appointmentsSet: Number(apptCount.rows[0]?.c ?? 0),
@@ -121,9 +178,11 @@ export async function getSetterStats(
     dealsLinked: Number(d?.deals_linked ?? 0),
     dealsClosed: Number(d?.deals_closed ?? 0),
     revenueAttributed: Number(d?.revenue_attributed ?? 0),
+    paidRevenueAttributed: paidRevenue,
+    outstandingRevenueAttributed: outstandingRevenue,
     commissionEarned: Math.round((paidRevenue * commissionRateBasisPoints) / 10000),
+    commissionPending: Math.round((outstandingRevenue * commissionRateBasisPoints) / 10000),
     pendingDeals: Number(d?.pending_deals ?? 0),
-    followUpCount: Number(followUps.rows[0]?.c ?? 0),
   };
 }
 

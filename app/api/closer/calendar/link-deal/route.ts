@@ -101,17 +101,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // Push notification to admins
-    try {
-      const dealValueDollars = dealValue;
-      await sendPushToAllAdmins({
-        title: `New Deal: ${eventTitle}`,
-        body: `${status === "closed" ? "Closed" : "New"} deal worth $${dealValueDollars.toLocaleString()} linked from calendar`,
-        url: "/dashboard/closers/deals",
-        tag: `deal-${id}`,
-      });
-    } catch (err) {
-      console.error("[link-deal] Push failed:", err);
+    // Notify admins only when the deal is closed and lands in their queue.
+    // In-flight statuses stay with the closer; pinging admin about a deal
+    // they can't see in the queue would just be noise.
+    if (status === "closed") {
+      try {
+        await sendPushToAllAdmins({
+          title: `New Deal: ${eventTitle}`,
+          body: `Closed deal worth $${dealValue.toLocaleString()} linked from calendar`,
+          url: "/dashboard/closers/deals",
+          tag: `deal-${id}`,
+        });
+      } catch (err) {
+        console.error("[link-deal] Push failed:", err);
+      }
     }
 
     return NextResponse.json({ data: { id } }, { status: 201 });

@@ -1,17 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { CloserOverviewMetrics } from "@/components/closers/CloserOverviewMetrics";
 import { CloserLeaderboard } from "@/components/closers/CloserLeaderboard";
 import { TeamOutputChart } from "@/components/closers/TeamOutputChart";
+import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
+import {
+  appendTimeFrameParams,
+  buildTimeFrame,
+  TIME_FRAME_LABELS,
+  type TimeFrame,
+  type TimeFrameKey,
+} from "@/lib/timeFrame";
+
+function windowLabel(tf: TimeFrame): string {
+  if (tf.key === "custom" && tf.since && tf.until) return `${tf.since} → ${tf.until}`;
+  return TIME_FRAME_LABELS[tf.key as TimeFrameKey] ?? "Selected window";
+}
 
 export default function ClosersPage() {
+  const [timeFrame, setTimeFrame] = useState<TimeFrame>(() => buildTimeFrame("month"));
+
   const { data, isLoading } = useQuery({
-    queryKey: ["closers-stats"],
+    queryKey: ["closers-stats", timeFrame.key, timeFrame.since ?? "", timeFrame.until ?? ""],
     queryFn: async () => {
-      const r = await fetch("/api/admin/closers/stats");
+      const url = appendTimeFrameParams("/api/admin/closers/stats", timeFrame);
+      const r = await fetch(url);
       if (!r.ok) throw new Error("Failed to fetch stats");
       const d = await r.json();
       return d.data;
@@ -33,11 +50,17 @@ export default function ClosersPage() {
 
         <CloserSubNav />
 
+        <TimeFrameSelector value={timeFrame} onChange={setTimeFrame} />
+
         {isLoading ? (
           <OverviewSkeleton />
         ) : data ? (
           <>
-            <CloserOverviewMetrics stats={data} />
+            <CloserOverviewMetrics
+              stats={data}
+              windowLabel={windowLabel(timeFrame)}
+              isLifetimeWindow={timeFrame.key === "all"}
+            />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <CloserLeaderboard closerBreakdowns={data.closerBreakdowns} />
               <TeamOutputChart closerBreakdowns={data.closerBreakdowns} />
@@ -58,7 +81,6 @@ export default function ClosersPage() {
 function OverviewSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Metrics skeleton */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
           <div
@@ -77,7 +99,6 @@ function OverviewSkeleton() {
         ))}
       </div>
 
-      {/* Charts skeleton */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {[1, 2].map((i) => (
           <div

@@ -5,7 +5,10 @@ import { Plus } from "lucide-react";
 import { CloserBentoGrid } from "@/components/closer/CloserBentoGrid";
 import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
 import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
+import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
+import type { CloserDealStats } from "@/lib/deals";
+import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
 
 export interface CloserDashboardData {
   closer: {
@@ -15,15 +18,8 @@ export interface CloserDashboardData {
     quota: number;
     commissionRate: number;
   };
-  stats: {
-    totalRevenue: number;
-    dealCount: number;
-    closedCount: number;
-    avgDealValue: number;
-    showRate: number;
-    showCount: number;
-    noShowCount: number;
-  };
+  stats: CloserDealStats;
+  timeFrame: { since: string | null; until: string | null };
   recentDeals: Array<{
     id: string;
     closerId: string;
@@ -43,16 +39,21 @@ export interface CloserDashboardData {
 
 interface Props {
   data: CloserDashboardData;
-  /** When true, hide mutation-only UI (mobile new-deal FAB). Used by the
-   *  admin "view as" surface where mutations would 401 anyway. */
+  /** Selected time frame, owned by the page so it survives polling. */
+  timeFrame: TimeFrame;
+  onTimeFrameChange: (next: TimeFrame) => void;
+  /** When true, hide mutation-only UI (mobile new-deal FAB). */
   readOnly?: boolean;
 }
 
-/** Pure presentational dashboard. Caller owns the fetch + loading/error
- *  states so the same component renders for the closer's own session and
- *  for an admin viewing them, without a self-fetch race or eternal-skeleton
- *  failure mode. */
-export function CloserDashboardView({ data, readOnly }: Props) {
+function windowLabel(tf: TimeFrame): string {
+  if (tf.key === "custom" && tf.since && tf.until) return `${tf.since} → ${tf.until}`;
+  return TIME_FRAME_LABELS[tf.key as TimeFrameKey] ?? "Selected window";
+}
+
+export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOnly }: Props) {
+  const isLifetimeWindow = timeFrame.key === "all";
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
       {/* Header */}
@@ -65,30 +66,30 @@ export function CloserDashboardView({ data, readOnly }: Props) {
         </p>
       </div>
 
-      {/* Metrics */}
+      {/* Time-frame selector */}
+      <div className="mb-6">
+        <TimeFrameSelector value={timeFrame} onChange={onTimeFrameChange} />
+      </div>
+
+      {/* Metrics — lifetime + selected window */}
       <CloserBentoGrid
-        totalRevenue={data.stats.totalRevenue}
-        dealCount={data.stats.dealCount}
-        closedCount={data.stats.closedCount}
-        avgDealValue={data.stats.avgDealValue}
-        showRate={data.stats.showRate}
-        showCount={data.stats.showCount}
-        noShowCount={data.stats.noShowCount}
+        lifetime={data.stats.lifetime}
+        window={data.stats.window}
+        windowLabel={windowLabel(timeFrame)}
+        isLifetimeWindow={isLifetimeWindow}
         quota={data.closer.quota}
       />
 
       {/* Recent deals */}
       <CloserRecentDeals deals={data.recentDeals as never[]} />
 
-      {/* No-show follow-ups (scoped to this closer's own marks).
-          Count moved into PaginatedFollowUpList so it stays consistent
-          with any active search filter. */}
+      {/* No-show follow-ups (scoped to this closer's own marks) */}
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
         <PaginatedFollowUpList items={data.noShowFollowUps} variant="closer" />
       </section>
 
-      {/* Showed leads (scoped to this closer's own marks) */}
+      {/* Showed leads */}
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-foreground mb-3">Showed leads</h2>
         <PaginatedFollowUpList
@@ -99,8 +100,6 @@ export function CloserDashboardView({ data, readOnly }: Props) {
         />
       </section>
 
-      {/* Mobile FAB — hidden in read-only admin view since /closer/new-deal
-          requires a c_sess cookie the admin doesn't have. */}
       {!readOnly && (
         <Link
           href="/closer/new-deal"

@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
-import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "@/lib/deals";
+import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
@@ -39,6 +39,17 @@ export async function GET(request: Request) {
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
   let deals = await readDeals({ since, until });
+
+  // Hide in-flight deals from the admin queue. Closers manage them in their
+  // own portal; they only land here once they're closed (with a generated
+  // invoice for review) or sitting at pending_signature awaiting paperwork.
+  // pending_signature stays because the admin tracks DocuSeal signatures.
+  const ADMIN_HIDDEN_STATUSES: ReadonlySet<DealStatus> = new Set([
+    "rescheduled",
+    "follow_up",
+    "not_closed",
+  ]);
+  deals = deals.filter((d) => !ADMIN_HIDDEN_STATUSES.has(d.status));
 
   if (closerId) {
     deals = deals.filter((d) => d.closerId === closerId);

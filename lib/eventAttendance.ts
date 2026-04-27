@@ -82,21 +82,38 @@ export async function getAllAttendance(): Promise<EventAttendance[]> {
 }
 
 /**
- * Get show rate stats for a closer.
+ * Get show rate stats for a closer. Source is `event_attendance` (every
+ * event the closer marked, with or without a linked deal) — that's the
+ * closer's mental model of "how often does my prospect show up". Optional
+ * window filters by `event_attendance.updated_at` so callers can match a
+ * dashboard time-frame.
  */
-export async function getCloserShowRate(closerId: string): Promise<{
+export async function getCloserShowRate(
+  closerId: string,
+  opts: { since?: string; until?: string } = {}
+): Promise<{
   showCount: number;
   noShowCount: number;
   showRate: number;
 }> {
   await ensureMigrated();
   const db = getDb();
+  const conditions: string[] = ["closer_id = ?"];
+  const values: string[] = [closerId];
+  if (opts.since) {
+    conditions.push("substr(updated_at,1,10) >= ?");
+    values.push(opts.since);
+  }
+  if (opts.until) {
+    conditions.push("substr(updated_at,1,10) <= ?");
+    values.push(opts.until);
+  }
   const result = await db.execute({
     sql: `SELECT
             SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
             SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
-          FROM event_attendance WHERE closer_id = ?`,
-    args: [closerId],
+          FROM event_attendance WHERE ${conditions.join(" AND ")}`,
+    args: values,
   });
   const row = result.rows[0];
   const showCount = Number(row?.show_count ?? 0);
@@ -446,9 +463,13 @@ export async function enrichNoShowsFromCalendar(
 }
 
 /**
- * Get team-wide show rate stats with per-closer breakdown.
+ * Get team-wide show rate stats with per-closer breakdown. Same source +
+ * window semantics as getCloserShowRate (event_attendance, filtered by
+ * updated_at), so admin and closer surfaces report the same numbers.
  */
-export async function getTeamShowRate(): Promise<{
+export async function getTeamShowRate(
+  opts: { since?: string; until?: string } = {}
+): Promise<{
   showCount: number;
   noShowCount: number;
   showRate: number;
@@ -462,25 +483,39 @@ export async function getTeamShowRate(): Promise<{
   await ensureMigrated();
   const db = getDb();
 
-  const totals = await db.execute(
-    `SELECT
-       SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
-       SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
-     FROM event_attendance`
-  );
+  const conditions: string[] = [];
+  const values: string[] = [];
+  if (opts.since) {
+    conditions.push("substr(updated_at,1,10) >= ?");
+    values.push(opts.since);
+  }
+  if (opts.until) {
+    conditions.push("substr(updated_at,1,10) <= ?");
+    values.push(opts.until);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const totals = await db.execute({
+    sql: `SELECT
+            SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
+            SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
+          FROM event_attendance ${where}`,
+    args: values,
+  });
   const t = totals.rows[0];
   const teamShow = Number(t?.show_count ?? 0);
   const teamNoShow = Number(t?.no_show_count ?? 0);
   const teamTotal = teamShow + teamNoShow;
 
-  const breakdowns = await db.execute(
-    `SELECT
-       closer_id,
-       SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
-       SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
-     FROM event_attendance
-     GROUP BY closer_id`
-  );
+  const breakdowns = await db.execute({
+    sql: `SELECT
+            closer_id,
+            SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
+            SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
+          FROM event_attendance ${where}
+          GROUP BY closer_id`,
+    args: values,
+  });
 
   return {
     showCount: teamShow,

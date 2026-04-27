@@ -130,16 +130,21 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
 
   revalidatePath("/closer/dashboard");
 
-  // Send push notification to admins — awaited so it completes before response
-  try {
-    await sendPushToAllAdmins({
-      title: `New Deal: ${clientName}`,
-      body: `${status === "closed" ? "Closed" : "New"} deal worth $${dealValueDollars.toLocaleString()} needs review`,
-      url: "/dashboard/closers/deals",
-      tag: `deal-${id}`,
-    });
-  } catch (err) {
-    console.error("[createDealAction] Push failed:", err);
+  // Notify admins only when the deal is closed and lands in their queue
+  // for invoice review. In-flight statuses (rescheduled, follow_up,
+  // not_closed) stay with the closer per project policy — pinging admin
+  // about a deal they can't see and didn't action would just be noise.
+  if (status === "closed") {
+    try {
+      await sendPushToAllAdmins({
+        title: `New Deal: ${clientName}`,
+        body: `Closed deal worth $${dealValueDollars.toLocaleString()} needs review`,
+        url: "/dashboard/closers/deals",
+        tag: `deal-${id}`,
+      });
+    } catch (err) {
+      console.error("[createDealAction] Push failed:", err);
+    }
   }
 
   return {};

@@ -118,7 +118,7 @@ export default function CloserDetailPage() {
         {/* Main content */}
         {data && (
           <>
-            <CloserDetailMetrics stats={data.stats} closer={data.closer} />
+            <CloserDetailMetrics stats={data.stats} />
             <CloserPerformanceChart deals={data.deals} />
             <RecentDealsTable deals={data.deals} />
           </>

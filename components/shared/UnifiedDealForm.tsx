@@ -184,6 +184,25 @@ export function UnifiedDealForm({
       }
     }
 
+    // Admin downgrade guard: changing a deal from a visible status
+    // (closed / pending_signature) to a hidden one (rescheduled / follow_up
+    // / not_closed) makes it disappear from the admin queue. Confirm only
+    // after validation passes so the admin doesn't accept the warning and
+    // then have it re-prompt on the next attempt.
+    const ADMIN_HIDDEN = new Set(["rescheduled", "follow_up", "not_closed"]);
+    if (
+      context === "admin" &&
+      mode === "edit" &&
+      initialData?.status &&
+      !ADMIN_HIDDEN.has(initialData.status) &&
+      ADMIN_HIDDEN.has(status)
+    ) {
+      const ok = window.confirm(
+        `Changing status to "${status.replace(/_/g, " ")}" moves this deal back to the closer's queue and removes it from your view. Continue?`
+      );
+      if (!ok) return;
+    }
+
     const serializedServices = serializeServiceCategory(selectedServices);
 
     // Auto-show: closed + calendar-linked = showed

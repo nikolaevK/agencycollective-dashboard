@@ -280,111 +280,199 @@ export async function deleteDeal(id: string): Promise<boolean> {
 // Aggregate helpers
 // ---------------------------------------------------------------------------
 
-export interface CloserDealStats {
-  totalRevenue: number;
-  dealCount: number;
+/**
+ * Bucket of metrics scoped to either lifetime or a specific time window.
+ * `paidRevenue` follows Phase-1 semantics: a closed deal counts toward
+ * paid revenue when its `closing_date` falls inside the window AND its
+ * `paid_status` is "paid". A future `paid_at` column would let us key on
+ * payment timestamp instead.
+ */
+export interface DealMetricBucket {
+  /** Revenue from deals marked closed in this window (any payment status). */
+  closedRevenue: number;
+  /** Cash collected — sum of any visible-status deal (closed OR
+   *  pending_signature) that's been marked paid. A client can pay before
+   *  signing, so pending_signature paid deals count too. */
+  paidRevenue: number;
+  /** Subset of closedRevenue where paid_status is 'unpaid' (or NULL). */
+  outstandingRevenue: number;
+  /** Sum of pending_signature deal values — pipeline awaiting paperwork. */
+  pendingPipeline: number;
+  /** Count of closed deals in this window. */
   closedCount: number;
-  avgDealValue: number;
+  /** Count of pending_signature deals in this window. */
+  pendingCount: number;
+  /** Count of in-flight deals (rescheduled / follow_up / not_closed) in
+   *  this window. Not exposed as individual rows in the admin queue, but
+   *  aggregated here so the team Close Rate has a true denominator. */
+  inFlightCount: number;
+  /** Average closed deal_value in this window. 0 when no closed deals. */
+  avgClosedValue: number;
+  /** Attendance counts in this window (independent of deal status). */
   showCount: number;
   noShowCount: number;
-  showRate: number; // percentage
+  /** Percentage with one decimal: showCount / (showCount + noShowCount). */
+  showRate: number;
 }
 
-export async function getCloserDealStats(closerId: string): Promise<CloserDealStats> {
+export interface CloserDealStats {
+  /** Lifetime totals — never narrowed by time frame. Closer's "career" view. */
+  lifetime: DealMetricBucket;
+  /** Time-frame-scoped bucket. Equals lifetime when no since/until passed. */
+  window: DealMetricBucket;
+}
+
+export async function getCloserDealStats(
+  closerId: string,
+  opts: {
+    /** Inclusive YYYY-MM-DD start of the window. Omit for lifetime-only. */
+    since?: string;
+    /** Inclusive YYYY-MM-DD end of the window. Omit for lifetime-only. */
+    until?: string;
+  } = {}
+): Promise<CloserDealStats> {
   await ensureMigrated();
   const db = getDb();
+  const lifetime = await aggregateBucket(db, { closerId });
+  const window =
+    opts.since && opts.until
+      ? await aggregateBucket(db, { closerId, since: opts.since, until: opts.until })
+      : lifetime;
+  return { lifetime, window };
+}
+
+async function aggregateBucket(
+  db: ReturnType<typeof getDb>,
+  args: { closerId?: string; since?: string; until?: string }
+): Promise<DealMetricBucket> {
+  // Window predicate uses COALESCE(closing_date, substr(created_at,1,10))
+  // so deals without an explicit closing_date still bucket by their
+  // creation day — matches the admin queue's existing date-window logic.
+  const conditions: string[] = [];
+  const values: (string | number)[] = [];
+  if (args.closerId) {
+    conditions.push("closer_id = ?");
+    values.push(args.closerId);
+  }
+  if (args.since) {
+    conditions.push("COALESCE(closing_date, substr(created_at,1,10)) >= ?");
+    values.push(args.since);
+  }
+  if (args.until) {
+    conditions.push("COALESCE(closing_date, substr(created_at,1,10)) <= ?");
+    values.push(args.until);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
   const result = await db.execute({
     sql: `SELECT
-            COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS total_revenue,
-            COUNT(*) AS deal_count,
-            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_count,
-            COALESCE(AVG(CASE WHEN status = 'closed' THEN deal_value ELSE NULL END), 0) AS avg_deal_value,
-            SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
-            SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
-          FROM deals WHERE closer_id = ?`,
-    args: [closerId],
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS closed_revenue,
+            COALESCE(SUM(CASE WHEN status IN ('closed', 'pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS paid_revenue,
+            COALESCE(SUM(CASE WHEN status = 'closed' AND IFNULL(paid_status, 'unpaid') = 'unpaid' THEN deal_value ELSE 0 END), 0) AS outstanding_revenue,
+            COALESCE(SUM(CASE WHEN status = 'pending_signature' THEN deal_value ELSE 0 END), 0) AS pending_pipeline,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
+            COALESCE(SUM(CASE WHEN status = 'pending_signature' THEN 1 ELSE 0 END), 0) AS pending_count,
+            COALESCE(SUM(CASE WHEN status IN ('rescheduled', 'follow_up', 'not_closed') THEN 1 ELSE 0 END), 0) AS in_flight_count,
+            COALESCE(AVG(CASE WHEN status = 'closed' THEN deal_value ELSE NULL END), 0) AS avg_closed_value,
+            COALESCE(SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END), 0) AS show_count,
+            COALESCE(SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
+          FROM deals ${where}`,
+    args: values,
   });
   const row = result.rows[0];
   const showCount = Number(row?.show_count ?? 0);
   const noShowCount = Number(row?.no_show_count ?? 0);
-  const totalTracked = showCount + noShowCount;
+  const tracked = showCount + noShowCount;
   return {
-    totalRevenue: Number(row?.total_revenue ?? 0),
-    dealCount: Number(row?.deal_count ?? 0),
+    closedRevenue: Number(row?.closed_revenue ?? 0),
+    paidRevenue: Number(row?.paid_revenue ?? 0),
+    outstandingRevenue: Number(row?.outstanding_revenue ?? 0),
+    pendingPipeline: Number(row?.pending_pipeline ?? 0),
     closedCount: Number(row?.closed_count ?? 0),
-    avgDealValue: Number(row?.avg_deal_value ?? 0),
+    pendingCount: Number(row?.pending_count ?? 0),
+    inFlightCount: Number(row?.in_flight_count ?? 0),
+    avgClosedValue: Number(row?.avg_closed_value ?? 0),
     showCount,
     noShowCount,
-    showRate: totalTracked > 0 ? Math.round((showCount / totalTracked) * 1000) / 10 : 0,
+    showRate: tracked > 0 ? Math.round((showCount / tracked) * 1000) / 10 : 0,
   };
 }
 
 export interface TeamStats {
-  totalRevenue: number;
-  totalDeals: number;
-  closedDeals: number;
-  showCount: number;
-  noShowCount: number;
-  showRate: number;
+  /** Lifetime team aggregates. */
+  lifetime: DealMetricBucket;
+  /** Time-frame bucket — equals lifetime when no since/until passed. */
+  window: DealMetricBucket;
+  /** Per-closer breakdown for the leaderboard, scoped to the time frame. */
   closerBreakdowns: Array<{
     closerId: string;
     displayName: string;
     avatarPath: string | null;
-    revenue: number;
-    closedCount: number;
-    totalCount: number;
     commissionRate: number;
+    revenue: number; // closed revenue
+    paidRevenue: number;
+    outstandingRevenue: number;
+    closedCount: number;
+    totalCount: number; // closed + pending
     showCount: number;
     noShowCount: number;
     showRate: number;
   }>;
 }
 
-export async function getTeamStats(): Promise<TeamStats> {
+export async function getTeamStats(
+  opts: { since?: string; until?: string } = {}
+): Promise<TeamStats> {
   await ensureMigrated();
   const db = getDb();
 
-  // Overall totals
-  const totals = await db.execute(
-    `SELECT
-       COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS total_revenue,
-       COUNT(*) AS total_deals,
-       SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_deals,
-       SUM(CASE WHEN show_status = 'showed' THEN 1 ELSE 0 END) AS show_count,
-       SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
-     FROM deals`
-  );
-  const t = totals.rows[0];
-  const teamShowCount = Number(t?.show_count ?? 0);
-  const teamNoShowCount = Number(t?.no_show_count ?? 0);
-  const teamTracked = teamShowCount + teamNoShowCount;
+  const lifetime = await aggregateBucket(db, {});
+  const window =
+    opts.since && opts.until
+      ? await aggregateBucket(db, { since: opts.since, until: opts.until })
+      : lifetime;
 
-  // Per-closer breakdowns
-  const breakdowns = await db.execute(
-    `SELECT
-       c.id AS closer_id,
-       c.display_name,
-       c.avatar_path,
-       c.commission_rate,
-       COALESCE(SUM(CASE WHEN d.status = 'closed' THEN d.deal_value ELSE 0 END), 0) AS revenue,
-       COALESCE(SUM(CASE WHEN d.status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
-       COUNT(d.id) AS total_count,
-       COALESCE(SUM(CASE WHEN d.show_status = 'showed' THEN 1 ELSE 0 END), 0) AS show_count,
-       COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
-     FROM closers c
-     LEFT JOIN deals d ON d.closer_id = c.id
-     WHERE c.status = 'active' AND c.role != 'setter'
-     GROUP BY c.id
-     ORDER BY revenue DESC`
-  );
+  // Per-closer breakdown scoped to the same window. closing_date is the
+  // bucketing field so the leaderboard reflects the period the admin selected.
+  const dateConditions: string[] = [];
+  const dateValues: string[] = [];
+  if (opts.since) {
+    dateConditions.push("AND COALESCE(d.closing_date, substr(d.created_at,1,10)) >= ?");
+    dateValues.push(opts.since);
+  }
+  if (opts.until) {
+    dateConditions.push("AND COALESCE(d.closing_date, substr(d.created_at,1,10)) <= ?");
+    dateValues.push(opts.until);
+  }
+  // Collapse predicates into a single SQL fragment. dateConditions only ever
+  // contains literal templates ("AND COALESCE(...) >= ?"), no user input —
+  // bound values flow through args.
+  const dateClause = dateConditions.join(" ");
+
+  const breakdowns = await db.execute({
+    sql: `SELECT
+            c.id AS closer_id,
+            c.display_name,
+            c.avatar_path,
+            c.commission_rate,
+            COALESCE(SUM(CASE WHEN d.status = 'closed' THEN d.deal_value ELSE 0 END), 0) AS revenue,
+            COALESCE(SUM(CASE WHEN d.status IN ('closed', 'pending_signature') AND d.paid_status = 'paid' THEN d.deal_value ELSE 0 END), 0) AS paid_revenue,
+            COALESCE(SUM(CASE WHEN d.status = 'closed' AND IFNULL(d.paid_status, 'unpaid') = 'unpaid' THEN d.deal_value ELSE 0 END), 0) AS outstanding_revenue,
+            COALESCE(SUM(CASE WHEN d.status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
+            COALESCE(SUM(CASE WHEN d.status IN ('closed', 'pending_signature') THEN 1 ELSE 0 END), 0) AS total_count,
+            COALESCE(SUM(CASE WHEN d.show_status = 'showed' THEN 1 ELSE 0 END), 0) AS show_count,
+            COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
+          FROM closers c
+          LEFT JOIN deals d ON d.closer_id = c.id ${dateClause}
+          WHERE c.status = 'active' AND c.role != 'setter'
+          GROUP BY c.id
+          ORDER BY revenue DESC`,
+    args: dateValues,
+  });
 
   return {
-    totalRevenue: Number(t?.total_revenue ?? 0),
-    totalDeals: Number(t?.total_deals ?? 0),
-    closedDeals: Number(t?.closed_deals ?? 0),
-    showCount: teamShowCount,
-    noShowCount: teamNoShowCount,
-    showRate: teamTracked > 0 ? Math.round((teamShowCount / teamTracked) * 1000) / 10 : 0,
+    lifetime,
+    window,
     closerBreakdowns: breakdowns.rows.map((row) => {
       const sc = Number(row.show_count ?? 0);
       const nsc = Number(row.no_show_count ?? 0);
@@ -393,10 +481,12 @@ export async function getTeamStats(): Promise<TeamStats> {
         closerId: String(row.closer_id),
         displayName: String(row.display_name),
         avatarPath: row.avatar_path != null ? String(row.avatar_path) : null,
+        commissionRate: Number(row.commission_rate ?? 0),
         revenue: Number(row.revenue ?? 0),
+        paidRevenue: Number(row.paid_revenue ?? 0),
+        outstandingRevenue: Number(row.outstanding_revenue ?? 0),
         closedCount: Number(row.closed_count ?? 0),
         totalCount: Number(row.total_count ?? 0),
-        commissionRate: Number(row.commission_rate ?? 0),
         showCount: sc,
         noShowCount: nsc,
         showRate: tracked > 0 ? Math.round((sc / tracked) * 1000) / 10 : 0,
