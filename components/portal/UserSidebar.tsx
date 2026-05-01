@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
@@ -18,6 +19,22 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
 
   // Extract slug from URL: "/{slug}/portal/..."
   const slug = pathname.split("/")[1] ?? "";
+
+  // Unread support-message count for the sidebar badge. Polled every 60s,
+  // pauses while tab is hidden. Cleared as soon as the user opens the
+  // support page (which POSTs /read on mount + on each new poll).
+  const { data: unreadSupport = 0 } = useQuery<number>({
+    queryKey: ["portal-support-unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/portal/support/unread");
+      if (!res.ok) return 0;
+      const json = await res.json();
+      return Number(json.data?.count ?? 0);
+    },
+    staleTime: 45_000,
+    refetchInterval: 90_000,
+    refetchIntervalInBackground: false,
+  });
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -97,6 +114,25 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
         >
           <LayoutDashboard className="h-4 w-4 shrink-0" />
           <span>Overview</span>
+        </Link>
+        <Link
+          href={`/${slug}/portal/support`}
+          onClick={onClose}
+          className={cn(
+            "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+            pathname.includes("/portal/support") && "active"
+          )}
+        >
+          <MessageSquare className="h-4 w-4 shrink-0" />
+          <span className="flex-1">Support</span>
+          {unreadSupport > 0 && (
+            <span
+              className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"
+              aria-label={`${unreadSupport} unread message${unreadSupport === 1 ? "" : "s"}`}
+            >
+              {unreadSupport > 99 ? "99+" : unreadSupport}
+            </span>
+          )}
         </Link>
       </nav>
 

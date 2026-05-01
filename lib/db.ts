@@ -73,8 +73,29 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
   }
 }
 
+/**
+ * Bumped whenever the migration body changes. The sentinel SELECT below is
+ * one DB roundtrip; if the stored version matches we skip the ~30-stmt body.
+ * Critical on Vercel where every cold lambda runs migrate() — without the
+ * guard we burn 1–2s of cold-start time and N×30 Turso calls across
+ * concurrent cold starts.
+ */
+const SCHEMA_VERSION = "2026-04-30.support";
+
 export async function migrate(): Promise<void> {
   const db = getDb();
+
+  // Cheap sentinel probe. Wrapped in try/catch because schema_meta itself
+  // doesn't exist on the very first migrate of a fresh DB — the catch falls
+  // through to the full body, which creates schema_meta at the end and
+  // stamps the version.
+  try {
+    const probe = await db.execute("SELECT version FROM schema_meta WHERE id = 1");
+    if (probe.rows[0]?.version === SCHEMA_VERSION) return;
+  } catch {
+    // No schema_meta yet — fall through to the full migration body.
+  }
+
   console.log("[migrate] Starting database migration...");
 
   // ── Users table ────────────────────────────────────────────────────
@@ -993,6 +1014,91 @@ export async function migrate(): Promise<void> {
     }
   }
 
+  // ── Support: client ↔ admin conversations + messages ───────────────────
+  // One conversation per client (UNIQUE on user_id). Read receipts live as
+  // last_*_read_at columns on the conversation row so unread counts can be
+  // computed without scanning all messages. last_message_at is denormalized
+  // so the admin inbox can sort + show "new" badges without a JOIN.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id                  TEXT PRIMARY KEY,
+      user_id             TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      last_message_at     TEXT,
+      last_user_read_at   TEXT,
+      last_admin_read_at  TEXT,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Loose FK — sender_id points at either users.id (client) or admins.id (admin)
+  // depending on sender_type, so we resolve identity at read time per row.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id              TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      sender_type     TEXT NOT NULL CHECK (sender_type IN ('client','admin','system')),
+      sender_id       TEXT NOT NULL,
+      body            TEXT NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      edited_at       TEXT,
+      deleted_at      TEXT
+    )
+  `);
+
+  try {
+    // Used for the cursor-based ?since polling and the last-message inbox sort.
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at DESC)`);
+  } catch {
+    // index may already exist
+  }
+
+  // ── Support: structured feedback (sentiment + rating + free-form) ──────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sentiment   TEXT NOT NULL CHECK (sentiment IN ('happy','neutral','concerned')),
+      rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      body        TEXT NOT NULL DEFAULT '',
+      status      TEXT NOT NULL DEFAULT 'open',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_feedback_user_created ON feedback(user_id, created_at DESC)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_feedback_status_created ON feedback(status, created_at DESC)`);
+  } catch {
+    // indexes may already exist
+  }
+
+  // Per-feedback admin replies. Owner client + admins see them; nobody else.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS feedback_replies (
+      id           TEXT PRIMARY KEY,
+      feedback_id  TEXT NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+      admin_id     TEXT NOT NULL,
+      body         TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_feedback_replies_fid ON feedback_replies(feedback_id, created_at)`);
+  } catch {
+    // index may already exist
+  }
+
+  // ── Admin presence (heartbeat-driven "Team is online" indicator) ───────
+  // One row per admin, upserted every 30s while their tab is focused. Client
+  // sees "online" if ANY row's last_seen_at is within the last 60s.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS admin_presence (
+      admin_id      TEXT PRIMARY KEY,
+      last_seen_at  TEXT NOT NULL
+    )
+  `);
+
   // ── Push notification subscriptions ──────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -1011,6 +1117,20 @@ export async function migrate(): Promise<void> {
   } catch {
     // index may already exist
   }
+
+  // ── Schema-version sentinel ───────────────────────────────────────────
+  // Stamped at the very end so a partial migration (process killed mid-run)
+  // doesn't get marked complete — the next cold start re-runs the body.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS schema_meta (
+      id      INTEGER PRIMARY KEY,
+      version TEXT NOT NULL
+    )
+  `);
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO schema_meta (id, version) VALUES (1, ?)",
+    args: [SCHEMA_VERSION],
+  });
 
   console.log("[migrate] Database migration complete");
 }

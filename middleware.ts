@@ -87,6 +87,7 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/ad-copy"), perm: "adcopy" },
   { match: (p) => p.startsWith("/api/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
+  { match: (p) => p.startsWith("/api/admin/support"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/deals"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/deal-invoices"), perm: "closers" },
@@ -202,7 +203,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Client portal (/{slug}/portal/*) ────────────────────────────────────
-  if (/^\/[^/]+\/portal(\/|$)/.test(pathname)) {
+  // Excludes /api/* — without the guard, "/api/portal/..." would match here
+  // (because [^/]+ greedily matches "api") and bounce as if it were a page.
+  if (!pathname.startsWith("/api/") && /^\/[^/]+\/portal(\/|$)/.test(pathname)) {
     const token = request.cookies.get(PORTAL_COOKIE)?.value;
     if (!token) {
       return NextResponse.redirect(new URL("/?portal=client", request.url));
@@ -231,6 +234,7 @@ export const config = {
     "/api/ad-copy/:path*",
     "/api/invoice/:path*",
     "/api/admin/users/:path*",
+    "/api/admin/support/:path*",
     "/api/admin/closers/:path*",
     "/api/admin/deals/:path*",
     "/api/admin/deal-invoices/:path*",

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
@@ -38,6 +39,25 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
   const { data: alerts } = useAlerts(dateRange);
   const criticalCount = alerts?.filter((a) => a.severity === "critical").length ?? 0;
   const totalCount = alerts?.length ?? 0;
+
+  // Unread support-message count across all client conversations. Drives the
+  // red badge on the Clients nav item (Support is folded into that page as
+  // a tab). Only fetches if the admin has the `users` perm; gating here
+  // matches both the API-route gate and what the user can actually act on.
+  const supportEnabled = admin.isSuper || admin.permissions.users;
+  const { data: unreadSupport = 0 } = useQuery<number>({
+    queryKey: ["admin-support-unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/support/unread");
+      if (!res.ok) return 0;
+      const json = await res.json();
+      return Number(json.data?.count ?? 0);
+    },
+    enabled: supportEnabled,
+    staleTime: 45_000,
+    refetchInterval: 90_000,
+    refetchIntervalInBackground: false,
+  });
 
   // Filter nav items by permissions (superOnly items only visible to super admins)
   const visibleItems = navItems.filter(
@@ -120,6 +140,17 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
                   )}
                 >
                   {totalCount}
+                </span>
+              )}
+              {item.label === "Clients" && unreadSupport > 0 && (
+                <span
+                  className={cn(
+                    "flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white px-1.5 text-xs font-semibold",
+                    collapsed ? "md:absolute md:top-0 md:right-0 md:h-4 md:min-w-4 md:text-[9px] md:px-1" : "ml-auto"
+                  )}
+                  aria-label={`${unreadSupport} unread support message${unreadSupport === 1 ? "" : "s"}`}
+                >
+                  {unreadSupport > 99 ? "99+" : unreadSupport}
                 </span>
               )}
             </Link>

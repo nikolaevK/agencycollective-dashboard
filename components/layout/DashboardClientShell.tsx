@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { AdminProvider, type AdminContextValue } from "@/components/providers/AdminProvider";
+import { AdminPresenceHeartbeat } from "@/components/layout/AdminPresenceHeartbeat";
 import { refreshAdminSession } from "@/app/actions/refreshSession";
 
 interface DashboardClientShellProps {
@@ -29,6 +30,7 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh 
 
   return (
     <AdminProvider value={adminData}>
+      <AdminPresenceHeartbeat />
       <div className="flex h-screen overflow-hidden">
         {/* Mobile backdrop */}
         {sidebarOpen && (
