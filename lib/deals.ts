@@ -112,7 +112,7 @@ export async function readDeals(
     args.push(options.since);
   }
   if (options.until) {
-    clauses.push("COALESCE(closing_date, SUBSTR(created_at, 1, 10)) < ?");
+    clauses.push("COALESCE(closing_date, SUBSTR(created_at, 1, 10)) <= ?");
     args.push(options.until);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
