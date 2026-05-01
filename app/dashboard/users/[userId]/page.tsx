@@ -367,6 +367,14 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                       No email
                     </span>
                   )}
+                  {!client.analystEnabled && (
+                    <span
+                      className="px-2 py-0.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded text-[10px] font-bold uppercase"
+                      title="AI Analyst access has been disabled for this client"
+                    >
+                      AI Off
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 mt-1.5 flex-wrap text-sm text-muted-foreground">
                   {client.email && (

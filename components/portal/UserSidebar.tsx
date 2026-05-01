@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface UserSidebarProps {
   displayName?: string;
+  analystEnabled?: boolean;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-export function UserSidebar({ displayName, isOpen = false, onClose }: UserSidebarProps) {
+export function UserSidebar({ displayName, analystEnabled = true, isOpen = false, onClose }: UserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -115,6 +116,19 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           <LayoutDashboard className="h-4 w-4 shrink-0" />
           <span>Overview</span>
         </Link>
+        {analystEnabled && (
+          <Link
+            href={`/${slug}/portal/analyst`}
+            onClick={onClose}
+            className={cn(
+              "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+              pathname.includes("/portal/analyst") && "active"
+            )}
+          >
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span>AI Analyst</span>
+          </Link>
+        )}
         <Link
           href={`/${slug}/portal/support`}
           onClick={onClose}

@@ -16,6 +16,8 @@ import {
 import type { UserStatus } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
 import { getAdminSession } from "@/lib/adminSession";
+import { findAdmin } from "@/lib/admins";
+import { logAuditEvent } from "@/lib/auditLog";
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
@@ -106,6 +108,7 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     mrr,
     category,
     createdAt: new Date().toISOString(),
+    analystEnabled: true,
   });
 
   revalidatePath("/dashboard/users");
@@ -177,7 +180,37 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
     changes.accountId = normalizeAccountId(rawAccountId.trim());
   }
 
+  // Per-user feature gate. Only act on a string value — formData.get() can
+  // also return File or null. Treating those as "false" would silently
+  // disable a user on a malformed request, so we ignore non-string values
+  // entirely (no change to the column).
+  const analystFlag = formData.get("analystEnabled");
+  if (typeof analystFlag === "string") {
+    const next = analystFlag === "true" || analystFlag === "1" || analystFlag === "on";
+    if (next !== user.analystEnabled) {
+      changes.analystEnabled = next;
+    }
+  }
+
   await updateUser(id, changes);
+
+  // Audit-log analyst-access changes specifically — they're a moderation lever.
+  if (changes.analystEnabled !== undefined) {
+    try {
+      const adminRecord = await findAdmin(admin.adminId);
+      await logAuditEvent({
+        adminId: admin.adminId,
+        adminUsername: adminRecord?.username ?? admin.adminId,
+        action: changes.analystEnabled ? "enable_client_analyst" : "disable_client_analyst",
+        targetType: "user",
+        targetId: id,
+        details: JSON.stringify({ slug: user.slug, displayName: user.displayName }),
+      });
+    } catch {
+      // Audit logging is fire-and-forget elsewhere; preserve that semantics.
+    }
+  }
+
   revalidatePath("/dashboard/users");
   return {};
 }

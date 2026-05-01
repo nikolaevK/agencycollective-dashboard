@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-04-30.support";
+const SCHEMA_VERSION = "2026-05-01.analyst-toggle";
 
 export async function migrate(): Promise<void> {
   const db = getDb();
@@ -282,6 +282,17 @@ export async function migrate(): Promise<void> {
     }
 
     console.log("[migrate] Users table columns added");
+  }
+
+  // ── Per-user feature flags (additive, idempotent) ──────────────────
+  // Default 1 (enabled). Admin can toggle off from /dashboard/users/[id]
+  // to revoke a client's portal AI Analyst access.
+  try {
+    await db.execute(
+      "ALTER TABLE users ADD COLUMN analyst_enabled INTEGER NOT NULL DEFAULT 1"
+    );
+  } catch {
+    // Column already exists — no-op.
   }
 
   // ── Migrate existing single account_id to client_accounts ───────────

@@ -15,6 +15,7 @@ export interface ClientPublic {
   category: string | null;
   createdAt: string;
   hasPassword: boolean;
+  analystEnabled: boolean;
   accounts: ClientAccount[];
 }
 

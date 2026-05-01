@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useTransition } from "react";
-import { X, Upload, Trash2 } from "lucide-react";
+import { X, Upload, Trash2, Sparkles } from "lucide-react";
 import { updateUserAction, removeUserLogoAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import type { ClientPublic } from "./types";
@@ -22,6 +22,10 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
   const [status, setStatus] = useState<UserStatus>(client.status);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoRemoved, setLogoRemoved] = useState(false);
+  // Fall back to true if the field is missing from the API response so a
+  // stale frontend reading a fresh server (or vice versa) can't accidentally
+  // disable an enabled user when the admin saves without touching the toggle.
+  const [analystEnabled, setAnalystEnabled] = useState<boolean>(client.analystEnabled ?? true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -34,6 +38,7 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     formData.set("email", email);
     formData.set("category", category);
     formData.set("status", status);
+    formData.set("analystEnabled", analystEnabled ? "true" : "false");
 
     // Append new logo file if selected
     const logoFile = fileInputRef.current?.files?.[0];
@@ -133,6 +138,42 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
               <option value="inactive">Inactive</option>
               <option value="archived">Archived</option>
             </select>
+          </div>
+
+          {/* AI Analyst access toggle */}
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+              Portal Features
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={analystEnabled}
+              onClick={() => setAnalystEnabled((v) => !v)}
+              className="w-full flex items-center justify-between gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl border-2 border-transparent hover:border-primary/30 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${analystEnabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">AI Analyst access</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {analystEnabled
+                      ? "Client can chat with the AI Analyst in their portal."
+                      : "Disabled — client sees no Analyst nav item or page."}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${analystEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
+                aria-hidden="true"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${analystEnabled ? "translate-x-5" : "translate-x-0.5"}`}
+                />
+              </span>
+            </button>
           </div>
 
           {/* Logo */}

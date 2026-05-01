@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getAdminSession } from "@/lib/adminSession";
-import { fetchOwnedAccounts, fetchAllAccountInsightsBatch, fetchCampaigns, fetchAdSets, fetchAds } from "@/lib/meta/endpoints";
+import { fetchCampaigns, fetchAdSets, fetchAds } from "@/lib/meta/endpoints";
 import {
   fetchDemographicBreakdown,
   fetchPlacementBreakdown,
@@ -14,16 +14,22 @@ import {
   formatLearningStages,
   formatConversionBreakdown,
 } from "@/lib/meta/chatEndpoints";
-import { transformInsight, transformAccount, transformCampaign, transformAdSet, transformAd } from "@/lib/meta/transformers";
+import { transformCampaign, transformAdSet, transformAd } from "@/lib/meta/transformers";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
-import { dateRangeCacheKey, formatCurrency, formatRoas, formatPercent, formatNumber, getPreviousPeriod } from "@/lib/utils";
+import { dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
 import { CHAT_TOOLS, DISPLAY_TOOLS } from "@/lib/chatTools";
 import { generateReport } from "@/lib/reportGenerator";
 import { ANALYST_SKILLS } from "@/lib/chatSkills";
 import { fetchAndExtractPage } from "@/lib/urlValidation";
+import {
+  formatAccountContext,
+  formatCampaignContext,
+  formatAdSetContext,
+  getAccountSummaries,
+} from "@/lib/chatContext";
 import type { DateRangeInput } from "@/types/api";
-import type { AccountSummary, CampaignRow } from "@/types/dashboard";
+import type { CampaignRow } from "@/types/dashboard";
 import { ALLOWED_MODELS, type ChatModelId } from "@/lib/chatModels";
 import type { GenerateReportInput, ApiContentBlock } from "@/types/chat";
 
@@ -79,77 +85,7 @@ function buildDateLabel(dateRange: DateRangeInput): string {
   return "Last 7 days";
 }
 
-function formatAccountContext(account: AccountSummary): string {
-  const m = account.insights;
-  const cur = account.currency;
-  return [
-    `**${account.name}** (${account.id}) — Status: ${account.status} | Currency: ${cur}`,
-    `  Spend: ${formatCurrency(m.spend, cur)} | ROAS: ${formatRoas(m.roas)} | Revenue: ${formatCurrency(m.conversionValue, cur)}`,
-    `  Impressions: ${formatNumber(m.impressions)} | Clicks: ${formatNumber(m.clicks)} | CTR: ${formatPercent(m.ctr)}`,
-    `  CPC: ${formatCurrency(m.cpc, cur)} | CPM: ${formatCurrency(m.cpm, cur)} | Frequency: ${m.frequency.toFixed(1)}`,
-    `  Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, cur) : "N/A"}${m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}` : ""}${m.leadValue > 0 ? ` | Lead Value: ${formatCurrency(m.leadValue, cur)}` : ""}${m.instagramProfileVisits > 0 ? ` | IG Profile Visits: ${formatNumber(m.instagramProfileVisits)}` : ""}`,
-  ].join("\n");
-}
-
-function formatCampaignContext(campaign: CampaignRow, currency: string): string {
-  const m = campaign.insights;
-  const budget = campaign.budget > 0
-    ? `${formatCurrency(campaign.budget, currency)}/${campaign.budgetType === "daily" ? "day" : "lifetime"}`
-    : "No budget";
-  return [
-    `  - **${campaign.name}** — ${campaign.status} | ${campaign.objective}${campaign.advantagePlus ? " | Advantage+" : ""}`,
-    `    Budget: ${budget} | Spend: ${formatCurrency(m.spend, currency)} | Revenue: ${formatCurrency(m.conversionValue, currency)} | ROAS: ${formatRoas(m.roas)}`,
-    `    CTR: ${formatPercent(m.ctr)} | CPC: ${formatCurrency(m.cpc, currency)} | Conversions: ${Math.round(m.conversions)} | Cost/Purchase: ${m.costPerPurchase > 0 ? formatCurrency(m.costPerPurchase, currency) : "N/A"}${m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}${m.leadValue > 0 ? ` (${formatCurrency(m.leadValue, currency)})` : ""}` : ""}`,
-  ].join("\n");
-}
-
-function formatAdSetContext(adSet: import("@/types/dashboard").AdSetRow, currency: string, adCount: number, activeAdCount: number): string {
-  const m = adSet.insights;
-  const budget = adSet.budget > 0
-    ? `${formatCurrency(adSet.budget, currency)}/${adSet.budgetType === "daily" ? "day" : "lifetime"}`
-    : "No budget";
-  const leadStr = m.leads > 0 ? ` | Leads: ${Math.round(m.leads)}` : "";
-  return `    - **${adSet.name}** — ${adSet.status} | ${adSet.optimizationGoal}${adSet.budgetSharing ? " | CBO" : ""} | Budget: ${budget} | Spend: ${formatCurrency(m.spend, currency)} | ROAS: ${formatRoas(m.roas)} | Freq: ${m.frequency.toFixed(1)}${leadStr} | ${activeAdCount} active ads (${adCount} total)`;
-}
-
 const MAX_CONTEXT_CHARS = 8000;
-
-async function getAccountSummaries(dateRange: DateRangeInput): Promise<AccountSummary[]> {
-  const dateKey = dateRangeCacheKey(dateRange);
-  const cacheKey = CacheKeys.allInsights(dateKey);
-
-  const cached = cache.get<AccountSummary[]>(cacheKey);
-  if (cached) return cached;
-
-  const accounts = await fetchOwnedAccounts();
-  const accountIds = accounts.map((a) => a.id);
-
-  const prevDateRange = getPreviousPeriod(dateRange);
-  const [currentInsightsMap, previousInsightsMap] = await Promise.all([
-    fetchAllAccountInsightsBatch(accountIds, dateRange),
-    fetchAllAccountInsightsBatch(accountIds, prevDateRange),
-  ]);
-
-  const summaries: AccountSummary[] = accounts.map((account) => {
-    const rawCurrent = currentInsightsMap.get(account.id);
-    const rawPrevious = previousInsightsMap.get(account.id);
-    const currentMetrics = rawCurrent ? transformInsight(rawCurrent) : emptyInsights();
-    const previousMetrics = rawPrevious ? transformInsight(rawPrevious) : undefined;
-    return transformAccount(account, currentMetrics, previousMetrics);
-  });
-
-  cache.set(cacheKey, summaries, TTL.ACCOUNTS);
-  return summaries;
-}
-
-function emptyInsights() {
-  return {
-    spend: 0, impressions: 0, reach: 0, clicks: 0,
-    ctr: 0, cpc: 0, cpm: 0, roas: 0,
-    conversions: 0, conversionValue: 0, costPerPurchase: 0,
-    frequency: 0, instagramProfileVisits: 0, leads: 0, leadValue: 0,
-  };
-}
 
 function badRequest(msg: string) {
   return new Response(JSON.stringify({ error: msg }), { status: 400 });

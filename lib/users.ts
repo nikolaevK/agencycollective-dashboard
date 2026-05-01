@@ -1,5 +1,5 @@
 import { getDb } from "./db";
-import type { Row } from "@libsql/client";
+import type { Client, Row } from "@libsql/client";
 
 export type UserStatus = "active" | "onboarding" | "inactive" | "archived";
 
@@ -15,6 +15,7 @@ export interface UserRecord {
   mrr: number;                // in cents
   category: string | null;
   createdAt: string;
+  analystEnabled: boolean;    // gates client-portal AI analyst access
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,23 @@ export function normalizeAccountId(raw: string): string {
 // DB helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * One-shot probe for the `analyst_enabled` column. Cached on success so we
+ * don't pay a roundtrip per insert/update. Cached `false` is re-probed in
+ * case migration runs after the first call.
+ */
+let _hasAnalystEnabledCol: boolean = false;
+async function hasAnalystEnabledColumn(db: Client): Promise<boolean> {
+  if (_hasAnalystEnabledCol) return true;
+  try {
+    await db.execute("SELECT analyst_enabled FROM users LIMIT 0");
+    _hasAnalystEnabledCol = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function rowToUser(row: Row): UserRecord {
   return {
     id: String(row.id),
@@ -94,6 +112,8 @@ function rowToUser(row: Row): UserRecord {
     mrr: Number(row.mrr ?? 0),
     category: row.category != null ? String(row.category) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
+    // Default true if column missing (pre-migration row read).
+    analystEnabled: row.analyst_enabled == null ? true : Number(row.analyst_enabled) === 1,
   };
 }
 
@@ -134,6 +154,32 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
 
 export async function insertUser(user: UserRecord): Promise<void> {
   const db = getDb();
+  const includeAnalyst = await hasAnalystEnabledColumn(db);
+
+  if (includeAnalyst) {
+    await db.execute({
+      sql: `INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash, email, status, mrr, category, analyst_enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        user.id,
+        user.slug,
+        user.accountId,
+        user.displayName,
+        user.logoPath,
+        user.passwordHash,
+        user.email,
+        user.status,
+        user.mrr,
+        user.category,
+        user.analystEnabled ? 1 : 0,
+      ],
+    });
+    return;
+  }
+
+  // Column not present yet (migration hasn't reached this DB) — write the
+  // base columns; the new flag will be NULL → coerced to true on read until
+  // the migration adds the column with its DEFAULT 1.
   await db.execute({
     sql: `INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash, email, status, mrr, category)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -196,10 +242,20 @@ export async function updateUser(
     args.push(changes.category);
   }
 
+  const db = getDb();
+
+  // Only emit the analyst_enabled write when the column exists. On a DB
+  // where the migration hasn't landed yet we silently skip — the rest of
+  // the update still applies, and the toggle just doesn't persist until
+  // migration runs (next request, since SCHEMA_VERSION is bumped).
+  if (changes.analystEnabled !== undefined && (await hasAnalystEnabledColumn(db))) {
+    fields.push("analyst_enabled = ?");
+    args.push(changes.analystEnabled ? 1 : 0);
+  }
+
   if (fields.length === 0) return;
   args.push(id);
 
-  const db = getDb();
   await db.execute({
     sql: `UPDATE users SET ${fields.join(", ")} WHERE id = ?`,
     args,
