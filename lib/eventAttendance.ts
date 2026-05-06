@@ -212,7 +212,7 @@ export async function getAttendanceFollowUpsForCloser(
   const result = await db.execute({
     sql: `WITH latest_appt AS (
             SELECT id, google_event_id, setter_id, client_name, client_email,
-                   scheduled_at, notes, pre_call_status, post_call_status, updated_at,
+                   scheduled_at, notes, pre_call_status, post_call_status, setter_tier, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
           ),
