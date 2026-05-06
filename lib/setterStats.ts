@@ -191,7 +191,7 @@ async function aggregateSetterBucket(
             COALESCE(SUM(CASE WHEN status = 'closed' AND IFNULL(paid_status, 'unpaid') = 'unpaid' THEN deal_value ELSE 0 END), 0) AS outstanding_revenue,
             COALESCE(SUM(CASE WHEN status IN ('pending_signature', 'follow_up', 'rescheduled') THEN 1 ELSE 0 END), 0) AS pending_deals,
 
-            COALESCE(SUM(CASE WHEN setter_tier = 'A' AND status = 'closed' AND paid_status = 'paid' THEN 1 ELSE 0 END), 0) AS tier_a_count,
+            COALESCE(SUM(CASE WHEN setter_tier = 'A' AND status IN ('closed','pending_signature') AND paid_status = 'paid' THEN 1 ELSE 0 END), 0) AS tier_a_count,
             COALESCE(SUM(CASE WHEN setter_tier = 'A' AND status IN ('closed','pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS tier_a_paid_revenue,
             COALESCE(SUM(
               CASE WHEN setter_tier = 'A' AND status IN ('closed','pending_signature') AND paid_status = 'paid'
@@ -214,7 +214,7 @@ async function aggregateSetterBucket(
               END
             ), 0) AS tier_a_commission_pending,
 
-            COALESCE(SUM(CASE WHEN setter_tier = 'B' AND status = 'closed' AND paid_status = 'paid' THEN 1 ELSE 0 END), 0) AS tier_b_count,
+            COALESCE(SUM(CASE WHEN setter_tier = 'B' AND status IN ('closed','pending_signature') AND paid_status = 'paid' THEN 1 ELSE 0 END), 0) AS tier_b_count,
             COALESCE(SUM(CASE WHEN setter_tier = 'B' AND status IN ('closed','pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS tier_b_paid_revenue,
             COALESCE(SUM(
               CASE WHEN setter_tier = 'B' AND status IN ('closed','pending_signature') AND paid_status = 'paid'
@@ -247,6 +247,12 @@ async function aggregateSetterBucket(
   // tier=C with the latest event_attendance row — only events with show_status
   // = 'showed' qualify. Window-bound on the appointment itself, since the
   // fee is earned by the setter regardless of whether a deal exists.
+  //
+  // Anti-stacking guard (§3.3): if the event has a deal whose setter_tier is
+  // anything other than 'C', the deal's tier is the source of truth and Tier
+  // C does NOT pay alongside it. We exclude such events here — admin's
+  // override wins, the per-call fee is suppressed, and the setter doesn't
+  // get paid both the deal commission AND the $25.
   const tierCAggregate = await db.execute({
     sql: `SELECT COUNT(*) AS attended FROM (
             SELECT a.google_event_id,
@@ -257,6 +263,11 @@ async function aggregateSetterBucket(
               FROM appointments a
              WHERE a.setter_id = ?
                AND a.setter_tier = 'C'
+               AND NOT EXISTS (
+                 SELECT 1 FROM deals d
+                  WHERE d.google_event_id = a.google_event_id
+                    AND COALESCE(d.setter_tier, '') NOT IN ('', 'C')
+               )
                ${apptDateClause}
           )
           WHERE appt_rn = 1 AND show_status = 'showed'`,

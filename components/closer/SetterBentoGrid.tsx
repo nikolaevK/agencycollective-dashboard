@@ -233,7 +233,7 @@ function TierBreakdownPanel({
     },
     {
       key: "D",
-      commission: breakdown.tierD.dealCount > 0 ? 0 : 0,
+      commission: 0,
       volume: `${breakdown.tierD.dealCount} deal${breakdown.tierD.dealCount === 1 ? "" : "s"} · no payout`,
     },
   ];

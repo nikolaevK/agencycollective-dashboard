@@ -103,9 +103,13 @@ export async function POST(request: Request) {
     setterTier,
   });
 
-  // Backfill: any existing deal linked to this event gets this setter credited
-  // (or re-credited to a later claimer if rules change).
-  await reassignDealsForEvent(googleEventId);
+  // Only reassign deal attribution when the setter explicitly committed or
+  // rescinded a tier on this POST. Notes-only or status-only updates do NOT
+  // re-run attribution — that would silently overwrite an admin's tier
+  // override on the linked deal every time the setter typed a note.
+  if (setterTier !== undefined) {
+    await reassignDealsForEvent(googleEventId);
+  }
 
   return NextResponse.json({ data: record });
 }
