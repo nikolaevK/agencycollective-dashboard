@@ -11,6 +11,7 @@ const tabs = [
   { href: "/dashboard/closers/calendar", label: "Calendar" },
   { href: "/dashboard/closers/payouts", label: "Payouts" },
   { href: "/dashboard/closers/contracts", label: "Contracts" },
+  { href: "/dashboard/closers/ghl-contacts", label: "GHL Contacts" },
 ];
 
 export function CloserSubNav() {

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useGhlCrossReference } from "@/hooks/useGhlContacts";
+import { GhlEventChip } from "@/components/ghl/GhlEventChip";
 import { format, parseISO } from "date-fns";
 import {
   AlignLeft,
@@ -88,6 +90,27 @@ export function NoShowFollowUpList({
   emptyText,
 }: NoShowFollowUpListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Single GHL cross-reference fetch covering every follow-up on the screen.
+  // Composite-key match needs (title, startTime, endTime); for follow-ups
+  // those map to (eventTitle, scheduledAt, eventEnd).
+  const ghlInputs = useMemo(() => {
+    const seen = new Set<string>();
+    const events: { id: string; title: string; startTime: string; endTime: string }[] = [];
+    for (const n of items) {
+      if (!n.googleEventId || seen.has(n.googleEventId)) continue;
+      if (!n.scheduledAt) continue;
+      seen.add(n.googleEventId);
+      events.push({
+        id: n.googleEventId,
+        title: n.eventTitle ?? n.clientName ?? "",
+        startTime: n.scheduledAt,
+        endTime: n.eventEnd ?? "",
+      });
+    }
+    return { events };
+  }, [items]);
+  const { data: ghlData } = useGhlCrossReference(ghlInputs);
 
   function toggleExpanded(eventId: string) {
     setExpanded((prev) => {
@@ -208,6 +231,19 @@ export function NoShowFollowUpList({
                       {n.attendees.length} attendee{n.attendees.length !== 1 ? "s" : ""}
                     </span>
                   )}
+                  <GhlEventChip
+                    event={
+                      n.googleEventId && n.scheduledAt
+                        ? {
+                            id: n.googleEventId,
+                            title: n.eventTitle ?? n.clientName ?? "",
+                            startTime: n.scheduledAt,
+                            endTime: n.eventEnd ?? "",
+                          }
+                        : null
+                    }
+                    data={ghlData}
+                  />
                 </div>
 
                 {/* Details expander — description + attendees, identical to calendar pattern */}

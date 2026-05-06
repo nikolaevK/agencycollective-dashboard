@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,8 @@ import {
   type AppointmentIndexEntry,
 } from "@/lib/appointments";
 import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
+import { useGhlCrossReference } from "@/hooks/useGhlContacts";
+import { GhlEventChip, buildGhlCrossReferenceInputs } from "@/components/ghl/GhlEventChip";
 
 export type AttendeeResponseStatus =
   | "needsAction"
@@ -124,6 +126,12 @@ export function CalendarEventList({
   // Re-render at midnight so the "Today" badge tracks the calendar day,
   // not just the data refetch cadence.
   useMidnightTick();
+
+  // Single GHL cross-reference fetch covering every event on the screen.
+  // Each card reads its row from `ghlData` instead of firing its own
+  // request — 50 cards = 1 GHL roundtrip.
+  const ghlInputs = useMemo(() => buildGhlCrossReferenceInputs(events), [events]);
+  const { data: ghlData } = useGhlCrossReference(ghlInputs);
 
   useEffect(() => {
     if (todayRef.current) {
@@ -250,6 +258,15 @@ export function CalendarEventList({
                             {dealInfo.closerName}
                           </span>
                         )}
+                        <GhlEventChip
+                          event={{
+                            id: event.id,
+                            title: event.title,
+                            startTime: event.start,
+                            endTime: event.end,
+                          }}
+                          data={ghlData}
+                        />
                       </div>
                     </div>
 
