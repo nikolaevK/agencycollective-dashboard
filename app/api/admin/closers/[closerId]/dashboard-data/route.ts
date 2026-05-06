@@ -62,7 +62,7 @@ export async function GET(
 
   if (target.role === "setter") {
     const [stats, recentDeals, followUps, rawNoShows] = await Promise.all([
-      getSetterStats(target.id, target.commissionRate, { since, until }),
+      getSetterStats(target.id, { since, until }),
       getSetterRecentDeals(target.id),
       getSetterFollowUps(target.id),
       getNoShowFollowUpsTeamWide(),

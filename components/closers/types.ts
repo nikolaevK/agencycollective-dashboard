@@ -1,5 +1,6 @@
 import type { CloserStatus, CloserRole } from "@/lib/closers";
 import type { DealStatus, ShowStatus } from "@/lib/deals";
+import type { SetterTier } from "@/lib/appointments";
 
 export interface CloserPublic {
   id: string;
@@ -35,6 +36,8 @@ export interface DealPublic {
   website: string | null;
   paidStatus: "paid" | "unpaid";
   additionalCcEmails: string[];
+  setterTier: SetterTier | null;
+  noRetainer: boolean;
   createdAt: string;
   updatedAt: string;
 }

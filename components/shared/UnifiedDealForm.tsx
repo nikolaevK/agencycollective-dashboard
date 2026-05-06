@@ -8,6 +8,7 @@ import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
 import { INDUSTRIES, DEAL_STATUSES, PAYMENT_TYPES } from "@/components/closers/types";
 import { parseServiceCategory, serializeServiceCategory } from "@/lib/serviceCategory";
 import { createDealAction } from "@/app/actions/closerDeals";
+import { SETTER_TIERS, SETTER_TIER_LABELS, type SetterTier } from "@/lib/appointments";
 
 const INPUT_CLS =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
@@ -31,6 +32,9 @@ interface UnifiedDealFormProps {
     brandName?: string | null;
     website?: string | null;
     additionalCcEmails?: string[];
+    setterId?: string | null;
+    setterTier?: SetterTier | null;
+    noRetainer?: boolean;
   };
   calendarEvent?: {
     id: string;
@@ -75,8 +79,18 @@ export function UnifiedDealForm({
   const [additionalCcEmails, setAdditionalCcEmails] = useState<string[]>(initialData?.additionalCcEmails ?? []);
   const [ccInputValue, setCcInputValue] = useState("");
   const [ccInputError, setCcInputError] = useState<string | null>(null);
+  // Admin-only tier override + no-retainer flag (1099 §3.3, §3.8). Initialized
+  // from the deal so the form reflects what the setter picked, but admin has
+  // the final say. `setterTier === ""` means "no tier — drops setter from
+  // commission for this deal" (setter attribution itself is preserved so
+  // history is auditable).
+  const [setterTier, setSetterTier] = useState<"" | SetterTier>(initialData?.setterTier ?? "");
+  const [noRetainer, setNoRetainer] = useState<boolean>(initialData?.noRetainer ?? false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const showAdminTierFields = context === "admin" && mode === "edit";
+  const hasSetter = Boolean(initialData?.setterId);
 
   function tryCommitCc(raw: string): boolean {
     const trimmed = raw.trim().toLowerCase();
@@ -288,6 +302,13 @@ export function UnifiedDealForm({
           body.website = website || null;
           body.additionalCcEmails = ccList;
           if (autoShowStatus) body.showStatus = autoShowStatus;
+          if (showAdminTierFields) {
+            // Empty string → null (clears tier on the deal so it pays $0
+            // without disturbing the setter attribution). Admin sees the
+            // setter row but commission math drops them.
+            body.setterTier = setterTier === "" ? null : setterTier;
+            body.noRetainer = noRetainer;
+          }
 
           const res = await fetch(endpoint, {
             method: "PATCH",
@@ -544,6 +565,53 @@ export function UnifiedDealForm({
           </select>
         </div>
       </div>
+
+      {/* Admin-only setter payout override. Surfaces the tier the setter
+          picked and lets admin override per the 1099 contract §3.3, plus
+          a no-retainer flag that caps tier A/B at $500 per §3.8. */}
+      {showAdminTierFields && (
+        <div className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Setter payout</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {hasSetter
+                ? "Override the tier the setter picked. Set to none to drop them from this deal's commission."
+                : "No setter attributed to this deal."}
+            </p>
+          </div>
+          {hasSetter && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-foreground mb-1.5 block">Tier</label>
+                <select
+                  value={setterTier}
+                  onChange={(e) => setSetterTier(e.target.value as "" | SetterTier)}
+                  className={INPUT_CLS}
+                >
+                  <option value="">None — no setter commission</option>
+                  {SETTER_TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      Tier {t} — {SETTER_TIER_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={noRetainer}
+                  onChange={(e) => setNoRetainer(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <span>
+                  No-retainer deal —{" "}
+                  <span className="text-muted-foreground">cap setter commission at $500 (§3.8)</span>
+                </span>
+              </label>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Notes */}
       <div>

@@ -1,5 +1,6 @@
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
+import { isSetterTier, type SetterTier } from "./appointments";
 
 export type DealStatus = "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
 
@@ -25,6 +26,12 @@ export interface DealRecord {
   website: string | null;
   paidStatus: "paid" | "unpaid";
   additionalCcEmails: string[];
+  /** Snapshot of `appointment.setter_tier` taken when the deal was created
+   *  or when the setter changed their tier. Admin can override on the deal
+   *  level for §3.4 disputes — see updateDeal. Null = no setter credit. */
+  setterTier: SetterTier | null;
+  /** Admin-set flag (§3.8): caps total commission at $500 for this deal. */
+  noRetainer: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,6 +76,7 @@ export function sanitizeCcEmails(input: unknown): string[] {
 // ---------------------------------------------------------------------------
 
 function rowToDeal(row: Row): DealRecord {
+  const tierRaw = row.setter_tier != null ? String(row.setter_tier) : null;
   return {
     id: String(row.id),
     closerId: String(row.closer_id),
@@ -89,6 +97,8 @@ function rowToDeal(row: Row): DealRecord {
     website: row.website != null ? String(row.website) : null,
     paidStatus: (String(row.paid_status ?? "unpaid")) as "paid" | "unpaid",
     additionalCcEmails: parseCcEmails(row.additional_cc_emails),
+    setterTier: isSetterTier(tierRaw) ? tierRaw : null,
+    noRetainer: Number(row.no_retainer ?? 0) === 1,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -147,8 +157,8 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO deals (id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails, setter_tier, no_retainer)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       deal.id,
       deal.closerId,
@@ -169,6 +179,8 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.website,
       deal.paidStatus ?? "unpaid",
       deal.additionalCcEmails && deal.additionalCcEmails.length > 0 ? JSON.stringify(deal.additionalCcEmails) : null,
+      deal.setterTier,
+      deal.noRetainer ? 1 : 0,
     ],
   });
 }
@@ -247,6 +259,14 @@ export async function updateDeal(
   if (changes.setterId !== undefined) {
     fields.push("setter_id = ?");
     args.push(changes.setterId);
+  }
+  if (changes.setterTier !== undefined) {
+    fields.push("setter_tier = ?");
+    args.push(changes.setterTier);
+  }
+  if (changes.noRetainer !== undefined) {
+    fields.push("no_retainer = ?");
+    args.push(changes.noRetainer ? 1 : 0);
   }
 
   if (fields.length === 0) return;

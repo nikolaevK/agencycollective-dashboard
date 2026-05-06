@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
   const [stats, recentDeals, followUps, rawNoShows] = await Promise.all([
-    getSetterStats(setter.id, setter.commissionRate, { since, until }),
+    getSetterStats(setter.id, { since, until }),
     getSetterRecentDeals(setter.id),
     getSetterFollowUps(setter.id),
     getNoShowFollowUpsTeamWide(),

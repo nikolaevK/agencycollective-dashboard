@@ -8,6 +8,7 @@ import {
   deleteAppointment,
   isPreCallStatus,
   isPostCallStatus,
+  isSetterTier,
 } from "@/lib/appointments";
 import { reassignDealsForEvent } from "@/lib/setterAttribution";
 
@@ -58,6 +59,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid postCallStatus" }, { status: 400 });
   }
 
+  // Tier is the setter's explicit credit-claim per the 1099 contract.
+  // Accepts a letter A/B/C/D, `null` to rescind credit, or undefined to
+  // leave the existing value untouched.
+  const tierRaw = body.setterTier;
+  let setterTier: "A" | "B" | "C" | "D" | null | undefined = undefined;
+  if (tierRaw !== undefined) {
+    if (tierRaw === null) {
+      setterTier = null;
+    } else if (isSetterTier(tierRaw)) {
+      setterTier = tierRaw;
+    } else {
+      return NextResponse.json({ error: "Invalid setterTier" }, { status: 400 });
+    }
+  }
+
   function optionalString(v: unknown): string | null | undefined {
     if (v === undefined) return undefined;
     if (v == null) return null;
@@ -84,6 +100,7 @@ export async function POST(request: Request) {
         : body.notes == null
         ? null
         : String(body.notes),
+    setterTier,
   });
 
   // Backfill: any existing deal linked to this event gets this setter credited

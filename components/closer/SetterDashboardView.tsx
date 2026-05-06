@@ -127,6 +127,10 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       preCallStatus: (editing.preCallStatus ?? "not_called") as PreCallStatus,
       postCallStatus: (editing.postCallStatus ?? "not_called") as PostCallStatus,
       notes: editing.setterNotes,
+      // Tier picker starts unselected on the dashboard's quick-edit view; the
+      // setter can pick one in the modal and POST will persist it.
+      setterTier: editing.setterTier ?? null,
+      setterTierAt: null,
       createdAt: "",
       updatedAt: "",
     };
@@ -134,7 +138,6 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
   }, [editing, data.setter.id]);
 
   const { setter, stats, recentDeals, followUps } = data;
-  const commissionPct = (setter.commissionRate / 100).toFixed(1);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
@@ -145,9 +148,8 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
             Welcome back, {setter.displayName.split(" ")[0]}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Attribution + follow-ups at a glance. You earn{" "}
-            <span className="font-semibold text-foreground">{commissionPct}%</span>{" "}
-            on every paid deal you sourced.
+            Attribution + follow-ups at a glance. Pick a tier on each
+            appointment to set your payout — A 3%, B 2%, C $25/attended, D $0.
           </p>
         </div>
         {!readOnly && (

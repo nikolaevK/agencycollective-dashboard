@@ -56,13 +56,19 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   const website = String(formData.get("website") ?? "").trim() || null;
   const additionalCcEmails = sanitizeCcEmails(formData.getAll("additionalCcEmails"));
 
-  // Auto-attribute setter if a setter has already claimed this calendar event
-  const setterId = googleEventId ? await resolveSetterForEvent(googleEventId) : null;
+  // Setter is only attributed when they've claimed AND picked a tier per
+  // the 1099 contract. `resolveSetterForEvent` returns null until the
+  // setter's appointment carries a tier letter.
+  const resolvedSetter = googleEventId ? await resolveSetterForEvent(googleEventId) : null;
+  const setterId = resolvedSetter?.setterId ?? null;
+  const setterTier = resolvedSetter?.tier ?? null;
 
   await insertDeal({
     id,
     closerId: session.closerId,
     setterId,
+    setterTier,
+    noRetainer: false,
     clientName,
     clientUserId,
     clientEmail,
@@ -92,7 +98,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   if (status === "closed" && dealValue > 0) {
     try {
       const invoiceNumber = await generateInvoiceNumber();
-      const deal = { id, closerId: session.closerId, setterId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const deal = { id, closerId: session.closerId, setterId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, setterTier, noRetainer: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
       await insertDealInvoice({
         id: crypto.randomUUID(),

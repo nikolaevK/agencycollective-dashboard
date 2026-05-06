@@ -174,6 +174,10 @@ export interface NoShowFollowUp {
   appointmentId: string | null;
   preCallStatus: string | null;
   postCallStatus: string | null;
+  /** 1099 tier the setter has claimed for this appointment, or null if
+   *  unselected. Surfaced so the dashboard's quick-edit modal can preserve
+   *  the existing selection instead of resetting it on each open. */
+  setterTier: "A" | "B" | "C" | "D" | null;
   /**
    * Enrichment pulled from the Google Calendar event itself. Critical when a
    * no-show has no appointment and no linked deal — without these, the setter
@@ -229,6 +233,7 @@ export async function getAttendanceFollowUpsForCloser(
              ap.notes AS setter_notes,
              ap.pre_call_status AS pre_call_status,
              ap.post_call_status AS post_call_status,
+             ap.setter_tier AS setter_tier,
              sc.display_name AS setter_name,
              d.id AS deal_id,
              d.client_name AS deal_client_name,
@@ -272,6 +277,10 @@ export async function getAttendanceFollowUpsForCloser(
     appointmentId: row.appointment_id != null ? String(row.appointment_id) : null,
     preCallStatus: row.pre_call_status != null ? String(row.pre_call_status) : null,
     postCallStatus: row.post_call_status != null ? String(row.post_call_status) : null,
+    setterTier: (() => {
+      const v = row.setter_tier != null ? String(row.setter_tier) : null;
+      return v === "A" || v === "B" || v === "C" || v === "D" ? v : null;
+    })(),
     eventTitle: null,
     eventDescription: null,
     eventEnd: null,
@@ -306,7 +315,7 @@ export async function getNoShowFollowUpsTeamWide(
           ),
           latest_appt AS (
             SELECT id, google_event_id, setter_id, client_name, client_email,
-                   scheduled_at, notes, pre_call_status, post_call_status, updated_at,
+                   scheduled_at, notes, pre_call_status, post_call_status, setter_tier, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
           ),
@@ -327,6 +336,7 @@ export async function getNoShowFollowUpsTeamWide(
              ap.notes AS setter_notes,
              ap.pre_call_status AS pre_call_status,
              ap.post_call_status AS post_call_status,
+             ap.setter_tier AS setter_tier,
              sc.display_name AS setter_name,
              d.id AS deal_id,
              d.client_name AS deal_client_name,
@@ -370,6 +380,10 @@ export async function getNoShowFollowUpsTeamWide(
     appointmentId: row.appointment_id != null ? String(row.appointment_id) : null,
     preCallStatus: row.pre_call_status != null ? String(row.pre_call_status) : null,
     postCallStatus: row.post_call_status != null ? String(row.post_call_status) : null,
+    setterTier: (() => {
+      const v = row.setter_tier != null ? String(row.setter_tier) : null;
+      return v === "A" || v === "B" || v === "C" || v === "D" ? v : null;
+    })(),
     eventTitle: null,
     eventDescription: null,
     eventEnd: null,

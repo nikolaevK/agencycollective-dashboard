@@ -5,6 +5,7 @@ import { formatCents } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
+import { SETTER_TIER_BADGE } from "@/lib/appointments";
 import type { SetterRecentDeal } from "@/lib/setterStats";
 
 interface Props {
@@ -59,6 +60,7 @@ export function SetterRecentDeals({ deals }: Props) {
             <tr className="text-left text-xs font-medium text-muted-foreground">
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Closer</th>
+              <th className="px-4 py-3">Tier</th>
               <th className="px-4 py-3">Value</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Invoice</th>
@@ -72,6 +74,22 @@ export function SetterRecentDeals({ deals }: Props) {
               <tr key={d.id} className="border-t border-border/50 dark:border-white/[0.04]">
                 <td className="px-4 py-3 font-medium text-foreground truncate max-w-[12rem]">{d.clientName}</td>
                 <td className="px-4 py-3 text-muted-foreground">{d.closerName ?? "—"}</td>
+                <td className="px-4 py-3">
+                  {d.setterTier ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                        SETTER_TIER_BADGE[d.setterTier]
+                      )}
+                      title={d.noRetainer ? "No-retainer deal — capped at $500 payout per §3.8" : undefined}
+                    >
+                      {d.setterTier}
+                      {d.noRetainer && <span className="ml-1 opacity-70">·NR</span>}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 font-mono tabular-nums">{formatCents(d.dealValue)}</td>
                 <td className="px-4 py-3">
                   <span

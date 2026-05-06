@@ -9,6 +9,7 @@ import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { isSetterTier } from "@/lib/appointments";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -130,6 +131,26 @@ export async function PATCH(request: Request) {
       if (ps === "paid" || ps === "unpaid") changes.paidStatus = ps;
     }
     if (body.additionalCcEmails !== undefined) changes.additionalCcEmails = sanitizeCcEmails(body.additionalCcEmails);
+
+    // Admin tier override + no-retainer flag (1099 contract §3.3, §3.8).
+    // Admin can null the tier (drops setter from payout entirely) or set a
+    // letter — and they can also clear the setter attribution outright by
+    // passing setterId: null. Both are audit-logged.
+    if (body.setterTier !== undefined) {
+      if (body.setterTier === null || body.setterTier === "") {
+        changes.setterTier = null;
+      } else if (isSetterTier(body.setterTier)) {
+        changes.setterTier = body.setterTier;
+      } else {
+        return NextResponse.json({ error: "Invalid setter tier" }, { status: 400 });
+      }
+    }
+    if (body.noRetainer !== undefined) {
+      changes.noRetainer = Boolean(body.noRetainer);
+    }
+    if (body.setterId !== undefined) {
+      changes.setterId = body.setterId ? String(body.setterId).trim() : null;
+    }
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {

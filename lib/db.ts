@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-01.analyst-toggle";
+const SCHEMA_VERSION = "2026-05-06.setter-tiers";
 
 export async function migrate(): Promise<void> {
   const db = getDb();
@@ -960,6 +960,52 @@ export async function migrate(): Promise<void> {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_deals_setter_id ON deals(setter_id)`);
   } catch {
     // index may already exist
+  }
+
+  // ── Setter tier columns (1099 contract: A/B/C/D commission tiers) ────
+  // Setter is no longer auto-credited just because they claimed an event;
+  // they must explicitly pick a tier on the appointment, which then flows
+  // into the linked deal. The `no_retainer` flag on deals lets admin cap
+  // tier-A/B payouts at $500 per the contract's no-retainer-deal clause.
+  try {
+    await db.execute(`SELECT setter_tier FROM appointments LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE appointments ADD COLUMN setter_tier TEXT`);
+      console.log("[migrate] Added setter_tier column to appointments");
+    } catch (err) {
+      console.warn("[migrate] Could not add setter_tier column to appointments:", err);
+    }
+  }
+  try {
+    await db.execute(`SELECT setter_tier_at FROM appointments LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE appointments ADD COLUMN setter_tier_at TEXT`);
+      console.log("[migrate] Added setter_tier_at column to appointments");
+    } catch (err) {
+      console.warn("[migrate] Could not add setter_tier_at column:", err);
+    }
+  }
+  try {
+    await db.execute(`SELECT setter_tier FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN setter_tier TEXT`);
+      console.log("[migrate] Added setter_tier column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add setter_tier column to deals:", err);
+    }
+  }
+  try {
+    await db.execute(`SELECT no_retainer FROM deals LIMIT 0`);
+  } catch {
+    try {
+      await db.execute(`ALTER TABLE deals ADD COLUMN no_retainer INTEGER NOT NULL DEFAULT 0`);
+      console.log("[migrate] Added no_retainer column to deals");
+    } catch (err) {
+      console.warn("[migrate] Could not add no_retainer column:", err);
+    }
   }
 
   // ── Notes (per-user scratchpad: priority, due date, tags, lead linkage) ──

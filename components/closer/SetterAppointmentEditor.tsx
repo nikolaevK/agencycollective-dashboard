@@ -8,12 +8,16 @@ import type {
   AppointmentRecord,
   PostCallStatus,
   PreCallStatus,
+  SetterTier,
 } from "@/lib/appointments";
 import {
   PRE_CALL_LABELS,
   POST_CALL_LABELS,
   PRE_CALL_STATUSES,
   POST_CALL_STATUSES,
+  SETTER_TIERS,
+  SETTER_TIER_LABELS,
+  SETTER_TIER_PAYOUT_HINT,
 } from "@/lib/appointments";
 
 interface Props {
@@ -32,6 +36,10 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
   const [clientName, setClientName] = useState(appointment.clientName ?? "");
   const [clientEmail, setClientEmail] = useState(appointment.clientEmail ?? "");
   const [notes, setNotes] = useState(appointment.notes ?? "");
+  // `null` here means "no tier selected → no setter credit on the linked
+  // deal" per Section 3 of the 1099 contract. `undefined` is never used
+  // here; we always pass an explicit value to the API.
+  const [setterTier, setSetterTier] = useState<SetterTier | null>(appointment.setterTier);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +49,7 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
     setClientName(appointment.clientName ?? "");
     setClientEmail(appointment.clientEmail ?? "");
     setNotes(appointment.notes ?? "");
+    setSetterTier(appointment.setterTier);
     setError(null);
   }, [appointment]);
 
@@ -59,6 +68,7 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
           notes,
           preCallStatus,
           postCallStatus,
+          setterTier,
         }),
       });
       if (!res.ok) {
@@ -156,6 +166,63 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
               rows={4}
               className={cn(INPUT_CLS, "h-auto py-2")}
             />
+          </div>
+
+          {/* ── 1099 commission tier ──────────────────────────────────
+              Setter declares which tier this appointment falls under per
+              Section 3.3 of the contract. Until a tier is selected, the
+              setter is NOT credited on any deal that links to this event.
+              Picking a tier acts as the explicit "approve attribution"
+              consent the contract requires. */}
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <label className="text-sm font-medium text-foreground">Commission tier</label>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Pick the tier that best describes your contribution. Selecting a
+              tier credits you on any closed deal linked to this call. Leave
+              unselected if you weren&apos;t the source of this appointment.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              <label className="flex items-start gap-2 rounded-md border border-input bg-background px-3 py-2 cursor-pointer hover:bg-accent/40 transition-colors">
+                <input
+                  type="radio"
+                  name="setter-tier"
+                  className="mt-0.5"
+                  checked={setterTier === null}
+                  onChange={() => setSetterTier(null)}
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-foreground">No tier</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    I&apos;m not claiming credit on this appointment.
+                  </p>
+                </div>
+              </label>
+              {SETTER_TIERS.map((t) => (
+                <label
+                  key={t}
+                  className={cn(
+                    "flex items-start gap-2 rounded-md border border-input bg-background px-3 py-2 cursor-pointer hover:bg-accent/40 transition-colors",
+                    setterTier === t && "border-foreground/40 bg-foreground/5"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="setter-tier"
+                    className="mt-0.5"
+                    checked={setterTier === t}
+                    onChange={() => setSetterTier(t)}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-foreground">
+                      {SETTER_TIER_LABELS[t]}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {SETTER_TIER_PAYOUT_HINT[t]}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

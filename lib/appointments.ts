@@ -44,6 +44,12 @@ export const POST_CALL_STATUSES: PostCallStatus[] = [
   "no_answer",
 ];
 
+// 1099 contract tiers (Section 3.3). The setter declares which tier their
+// contribution falls under; null means "no tier selected → no credit on
+// any linked deal." This is what replaces the old auto-attribution.
+export type SetterTier = "A" | "B" | "C" | "D";
+export const SETTER_TIERS: SetterTier[] = ["A", "B", "C", "D"];
+
 export interface AppointmentRecord {
   id: string;
   setterId: string;
@@ -54,11 +60,21 @@ export interface AppointmentRecord {
   preCallStatus: PreCallStatus;
   postCallStatus: PostCallStatus;
   notes: string | null;
+  /** Tier the setter has claimed for this appointment, or null if not yet
+   *  selected. While null, no setter credit flows through to any linked deal. */
+  setterTier: SetterTier | null;
+  /** ISO timestamp of when `setterTier` was last set. Useful for audit. */
+  setterTierAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export function isSetterTier(v: unknown): v is SetterTier {
+  return typeof v === "string" && (SETTER_TIERS as string[]).includes(v);
+}
+
 function rowToAppointment(row: Row): AppointmentRecord {
+  const tierRaw = row.setter_tier != null ? String(row.setter_tier) : null;
   return {
     id: String(row.id),
     setterId: String(row.setter_id),
@@ -69,6 +85,8 @@ function rowToAppointment(row: Row): AppointmentRecord {
     preCallStatus: String(row.pre_call_status) as PreCallStatus,
     postCallStatus: String(row.post_call_status) as PostCallStatus,
     notes: row.notes != null ? String(row.notes) : null,
+    setterTier: isSetterTier(tierRaw) ? tierRaw : null,
+    setterTierAt: row.setter_tier_at != null ? String(row.setter_tier_at) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -137,6 +155,9 @@ export interface UpsertAppointmentInput {
   preCallStatus?: PreCallStatus;
   postCallStatus?: PostCallStatus;
   notes?: string | null;
+  /** Pass `undefined` to leave unchanged. Pass `null` to clear the tier
+   *  (rescinds setter credit on linked deals). Pass a tier letter to set. */
+  setterTier?: SetterTier | null;
 }
 
 /**
@@ -180,6 +201,14 @@ export async function upsertAppointment(
       fields.push("notes = ?");
       args.push(input.notes);
     }
+    if (input.setterTier !== undefined) {
+      // Pair tier writes with their timestamp so audit/admin views can show
+      // when the setter committed credit. Clearing tier also clears the ts.
+      fields.push("setter_tier = ?");
+      args.push(input.setterTier);
+      fields.push("setter_tier_at = ?");
+      args.push(input.setterTier == null ? null : new Date().toISOString());
+    }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')");
@@ -196,10 +225,11 @@ export async function upsertAppointment(
   }
 
   const id = crypto.randomUUID();
+  const initialTier = input.setterTier ?? null;
   await db.execute({
     sql: `INSERT INTO appointments
-            (id, setter_id, google_event_id, client_name, client_email, scheduled_at, pre_call_status, post_call_status, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, setter_id, google_event_id, client_name, client_email, scheduled_at, pre_call_status, post_call_status, notes, setter_tier, setter_tier_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       input.setterId,
@@ -210,6 +240,8 @@ export async function upsertAppointment(
       input.preCallStatus ?? "not_called",
       input.postCallStatus ?? "not_called",
       input.notes ?? null,
+      initialTier,
+      initialTier == null ? null : new Date().toISOString(),
     ],
   });
 
@@ -300,6 +332,7 @@ export interface AppointmentIndexEntry {
   preCallStatus: PreCallStatus;
   postCallStatus: PostCallStatus;
   notes: string | null;
+  setterTier: SetterTier | null;
   updatedAt: string;
 }
 
@@ -315,7 +348,7 @@ export async function getAppointmentsIndex(): Promise<Record<string, Appointment
   const db = getDb();
   const result = await db.execute(
     `SELECT a.id, a.google_event_id, a.setter_id, a.client_name, a.client_email,
-            a.scheduled_at, a.pre_call_status, a.post_call_status, a.notes, a.updated_at,
+            a.scheduled_at, a.pre_call_status, a.post_call_status, a.notes, a.setter_tier, a.updated_at,
             c.display_name AS setter_name
        FROM appointments a
        LEFT JOIN closers c ON c.id = a.setter_id
@@ -327,6 +360,7 @@ export async function getAppointmentsIndex(): Promise<Record<string, Appointment
     const eventId = String(row.google_event_id);
     // Rows are sorted newest-first; the first one we see for a given event wins.
     if (index[eventId]) continue;
+    const tierRaw = row.setter_tier != null ? String(row.setter_tier) : null;
     index[eventId] = {
       googleEventId: eventId,
       setterId: String(row.setter_id),
@@ -337,8 +371,35 @@ export async function getAppointmentsIndex(): Promise<Record<string, Appointment
       preCallStatus: String(row.pre_call_status) as PreCallStatus,
       postCallStatus: String(row.post_call_status) as PostCallStatus,
       notes: row.notes != null ? String(row.notes) : null,
+      setterTier: isSetterTier(tierRaw) ? tierRaw : null,
       updatedAt: String(row.updated_at),
     };
   }
   return index;
 }
+
+// ── Tier metadata for UI consumption ─────────────────────────────────
+// Centralized so the setter calendar, setter dashboard, admin deal view,
+// and audit log all describe each tier identically.
+
+export const SETTER_TIER_LABELS: Record<SetterTier, string> = {
+  A: "Tier A — Setter-Sourced",
+  B: "Tier B — Setter-Recovered",
+  C: "Tier C — Setter-Confirmed (Self-Booked)",
+  D: "Tier D — System-Nurtured",
+};
+
+/** One-line summary of how each tier pays. Surfaced next to the picker. */
+export const SETTER_TIER_PAYOUT_HINT: Record<SetterTier, string> = {
+  A: "3% of collected gross revenue",
+  B: "2% of collected gross revenue",
+  C: "$25 flat per attended call (≥ 2 min)",
+  D: "No commission",
+};
+
+export const SETTER_TIER_BADGE: Record<SetterTier, string> = {
+  A: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  B: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
+  C: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  D: "bg-muted/60 text-muted-foreground",
+};
