@@ -94,7 +94,7 @@ export function SetterRecentDeals({ deals }: Props) {
                 <td className="px-4 py-3">
                   <span
                     className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                      "inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
                       STATUS_STYLES[d.status] ?? STATUS_STYLES.follow_up
                     )}
                   >
@@ -118,7 +118,7 @@ export function SetterRecentDeals({ deals }: Props) {
                 <td className="px-4 py-3">
                   <span
                     className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                      "inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
                       d.paidStatus === "paid"
                         ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
                         : "bg-muted/50 text-muted-foreground"
@@ -127,7 +127,7 @@ export function SetterRecentDeals({ deals }: Props) {
                     {d.paidStatus}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{formatDate(d.closingDate)}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDate(d.closingDate)}</td>
               </tr>
             ))}
           </tbody>

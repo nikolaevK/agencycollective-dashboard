@@ -45,7 +45,7 @@ export function DealContractStatusBadge({ status, onClick }: Props) {
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors",
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors",
         config.className,
         onClick && "cursor-pointer hover:opacity-80",
         !onClick && "cursor-default"
