@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-06.setter-tiers";
+const SCHEMA_VERSION = "2026-05-06.setter-tiers.r2";
 
 export async function migrate(): Promise<void> {
   const db = getDb();
