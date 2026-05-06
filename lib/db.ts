@@ -82,8 +82,51 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  */
 const SCHEMA_VERSION = "2026-05-06.setter-tiers.r2";
 
+/**
+ * Critical column-add ALTERs that MUST exist for runtime queries to work.
+ * Run unconditionally on every cold start, BEFORE the SCHEMA_VERSION probe —
+ * because if a previous run stamped the version but the ALTER silently
+ * failed, the body would be skipped forever and the column would never
+ * appear. Each block is a SELECT probe + ALTER, so it costs one extra
+ * roundtrip when the column already exists. Acceptable tax for self-healing.
+ *
+ * Strictly additive: every ALTER here is `ADD COLUMN` against an existing
+ * table. No data is rewritten, no table is dropped, no column is altered.
+ */
+async function ensureCriticalColumns(db: Client): Promise<void> {
+  const adds: { table: string; column: string; defn: string }[] = [
+    { table: "appointments", column: "setter_tier",    defn: "TEXT" },
+    { table: "appointments", column: "setter_tier_at", defn: "TEXT" },
+    { table: "deals",        column: "setter_tier",    defn: "TEXT" },
+    { table: "deals",        column: "no_retainer",    defn: "INTEGER NOT NULL DEFAULT 0" },
+  ];
+  for (const { table, column, defn } of adds) {
+    try {
+      await db.execute(`SELECT ${column} FROM ${table} LIMIT 0`);
+      continue; // column exists, nothing to do
+    } catch {
+      // column missing — fall through to ALTER
+    }
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${defn}`);
+      console.log(`[migrate] Added ${column} column to ${table}`);
+    } catch (err) {
+      // Surface as error (not warn) so a real failure is visible. Rethrow
+      // so ensureMigrated retries on the next call rather than declaring
+      // success while the schema is broken.
+      console.error(`[migrate] Failed to add ${column} to ${table}:`, err);
+      throw err;
+    }
+  }
+}
+
 export async function migrate(): Promise<void> {
   const db = getDb();
+
+  // Always run critical column ALTERs first. Idempotent, and survives a
+  // stuck SCHEMA_VERSION stamp where the body got skipped after a prior
+  // partial migration silently warned-and-stamped.
+  await ensureCriticalColumns(db);
 
   // Cheap sentinel probe. Wrapped in try/catch because schema_meta itself
   // doesn't exist on the very first migrate of a fresh DB — the catch falls
