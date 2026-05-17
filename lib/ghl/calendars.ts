@@ -1,6 +1,5 @@
-import { ghlRequest, getGhlConfig, describeError } from "./client";
+import { ghlRequest, getGhlConfig, describeError, GhlApiError } from "./client";
 import { pickStr, pickIso, cachedSingleflight } from "./util";
-import { fetchWithConcurrency } from "@/lib/concurrency";
 import type { GhlContactAppointment } from "@/types/ghl";
 
 const TTL_EVENTS = 300; // 5 min
@@ -49,31 +48,53 @@ function normEvent(raw: Record<string, unknown>): GhlContactAppointment {
 }
 
 async function listCalendarIds(locationId: string): Promise<string[]> {
-  // Fast path: stick with the previously-working endpoint.
+  // Fast path: stick with the previously-working endpoint. Only re-probe
+  // when the cached path is truly gone (404). Every other failure
+  // (429, 5xx, network) is transient — propagate so the caller's
+  // cachedSingleflight doesn't cache an empty result on top of it.
   if (resolvedCalendarsPath) {
     try {
       return await fetchCalendarIdsAt(resolvedCalendarsPath, locationId);
     } catch (err) {
-      // Path failed — clear the memo and re-probe below.
-      console.error(
-        `[ghl-calendars] cached path ${resolvedCalendarsPath} failed, re-probing:`,
-        err instanceof Error ? err.message : err
-      );
-      resolvedCalendarsPath = null;
+      if (err instanceof GhlApiError && err.status === 404) {
+        console.error(
+          `[ghl-calendars] cached path ${resolvedCalendarsPath} 404, re-probing`
+        );
+        resolvedCalendarsPath = null;
+      } else {
+        throw err;
+      }
     }
   }
 
+  // Path probing — only continue to the next candidate on 404. Previously
+  // any error (429, 5xx) silently fell through to the next path; both
+  // would "fail" and we'd return [], which `cachedSingleflight` then
+  // cached for 5 min. Result: a transient rate-limit turned into a
+  // five-minute global outage where GHL features rendered empty.
+  let lastError: unknown = null;
   for (const p of ["/calendars/", "/calendars"]) {
     try {
       const ids = await fetchCalendarIdsAt(p, locationId);
-      // Remember this path even if it returned an empty list, so future
-      // calls don't keep probing.
       resolvedCalendarsPath = p;
       return ids;
     } catch (err) {
-      console.error(`[ghl-calendars] ${p} failed:`, describeError(err));
+      lastError = err;
+      if (err instanceof GhlApiError && err.status === 404) {
+        console.error(`[ghl-calendars] ${p} not found, trying next path`);
+        continue;
+      }
+      // 429 / 5xx / network — bubble up to caller. cachedSingleflight
+      // won't cache on throw, so the next request retries naturally.
+      throw err;
     }
   }
+  // Every candidate path 404'd → GHL genuinely doesn't expose a
+  // /calendars listing on this tenant. Empty is the correct answer.
+  console.error(
+    "[ghl-calendars] all calendar paths 404'd; returning empty:",
+    describeError(lastError)
+  );
   return [];
 }
 
@@ -145,21 +166,18 @@ export async function getAppointmentsByContact(): Promise<
     const startTime = now - PAST_WINDOW_DAYS * 86_400_000;
     const endTime = now + FUTURE_WINDOW_DAYS * 86_400_000;
 
-    // Bounded fan-out — three at a time. Fully parallel fan-out got
-    // 429-stormed in production when several Vercel instances all loaded
-    // a calendar page simultaneously: their limiters each granted a burst
-    // independently, and the aggregate spilled past GHL's 100/10s ceiling.
-    // Three keeps each instance well below the per-tenant rate even when
-    // multiple instances are concurrently fetching.
-    const settled = await fetchWithConcurrency(
-      calendarIds,
-      (id) => fetchEventsForCalendar(locationId, id, startTime, endTime),
-      3
+    // Run all calendars in parallel — each call is one shot with no
+    // pagination, so concurrency just collapses wall-clock from N×rtt to rtt.
+    const settled = await Promise.allSettled(
+      calendarIds.map((id) =>
+        fetchEventsForCalendar(locationId, id, startTime, endTime)
+      )
     );
-    for (const r of settled) {
+    for (let i = 0; i < settled.length; i++) {
+      const r = settled[i];
       if (r.status === "rejected") {
         console.error(
-          `[ghl-calendars] events fetch failed for calendar ${r.input}:`,
+          `[ghl-calendars] events fetch failed for calendar ${calendarIds[i]}:`,
           describeError(r.reason)
         );
         continue;

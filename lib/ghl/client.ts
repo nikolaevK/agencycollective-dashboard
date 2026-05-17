@@ -105,15 +105,11 @@ class RateLimiter {
   }
 }
 
-// GHL PIT documents 100 burst per 10s. Token bucket lets a fresh request
-// burst through 20 calls then refills at 15/s — slightly above the
-// strict 10/s sustained rate to give each call a tiny bit of headroom,
-// but well under the per-tenant 100/10s ceiling even when multiple
-// Vercel instances run concurrently. The earlier 50/50 setting was 5×
-// over budget and caused 429-storms in production; the previous 10/20
-// dial-down was too conservative and let the retry path bloat function
-// runtime past Vercel's 30s ceiling.
-const limiter = new RateLimiter(20, 15);
+// 50/s sustained — comfortably within GHL PIT's documented daily-cap math
+// while letting bulk paginated fetches (calendars, opportunities,
+// conversations) drain quickly. 429 retry below covers the rare burst that
+// still slips through.
+const limiter = new RateLimiter(50, 50);
 
 // ── Request ──────────────────────────────────────────────────────────
 
@@ -123,22 +119,9 @@ interface RequestOpts {
   body?: unknown;
   /** Override the GHL Version header. Some endpoints require 2023-02-21. */
   version?: string;
-  /**
-   * Hard ceiling on total time for this call (including retries). Default
-   * 10s. Critical because fetchWithConcurrency awaits all settled — one
-   * stuck call can otherwise block the entire bulk fetch and burn the
-   * function's 30s Vercel budget.
-   */
-  timeoutMs?: number;
 }
 
-// 3 retries × 5s max each = ~15s worst-case per call, which fits inside
-// the 10s per-call timeout below in the happy path and lets the timeout
-// abort cleanly otherwise. Larger retry budgets (we tried 6 × 15s) made
-// single calls stall for 90s, blocking the whole calendar fan-out and
-// timing out the function.
-const MAX_429_RETRIES = 3;
-const DEFAULT_TIMEOUT_MS = 10_000;
+const MAX_429_RETRIES = 4;
 
 export async function ghlRequest<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const { pit } = getGhlConfig();
@@ -153,72 +136,51 @@ export async function ghlRequest<T>(path: string, opts: RequestOpts = {}): Promi
     }
   }
 
-  // Single overall deadline covering rate-limit wait + retries + fetch.
-  // AbortSignal.timeout is widely supported in Node 18+ / modern fetch.
-  const deadlineMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const deadline = Date.now() + deadlineMs;
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(new Error(`GHL ${method} ${path} timed out after ${deadlineMs}ms`)), deadlineMs);
+  let attempt = 0;
+  while (true) {
+    await limiter.acquire();
 
-  try {
-    let attempt = 0;
-    while (true) {
-      await limiter.acquire();
-      if (abort.signal.aborted) throw abort.signal.reason ?? new Error("aborted");
+    const res = await fetch(url.toString(), {
+      method,
+      headers: {
+        Authorization: `Bearer ${pit}`,
+        Version: version,
+        Accept: "application/json",
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      cache: "no-store",
+    });
 
-      const res = await fetch(url.toString(), {
-        method,
-        headers: {
-          Authorization: `Bearer ${pit}`,
-          Version: version,
-          Accept: "application/json",
-          ...(opts.body ? { "Content-Type": "application/json" } : {}),
-        },
-        body: opts.body ? JSON.stringify(opts.body) : undefined,
-        cache: "no-store",
-        signal: abort.signal,
-      });
-
-      // Transparent 429 retry — GHL bursts can over-run our limiter when
-      // concurrent callers all happen to grab tokens at once. Read the
-      // Retry-After header (seconds) if present, otherwise back off
-      // exponentially. Full jitter prevents multiple serverless instances
-      // from synchronizing their retries and re-amplifying the burst.
-      // Skip the retry if the wait would push us past our deadline —
-      // better to throw a 429 we can recover from than block.
-      if (res.status === 429 && attempt < MAX_429_RETRIES) {
-        attempt += 1;
-        const retryAfter = res.headers.get("Retry-After");
-        const ra = retryAfter ? Number(retryAfter) : NaN;
-        const ceiling = Number.isFinite(ra) && ra > 0
-          ? Math.min(5_000, ra * 1000)
-          : Math.min(5_000, 500 * Math.pow(2, attempt));
-        const waitMs = Math.floor(ceiling * (0.5 + Math.random() * 0.5));
-        if (Date.now() + waitMs >= deadline) {
-          // Don't wait — let the next iteration's signal check throw.
-          throw new GhlApiError(429, null, `GHL ${method} ${path} 429 after ${attempt} attempts; would exceed timeout`);
-        }
-        await new Promise((r) => setTimeout(r, waitMs));
-        continue;
-      }
-
-      let payload: unknown = null;
-      const text = await res.text();
-      if (text) {
-        try { payload = JSON.parse(text); } catch { payload = text; }
-      }
-
-      if (!res.ok) {
-        const message =
-          payload && typeof payload === "object" && "message" in payload && typeof (payload as Record<string, unknown>).message === "string"
-            ? String((payload as Record<string, unknown>).message)
-            : `GHL ${method} ${path} failed (${res.status})`;
-        throw new GhlApiError(res.status, payload, message);
-      }
-
-      return payload as T;
+    // Transparent 429 retry — GHL bursts can over-run our limiter when
+    // concurrent callers all happen to grab tokens at once. Read the
+    // Retry-After header (seconds) if present, otherwise back off
+    // exponentially.
+    if (res.status === 429 && attempt < MAX_429_RETRIES) {
+      attempt += 1;
+      const retryAfter = res.headers.get("Retry-After");
+      const ra = retryAfter ? Number(retryAfter) : NaN;
+      const waitMs = Number.isFinite(ra) && ra > 0
+        ? Math.min(15_000, ra * 1000)
+        : Math.min(8_000, 500 * Math.pow(2, attempt));
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
     }
-  } finally {
-    clearTimeout(timer);
+
+    let payload: unknown = null;
+    const text = await res.text();
+    if (text) {
+      try { payload = JSON.parse(text); } catch { payload = text; }
+    }
+
+    if (!res.ok) {
+      const message =
+        payload && typeof payload === "object" && "message" in payload && typeof (payload as Record<string, unknown>).message === "string"
+          ? String((payload as Record<string, unknown>).message)
+          : `GHL ${method} ${path} failed (${res.status})`;
+      throw new GhlApiError(res.status, payload, message);
+    }
+
+    return payload as T;
   }
 }
