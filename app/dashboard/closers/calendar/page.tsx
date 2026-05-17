@@ -72,21 +72,65 @@ export default function AdminCalendarPage() {
   // Fetch attendance data — admin keeps its closer-attribution endpoint for
   // the team breakdown, but the GHL sync chip uses the shared team-wide
   // endpoint (POST with event coords so links auto-discover on load).
-  const { data: attendance = {} } = useQuery<Record<string, string>>({
+  // We split the response into two derived maps: { eventId: showStatus }
+  // for the badge, and { eventId: closerId } for the reassign-picker.
+  const { data: attendanceMaps = { status: {} as Record<string, string>, closerId: {} as Record<string, string> } } = useQuery<{
+    status: Record<string, string>;
+    closerId: Record<string, string>;
+  }>({
     queryKey: ["admin-attendance"],
     queryFn: async () => {
       const res = await fetch("/api/admin/attendance");
       const json = await res.json();
-      // Convert { eventId: { showStatus, closerId } } to { eventId: showStatus }
-      const raw = json.data ?? {};
-      const result: Record<string, string> = {};
+      const raw = (json.data ?? {}) as Record<string, { showStatus: string; closerId: string }>;
+      const status: Record<string, string> = {};
+      const closerId: Record<string, string> = {};
       for (const [eventId, val] of Object.entries(raw)) {
-        result[eventId] = (val as { showStatus: string }).showStatus;
+        status[eventId] = val.showStatus;
+        closerId[eventId] = val.closerId;
       }
-      return result;
+      return { status, closerId };
     },
     staleTime: 30_000,
   });
+  const attendance = attendanceMaps.status;
+  const attendanceCloserId = attendanceMaps.closerId;
+
+  // Active closers + setters as reassignment targets for the per-card picker.
+  // Cached 5 min — the list rarely changes mid-session, and the admin
+  // calendar already does plenty of work per render.
+  const { data: closersList = [] } = useQuery<Array<{ id: string; displayName: string }>>({
+    queryKey: ["admin-closers-list-active"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/closers?status=active");
+      if (!res.ok) return [];
+      const json = await res.json();
+      const rows = (json.data ?? []) as Array<{ id: string; displayName: string }>;
+      return rows
+        .map((c) => ({ id: c.id, displayName: c.displayName }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  async function handleReassignAttribution(eventId: string, toCloserId: string) {
+    const fromCloserId = attendanceCloserId[eventId];
+    if (!fromCloserId || fromCloserId === toCloserId) return;
+    const res = await fetch("/api/admin/attendance", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, fromCloserId, toCloserId }),
+    });
+    if (!res.ok) {
+      console.error("[admin-calendar] reassign failed:", await res.text());
+      return;
+    }
+    // Refresh attendance + downstream stats (closer dashboard show rates,
+    // team breakdowns) so the new attribution propagates without a reload.
+    queryClient.invalidateQueries({ queryKey: ["admin-attendance"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-team-attendance-sync"] });
+    queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
+  }
 
   type SyncEntry = {
     dashboardStatus: "showed" | "no_show" | null;
@@ -295,9 +339,12 @@ export default function AdminCalendarPage() {
                 linkedEventIds={linkedEventIds}
                 linkedDeals={linkedDeals}
                 attendance={attendance}
+                attendanceCloserId={attendanceCloserId}
+                closers={closersList}
                 ghlSync={ghlSync}
                 appointments={setterAppointments}
                 onResync={handleResync}
+                onReassignAttribution={handleReassignAttribution}
                 isAdmin={true}
               />
             )}

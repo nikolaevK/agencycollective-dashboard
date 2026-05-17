@@ -316,6 +316,39 @@ export async function syncEventAttendanceFromGhl(input: {
   const attribution =
     input.closerId ?? (await resolveCloserByGhlAssignedUser(snap?.assignedUserId));
   if (!attribution) {
+    // Can't auto-attribute the new row — GHL's assignedUserId doesn't
+    // resolve to any active closer by display name (or there is no
+    // assigned user at all). Two sub-cases:
+    //
+    //   a) The event already has existing event_attendance row(s).
+    //      Fall back to updating their show_status to match GHL.
+    //      Attribution stays with whoever already had the row; admin can
+    //      fix it with the calendar's reassign picker afterwards. This
+    //      is what unblocks "pull a lead whose GHL assigned user isn't
+    //      a closer in our DB" — status syncs even if attribution can't.
+    //   b) No rows exist yet. Genuine needs_attribution — there's
+    //      nothing to update, and we won't fabricate a row attributed
+    //      to a guess.
+    const updated = await updateExistingAttendanceStatus(
+      input.evt.googleEventId,
+      targetDashboard
+    );
+    if (updated > 0) {
+      await updateLinkSyncState({
+        googleEventId: input.evt.googleEventId,
+        syncState: "synced",
+        dashboardStatus: targetDashboard,
+        ghlStatus,
+        bumpLastPull: true,
+        lastError: null,
+      });
+      return {
+        outcome: "synced",
+        syncState: "synced",
+        ghlStatus,
+        dashboardStatus: targetDashboard,
+      };
+    }
     await updateLinkSyncState({
       googleEventId: input.evt.googleEventId,
       syncState: "out_of_sync",
@@ -385,4 +418,29 @@ async function replaceAttendanceForEvent(
     ],
     "write"
   );
+}
+
+/**
+ * Update show_status on every existing row for an event, preserving
+ * closer_id. Used by Pull's status-only fallback when GHL's assigned
+ * user can't be name-matched to a dashboard closer — we still want the
+ * status to sync so the admin can reassign attribution separately via
+ * the calendar picker.
+ *
+ * Returns the number of rows updated (0 means "no existing attendance
+ * for this event").
+ */
+async function updateExistingAttendanceStatus(
+  googleEventId: string,
+  showStatus: AttendanceStatus
+): Promise<number> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `UPDATE event_attendance
+             SET show_status = ?, updated_at = datetime('now')
+           WHERE google_event_id = ?`,
+    args: [showStatus, googleEventId],
+  });
+  return result.rowsAffected ?? 0;
 }

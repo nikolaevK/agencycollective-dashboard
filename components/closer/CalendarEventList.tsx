@@ -62,6 +62,12 @@ interface Props {
   linkedDeals?: LinkedDealInfo[];
   /** Attendance status per event ID: "showed" | "no_show" */
   attendance?: Record<string, string>;
+  /** Closer attributed to each event's attendance row (admin view only).
+   *  Same key set as `attendance`. Drives the reassign-picker dropdown. */
+  attendanceCloserId?: Record<string, string>;
+  /** Active closers available as reassignment targets. Required to render
+   *  the admin reassign-picker; omit to hide it. */
+  closers?: Array<{ id: string; displayName: string }>;
   /** GHL sync state per event ID. Present only for events linked to a GHL
    *  appointment; absence = non-GHL event (no chip). */
   ghlSync?: Record<string, GhlSyncEntry>;
@@ -73,6 +79,8 @@ interface Props {
   onAttendanceChange?: (eventId: string, status: "showed" | "no_show" | null) => void;
   /** Manual force-sync. "push" = dashboard → GHL, "pull" = GHL → dashboard. */
   onResync?: (eventId: string, direction: "push" | "pull") => Promise<void> | void;
+  /** Admin handler to reassign which closer owns the attendance row. */
+  onReassignAttribution?: (eventId: string, toCloserId: string) => Promise<void> | void;
   /** Edit a linked deal */
   onEditDeal?: (dealId: string) => void;
   /** Admin view (read-only attendance, shows closer name) */
@@ -146,11 +154,14 @@ export function CalendarEventList({
   linkedEventIds,
   linkedDeals,
   attendance,
+  attendanceCloserId,
+  closers,
   ghlSync,
   appointments,
   onLinkDeal,
   onAttendanceChange,
   onResync,
+  onReassignAttribution,
   onEditDeal,
   isAdmin,
 }: Props) {
@@ -161,6 +172,21 @@ export function CalendarEventList({
   // state, which can be null for an unselect).
   const [pendingAttendance, setPendingAttendance] = useState<Map<string, "showed" | "no_show">>(new Map());
   const [pendingResync, setPendingResync] = useState<Map<string, "push" | "pull">>(new Map());
+  const [pendingReassign, setPendingReassign] = useState<Set<string>>(new Set());
+
+  async function handleReassignClick(eventId: string, toCloserId: string) {
+    if (!onReassignAttribution) return;
+    setPendingReassign((prev) => new Set(prev).add(eventId));
+    try {
+      await onReassignAttribution(eventId, toCloserId);
+    } finally {
+      setPendingReassign((prev) => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
 
   async function handleAttendanceClick(
     eventId: string,
@@ -563,20 +589,67 @@ export function CalendarEventList({
                     </div>
                   )}
 
-                  {/* Admin: read-only attendance badge */}
-                  {isAdmin && eventAttendance && (
-                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
-                      <span className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
-                        eventAttendance === "showed"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                          : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
-                      )}>
-                        {eventAttendance === "showed" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                        {eventAttendance === "showed" ? "Showed" : "No Show"}
-                      </span>
-                    </div>
-                  )}
+                  {/* Admin: read-only attendance badge + closer reassign picker */}
+                  {isAdmin && eventAttendance && (() => {
+                    const currentCloser = attendanceCloserId?.[event.id] ?? null;
+                    const canReassign =
+                      Boolean(onReassignAttribution) &&
+                      Boolean(closers && closers.length > 0) &&
+                      Boolean(currentCloser);
+                    const reassignBusy = pendingReassign.has(event.id);
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                          eventAttendance === "showed"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                            : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+                        )}>
+                          {eventAttendance === "showed" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                          {eventAttendance === "showed" ? "Showed" : "No Show"}
+                        </span>
+                        {canReassign && closers && (
+                          <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span>Attributed to:</span>
+                            <select
+                              value={currentCloser ?? ""}
+                              disabled={reassignBusy}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                if (!next || next === currentCloser) return;
+                                handleReassignClick(event.id, next);
+                              }}
+                              className={cn(
+                                "h-7 rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30",
+                                reassignBusy && "opacity-60 cursor-wait"
+                              )}
+                              aria-label="Reassign attendance to a different closer"
+                            >
+                              {/* If the currently-attributed closer isn't in
+                                  the active-closers list (deactivated since
+                                  the row was written), still render them as
+                                  the selected option so the picker reflects
+                                  reality and the admin sees who to change FROM. */}
+                              {currentCloser &&
+                                !closers.some((c) => c.id === currentCloser) && (
+                                  <option value={currentCloser}>
+                                    (unknown / inactive)
+                                  </option>
+                                )}
+                              {closers.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.displayName}
+                                </option>
+                              ))}
+                            </select>
+                            {reassignBusy && (
+                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                            )}
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
