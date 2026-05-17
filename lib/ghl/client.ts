@@ -105,11 +105,14 @@ class RateLimiter {
   }
 }
 
-// 50/s sustained — comfortably within GHL PIT's documented daily-cap math
-// while letting bulk paginated fetches (calendars, opportunities,
-// conversations) drain quickly. 429 retry below covers the rare burst that
-// still slips through.
-const limiter = new RateLimiter(50, 50);
+// GHL PIT documents 100 burst per 10s → 10 r/s sustained, ~20 burst.
+// We previously ran at 50/50 ("comfortably" exceeded the doc) and it
+// worked in dev but kept hitting 429 in production where multiple Vercel
+// serverless instances each carry their own limiter — the aggregate rate
+// across instances multiplies past the per-tenant ceiling. Sticking close
+// to the documented sustained rate gives every instance headroom and lets
+// the 429 retry path mop up the rare overlap.
+const limiter = new RateLimiter(20, 10);
 
 // ── Request ──────────────────────────────────────────────────────────
 
@@ -121,7 +124,10 @@ interface RequestOpts {
   version?: string;
 }
 
-const MAX_429_RETRIES = 4;
+// Up from 4 — multi-instance serverless deployments can have several
+// retries racing the same 10s window. Each attempt waits at least the
+// Retry-After value (or a jittered exponential backoff up to 15s).
+const MAX_429_RETRIES = 6;
 
 export async function ghlRequest<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const { pit } = getGhlConfig();
@@ -155,14 +161,16 @@ export async function ghlRequest<T>(path: string, opts: RequestOpts = {}): Promi
     // Transparent 429 retry — GHL bursts can over-run our limiter when
     // concurrent callers all happen to grab tokens at once. Read the
     // Retry-After header (seconds) if present, otherwise back off
-    // exponentially.
+    // exponentially. Full jitter prevents multiple serverless instances
+    // from synchronizing their retries and re-amplifying the burst.
     if (res.status === 429 && attempt < MAX_429_RETRIES) {
       attempt += 1;
       const retryAfter = res.headers.get("Retry-After");
       const ra = retryAfter ? Number(retryAfter) : NaN;
-      const waitMs = Number.isFinite(ra) && ra > 0
+      const ceiling = Number.isFinite(ra) && ra > 0
         ? Math.min(15_000, ra * 1000)
-        : Math.min(8_000, 500 * Math.pow(2, attempt));
+        : Math.min(15_000, 500 * Math.pow(2, attempt));
+      const waitMs = Math.floor(ceiling * (0.5 + Math.random() * 0.5));
       await new Promise((r) => setTimeout(r, waitMs));
       continue;
     }

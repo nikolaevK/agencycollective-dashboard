@@ -1,4 +1,9 @@
 export const dynamic = "force-dynamic";
+// POST does discovery (composite-key matching against the cached GHL bulk
+// listing) plus per-link drift detection. On a cold cache + rate-limit
+// retries the worst case can run several seconds; 30s matches the other
+// GHL-touching routes and keeps Vercel from killing the function.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";

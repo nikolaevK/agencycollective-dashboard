@@ -1,4 +1,8 @@
 export const dynamic = "force-dynamic";
+// PATCH/DELETE include the synchronous GHL PUT (with the GET-for-body
+// pre-fetch). With rate limiting + jittered retries that round-trip can
+// take several seconds in the worst case.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";

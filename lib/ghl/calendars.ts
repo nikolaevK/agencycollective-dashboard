@@ -1,5 +1,6 @@
 import { ghlRequest, getGhlConfig, describeError } from "./client";
 import { pickStr, pickIso, cachedSingleflight } from "./util";
+import { fetchWithConcurrency } from "@/lib/concurrency";
 import type { GhlContactAppointment } from "@/types/ghl";
 
 const TTL_EVENTS = 300; // 5 min
@@ -144,18 +145,21 @@ export async function getAppointmentsByContact(): Promise<
     const startTime = now - PAST_WINDOW_DAYS * 86_400_000;
     const endTime = now + FUTURE_WINDOW_DAYS * 86_400_000;
 
-    // Run all calendars in parallel — each call is one shot with no
-    // pagination, so concurrency just collapses wall-clock from N×rtt to rtt.
-    const settled = await Promise.allSettled(
-      calendarIds.map((id) =>
-        fetchEventsForCalendar(locationId, id, startTime, endTime)
-      )
+    // Bounded fan-out — three at a time. Fully parallel fan-out got
+    // 429-stormed in production when several Vercel instances all loaded
+    // a calendar page simultaneously: their limiters each granted a burst
+    // independently, and the aggregate spilled past GHL's 100/10s ceiling.
+    // Three keeps each instance well below the per-tenant rate even when
+    // multiple instances are concurrently fetching.
+    const settled = await fetchWithConcurrency(
+      calendarIds,
+      (id) => fetchEventsForCalendar(locationId, id, startTime, endTime),
+      3
     );
-    for (let i = 0; i < settled.length; i++) {
-      const r = settled[i];
+    for (const r of settled) {
       if (r.status === "rejected") {
         console.error(
-          `[ghl-calendars] events fetch failed for calendar ${calendarIds[i]}:`,
+          `[ghl-calendars] events fetch failed for calendar ${r.input}:`,
           describeError(r.reason)
         );
         continue;

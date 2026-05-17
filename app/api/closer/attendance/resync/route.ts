@@ -1,4 +1,7 @@
 export const dynamic = "force-dynamic";
+// Push: GET + PUT against GHL. Pull: GET + DB batch. Either can hit
+// rate-limit retries when the bulk cache is cold or busy.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
