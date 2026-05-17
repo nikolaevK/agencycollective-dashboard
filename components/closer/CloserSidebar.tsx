@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, PlusCircle, CalendarDays, LogOut, X, StickyNote, Users } from "lucide-react";
+import { LayoutDashboard, PlusCircle, CalendarDays, LogOut, X, StickyNote, Users, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CloserRole } from "@/lib/closers";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
@@ -21,6 +21,7 @@ const CLOSER_NAV = [
   { href: "/closer/new-deal", label: "New Deal", icon: PlusCircle },
   { href: "/closer/notes", label: "Notes", icon: StickyNote },
   { href: "/closer/ghl-contacts", label: "GHL Contacts", icon: Users },
+  { href: "/closer/docs", label: "Documentation", icon: BookOpen },
 ];
 
 const SETTER_NAV = [
@@ -28,6 +29,7 @@ const SETTER_NAV = [
   { href: "/closer/setter/appointments", label: "Appointments", icon: CalendarDays },
   { href: "/closer/setter/notes", label: "Notes", icon: StickyNote },
   { href: "/closer/ghl-contacts", label: "GHL Contacts", icon: Users },
+  { href: "/closer/docs", label: "Documentation", icon: BookOpen },
 ];
 
 export function CloserSidebar({ displayName, role, isOpen = false, onClose }: CloserSidebarProps) {

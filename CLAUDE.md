@@ -176,6 +176,7 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/dashboard/users` — User management (requires `users` perm)
 - `/dashboard/closers` — Closer management (requires `closers` perm)
 - `/dashboard/admins` — Admin management (requires `admin` perm)
+- `/dashboard/settings` — Admin documentation (page-by-page reference; rendered server-side, no client JS)
 
 **Client Portal** (`/[slug]/portal/*`) — requires `u_sess`
 
@@ -184,11 +185,13 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/closer/calendar` — team-wide attendance view, show/no-show marking (closer writes)
 - `/closer/new-deal` — deal creation with Google event linkage
 - `/closer/notes` — personal notes + shared-with-me
+- `/closer/docs` — portal documentation (shared with setters; rendered server-side, no client JS)
 
 **Setter Portal** (`/closer/setter/*`) — same `c_sess` cookie, role=`setter` required:
 - `/closer/setter` — dashboard (appointments set, show rate, revenue attributed, commission earned, active + recovered no-show sections, deals credited)
 - `/closer/setter/appointments` — claim Google events + set pre/post-call flags + notes
 - `/closer/setter/notes` — same notes component as closer
+- `/closer/docs` — same documentation page as closer (sidebar link present in both roles)
 
 ### Database
 
