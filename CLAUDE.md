@@ -45,8 +45,9 @@ app/
     calendar/             # Shared calendar endpoints (admin + closer + setter)
       events/             # Google Calendar events (scoped, cached)
       appointments/       # Team-wide setter-claim index
-      attendance/         # Team-wide show/no-show map
+      attendance/         # Team-wide show/no-show map + GHL sync state (GET + POST discovery)
     closer/               # Closer/setter-session endpoints
+      attendance/         # PATCH/DELETE marks + sync to GHL; resync/ for Push/Pull
       setter/             # Setter-only: stats, appointments
       notes/              # Notes CRUD + share + archive + lead-context
   dashboard/              # Admin dashboard pages
@@ -101,6 +102,8 @@ lib/
   setterStats.ts          # Setter dashboard aggregates (commission, show rate, etc.)
   setterAttribution.ts    # resolveSetterForEvent + reassignDealsForEvent
   eventAttendance.ts      # Show/no-show marks, no-show follow-up queries, enrichment
+  ghlAppointmentLinks.ts  # Google event ↔ GHL appointment id bridge + denormalized sync state
+  attendanceSync.ts       # Orchestrator: push (dashboard → GHL), pull (GHL → dashboard), discovery
   notes.ts                # Notes CRUD + sharing + archive + validation helpers
   auditLog.ts             # Audit log writes/reads
   meta/
@@ -111,6 +114,15 @@ lib/
     oauth.ts              # Google OAuth 2.0 flow
     calendar.ts           # Google Calendar integration (scope-keyed, server-cached)
     tokenStorage.ts       # AES-256-GCM encrypted token storage (NODE_ENV scope)
+  ghl/
+    client.ts             # GHL v2 client (PIT auth, rate limiter, 429 retry)
+    calendars.ts          # Bulk appointments listing (cached 5 min)
+    appointments.ts       # Single-appointment GET/PUT + composite-key resolver + name-based closer mapping
+    crossReference.ts     # (title|startMs|endMs) composite key — bridges Google ↔ GHL
+    contacts.ts           # Contact search + notes + appointments index
+    users.ts              # Location user catalog (cached 10 min)
+    conversations.ts      # Messages thread reads
+    opportunities.ts      # Pipeline opportunities
 types/
   dashboard.ts            # Domain types (AccountSummary, CampaignRow, InsightMetrics)
   api.ts                  # API response types (ApiResponse<T>)
@@ -188,6 +200,7 @@ Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
 - `deals` — Sales pipeline. `closer_id` (NOT NULL, CASCADE) + `setter_id` (nullable, auto-resolved from appointments by shared `google_event_id`)
 - `appointments` — Setter claims on Google Calendar events. UNIQUE(`setter_id`, `google_event_id`); carries pre/post-call status + client info + notes
 - `event_attendance` — Closer-marked show/no-show per event. PK (`google_event_id`, `closer_id`)
+- `ghl_appointment_links` — Bridges Google Calendar event id → GHL appointment id, plus denormalized last-observed status on each side and a `sync_state` (`synced` / `out_of_sync`). PK `google_event_id`, UNIQUE `ghl_appointment_id`. Presence of a row = event is GHL-linked; absence = non-GHL event (sync code is a no-op)
 - `notes` — Personal scratchpad per user (title, markdown body, priority, due date, tags JSON, linked `google_event_id` / `deal_id`)
 - `note_shares` — Junction for note sharing. (`note_id` FK CASCADE, `shared_with_id`, `archived_at` nullable — recipient soft-dismiss)
 - `audit_log` — Admin action log
@@ -217,6 +230,7 @@ Client-side React Query:
 - **Google Calendar** — OAuth 2.0 (read-only scope). Tokens encrypted with AES-256-GCM at rest, **scope-keyed by `NODE_ENV`** so dev and prod tokens coexist in a shared database without thrashing. Auto-refresh with 5-min buffer. Calendar fetches cached server-side (2 min). Decrypt path format-sniffs our cipher format; on mismatch we throw loudly rather than silently passing ciphertext to Google.
 - **Anthropic Claude** — Chat analytics with rate limiting (20 req/min per admin). Streaming responses.
 - **Google Gemini** — Image generation capabilities.
+- **GoHighLevel (GHL) v2** — Private Integration Token auth, single sub-account. Bulk appointment + contact listings cached 5 min server-side. Token-bucket rate limit (50 r/s) plus transparent 429 retry with `Retry-After` honoring. **Bidirectional appointment-status sync** with the dashboard (see Sales Pipeline → GHL Appointment Status Sync). All resource-specific modules live in `lib/ghl/`; appointment-status endpoints use `Version: 2023-02-21` (older versions silently no-op the PUT — see `lib/ghl/appointments.ts` for the canonical body shape required).
 
 ## Sales Pipeline: Setter + Closer Collaboration
 
@@ -242,8 +256,32 @@ Every deal can be credited to two teammates: the **closer** (`deals.closer_id`, 
 ### Team-wide shared surfaces
 
 - `GET /api/calendar/events` — shared by admin, closer, setter for raw events (cached).
-- `GET /api/calendar/attendance` — team-wide show/no-show map. Admin + closer + setter all read; closers write via their own endpoint.
+- `GET /api/calendar/attendance` — team-wide show/no-show map. Setter reads only this (no GHL discovery).
+- `POST /api/calendar/attendance` — same map, plus body `{ events: [{id,title,start,end}] }` triggers a discovery pass that creates `ghl_appointment_links` rows for any composite-key matches and returns a per-event `sync` map (`dashboardStatus`, `ghlStatus`, `syncState`). Closer + admin calendar pages use this so the sync chip surfaces on first load.
 - `GET /api/calendar/appointments` — team-wide setter-claim index. Admin + closer read; setters blocked (they use their own endpoint).
+
+### GHL Appointment Status Sync
+
+Dashboard `event_attendance` (show/no-show) and GHL `appointmentStatus` are kept in step through an explicit orchestrator (`lib/attendanceSync.ts`). No webhooks, no GHL workflow automations — outbound is real-time PUT, inbound is on-demand pull.
+
+**Bridging the two systems.** GHL doesn't expose the synced Google event id, so a Google event is matched to a GHL appointment via composite key `(title|startMs|endMs)` (same primitive `lib/ghl/crossReference.ts` uses). On first match, the result is persisted in `ghl_appointment_links` and reused for every subsequent sync — direct id lookups, no re-matching.
+
+**Discovery.** The closer + admin calendar pages POST the visible events to `/api/calendar/attendance`; for any event without a link row, the server tries a composite-key match against the cached bulk GHL listing and inserts the link. Discovery upserts run in parallel.
+
+**Push (dashboard → GHL).** After every `event_attendance` write (`PATCH /api/closer/attendance`, deal-creation auto-mark, or manual `[Push]` button), `syncEventAttendanceToGhl` PUTs `appointmentStatus` to GHL with the canonical body shape (`appointmentStatus` + `calendarId` + `startTime` + `endTime` + `title` + `assignedUserId`). The PUT response carries the new status and is trusted as the verify signal — no second GET round-trip. Drift detection on the next read catches any GHL automation that immediately overwrites. The bulk-listing cache is busted on every successful PUT so the next refetch sees the fresh value.
+
+**Pull (GHL → dashboard).** The `[Pull]` button (and the resync endpoint) calls `syncEventAttendanceFromGhl`, which GETs the appointment, maps `showed`/`noshow` to dashboard attendance, resolves the responsible closer via GHL `assignedUserId` → user name → `closers.display_name` match, then **replaces** all `event_attendance` rows for the event with a single attributed row (DELETE + INSERT in one libSQL `db.batch`). GHL non-attendance states (`confirmed` / `cancelled` / `invalid` / `new`) wipe the dashboard side. Unmatched names return `outcome: "needs_attribution"` and the chip stays out-of-sync.
+
+**Mark/unselect mapping.**
+| Dashboard action | GHL `appointmentStatus` |
+|---|---|
+| Mark "Showed" | `showed` |
+| Mark "No Show" | `noshow` |
+| Unselect (clear) | `confirmed` |
+
+**Drift detection.** Every `POST /api/calendar/attendance` re-reads the cached GHL listing for the visible events' links and recomputes `syncState` on the fly. Detected drift flips the chip from green ("Synced") to amber ("Out of sync · Dashboard: X · GHL: Y") with `[Push to GHL]` and `[Pull from GHL]` buttons (`/api/closer/attendance/resync`). Both directions reconcile against team-wide latest, matching what the chip displays. The recomputed `sync_state` is persisted back to the link row in batched writes before the response returns.
+
+**Non-GHL events** (no composite-key match) skip the sync code path entirely — every sync function returns `outcome: "non_ghl"` early so dashboard behavior is identical to pre-sync.
 
 ## Notes (per-user scratchpad with sharing)
 
@@ -317,7 +355,11 @@ Optional:
 META_API_VERSION         # Default: v25.0
 META_CONCURRENCY_LIMIT   # Default: 5
 META_CACHE_TTL_SECONDS   # Default: 300
+GHL_PIT                  # GoHighLevel Private Integration Token (enables appointment status sync + GHL contact surfaces)
+GHL_LOCATION_ID          # GHL sub-account id; paired with GHL_PIT
 ```
+
+When `GHL_PIT` + `GHL_LOCATION_ID` are unset, attendance writes still succeed but the sync layer returns `outcome: "ghl_unavailable"` and the chip never renders — dashboard behavior is identical to pre-sync.
 
 ## Key Implementation Notes
 
@@ -338,3 +380,8 @@ META_CACHE_TTL_SECONDS   # Default: 300
 - **No role-based redirects in middleware for closer/setter routes.** Layout-level DB checks are authoritative (prevents loops when admin changes a user's role mid-session)
 - **Client-side dashboards cap queries to what maps to a screen** — notes list 500, team no-shows 500, setter recent deals 50. Pagination is client-side where data is already bounded
 - **Lead context enrichment** (`enrichNoShowsFromCalendar`) fetches a 2-year Google Calendar window on demand, cached 2 min server-side; without it, un-claimed no-shows would show as "No-show" with no client identity
+- **GHL appointment status sync uses `Version: 2023-02-21`** for `/calendars/events/appointments/*`. Other GHL endpoint families use different versions (`/calendars/events` bulk uses the same, contacts uses 2021-07-28). Sending the wrong version returns 200 but silently no-ops the PUT. PUT body must include `calendarId` + `startTime` + `endTime` + `title` + `assignedUserId` alongside the status or the write doesn't persist — fetch the current appointment first and round-trip those fields
+- **Bidirectional sync is opt-in per event** via the composite-key match. There is no manual override to "force-link" a Google event to a specific GHL appointment id — if titles or times don't match, the chip never appears and the event behaves as non-GHL. Surface this for support cases where ops expects the chip on a known-mismatched pair
+- **GHL closer attribution uses display-name matching.** GHL `assignedUserId` → user name (via `/users` cached 10 min) → normalized lookup in `closers.display_name` (lowercase, whitespace-collapsed, cached 5 min). No `closers.ghl_user_id` column — renames in either system break attribution until names re-align. If this becomes a problem, add the column as a strictly additive migration
+- **GHL bulk-listing cache is in-process only** — invalidation via `cache.delete(...)` after a PUT works on a single Node process but doesn't propagate across Vercel serverless instances. Drift detection catches the stale-cache window on the next read. Acceptable for current scale; would need a shared cache (Upstash / Redis) before fan-out becomes a problem
+- **libSQL transactions** via `db.batch([...], "write")` — used in `attendanceSync.replaceAttendanceForEvent` (pull) and `conversations.clearConversationMessages`. Prefer this over sequential `db.execute` when two or more writes must succeed atomically

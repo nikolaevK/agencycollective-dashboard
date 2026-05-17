@@ -6,6 +6,7 @@ import { getCloserSession } from "@/lib/closerSession";
 import { getLatestAttendanceByEvent } from "@/lib/eventAttendance";
 import {
   listAllLinks,
+  listLinksByGoogleEventIds,
   updateLinkSyncState,
   upsertLink,
   type SyncState,
@@ -49,8 +50,16 @@ async function buildResponse(
     return { data, sync };
   }
 
+  // Narrow the link query to just the events the caller is rendering when
+  // we have that list. Falls back to listing every link row for the legacy
+  // GET path (setter dashboard) where coords aren't sent.
+  const visibleIds = visibleEvents
+    ? visibleEvents.map((e) => e.id).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : null;
   const [existingLinks, apptsByContact] = await Promise.all([
-    listAllLinks(),
+    visibleIds
+      ? listLinksByGoogleEventIds(visibleIds).then((m) => Object.values(m))
+      : listAllLinks(),
     getAppointmentsByContact().catch(() => null),
   ]);
 
@@ -74,13 +83,19 @@ async function buildResponse(
     }
   }
 
-  // Discovery pass: if the caller passed event coords AND we have GHL data,
-  // create link rows for any composite-key matches that don't yet have one.
-  // Without this, the sync chip never appears until a closer interacts with
-  // the event for the first time.
   const linksByGoogle = new Map(existingLinks.map((l) => [l.googleEventId, l]));
 
+  // Discovery pass: when the caller passed event coords AND we have GHL
+  // data, create link rows for any composite-key matches that don't yet
+  // have one. Without this the sync chip wouldn't appear until first
+  // interaction. Parallelize because the inserts are independent.
   if (visibleEvents && apptsByContact) {
+    const toCreate: Array<{
+      eventId: string;
+      ghlId: string;
+      contactId: string | null;
+      calendarId: string | null;
+    }> = [];
     for (const evt of visibleEvents) {
       if (!evt.id || linksByGoogle.has(evt.id)) continue;
       const key = eventCompositeKey({
@@ -91,25 +106,41 @@ async function buildResponse(
       if (!key) continue;
       const match = ghlByCompositeKey.get(key);
       if (!match?.id) continue;
-      try {
-        const created = await upsertLink({
-          googleEventId: evt.id,
-          ghlAppointmentId: match.id,
-          ghlContactId: match.contactId ?? null,
-          ghlCalendarId: match.calendarId ?? null,
-        });
-        linksByGoogle.set(evt.id, created);
-      } catch (err) {
-        console.error(
-          "[calendar/attendance] discovery upsert failed for",
-          evt.id,
-          err instanceof Error ? err.message : err
-        );
+      toCreate.push({
+        eventId: evt.id,
+        ghlId: match.id,
+        contactId: match.contactId ?? null,
+        calendarId: match.calendarId ?? null,
+      });
+    }
+    if (toCreate.length > 0) {
+      const created = await Promise.all(
+        toCreate.map((c) =>
+          upsertLink({
+            googleEventId: c.eventId,
+            ghlAppointmentId: c.ghlId,
+            ghlContactId: c.contactId,
+            ghlCalendarId: c.calendarId,
+          }).catch((err) => {
+            console.error(
+              "[calendar/attendance] discovery upsert failed for",
+              c.eventId,
+              err instanceof Error ? err.message : err
+            );
+            return null;
+          })
+        )
+      );
+      for (const link of created) {
+        if (link) linksByGoogle.set(link.googleEventId, link);
       }
     }
   }
 
   // Build sync entries for every link we know about (existing + just-created).
+  // Collect drift-persistence writes and await them as a batch before
+  // returning — fire-and-forget gets cut off in serverless runtimes.
+  const driftWrites: Promise<unknown>[] = [];
   for (const [, link] of linksByGoogle) {
     const freshGhl = apptsByContact
       ? ghlStatusById.get(link.ghlAppointmentId) ?? null
@@ -134,17 +165,19 @@ async function buildResponse(
     };
 
     if (apptsByContact && (link.ghlStatus !== freshGhl || link.syncState !== computedState)) {
-      // Fire-and-forget persistence so the next read is already correct.
-      updateLinkSyncState({
-        googleEventId: link.googleEventId,
-        syncState: computedState,
-        ghlStatus: freshGhl,
-        bumpLastPull: true,
-      }).catch((err) => {
-        console.error("[calendar/attendance] failed to persist drift:", err);
-      });
+      driftWrites.push(
+        updateLinkSyncState({
+          googleEventId: link.googleEventId,
+          syncState: computedState,
+          ghlStatus: freshGhl,
+          bumpLastPull: true,
+        }).catch((err) => {
+          console.error("[calendar/attendance] failed to persist drift:", err);
+        })
+      );
     }
   }
+  if (driftWrites.length > 0) await Promise.all(driftWrites);
 
   return { data, sync };
 }

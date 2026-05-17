@@ -24,9 +24,10 @@ interface ResyncBody {
  *   direction = "push" → write dashboard's current state to GHL.
  *   direction = "pull" → write GHL's current state to dashboard.
  *
- * Closer sessions push their own attendance. Admin sessions push whatever
- * the team-wide latest mark says (and pull falls back to GHL's assignedUser
- * name resolution for attribution).
+ * Both session types push the team-wide latest mark (matches what the chip
+ * displays). Pull attributes the pulled status to the requesting closer
+ * when available, falling back to GHL's assignedUserId → name resolution
+ * for admin sessions.
  */
 export async function POST(request: Request) {
   const adminSession = getAdminSession();

@@ -147,13 +147,9 @@ export default function CloserCalendarPage() {
       : {};
 
     if (showStatus === null) {
-      const qs = new URLSearchParams({ eventId });
-      if (evt) {
-        qs.set("eventTitle", evt.title ?? "");
-        qs.set("eventStart", evt.start ?? "");
-        qs.set("eventEnd", evt.end ?? "");
-      }
-      const res = await fetch(`/api/closer/attendance?${qs.toString()}`, {
+      // No event coords on DELETE — the link row already exists from the
+      // prior PATCH that originally set the status. Keeps PII out of logs.
+      const res = await fetch(`/api/closer/attendance?eventId=${encodeURIComponent(eventId)}`, {
         method: "DELETE",
       });
       if (res.ok) {

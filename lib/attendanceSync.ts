@@ -30,10 +30,7 @@ import {
   type GhlAppointmentLink,
   type SyncState,
 } from "./ghlAppointmentLinks";
-import {
-  setEventAttendance,
-  type AttendanceStatus,
-} from "./eventAttendance";
+import { type AttendanceStatus } from "./eventAttendance";
 import { getDb, ensureMigrated } from "./db";
 
 /**
@@ -194,8 +191,15 @@ export async function syncEventAttendanceToGhl(input: {
   // UI tracks in-flight state client-side during the request, so the DB
   // sync_state only ever needs to reflect the final committed result.
 
+  // GHL's PUT response already includes appointmentStatus in its body, so
+  // we trust it as the verify signal — no second GET round-trip. If GHL
+  // automation immediately overwrites our value (workflow trigger flipping
+  // confirmed→cancelled etc.), the drift detector in /api/calendar/attendance
+  // catches it on the next refetch and surfaces the chip.
+  let observed: string | null = null;
   try {
-    await updateGhlAppointmentStatus(link.ghlAppointmentId, target);
+    const updated = await updateGhlAppointmentStatus(link.ghlAppointmentId, target);
+    observed = updated?.appointmentStatus ?? null;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updateLinkSyncState({
@@ -208,32 +212,6 @@ export async function syncEventAttendanceToGhl(input: {
       outcome: "out_of_sync",
       syncState: "out_of_sync",
       ghlStatus: link.ghlStatus,
-      dashboardStatus: input.dashboardStatus,
-      error: msg,
-    };
-  }
-
-  // Verify: re-GET the appointment and compare. Some GHL setups apply
-  // automation rules that immediately overwrite our PUT (e.g. a workflow
-  // that marks confirmed→cancelled on certain triggers). The verify step
-  // catches that within the same request lifecycle.
-  let observed: string | null = null;
-  try {
-    const snap = await getGhlAppointment(link.ghlAppointmentId);
-    observed = snap?.appointmentStatus ?? null;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await updateLinkSyncState({
-      googleEventId: input.evt.googleEventId,
-      syncState: "out_of_sync",
-      dashboardStatus: input.dashboardStatus,
-      bumpLastPush: true,
-      lastError: `verify failed: ${msg}`,
-    });
-    return {
-      outcome: "out_of_sync",
-      syncState: "out_of_sync",
-      ghlStatus: null,
       dashboardStatus: input.dashboardStatus,
       error: msg,
     };
@@ -354,11 +332,12 @@ export async function syncEventAttendanceFromGhl(input: {
     };
   }
 
-  // Wipe existing rows first so a teammate's stale opposite mark can't
+  // Wipe existing rows AND insert the new one in a single transaction so a
+  // crash between the two writes can't leave the event without any
+  // attendance row. A teammate's stale opposite mark could otherwise
   // outweigh the resolved closer's pulled value when team-wide latest is
   // computed downstream.
-  await clearAllAttendanceForEvent(input.evt.googleEventId);
-  await setEventAttendance(input.evt.googleEventId, attribution, targetDashboard);
+  await replaceAttendanceForEvent(input.evt.googleEventId, attribution, targetDashboard);
   await updateLinkSyncState({
     googleEventId: input.evt.googleEventId,
     syncState: "synced",
@@ -383,4 +362,27 @@ async function clearAllAttendanceForEvent(googleEventId: string): Promise<void> 
     sql: "DELETE FROM event_attendance WHERE google_event_id = ?",
     args: [googleEventId],
   });
+}
+
+async function replaceAttendanceForEvent(
+  googleEventId: string,
+  closerId: string,
+  showStatus: AttendanceStatus
+): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.batch(
+    [
+      {
+        sql: "DELETE FROM event_attendance WHERE google_event_id = ?",
+        args: [googleEventId],
+      },
+      {
+        sql: `INSERT INTO event_attendance (google_event_id, closer_id, show_status)
+              VALUES (?, ?, ?)`,
+        args: [googleEventId, closerId, showStatus],
+      },
+    ],
+    "write"
+  );
 }

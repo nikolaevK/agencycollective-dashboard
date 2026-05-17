@@ -131,18 +131,18 @@ export async function DELETE(request: Request) {
 
   // Step 2: best-effort GHL reset to "confirmed". Only fires for events
   // that already have a link row — non-GHL events and never-synced events
-  // are no-ops.
-  const eventTitle = searchParams.get("eventTitle");
-  const eventStart = searchParams.get("eventStart");
-  const eventEnd = searchParams.get("eventEnd");
+  // are no-ops. We deliberately don't accept event coords here: the closer
+  // must have marked the event at least once before being able to clear
+  // it, so the link row already exists from that prior PATCH. Skipping
+  // coords keeps event titles (potential PII) out of access logs.
   let sync: SyncResult;
   try {
     sync = await syncEventAttendanceToGhl({
       evt: {
         googleEventId: eventId,
-        title: eventTitle,
-        startTime: eventStart,
-        endTime: eventEnd,
+        title: null,
+        startTime: null,
+        endTime: null,
       },
       dashboardStatus: null,
     });
