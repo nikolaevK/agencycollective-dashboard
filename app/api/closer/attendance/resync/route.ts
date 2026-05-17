@@ -18,6 +18,14 @@ interface ResyncBody {
   eventTitle?: string | null;
   eventStart?: string | null;
   eventEnd?: string | null;
+  /**
+   * Explicit context flag. The admin team-calendar sets `asAdmin: true`;
+   * the closer portal omits it. Without this, the server can't tell
+   * which surface the click came from when the user happens to be signed
+   * in to both portals at once (their closer cookie would otherwise be
+   * used as an attribution shortcut even when they're acting as admin).
+   */
+  asAdmin?: boolean;
 }
 
 /**
@@ -27,10 +35,23 @@ interface ResyncBody {
  *   direction = "push" → write dashboard's current state to GHL.
  *   direction = "pull" → write GHL's current state to dashboard.
  *
- * Both session types push the team-wide latest mark (matches what the chip
- * displays). Pull attributes the pulled status to the requesting closer
- * when available, falling back to GHL's assignedUserId → name resolution
- * for admin sessions.
+ * Push always sends the team-wide latest mark (matches what the chip
+ * displays). Pull attribution depends on context:
+ *
+ *   - asAdmin (sent by /dashboard/closers/calendar): the admin is doing
+ *     ops work, NOT claiming attribution. Use GHL's assignedUserId →
+ *     name resolution as the only attribution source. If GHL has no
+ *     assigned user or name doesn't match a closer, leave existing
+ *     event_attendance rows alone (needs_attribution).
+ *
+ *   - default (sent by /closer/calendar): the closer attributes the
+ *     pulled status to themselves. Matches the existing dashboard-write
+ *     convention where a closer clicking on their own calendar always
+ *     writes their own row.
+ *
+ * Without this split, an admin who was also signed in as a closer
+ * silently re-attributed every event they pulled to their own closer
+ * row, regardless of who GHL actually had assigned.
  */
 export async function POST(request: Request) {
   const adminSession = getAdminSession();
@@ -48,6 +69,7 @@ export async function POST(request: Request) {
 
   const eventId = String(body.eventId ?? "").trim();
   const direction = String(body.direction ?? "").trim();
+  const asAdmin = body.asAdmin === true;
 
   if (!eventId) {
     return NextResponse.json({ error: "eventId is required" }, { status: 400 });
@@ -56,6 +78,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "direction must be 'push' or 'pull'" },
       { status: 400 }
+    );
+  }
+  if (asAdmin && !adminSession) {
+    // Defense-in-depth: a closer-only session cannot opt into admin
+    // attribution mode by toggling a body flag.
+    return NextResponse.json(
+      { error: "asAdmin requires an admin session" },
+      { status: 403 }
     );
   }
 
@@ -67,11 +97,6 @@ export async function POST(request: Request) {
   };
 
   if (direction === "push") {
-    // Push the team-wide latest mark, not the requesting closer's own row.
-    // The chip on the UI shows team-wide status — the Push button has to
-    // match what the closer sees. Earlier we used per-closer marks and that
-    // sent "confirmed" whenever the clicker hadn't personally marked the
-    // event, even though a teammate had marked it "showed".
     const teamLatest = await getLatestAttendanceByEvent();
     const dashboardStatus =
       (teamLatest[eventId] as "showed" | "no_show" | undefined) ?? null;
@@ -80,13 +105,11 @@ export async function POST(request: Request) {
   }
 
   // direction === "pull"
-  // Closer: attribute to themselves so the pulled GHL status lands on their
-  // event_attendance row (matches the existing dashboard-write convention).
-  // Admin: rely on GHL's assignedUserId → name resolution. If no match, the
-  // sync layer returns outcome="needs_attribution".
+  // asAdmin: never pass the closer cookie as an attribution shortcut even
+  // if the request happens to carry one. Force name-based resolution.
   const result = await syncEventAttendanceFromGhl({
     evt,
-    closerId: closerSession?.closerId,
+    closerId: asAdmin ? undefined : closerSession?.closerId,
   });
   return NextResponse.json({ data: result });
 }

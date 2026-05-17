@@ -129,6 +129,11 @@ export default function AdminCalendarPage() {
         eventTitle: evt?.title ?? null,
         eventStart: evt?.start ?? null,
         eventEnd: evt?.end ?? null,
+        // Tell the server this is admin-driven so it doesn't fall back
+        // to the requester's closer cookie for attribution. Without this
+        // an admin who's also signed in as a closer silently re-attributed
+        // every pulled event to their own closer row.
+        asAdmin: true,
       }),
     });
     if (res.ok) {
