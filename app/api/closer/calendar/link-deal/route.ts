@@ -6,6 +6,7 @@ import { getCloserSession } from "@/lib/closerSession";
 import { insertDeal, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
@@ -85,6 +86,15 @@ export async function POST(request: Request) {
     // Auto-mark attendance as "showed" when deal is closed
     if (status === "closed" && eventId) {
       await setEventAttendance(eventId, session.closerId, "showed");
+      // We have title + start here (no end), which is enough for sync to
+      // hit existing link rows. First-sight composite-key resolution needs
+      // end too and will fall back to the drift detector on next read.
+      await bestEffortPushAttendanceToGhl({
+        googleEventId: eventId,
+        dashboardStatus: "showed",
+        title: eventTitle,
+        startTime: eventDate,
+      });
     }
 
     // Auto-generate invoice for closed deals

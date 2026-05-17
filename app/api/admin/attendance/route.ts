@@ -12,9 +12,14 @@ export async function GET() {
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const records = await getAllAttendance();
-  // Build a map: eventId -> { showStatus, closerId }
+  // Build a map: eventId -> { showStatus, closerId }. Records arrive
+  // ORDER BY updated_at DESC, so the first row we see for each event is
+  // the newest. Skip subsequent rows or the overwrite loop ends up keeping
+  // the OLDEST mark — which caused admin + closer portals to disagree on
+  // multi-closer events.
   const data: Record<string, { showStatus: string; closerId: string }> = {};
   for (const r of records) {
+    if (r.googleEventId in data) continue;
     data[r.googleEventId] = { showStatus: r.showStatus, closerId: r.closerId };
   }
   return NextResponse.json({ data });

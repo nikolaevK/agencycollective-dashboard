@@ -7,6 +7,7 @@ import { findDeal, insertDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
@@ -92,6 +93,13 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   // Auto-set attendance when deal is closed and linked to calendar event
   if (status === "closed" && googleEventId) {
     await setEventAttendance(googleEventId, session.closerId, "showed");
+    // Push to GHL if this event is linked. No coords on hand here, so
+    // first-sight resolution can't run — drift detection on the next
+    // calendar read covers that case.
+    await bestEffortPushAttendanceToGhl({
+      googleEventId,
+      dashboardStatus: "showed",
+    });
   }
 
   // Auto-generate invoice for closed deals

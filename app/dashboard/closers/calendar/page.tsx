@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
@@ -19,6 +19,7 @@ interface DealWithCloserName extends DealPublic {
 export default function AdminCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [closerFilter, setCloserFilter] = useState("all");
+  const queryClient = useQueryClient();
 
   const currentWeekStart = useMemo(() => {
     const base = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -68,7 +69,9 @@ export default function AdminCalendarPage() {
     staleTime: 30_000,
   });
 
-  // Fetch attendance data
+  // Fetch attendance data — admin keeps its closer-attribution endpoint for
+  // the team breakdown, but the GHL sync chip uses the shared team-wide
+  // endpoint (POST with event coords so links auto-discover on load).
   const { data: attendance = {} } = useQuery<Record<string, string>>({
     queryKey: ["admin-attendance"],
     queryFn: async () => {
@@ -84,6 +87,55 @@ export default function AdminCalendarPage() {
     },
     staleTime: 30_000,
   });
+
+  type SyncEntry = {
+    dashboardStatus: "showed" | "no_show" | null;
+    ghlStatus: string | null;
+    syncState: "synced" | "pending" | "out_of_sync";
+  };
+  const visibleEventIds = useMemo(() => events.map((e) => e.id).sort().join(","), [events]);
+  const { data: ghlSync = {} } = useQuery<Record<string, SyncEntry>>({
+    queryKey: ["admin-team-attendance-sync", visibleEventIds],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          events: events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            start: e.start,
+            end: e.end,
+          })),
+        }),
+      });
+      if (!res.ok) return {};
+      const json = await res.json();
+      return json.sync ?? {};
+    },
+    enabled: events.length > 0,
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+
+  async function handleResync(eventId: string, direction: "push" | "pull") {
+    const evt = events.find((e) => e.id === eventId);
+    const res = await fetch("/api/closer/attendance/resync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventId,
+        direction,
+        eventTitle: evt?.title ?? null,
+        eventStart: evt?.start ?? null,
+        eventEnd: evt?.end ?? null,
+      }),
+    });
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["admin-attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-team-attendance-sync"] });
+    }
+  }
 
   // Setter claims per event (shared endpoint used by admin + closer surfaces)
   const { data: setterAppointments = {} } = useQuery<Record<string, AppointmentIndexEntry>>({
@@ -238,7 +290,9 @@ export default function AdminCalendarPage() {
                 linkedEventIds={linkedEventIds}
                 linkedDeals={linkedDeals}
                 attendance={attendance}
+                ghlSync={ghlSync}
                 appointments={setterAppointments}
+                onResync={handleResync}
                 isAdmin={true}
               />
             )}

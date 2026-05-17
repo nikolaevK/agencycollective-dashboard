@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-06.setter-tiers.r2";
+const SCHEMA_VERSION = "2026-05-16.ghl-appt-links.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -1214,6 +1214,35 @@ export async function migrate(): Promise<void> {
 
   try {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_push_subs_admin ON push_subscriptions(admin_id)`);
+  } catch {
+    // index may already exist
+  }
+
+  // ── GHL appointment links (dashboard ↔ GHL appointment id mapping) ─────
+  // Bridges Google Calendar event id (what event_attendance uses) to GHL's
+  // own appointment id, so dashboard show/no-show writes can PUT to the
+  // right GHL appointment without re-resolving via composite key on every
+  // call. Per-event row, mirrors the dashboard's "one event at a time"
+  // model. Absence of a row = non-GHL event, sync code skips entirely.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS ghl_appointment_links (
+      google_event_id     TEXT PRIMARY KEY,
+      ghl_appointment_id  TEXT NOT NULL UNIQUE,
+      ghl_contact_id      TEXT,
+      ghl_calendar_id     TEXT,
+      dashboard_status    TEXT,
+      ghl_status          TEXT,
+      sync_state          TEXT NOT NULL DEFAULT 'synced',
+      last_push_at        TEXT,
+      last_pull_at        TEXT,
+      last_error          TEXT,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_ghl_appt_links_sync_state ON ghl_appointment_links(sync_state)`);
   } catch {
     // index may already exist
   }

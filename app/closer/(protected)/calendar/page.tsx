@@ -62,16 +62,50 @@ export default function CloserCalendarPage() {
 
   // Team-wide attendance (read): closers see every mark, not only their own.
   // Writes still go through /api/closer/attendance, scoped to this closer_id.
-  const { data: attendance = {} } = useQuery<Record<string, string>>({
-    queryKey: ["team-attendance"],
+  // `sync` carries per-event GHL state for events linked to a GHL appointment;
+  // events without a link entry are non-GHL and render exactly like today.
+  type SyncEntry = {
+    dashboardStatus: "showed" | "no_show" | null;
+    ghlStatus: string | null;
+    syncState: "synced" | "pending" | "out_of_sync";
+  };
+  // Stable id list keys the sync query so it refetches only when the
+  // visible-events set actually changes, not on every render of `events`.
+  const visibleEventIds = useMemo(() => events.map((e) => e.id).sort().join(","), [events]);
+  const { data: attendanceResp = { data: {} as Record<string, string>, sync: {} as Record<string, SyncEntry> } } = useQuery<{
+    data: Record<string, string>;
+    sync: Record<string, SyncEntry>;
+  }>({
+    queryKey: ["team-attendance", visibleEventIds],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/attendance");
-      if (!res.ok) return {};
+      // POST with event coords so the server can discover GHL link rows for
+      // events that have never been interacted with. Without this, the sync
+      // chip wouldn't appear until first click.
+      const res = await fetch("/api/calendar/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          events: events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            start: e.start,
+            end: e.end,
+          })),
+        }),
+      });
+      if (!res.ok) return { data: {}, sync: {} };
       const json = await res.json();
-      return json.data ?? {};
+      return { data: json.data ?? {}, sync: json.sync ?? {} };
     },
+    enabled: events.length > 0,
     staleTime: 30_000,
+    // Poll while the calendar is open so GHL-side status changes surface
+    // without the closer having to refresh. Cadence matches the setter
+    // dashboard so concurrent tabs share refetch ticks.
+    refetchInterval: 120_000,
   });
+  const attendance = attendanceResp.data;
+  const syncMap = attendanceResp.sync;
 
   // Setter claims per event (notes, pre/post-call flags) — team-wide view
   const { data: setterAppointments = {} } = useQuery<Record<string, AppointmentIndexEntry>>({
@@ -104,9 +138,22 @@ export default function CloserCalendarPage() {
   }, [deals]);
 
   async function handleAttendanceChange(eventId: string, showStatus: "showed" | "no_show" | null) {
+    // Send event coords so the sync layer can resolve a new GHL link via
+    // composite key on first sight. Falls back to dashboard-only behavior
+    // when the event has no GHL counterpart.
+    const evt = events.find((e) => e.id === eventId);
+    const coords = evt
+      ? { eventTitle: evt.title, eventStart: evt.start, eventEnd: evt.end }
+      : {};
+
     if (showStatus === null) {
-      // Clear attendance
-      const res = await fetch(`/api/closer/attendance?eventId=${encodeURIComponent(eventId)}`, {
+      const qs = new URLSearchParams({ eventId });
+      if (evt) {
+        qs.set("eventTitle", evt.title ?? "");
+        qs.set("eventStart", evt.start ?? "");
+        qs.set("eventEnd", evt.end ?? "");
+      }
+      const res = await fetch(`/api/closer/attendance?${qs.toString()}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -117,12 +164,31 @@ export default function CloserCalendarPage() {
       const res = await fetch("/api/closer/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, showStatus }),
+        body: JSON.stringify({ eventId, showStatus, ...coords }),
       });
       if (res.ok) {
         queryClient.invalidateQueries({ queryKey: ["team-attendance"] });
         queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
       }
+    }
+  }
+
+  async function handleResync(eventId: string, direction: "push" | "pull") {
+    const evt = events.find((e) => e.id === eventId);
+    const res = await fetch("/api/closer/attendance/resync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventId,
+        direction,
+        eventTitle: evt?.title ?? null,
+        eventStart: evt?.start ?? null,
+        eventEnd: evt?.end ?? null,
+      }),
+    });
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["team-attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
     }
   }
 
@@ -248,9 +314,11 @@ export default function CloserCalendarPage() {
                 linkedEventIds={linkedEventIds}
                 linkedDeals={linkedDeals}
                 attendance={attendance}
+                ghlSync={syncMap}
                 appointments={setterAppointments}
                 onLinkDeal={(event) => setLinkingEvent(event)}
                 onAttendanceChange={handleAttendanceChange}
+                onResync={handleResync}
                 onEditDeal={(dealId) => setEditingDealId(dealId)}
               />
             )}

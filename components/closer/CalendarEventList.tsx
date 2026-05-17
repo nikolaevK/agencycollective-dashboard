@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft } from "lucide-react";
+import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   PRE_CALL_BADGE,
@@ -48,6 +48,12 @@ export interface LinkedDealInfo {
   closerName?: string;
 }
 
+export interface GhlSyncEntry {
+  dashboardStatus: "showed" | "no_show" | null;
+  ghlStatus: string | null;
+  syncState: "synced" | "pending" | "out_of_sync";
+}
+
 interface Props {
   events: CalendarEvent[];
   /** Event IDs that have a linked deal */
@@ -56,16 +62,41 @@ interface Props {
   linkedDeals?: LinkedDealInfo[];
   /** Attendance status per event ID: "showed" | "no_show" */
   attendance?: Record<string, string>;
+  /** GHL sync state per event ID. Present only for events linked to a GHL
+   *  appointment; absence = non-GHL event (no chip). */
+  ghlSync?: Record<string, GhlSyncEntry>;
   /** Setter-claim info per event ID (notes, flags, client info). */
   appointments?: Record<string, AppointmentIndexEntry>;
   /** Create a deal from this event */
   onLinkDeal?: (event: CalendarEvent) => void;
   /** Toggle showed/no-show for any event. Pass null to clear. */
   onAttendanceChange?: (eventId: string, status: "showed" | "no_show" | null) => void;
+  /** Manual force-sync. "push" = dashboard → GHL, "pull" = GHL → dashboard. */
+  onResync?: (eventId: string, direction: "push" | "pull") => Promise<void> | void;
   /** Edit a linked deal */
   onEditDeal?: (dealId: string) => void;
   /** Admin view (read-only attendance, shows closer name) */
   isAdmin?: boolean;
+}
+
+const GHL_STATUS_LABEL: Record<string, string> = {
+  showed: "Showed",
+  noshow: "No-show",
+  confirmed: "Confirmed",
+  cancelled: "Cancelled",
+  invalid: "Invalid",
+  new: "New",
+};
+
+function ghlStatusLabel(s: string | null): string {
+  if (!s) return "—";
+  return GHL_STATUS_LABEL[s] ?? s;
+}
+
+function dashboardStatusLabel(s: "showed" | "no_show" | null): string {
+  if (s === "showed") return "Showed";
+  if (s === "no_show") return "No-show";
+  return "—";
 }
 
 const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
@@ -115,14 +146,57 @@ export function CalendarEventList({
   linkedEventIds,
   linkedDeals,
   attendance,
+  ghlSync,
   appointments,
   onLinkDeal,
   onAttendanceChange,
+  onResync,
   onEditDeal,
   isAdmin,
 }: Props) {
   const todayRef = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Per-event in-flight markers so the spinner lands on the exact button
+  // the closer clicked. Value tracks which button (not the target attendance
+  // state, which can be null for an unselect).
+  const [pendingAttendance, setPendingAttendance] = useState<Map<string, "showed" | "no_show">>(new Map());
+  const [pendingResync, setPendingResync] = useState<Map<string, "push" | "pull">>(new Map());
+
+  async function handleAttendanceClick(
+    eventId: string,
+    clickedButton: "showed" | "no_show",
+    nextStatus: "showed" | "no_show" | null
+  ) {
+    if (!onAttendanceChange) return;
+    setPendingAttendance((prev) => new Map(prev).set(eventId, clickedButton));
+    try {
+      await onAttendanceChange(eventId, nextStatus);
+    } finally {
+      setPendingAttendance((prev) => {
+        const next = new Map(prev);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
+
+  async function handleResyncClick(eventId: string, direction: "push" | "pull") {
+    if (!onResync) return;
+    setPendingResync((prev) => {
+      const next = new Map(prev);
+      next.set(eventId, direction);
+      return next;
+    });
+    try {
+      await onResync(eventId, direction);
+    } finally {
+      setPendingResync((prev) => {
+        const next = new Map(prev);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
   // Re-render at midnight so the "Today" badge tracks the calendar day,
   // not just the data refetch cadence.
   useMidnightTick();
@@ -180,6 +254,10 @@ export function CalendarEventList({
               const dealInfo = linkedDeals?.find((d) => d.googleEventId === event.id);
               const eventAttendance = attendance?.[event.id] as "showed" | "no_show" | undefined;
               const setterClaim = appointments?.[event.id];
+              const syncEntry = ghlSync?.[event.id];
+              const pendingButton = pendingAttendance.get(event.id);
+              const isSyncing = pendingButton !== undefined;
+              const pendingPushPull = pendingResync.get(event.id);
 
               return (
                 <div
@@ -381,27 +459,37 @@ export function CalendarEventList({
                   {onAttendanceChange && (
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
                       <button
-                        onClick={() => onAttendanceChange(event.id, eventAttendance === "showed" ? null : "showed")}
+                        disabled={isSyncing}
+                        onClick={() => handleAttendanceClick(event.id, "showed", eventAttendance === "showed" ? null : "showed")}
                         className={cn(
-                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors",
+                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-70",
                           eventAttendance === "showed"
                             ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                             : "border-border/50 bg-background text-muted-foreground hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-700 dark:hover:text-emerald-400"
                         )}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {pendingButton === "showed" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
                         Showed
                       </button>
                       <button
-                        onClick={() => onAttendanceChange(event.id, eventAttendance === "no_show" ? null : "no_show")}
+                        disabled={isSyncing}
+                        onClick={() => handleAttendanceClick(event.id, "no_show", eventAttendance === "no_show" ? null : "no_show")}
                         className={cn(
-                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors",
+                          "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-70",
                           eventAttendance === "no_show"
                             ? "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-400"
                             : "border-border/50 bg-background text-muted-foreground hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-700 dark:hover:text-red-400"
                         )}
                       >
-                        <XCircle className="h-3.5 w-3.5" />
+                        {pendingButton === "no_show" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5" />
+                        )}
                         No Show
                       </button>
 
@@ -414,6 +502,63 @@ export function CalendarEventList({
                           <Pencil className="h-3 w-3" />
                           Edit Deal
                         </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* GHL sync indicator — only on events linked to a GHL appointment */}
+                  {syncEntry && (
+                    <div className="mt-2 flex items-start gap-2">
+                      {syncEntry.syncState === "out_of_sync" ? (
+                        <div className="flex-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="h-3 w-3" />
+                            Out of sync with GHL
+                          </div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            Dashboard: <span className="font-medium text-foreground">{dashboardStatusLabel(syncEntry.dashboardStatus)}</span>
+                            <span className="mx-1.5">·</span>
+                            GHL: <span className="font-medium text-foreground">{ghlStatusLabel(syncEntry.ghlStatus)}</span>
+                          </div>
+                          {onResync && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                disabled={pendingPushPull !== undefined}
+                                onClick={() => handleResyncClick(event.id, "push")}
+                                className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-amber-500/40 bg-background text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-wait"
+                              >
+                                {pendingPushPull === "push" ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-3 w-3" />
+                                )}
+                                Push to GHL
+                              </button>
+                              <button
+                                disabled={pendingPushPull !== undefined}
+                                onClick={() => handleResyncClick(event.id, "pull")}
+                                className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-amber-500/40 bg-background text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-wait"
+                              >
+                                {pendingPushPull === "pull" ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-3 w-3 rotate-180" />
+                                )}
+                                Pull from GHL
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : syncEntry.syncState === "pending" ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Syncing with GHL…
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Synced with GHL
+                        </span>
                       )}
                     </div>
                   )}

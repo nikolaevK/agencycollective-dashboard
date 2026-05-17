@@ -7,6 +7,7 @@ import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails, type Dea
 import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
+import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { isSetterTier } from "@/lib/appointments";
@@ -156,6 +157,10 @@ export async function PATCH(request: Request) {
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {
       changes.showStatus = "showed";
       await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
+      await bestEffortPushAttendanceToGhl({
+        googleEventId: deal.googleEventId,
+        dashboardStatus: "showed",
+      });
     }
 
     await updateDeal(id, changes);
