@@ -3,7 +3,7 @@
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { useGhlCrossReference, type CrossReferenceEvent } from "@/hooks/useGhlContacts";
+import { type CrossReferenceEvent } from "@/hooks/useGhlContacts";
 import type { GhlContactRef } from "@/types/ghl";
 
 export interface GhlCrossReferenceData {
@@ -15,15 +15,16 @@ export interface GhlCrossReferenceData {
  * composite-key match (title + startTime + endTime) under the hood — no
  * email fallback, no false positives.
  *
- * USAGE — two modes:
+ * Always batched: the parent calls `useGhlCrossReference({ events })` once
+ * with the full visible set and passes `data` down. The chip renders
+ * nothing until `data` arrives. This used to ALSO support a standalone
+ * mode where the chip fired its own one-event query when `data` was
+ * undefined, but that fired 50+ per-event queries on every calendar /
+ * dashboard render before the parent's batched fetch resolved — every
+ * chip raced its own request, then went idle once the parent caught up.
  *
- *   Standalone (one-off card, fires its own query):
- *       <GhlEventChip event={{id, title, startTime, endTime}} />
- *
- *   Batched (calendar list — parent calls useGhlCrossReference once with
- *   ALL events and passes the data down so 50 cards share one fetch):
- *       const { data } = useGhlCrossReference({ events });
- *       <GhlEventChip event={e} data={data} />
+ *     const { data } = useGhlCrossReference({ events });
+ *     <GhlEventChip event={e} data={data} />
  */
 export function GhlEventChip({
   event,
@@ -34,14 +35,9 @@ export function GhlEventChip({
   data?: GhlCrossReferenceData;
   className?: string;
 }) {
-  const { data: ownData } = useGhlCrossReference({
-    events: data || !event ? [] : [event],
-  });
+  if (!data || !event) return null;
 
-  const resolvedData = data ?? ownData;
-  if (!resolvedData || !event) return null;
-
-  const ref = resolvedData.byGoogleEventId[event.id] ?? null;
+  const ref = data.byGoogleEventId[event.id] ?? null;
   if (!ref) return null;
 
   return (

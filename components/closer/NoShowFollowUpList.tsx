@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useGhlCrossReference } from "@/hooks/useGhlContacts";
-import { GhlEventChip } from "@/components/ghl/GhlEventChip";
+import { useState } from "react";
+import { GhlEventChip, type GhlCrossReferenceData } from "@/components/ghl/GhlEventChip";
 import { format, parseISO } from "date-fns";
 import {
   AlignLeft,
@@ -46,6 +45,15 @@ export interface NoShowFollowUpListProps {
   onEdit?: (item: NoShowFollowUp) => void;
   /** What to render when the list is empty. */
   emptyText?: string;
+  /**
+   * Pre-fetched GHL cross-reference data. Pass this from a parent that
+   * holds the full (unpaginated) items list so pagination / search /
+   * sort don't trigger a new cross-reference fetch on every change.
+   * Without it, each render with a different `items` slice refires the
+   * query — that's what caused 130+ /api/ghl/cross-reference calls per
+   * session on the dashboards.
+   */
+  ghlData?: GhlCrossReferenceData;
 }
 
 function formatRange(start: string | null, end: string | null, allDay: boolean): string {
@@ -88,29 +96,9 @@ export function NoShowFollowUpList({
   tone = "active",
   onEdit,
   emptyText,
+  ghlData,
 }: NoShowFollowUpListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  // Single GHL cross-reference fetch covering every follow-up on the screen.
-  // Composite-key match needs (title, startTime, endTime); for follow-ups
-  // those map to (eventTitle, scheduledAt, eventEnd).
-  const ghlInputs = useMemo(() => {
-    const seen = new Set<string>();
-    const events: { id: string; title: string; startTime: string; endTime: string }[] = [];
-    for (const n of items) {
-      if (!n.googleEventId || seen.has(n.googleEventId)) continue;
-      if (!n.scheduledAt) continue;
-      seen.add(n.googleEventId);
-      events.push({
-        id: n.googleEventId,
-        title: n.eventTitle ?? n.clientName ?? "",
-        startTime: n.scheduledAt,
-        endTime: n.eventEnd ?? "",
-      });
-    }
-    return { events };
-  }, [items]);
-  const { data: ghlData } = useGhlCrossReference(ghlInputs);
 
   function toggleExpanded(eventId: string) {
     setExpanded((prev) => {

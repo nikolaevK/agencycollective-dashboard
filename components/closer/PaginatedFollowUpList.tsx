@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { NoShowFollowUpList, type NoShowFollowUpListProps } from "./NoShowFollowUpList";
 import { Pagination } from "@/components/ui/pagination";
+import { useGhlCrossReference, type CrossReferenceEvent } from "@/hooks/useGhlContacts";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 
 interface Props extends NoShowFollowUpListProps {
@@ -92,6 +93,30 @@ export function PaginatedFollowUpList({
   const safePage = Math.min(page, totalPages);
   const pageItems = processed.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+  // ONE cross-reference fetch covering every follow-up across every page.
+  // Built from the full `items` list so pagination, search, and sort don't
+  // change the event-id set and force a refetch. Previously this hook
+  // lived inside NoShowFollowUpList where it received only the current
+  // page slice; every page change re-queried GHL and a single dashboard
+  // session was producing 130+ /api/ghl/cross-reference calls.
+  const ghlInputs = useMemo(() => {
+    const seen = new Set<string>();
+    const events: CrossReferenceEvent[] = [];
+    for (const n of items) {
+      if (!n.googleEventId || seen.has(n.googleEventId)) continue;
+      if (!n.scheduledAt) continue;
+      seen.add(n.googleEventId);
+      events.push({
+        id: n.googleEventId,
+        title: n.eventTitle ?? n.clientName ?? "",
+        startTime: n.scheduledAt,
+        endTime: n.eventEnd ?? "",
+      });
+    }
+    return { events };
+  }, [items]);
+  const { data: ghlData } = useGhlCrossReference(ghlInputs);
+
   // Distinguish "list is empty" (use caller's emptyText) from "search hid
   // everything" (more useful to tell the user *why* it's blank).
   const resolvedEmpty =
@@ -148,6 +173,7 @@ export function PaginatedFollowUpList({
         tone={tone}
         onEdit={onEdit}
         emptyText={resolvedEmpty}
+        ghlData={ghlData}
       />
 
       <Pagination
