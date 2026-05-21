@@ -91,13 +91,62 @@ interface DayHeaderProps {
 
 export function DayHeader({ info, eventCount }: DayHeaderProps) {
   return (
+    // Sticky inside its parent <section>, so as the user scrolls through a
+    // day's events the date stays pinned to the top of the viewport. The
+    // next day's section, when its header reaches the same offset, naturally
+    // pushes the previous one out (sticky elements unstick when they leave
+    // their parent's range).
+    //
+    // `top: var(--calendar-nav-h, 9rem)` — the calendar pages set this
+    // CSS variable to the live height of the sticky week-nav via
+    // `useElementHeightVar`. Using the actual measured height means the
+    // day header always lands flush with the bottom of the nav regardless
+    // of how many filter rows (owner / sub-account) are visible. 9rem is
+    // the conservative fallback for any caller that doesn't set the var.
+    //
+    // z-10 sits below the page's z-20 week navigator (so prev/next stays
+    // on top) and above z-auto event cards (so cards scroll behind it).
+    //
+    // Opaque-ish background + backdrop-blur prevents the scrolling-behind
+    // event cards from bleeding through. -mx-px keeps the bottom border
+    // flush with the event-card column edge.
     <div
       className={cn(
-        "mb-3 pb-2 border-b",
+        "sticky top-[var(--calendar-nav-h,9rem)] z-10 mb-3 pb-2 border-b -mx-px px-px",
+        "bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         info.isToday ? "border-primary/40" : "border-border/40"
       )}
     >
-      <div className="flex items-center gap-3">
+      {/* Mobile: single compact row. The big purple date card is too tall
+          on phones where every pixel of vertical space matters. */}
+      <div className="flex sm:hidden items-center gap-2 pt-2 pb-0.5">
+        <span
+          className={cn(
+            "shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide tabular-nums",
+            info.isToday
+              ? "bg-primary/15 text-primary"
+              : info.isPast
+                ? "bg-muted/40 text-muted-foreground"
+                : "bg-muted/40 text-foreground"
+          )}
+        >
+          {info.month} {info.dayNum}
+        </span>
+        <span
+          className={cn(
+            "truncate text-xs font-semibold",
+            info.isToday ? "text-primary" : "text-foreground"
+          )}
+        >
+          {info.weekday}
+        </span>
+        <span className="shrink-0 ml-auto text-[10px] font-medium text-muted-foreground tabular-nums">
+          {eventCount} {eventCount === 1 ? "event" : "events"}
+        </span>
+      </div>
+
+      {/* Desktop: full date card. */}
+      <div className="hidden sm:flex items-center gap-3 pt-2">
         <div
           className={cn(
             "flex flex-col items-center justify-center shrink-0 w-12 h-12 rounded-xl border",

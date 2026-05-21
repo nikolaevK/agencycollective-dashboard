@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,15 +9,29 @@ import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
 import { CalendarEventList, type CalendarEvent, type GhlSyncEntry, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
 import { LinkEventDealModal } from "@/components/closer/LinkEventDealModal";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
+import {
+  SubAccountFilterPills,
+  type SubAccountFilterValue,
+} from "@/components/ghl/SubAccountFilterPills";
+import { SUB_ACCOUNTS } from "@/lib/ghl/subAccounts";
+import { useElementHeightVar } from "@/hooks/useElementHeightVar";
+import { MobileFiltersSheet } from "@/components/closer/MobileFiltersSheet";
 import type { DealPublic } from "@/components/closers/types";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
 
 export default function CloserCalendarPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarFilter, setCalendarFilter] = useState("all");
+  const [subFilter, setSubFilter] = useState<SubAccountFilterValue>("all");
   const [linkingEvent, setLinkingEvent] = useState<CalendarEvent | null>(null);
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // Sticky nav height is mirrored into --calendar-nav-h on <html> so the
+  // sticky day headers below stick flush with the bottom of this nav,
+  // regardless of how many filter rows are visible.
+  const navRef = useRef<HTMLDivElement>(null);
+  useElementHeightVar(navRef, "--calendar-nav-h");
 
   const currentWeekStart = useMemo(() => {
     const base = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -196,10 +210,53 @@ export default function CloserCalendarPage() {
   // Auto-reset filter if selected owner has no events in current week
   const activeFilter = calendarFilter !== "all" && !calendarOwners.includes(calendarFilter) ? "all" : calendarFilter;
 
-  const filteredEvents = useMemo(() => {
+  // Step 1: filter by calendar owner. Sub-account counts below are computed
+  // off this pre-filtered set so they reflect "events in THIS owner's view"
+  // — switching closer filter doesn't show counts from hidden events.
+  const ownerFilteredEvents = useMemo(() => {
     if (activeFilter === "all") return events;
     return events.filter((e) => e.calendarName === activeFilter);
   }, [events, activeFilter]);
+
+  // Step 2: compute per-sub-account + non-GHL counts for the filter row.
+  // A missing sync entry means the event isn't GHL-linked at all (non-GHL).
+  // A present entry with null subAccountId is a discovery edge case — not
+  // counted in any specific bucket so it doesn't fabricate a category.
+  const subFilterCounts = useMemo(() => {
+    const bySub: Partial<Record<(typeof SUB_ACCOUNTS)[number]["id"], number>> = {};
+    let nonGhl = 0;
+    for (const e of ownerFilteredEvents) {
+      const entry = syncMap[e.id];
+      if (!entry) {
+        nonGhl += 1;
+        continue;
+      }
+      const sub = entry.subAccountId;
+      if (sub) bySub[sub] = (bySub[sub] ?? 0) + 1;
+    }
+    return { all: ownerFilteredEvents.length, bySub, nonGhl };
+  }, [ownerFilteredEvents, syncMap]);
+
+  // Auto-reset subFilter when the chosen bucket has 0 events in the
+  // current owner-filtered view. Without this, picking "Peptide" then
+  // changing owner to one whose calls are all Agency would leave subFilter
+  // stuck on "Peptide", the matching pill would hide (SubAccountFilterPills
+  // suppresses zero-count buckets), and the user would have no way to
+  // restore the view — they'd see only an empty event list.
+  const activeSubFilter: SubAccountFilterValue = useMemo(() => {
+    if (subFilter === "all") return "all";
+    if (subFilter === "non-ghl") {
+      return subFilterCounts.nonGhl > 0 ? "non-ghl" : "all";
+    }
+    return (subFilterCounts.bySub[subFilter] ?? 0) > 0 ? subFilter : "all";
+  }, [subFilter, subFilterCounts]);
+
+  // Step 3: apply the sub-account filter on top of the owner filter.
+  const filteredEvents = useMemo(() => {
+    if (activeSubFilter === "all") return ownerFilteredEvents;
+    if (activeSubFilter === "non-ghl") return ownerFilteredEvents.filter((e) => !syncMap[e.id]);
+    return ownerFilteredEvents.filter((e) => syncMap[e.id]?.subAccountId === activeSubFilter);
+  }, [ownerFilteredEvents, activeSubFilter, syncMap]);
 
   const connected = status?.connected ?? false;
 
@@ -227,7 +284,10 @@ export default function CloserCalendarPage() {
           <>
             {/* Sticky week navigator + filter — keeps prev/next + filter
                 chips reachable from any scroll position. */}
-            <div className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40">
+            <div
+              ref={navRef}
+              className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40"
+            >
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => setWeekOffset((w) => w - 1)}
@@ -258,8 +318,10 @@ export default function CloserCalendarPage() {
                 </button>
               </div>
 
+              {/* Desktop filter rows — hidden on mobile where they'd wrap
+                  to 7+ lines for long pill labels (emails). */}
               {calendarOwners.length > 1 && (
-                <div className="flex items-center gap-2 flex-wrap mt-3">
+                <div className="hidden sm:flex items-center gap-2 flex-wrap mt-3">
                   <button
                     onClick={() => setCalendarFilter("all")}
                     className={cn(
@@ -291,6 +353,66 @@ export default function CloserCalendarPage() {
                   })}
                 </div>
               )}
+
+              <div className="hidden sm:block">
+                <SubAccountFilterPills
+                  value={activeSubFilter}
+                  onChange={setSubFilter}
+                  counts={subFilterCounts}
+                />
+              </div>
+
+              {/* Mobile filter sheet — same pill choices, in a dialog so they
+                  don't eat 60% of the viewport. */}
+              <MobileFiltersSheet
+                activeCount={
+                  (activeFilter !== "all" ? 1 : 0) + (activeSubFilter !== "all" ? 1 : 0)
+                }
+              >
+                {calendarOwners.length > 1 && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      Calendar
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setCalendarFilter("all")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                          activeFilter === "all"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        All ({events.length})
+                      </button>
+                      {calendarOwners.map((owner) => {
+                        const count = events.filter((e) => e.calendarName === owner).length;
+                        return (
+                          <button
+                            key={owner}
+                            onClick={() => setCalendarFilter(owner)}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                              activeFilter === owner
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <UserRound className="h-3 w-3" />
+                            {owner} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <SubAccountFilterPills
+                  value={activeSubFilter}
+                  onChange={setSubFilter}
+                  counts={subFilterCounts}
+                />
+              </MobileFiltersSheet>
             </div>
 
             {/* Events */}
