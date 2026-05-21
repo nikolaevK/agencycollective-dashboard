@@ -1,12 +1,17 @@
 import { ghlRequest, getGhlConfig, describeError, GhlApiError } from "./client";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "./subAccounts";
 import { pickStr, pickIso, cachedSingleflight } from "./util";
 import type { GhlContactAppointment } from "@/types/ghl";
 
 const TTL_EVENTS = 300; // 5 min
 const VERSION = "2023-02-21";
-// Memoize the resolved /calendars list path across cache misses so we don't
-// re-probe `/calendars/` then `/calendars` on every refresh.
-let resolvedCalendarsPath: string | null = null;
+// Memoize the resolved /calendars list path per sub-account so we don't
+// re-probe `/calendars/` then `/calendars` on every refresh. Sub-account
+// keyed because each PIT may be allowed a different endpoint shape.
+const resolvedCalendarsPathBySub = new Map<GhlSubAccountId, string>();
 
 // 6 months past + 3 months future. Wide enough to cover almost any "find
 // dropped leads" hunt; narrow enough to keep the events-fetch reasonable
@@ -47,20 +52,24 @@ function normEvent(raw: Record<string, unknown>): GhlContactAppointment {
   };
 }
 
-async function listCalendarIds(locationId: string): Promise<string[]> {
+async function listCalendarIds(
+  locationId: string,
+  subAccountId: GhlSubAccountId
+): Promise<string[]> {
   // Fast path: stick with the previously-working endpoint. Only re-probe
   // when the cached path is truly gone (404). Every other failure
   // (429, 5xx, network) is transient — propagate so the caller's
   // cachedSingleflight doesn't cache an empty result on top of it.
-  if (resolvedCalendarsPath) {
+  const cachedPath = resolvedCalendarsPathBySub.get(subAccountId);
+  if (cachedPath) {
     try {
-      return await fetchCalendarIdsAt(resolvedCalendarsPath, locationId);
+      return await fetchCalendarIdsAt(cachedPath, locationId, subAccountId);
     } catch (err) {
       if (err instanceof GhlApiError && err.status === 404) {
         console.error(
-          `[ghl-calendars] cached path ${resolvedCalendarsPath} 404, re-probing`
+          `[ghl-calendars] cached path ${cachedPath} 404 for sub=${subAccountId}, re-probing`
         );
-        resolvedCalendarsPath = null;
+        resolvedCalendarsPathBySub.delete(subAccountId);
       } else {
         throw err;
       }
@@ -75,13 +84,13 @@ async function listCalendarIds(locationId: string): Promise<string[]> {
   let lastError: unknown = null;
   for (const p of ["/calendars/", "/calendars"]) {
     try {
-      const ids = await fetchCalendarIdsAt(p, locationId);
-      resolvedCalendarsPath = p;
+      const ids = await fetchCalendarIdsAt(p, locationId, subAccountId);
+      resolvedCalendarsPathBySub.set(subAccountId, p);
       return ids;
     } catch (err) {
       lastError = err;
       if (err instanceof GhlApiError && err.status === 404) {
-        console.error(`[ghl-calendars] ${p} not found, trying next path`);
+        console.error(`[ghl-calendars] ${p} not found for sub=${subAccountId}, trying next path`);
         continue;
       }
       // 429 / 5xx / network — bubble up to caller. cachedSingleflight
@@ -92,16 +101,21 @@ async function listCalendarIds(locationId: string): Promise<string[]> {
   // Every candidate path 404'd → GHL genuinely doesn't expose a
   // /calendars listing on this tenant. Empty is the correct answer.
   console.error(
-    "[ghl-calendars] all calendar paths 404'd; returning empty:",
+    `[ghl-calendars] all calendar paths 404'd for sub=${subAccountId}; returning empty:`,
     describeError(lastError)
   );
   return [];
 }
 
-async function fetchCalendarIdsAt(path: string, locationId: string): Promise<string[]> {
+async function fetchCalendarIdsAt(
+  path: string,
+  locationId: string,
+  subAccountId: GhlSubAccountId
+): Promise<string[]> {
   const raw = await ghlRequest<unknown>(path, {
     query: { locationId },
     version: VERSION,
+    subAccountId,
   });
   const list = extractArray(raw, "calendars");
   return list.map((c) => pickStr(c, "id", "_id") ?? "").filter(Boolean);
@@ -123,7 +137,8 @@ async function fetchEventsForCalendar(
   locationId: string,
   calendarId: string,
   startTime: number,
-  endTime: number
+  endTime: number,
+  subAccountId: GhlSubAccountId
 ): Promise<GhlContactAppointment[]> {
   // GHL `/calendars/events` returns the entire window in one shot — no
   // limit/page params (sending them returned 422 in production). Times are
@@ -136,9 +151,19 @@ async function fetchEventsForCalendar(
       endTime,
     },
     version: VERSION,
+    subAccountId,
   });
   const list = extractArray(raw, "events");
   return list.map((e) => normEvent(e as Record<string, unknown>));
+}
+
+/** Cache key for the bulk appointments map. Exported so the appointment
+ *  status PUT can bust the right sub-account's cache after a write. */
+export function appointmentsByContactCacheKey(
+  subAccountId: GhlSubAccountId,
+  locationId: string
+): string {
+  return `ghl:appts-by-contact:${subAccountId}:${locationId}`;
 }
 
 /**
@@ -151,45 +176,52 @@ async function fetchEventsForCalendar(
  * alongside locationId, so we list calendars first and iterate. Most
  * agencies have a handful of calendars, making this 1+N(calendars) calls
  * instead of N(contacts).
+ *
+ * Scoped to one sub-account. Callers that need both accounts merged should
+ * call this twice (or use the discovery helper in `appointments.ts`).
  */
-export async function getAppointmentsByContact(): Promise<
-  Map<string, GhlContactAppointment[]>
-> {
-  const { locationId } = getGhlConfig();
-  return cachedSingleflight(`ghl:appts-by-contact:${locationId}`, TTL_EVENTS, async () => {
-    const map = new Map<string, GhlContactAppointment[]>();
+export async function getAppointmentsByContact(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<Map<string, GhlContactAppointment[]>> {
+  const { locationId } = getGhlConfig(subAccountId);
+  return cachedSingleflight(
+    appointmentsByContactCacheKey(subAccountId, locationId),
+    TTL_EVENTS,
+    async () => {
+      const map = new Map<string, GhlContactAppointment[]>();
 
-    const calendarIds = await listCalendarIds(locationId);
-    if (calendarIds.length === 0) return map;
+      const calendarIds = await listCalendarIds(locationId, subAccountId);
+      if (calendarIds.length === 0) return map;
 
-    const now = Date.now();
-    const startTime = now - PAST_WINDOW_DAYS * 86_400_000;
-    const endTime = now + FUTURE_WINDOW_DAYS * 86_400_000;
+      const now = Date.now();
+      const startTime = now - PAST_WINDOW_DAYS * 86_400_000;
+      const endTime = now + FUTURE_WINDOW_DAYS * 86_400_000;
 
-    // Run all calendars in parallel — each call is one shot with no
-    // pagination, so concurrency just collapses wall-clock from N×rtt to rtt.
-    const settled = await Promise.allSettled(
-      calendarIds.map((id) =>
-        fetchEventsForCalendar(locationId, id, startTime, endTime)
-      )
-    );
-    for (let i = 0; i < settled.length; i++) {
-      const r = settled[i];
-      if (r.status === "rejected") {
-        console.error(
-          `[ghl-calendars] events fetch failed for calendar ${calendarIds[i]}:`,
-          describeError(r.reason)
-        );
-        continue;
+      // Run all calendars in parallel — each call is one shot with no
+      // pagination, so concurrency just collapses wall-clock from N×rtt to rtt.
+      const settled = await Promise.allSettled(
+        calendarIds.map((id) =>
+          fetchEventsForCalendar(locationId, id, startTime, endTime, subAccountId)
+        )
+      );
+      for (let i = 0; i < settled.length; i++) {
+        const r = settled[i];
+        if (r.status === "rejected") {
+          console.error(
+            `[ghl-calendars] events fetch failed for calendar ${calendarIds[i]} (sub=${subAccountId}):`,
+            describeError(r.reason)
+          );
+          continue;
+        }
+        for (const ev of r.value) {
+          if (!ev.contactId) continue;
+          const list = map.get(ev.contactId) ?? [];
+          list.push(ev);
+          map.set(ev.contactId, list);
+        }
       }
-      for (const ev of r.value) {
-        if (!ev.contactId) continue;
-        const list = map.get(ev.contactId) ?? [];
-        list.push(ev);
-        map.set(ev.contactId, list);
-      }
+
+      return map;
     }
-
-    return map;
-  });
+  );
 }

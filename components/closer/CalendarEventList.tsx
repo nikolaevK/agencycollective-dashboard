@@ -14,6 +14,11 @@ import {
 import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
 import { useGhlCrossReference } from "@/hooks/useGhlContacts";
 import { GhlEventChip, buildGhlCrossReferenceInputs } from "@/components/ghl/GhlEventChip";
+import {
+  getSubAccount,
+  isValidSubAccountId,
+  type GhlSubAccountId,
+} from "@/lib/ghl/subAccounts";
 
 export type AttendeeResponseStatus =
   | "needsAction"
@@ -52,6 +57,10 @@ export interface GhlSyncEntry {
   dashboardStatus: "showed" | "no_show" | null;
   ghlStatus: string | null;
   syncState: "synced" | "pending" | "out_of_sync";
+  /** Which GHL sub-account the linked appointment belongs to. Drives the
+   *  small badge on the sync chip. Optional for backward compat with any
+   *  caller that hasn't been updated yet. */
+  subAccountId?: GhlSubAccountId | null;
 }
 
 interface Props {
@@ -370,6 +379,7 @@ export function CalendarEventList({
                             endTime: event.end,
                           }}
                           data={ghlData}
+                          isAdmin={isAdmin}
                         />
                       </div>
                     </div>
@@ -533,13 +543,30 @@ export function CalendarEventList({
                   )}
 
                   {/* GHL sync indicator — only on events linked to a GHL appointment */}
-                  {syncEntry && (
+                  {syncEntry && (() => {
+                    const subId = isValidSubAccountId(syncEntry.subAccountId)
+                      ? syncEntry.subAccountId
+                      : null;
+                    const sub = subId ? getSubAccount(subId) : null;
+                    const SubBadge = sub ? (
+                      <span
+                        className={cn(
+                          "inline-flex items-center justify-center rounded px-1 py-0 text-[9px] font-bold border",
+                          sub.badgeClass
+                        )}
+                        title={sub.label}
+                      >
+                        {sub.shortLabel}
+                      </span>
+                    ) : null;
+                    return (
                     <div className="mt-2 flex items-start gap-2">
                       {syncEntry.syncState === "out_of_sync" ? (
                         <div className="flex-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
                           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
                             <AlertTriangle className="h-3 w-3" />
                             Out of sync with GHL
+                            {SubBadge}
                           </div>
                           <div className="mt-1 text-[11px] text-muted-foreground">
                             Dashboard: <span className="font-medium text-foreground">{dashboardStatusLabel(syncEntry.dashboardStatus)}</span>
@@ -579,15 +606,18 @@ export function CalendarEventList({
                         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                           <Loader2 className="h-3 w-3 animate-spin" />
                           Syncing with GHL…
+                          {SubBadge}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
                           <CheckCircle2 className="h-3 w-3" />
                           Synced with GHL
+                          {SubBadge}
                         </span>
                       )}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Admin: read-only attendance badge + closer reassign picker */}
                   {isAdmin && eventAttendance && (() => {

@@ -18,13 +18,19 @@ import {
 } from "@/lib/ghlAppointmentLinks";
 import { getAppointmentsByContact } from "@/lib/ghl/calendars";
 import { eventCompositeKey } from "@/lib/ghl/crossReference";
-import { isGhlConfigured } from "@/lib/ghl/client";
+import {
+  getConfiguredSubAccountIds,
+  isAnyGhlConfigured,
+  type GhlSubAccountId,
+} from "@/lib/ghl/subAccounts";
 import type { GhlContactAppointment } from "@/types/ghl";
 
 interface SyncEntry {
   dashboardStatus: "showed" | "no_show" | null;
   ghlStatus: string | null;
   syncState: SyncState;
+  /** Which sub-account this link points to — null if no link (non-GHL). */
+  subAccountId: GhlSubAccountId | null;
 }
 
 interface DiscoveryEvent {
@@ -51,7 +57,7 @@ async function buildResponse(
   const data = await getLatestAttendanceByEvent();
   const sync: Record<string, SyncEntry> = {};
 
-  if (!isGhlConfigured()) {
+  if (!isAnyGhlConfigured()) {
     return { data, sync };
   }
 
@@ -61,45 +67,74 @@ async function buildResponse(
   const visibleIds = visibleEvents
     ? visibleEvents.map((e) => e.id).filter((id): id is string => typeof id === "string" && id.length > 0)
     : null;
-  const [existingLinks, apptsByContact] = await Promise.all([
+
+  const configuredSubs = getConfiguredSubAccountIds();
+  const [existingLinks, ...apptResults] = await Promise.all([
     visibleIds
       ? listLinksByGoogleEventIds(visibleIds).then((m) => Object.values(m))
       : listAllLinks(),
-    getAppointmentsByContact().catch(() => null),
+    ...configuredSubs.map(async (sub) => {
+      try {
+        return { sub, map: await getAppointmentsByContact(sub) } as const;
+      } catch {
+        return { sub, map: null as Map<string, GhlContactAppointment[]> | null } as const;
+      }
+    }),
   ]);
 
-  const ghlStatusById = new Map<string, string | null>();
-  const ghlByCompositeKey = new Map<string, GhlContactAppointment>();
-  if (apptsByContact) {
-    for (const [, appts] of apptsByContact as Map<string, GhlContactAppointment[]>) {
+  // Build a per-sub-account index of (compositeKey → matched appointment)
+  // and a (subAccountId, ghlAppointmentId) → status lookup for drift
+  // detection. The link row carries the authoritative sub-account id, so
+  // status lookups have to be sub-scoped (an appointment id is only valid
+  // within its own location).
+  const ghlStatusByLinkKey = new Map<string, string | null>();
+  const ghlByCompositeKeyAndSub = new Map<
+    string,
+    { sub: GhlSubAccountId; appt: GhlContactAppointment }
+  >();
+  for (const r of apptResults) {
+    if (!r.map) continue;
+    const { sub, map } = r;
+    for (const [, appts] of map as Map<string, GhlContactAppointment[]>) {
       for (const appt of appts) {
-        if (appt.id) ghlStatusById.set(appt.id, appt.appointmentStatus ?? null);
+        if (appt.id) {
+          ghlStatusByLinkKey.set(
+            `${sub}:${appt.id}`,
+            appt.appointmentStatus ?? null
+          );
+        }
         const key = eventCompositeKey({
           title: appt.title,
           startTime: appt.startTime,
           endTime: appt.endTime,
         });
-        if (key && appt.id && !ghlByCompositeKey.has(key)) {
-          // First-seen wins on composite-key collisions, same convention as
-          // lib/ghl/crossReference.ts.
-          ghlByCompositeKey.set(key, appt);
+        // First-seen wins on composite-key collisions across sub-accounts,
+        // matching the lib/ghl/crossReference.ts convention (priority =
+        // SUB_ACCOUNTS order).
+        if (key && appt.id && !ghlByCompositeKeyAndSub.has(key)) {
+          ghlByCompositeKeyAndSub.set(key, { sub, appt });
         }
       }
     }
   }
 
   const linksByGoogle = new Map(existingLinks.map((l) => [l.googleEventId, l]));
+  // Did at least one sub-account return data? If none did (rate limit,
+  // outage, etc.), we still want to surface existing link rows from the DB
+  // but skip drift detection (would falsely flip every chip to out-of-sync).
+  const anyGhlDataLoaded = apptResults.some((r) => r.map !== null);
 
   // Discovery pass: when the caller passed event coords AND we have GHL
   // data, create link rows for any composite-key matches that don't yet
   // have one. Without this the sync chip wouldn't appear until first
   // interaction. Parallelize because the inserts are independent.
-  if (visibleEvents && apptsByContact) {
+  if (visibleEvents && anyGhlDataLoaded) {
     const toCreate: Array<{
       eventId: string;
       ghlId: string;
       contactId: string | null;
       calendarId: string | null;
+      sub: GhlSubAccountId;
     }> = [];
     for (const evt of visibleEvents) {
       if (!evt.id || linksByGoogle.has(evt.id)) continue;
@@ -109,13 +144,14 @@ async function buildResponse(
         endTime: evt.end ?? null,
       });
       if (!key) continue;
-      const match = ghlByCompositeKey.get(key);
-      if (!match?.id) continue;
+      const match = ghlByCompositeKeyAndSub.get(key);
+      if (!match?.appt.id) continue;
       toCreate.push({
         eventId: evt.id,
-        ghlId: match.id,
-        contactId: match.contactId ?? null,
-        calendarId: match.calendarId ?? null,
+        ghlId: match.appt.id,
+        contactId: match.appt.contactId ?? null,
+        calendarId: match.appt.calendarId ?? null,
+        sub: match.sub,
       });
     }
     if (toCreate.length > 0) {
@@ -126,10 +162,12 @@ async function buildResponse(
             ghlAppointmentId: c.ghlId,
             ghlContactId: c.contactId,
             ghlCalendarId: c.calendarId,
+            subAccountId: c.sub,
           }).catch((err) => {
             console.error(
               "[calendar/attendance] discovery upsert failed for",
               c.eventId,
+              `(sub=${c.sub})`,
               err instanceof Error ? err.message : err
             );
             return null;
@@ -147,8 +185,8 @@ async function buildResponse(
   // returning — fire-and-forget gets cut off in serverless runtimes.
   const driftWrites: Promise<unknown>[] = [];
   for (const [, link] of linksByGoogle) {
-    const freshGhl = apptsByContact
-      ? ghlStatusById.get(link.ghlAppointmentId) ?? null
+    const freshGhl = anyGhlDataLoaded
+      ? ghlStatusByLinkKey.get(`${link.subAccountId}:${link.ghlAppointmentId}`) ?? null
       : link.ghlStatus;
 
     const dashboardStatus = (data[link.googleEventId] as "showed" | "no_show" | undefined) ?? null;
@@ -167,9 +205,10 @@ async function buildResponse(
       dashboardStatus,
       ghlStatus: freshGhl,
       syncState: computedState,
+      subAccountId: link.subAccountId,
     };
 
-    if (apptsByContact && (link.ghlStatus !== freshGhl || link.syncState !== computedState)) {
+    if (anyGhlDataLoaded && (link.ghlStatus !== freshGhl || link.syncState !== computedState)) {
       driftWrites.push(
         updateLinkSyncState({
           googleEventId: link.googleEventId,
@@ -200,8 +239,9 @@ function authorize(): boolean {
  *      that already have a GHL link row.
  * POST: same response shape, but takes `{ events: [{id,title,start,end}] }`
  *      and runs a discovery pass first — creates link rows for any visible
- *      events whose (title,start,end) matches a GHL appointment. Used by the
- *      calendar pages so the sync chip appears on the first load.
+ *      events whose (title,start,end) matches a GHL appointment in any
+ *      configured sub-account. Used by the calendar pages so the sync chip
+ *      appears on the first load.
  */
 export async function GET() {
   if (!authorize()) {

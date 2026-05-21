@@ -1,4 +1,8 @@
 import { ghlRequest, getGhlConfig } from "./client";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "./subAccounts";
 import { pickStr, pickNum, pickIso, cachedSingleflight } from "./util";
 import type { GhlConversation, GhlMessage } from "@/types/ghl";
 
@@ -34,16 +38,21 @@ function normConversation(raw: Record<string, unknown>): GhlConversation {
 const MAX_CONTACT_THREADS = 500;
 
 export async function getContactConversations(
-  contactId: string
+  contactId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
 ): Promise<GhlConversation[]> {
-  const { locationId } = getGhlConfig();
-  return cachedSingleflight(`ghl:contact-threads:${contactId}`, TTL_CONTACT_THREADS, async () => {
+  const { locationId } = getGhlConfig(subAccountId);
+  return cachedSingleflight(
+    `ghl:contact-threads:${subAccountId}:${contactId}`,
+    TTL_CONTACT_THREADS,
+    async () => {
     const all: GhlConversation[] = [];
     let page = 1;
     while (all.length < MAX_CONTACT_THREADS) {
       const raw = await ghlRequest<unknown>("/conversations/search", {
         query: { locationId, contactId, limit: PAGE_LIMIT, page },
         version: VERSION,
+        subAccountId,
       });
       let list: unknown[] = [];
       if (Array.isArray(raw)) {
@@ -67,7 +76,8 @@ export async function getContactConversations(
       return bv - av;
     });
     return threads;
-  });
+    }
+  );
 }
 
 // ── Per-thread: messages ────────────────────────────────────────────
@@ -120,9 +130,13 @@ function normMessage(raw: Record<string, unknown>): GhlMessage {
  * GHL paginates this endpoint via `lastMessageId` rather than page numbers.
  */
 export async function getConversationMessages(
-  conversationId: string
+  conversationId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
 ): Promise<GhlMessage[]> {
-  return cachedSingleflight(`ghl:thread-messages:${conversationId}`, TTL_THREAD_MESSAGES, async () => {
+  return cachedSingleflight(
+    `ghl:thread-messages:${subAccountId}:${conversationId}`,
+    TTL_THREAD_MESSAGES,
+    async () => {
     const all: GhlMessage[] = [];
     let lastMessageId: string | null = null;
 
@@ -132,6 +146,7 @@ export async function getConversationMessages(
       {
         query: { limit: PAGE_LIMIT, lastMessageId: lastMessageId ?? undefined },
         version: VERSION,
+        subAccountId,
       }
     );
     // GHL has shipped this response in three different shapes across versions:
@@ -161,6 +176,7 @@ export async function getConversationMessages(
     if (!lastMessageId) break;
   }
 
-    return all;
-  });
+      return all;
+    }
+  );
 }

@@ -95,10 +95,14 @@ const SCHEMA_VERSION = "2026-05-16.ghl-appt-links.r1";
  */
 async function ensureCriticalColumns(db: Client): Promise<void> {
   const adds: { table: string; column: string; defn: string }[] = [
-    { table: "appointments", column: "setter_tier",    defn: "TEXT" },
-    { table: "appointments", column: "setter_tier_at", defn: "TEXT" },
-    { table: "deals",        column: "setter_tier",    defn: "TEXT" },
-    { table: "deals",        column: "no_retainer",    defn: "INTEGER NOT NULL DEFAULT 0" },
+    { table: "appointments",           column: "setter_tier",        defn: "TEXT" },
+    { table: "appointments",           column: "setter_tier_at",     defn: "TEXT" },
+    { table: "deals",                  column: "setter_tier",        defn: "TEXT" },
+    { table: "deals",                  column: "no_retainer",        defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Multi-sub-account GHL — runtime push/pull breaks without this.
+    // Must self-heal because the SCHEMA_VERSION probe below was already
+    // stamped on existing deploys when this column didn't exist yet.
+    { table: "ghl_appointment_links",  column: "ghl_sub_account_id", defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -111,11 +115,41 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${defn}`);
       console.log(`[migrate] Added ${column} column to ${table}`);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // ghl_appointment_links may not exist yet on a brand-new DB (its
+      // CREATE TABLE is gated by the SCHEMA_VERSION body below). Treat
+      // "no such table" as benign — the body will create it with the
+      // column inline on the same run.
+      if (table === "ghl_appointment_links" && /no such table/i.test(msg)) {
+        continue;
+      }
+      // Two concurrent Vercel cold starts can both observe the column as
+      // missing and both race the ALTER. The second one fails with
+      // "duplicate column name" — that's exactly the success outcome we
+      // wanted (column now exists). Swallow and continue.
+      if (/duplicate column name/i.test(msg)) {
+        continue;
+      }
       // Surface as error (not warn) so a real failure is visible. Rethrow
       // so ensureMigrated retries on the next call rather than declaring
       // success while the schema is broken.
       console.error(`[migrate] Failed to add ${column} to ${table}:`, err);
       throw err;
+    }
+  }
+
+  // Backfill the multi-sub-account stamp on any pre-existing rows. Safe to
+  // re-run: matches zero rows once every row has an id. Wrapped in a
+  // "no such table" check for fresh-DB cold starts where the table hasn't
+  // been created yet.
+  try {
+    await db.execute(
+      `UPDATE ghl_appointment_links SET ghl_sub_account_id = 'peptide' WHERE ghl_sub_account_id IS NULL`
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[migrate] ghl_appointment_links backfill failed:", err);
     }
   }
 }
@@ -1243,6 +1277,17 @@ export async function migrate(): Promise<void> {
 
   try {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_ghl_appt_links_sync_state ON ghl_appointment_links(sync_state)`);
+  } catch {
+    // index may already exist
+  }
+
+  // Multi-sub-account support: every link row is owned by exactly one GHL
+  // sub-account. The ALTER + backfill live in `ensureCriticalColumns` so
+  // they survive the SCHEMA_VERSION sentinel — runtime push/pull depends on
+  // this column, and a stuck version stamp would otherwise leave the column
+  // missing forever. Here we just add the index, which is cosmetic.
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_ghl_appt_links_sub_account ON ghl_appointment_links(ghl_sub_account_id)`);
   } catch {
     // index may already exist
   }

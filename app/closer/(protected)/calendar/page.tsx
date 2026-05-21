@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
-import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
+import { CalendarEventList, type CalendarEvent, type GhlSyncEntry, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
 import { LinkEventDealModal } from "@/components/closer/LinkEventDealModal";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import type { DealPublic } from "@/components/closers/types";
@@ -62,19 +62,15 @@ export default function CloserCalendarPage() {
 
   // Team-wide attendance (read): closers see every mark, not only their own.
   // Writes still go through /api/closer/attendance, scoped to this closer_id.
-  // `sync` carries per-event GHL state for events linked to a GHL appointment;
-  // events without a link entry are non-GHL and render exactly like today.
-  type SyncEntry = {
-    dashboardStatus: "showed" | "no_show" | null;
-    ghlStatus: string | null;
-    syncState: "synced" | "pending" | "out_of_sync";
-  };
+  // `sync` carries per-event GHL state for events linked to a GHL appointment
+  // (including which sub-account it lives in, for the chip badge); events
+  // without a link entry are non-GHL and render exactly like today.
   // Stable id list keys the sync query so it refetches only when the
   // visible-events set actually changes, not on every render of `events`.
   const visibleEventIds = useMemo(() => events.map((e) => e.id).sort().join(","), [events]);
-  const { data: attendanceResp = { data: {} as Record<string, string>, sync: {} as Record<string, SyncEntry> } } = useQuery<{
+  const { data: attendanceResp = { data: {} as Record<string, string>, sync: {} as Record<string, GhlSyncEntry> } } = useQuery<{
     data: Record<string, string>;
-    sync: Record<string, SyncEntry>;
+    sync: Record<string, GhlSyncEntry>;
   }>({
     queryKey: ["team-attendance", visibleEventIds],
     queryFn: async () => {

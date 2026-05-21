@@ -9,6 +9,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { getContactBatch, MAX_PAGE_LIMIT } from "@/lib/ghl/contacts";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
+import { parseSubAccountId } from "@/lib/ghl/subAccounts";
 
 export async function GET(request: NextRequest) {
   if (!getAdminSession() && !getCloserSession()) {
@@ -22,9 +23,10 @@ export async function GET(request: NextRequest) {
     MAX_PAGE_LIMIT,
     Math.max(1, Number(searchParams.get("pageLimit") ?? String(MAX_PAGE_LIMIT)) || MAX_PAGE_LIMIT)
   );
+  const subAccountId = parseSubAccountId(searchParams.get("subAccount"));
 
   try {
-    const batch = await getContactBatch({ query, page, pageLimit });
+    const batch = await getContactBatch({ query, page, pageLimit, subAccountId });
     return NextResponse.json({ data: batch });
   } catch (err) {
     if (err instanceof GhlNotConfiguredError) {

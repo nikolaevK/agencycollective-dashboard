@@ -8,7 +8,7 @@ import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
-import { CalendarEventList, type CalendarEvent, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
+import { CalendarEventList, type CalendarEvent, type GhlSyncEntry, type LinkedDealInfo } from "@/components/closer/CalendarEventList";
 import type { DealPublic } from "@/components/closers/types";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
 
@@ -132,13 +132,8 @@ export default function AdminCalendarPage() {
     queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
   }
 
-  type SyncEntry = {
-    dashboardStatus: "showed" | "no_show" | null;
-    ghlStatus: string | null;
-    syncState: "synced" | "pending" | "out_of_sync";
-  };
   const visibleEventIds = useMemo(() => events.map((e) => e.id).sort().join(","), [events]);
-  const { data: ghlSync = {} } = useQuery<Record<string, SyncEntry>>({
+  const { data: ghlSync = {} } = useQuery<Record<string, GhlSyncEntry>>({
     queryKey: ["admin-team-attendance-sync", visibleEventIds],
     queryFn: async () => {
       const res = await fetch("/api/calendar/attendance", {

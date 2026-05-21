@@ -1,8 +1,16 @@
 // GHL API v2 client — Private Integration Token auth.
 //
-// Single sub-account. Token + locationId both come from env. Anything that
-// requires a refresh dance (OAuth marketplace app, multi-location) is out of
-// scope for v1 and would replace this module wholesale.
+// Supports multiple GHL sub-accounts in parallel. Each request optionally
+// names a sub-account via `RequestOpts.subAccountId`; callers that don't
+// specify get the default account (kept stable for backward compatibility).
+// Sub-account → PIT/locationId mapping lives in `./subAccounts`.
+
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  getSubAccountEnv,
+  getConfiguredSubAccountIds,
+  type GhlSubAccountId,
+} from "./subAccounts";
 
 const BASE_URL = "https://services.leadconnectorhq.com";
 
@@ -35,21 +43,34 @@ export function describeError(err: unknown): string {
 }
 
 export class GhlNotConfiguredError extends Error {
-  constructor() {
-    super("GHL is not configured. Set GHL_PIT and GHL_LOCATION_ID in .env.local.");
+  subAccountId: GhlSubAccountId;
+  constructor(subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID) {
+    const envHint =
+      subAccountId === "agency"
+        ? "GHL_PIT_AGENCY and GHL_LOCATION_ID_AGENCY"
+        : "GHL_PIT and GHL_LOCATION_ID";
+    super(
+      `GHL sub-account "${subAccountId}" is not configured. Set ${envHint} in .env.local.`
+    );
     this.name = "GhlNotConfiguredError";
+    this.subAccountId = subAccountId;
   }
 }
 
-export function getGhlConfig(): { pit: string; locationId: string } {
-  const pit = process.env.GHL_PIT;
-  const locationId = process.env.GHL_LOCATION_ID;
-  if (!pit || !locationId) throw new GhlNotConfiguredError();
-  return { pit, locationId };
+export function getGhlConfig(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): { pit: string; locationId: string; subAccountId: GhlSubAccountId } {
+  const env = getSubAccountEnv(subAccountId);
+  if (!env) throw new GhlNotConfiguredError(subAccountId);
+  return { ...env, subAccountId };
 }
 
-export function isGhlConfigured(): boolean {
-  return Boolean(process.env.GHL_PIT && process.env.GHL_LOCATION_ID);
+/** True when the named sub-account has its env vars set, or — when called
+ *  without args — when ANY sub-account is configured. The latter shape is
+ *  what API routes use to gate "is GHL available at all?" branches. */
+export function isGhlConfigured(subAccountId?: GhlSubAccountId): boolean {
+  if (subAccountId) return getSubAccountEnv(subAccountId) !== null;
+  return getConfiguredSubAccountIds().length > 0;
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────
@@ -59,6 +80,11 @@ export function isGhlConfigured(): boolean {
 // previous fan-out happily exceeded that and got 429-stormed. 20/s with a
 // 20-token burst stays comfortably within the documented budget while still
 // letting per-page enrichment chew through ~300 calls in ~15s.
+//
+// Note: the limiter is global, shared across all sub-accounts. GHL's docs
+// rate-limit per PIT, so two sub-accounts could in theory drain 100/s each,
+// but our 50/s cap leaves headroom and keeps the implementation simple. If
+// fan-out from one account starves the other, split into per-PIT limiters.
 
 class RateLimiter {
   private tokens: number;
@@ -119,12 +145,15 @@ interface RequestOpts {
   body?: unknown;
   /** Override the GHL Version header. Some endpoints require 2023-02-21. */
   version?: string;
+  /** Which sub-account's PIT to send. Defaults to DEFAULT_SUB_ACCOUNT_ID. */
+  subAccountId?: GhlSubAccountId;
 }
 
 const MAX_429_RETRIES = 4;
 
 export async function ghlRequest<T>(path: string, opts: RequestOpts = {}): Promise<T> {
-  const { pit } = getGhlConfig();
+  const subAccountId = opts.subAccountId ?? DEFAULT_SUB_ACCOUNT_ID;
+  const { pit } = getGhlConfig(subAccountId);
   const method = opts.method ?? "GET";
   const version = opts.version ?? DEFAULT_VERSION;
 

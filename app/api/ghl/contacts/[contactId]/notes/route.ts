@@ -2,20 +2,24 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { createContactNote, getContactNotes } from "@/lib/ghl/contacts";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
+import { parseSubAccountId } from "@/lib/ghl/subAccounts";
 
 const NOTE_BODY_MAX = 10_000;
 
-export async function GET(_req: Request, { params }: { params: { contactId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { contactId: string } }) {
   if (!getAdminSession() && !getCloserSession()) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const subAccountId = parseSubAccountId(request.nextUrl.searchParams.get("subAccount"));
+
   try {
-    const notes = await getContactNotes(params.contactId);
+    const notes = await getContactNotes(params.contactId, subAccountId);
     return NextResponse.json({ data: notes });
   } catch (err) {
     if (err instanceof GhlNotConfiguredError) {
@@ -29,14 +33,14 @@ export async function GET(_req: Request, { params }: { params: { contactId: stri
   }
 }
 
-export async function POST(req: Request, { params }: { params: { contactId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: { contactId: string } }) {
   if (!getAdminSession() && !getCloserSession()) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let payload: Record<string, unknown>;
   try {
-    payload = (await req.json()) as Record<string, unknown>;
+    payload = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -52,8 +56,10 @@ export async function POST(req: Request, { params }: { params: { contactId: stri
     );
   }
 
+  const subAccountId = parseSubAccountId(request.nextUrl.searchParams.get("subAccount"));
+
   try {
-    const note = await createContactNote(params.contactId, body);
+    const note = await createContactNote(params.contactId, body, subAccountId);
     return NextResponse.json({ data: note }, { status: 201 });
   } catch (err) {
     if (err instanceof GhlNotConfiguredError) {

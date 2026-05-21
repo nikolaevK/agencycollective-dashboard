@@ -1,4 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  DEFAULT_UI_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "@/lib/ghl/subAccounts";
 import type {
   GhlContact,
   GhlContactAppointment,
@@ -53,6 +57,16 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 const PAGE_LIMIT = 100;
 
+/** Default sub-account used by every hook when the caller doesn't specify
+ *  one. Matches the UI default tab on the GHL contacts page. */
+const DEFAULT_SUB = DEFAULT_UI_SUB_ACCOUNT_ID;
+
+/** Helper to append `&subAccount=...` (or `?subAccount=...`) to a URL. */
+function withSub(url: string, sub: GhlSubAccountId): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}subAccount=${encodeURIComponent(sub)}`;
+}
+
 /**
  * Paginated newest-first contact loader. Loads page 1 immediately; subsequent
  * pages are fetched on demand by the caller via `fetchNextPage()` (typically
@@ -63,15 +77,16 @@ const PAGE_LIMIT = 100;
  * page; deeper exploration loads more on scroll. This replaces the previous
  * auto-fetch-all behaviour which paid the full cost up front.
  */
-export function useGhlContacts(query: string) {
-  return useInfiniteQuery<GhlContactBatch, Error, { pages: GhlContactBatch[]; pageParams: number[] }, [string, string], number>({
-    queryKey: ["ghl-contacts", query],
+export function useGhlContacts(query: string, subAccountId: GhlSubAccountId = DEFAULT_SUB) {
+  return useInfiniteQuery<GhlContactBatch, Error, { pages: GhlContactBatch[]; pageParams: number[] }, [string, string, string], number>({
+    queryKey: ["ghl-contacts", subAccountId, query],
     initialPageParam: 1,
     queryFn: async ({ pageParam }) => {
       const search = new URLSearchParams({
         query,
         page: String(pageParam),
         pageLimit: String(PAGE_LIMIT),
+        subAccount: subAccountId,
       });
       return fetchJson<GhlContactBatch>(`/api/ghl/contacts?${search.toString()}`);
     },
@@ -88,21 +103,32 @@ export function useGhlContacts(query: string) {
  * (clicking a calendar chip) where the target contact may not be in the
  * currently-loaded paginated list.
  */
-export function useGhlContactById(contactId: string | null) {
+export function useGhlContactById(
+  contactId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   return useQuery<GhlContact>({
-    queryKey: ["ghl-contact-by-id", contactId],
+    queryKey: ["ghl-contact-by-id", subAccountId, contactId],
     queryFn: () =>
-      fetchJson<GhlContact>(`/api/ghl/contacts/${encodeURIComponent(contactId!)}`),
+      fetchJson<GhlContact>(withSub(`/api/ghl/contacts/${encodeURIComponent(contactId!)}`, subAccountId)),
     enabled: Boolean(contactId),
     staleTime: 5 * 60_000,
+    // Don't retry 4xx — 403 means "wrong sub-account for this contact id"
+    // (the PIT is scoped to one location), 404 means deleted. Both are
+    // permanent failures from this hook's perspective; retrying just stacks
+    // up identical error responses.
+    retry: (count, err) => count < 1 && !/^Request failed \(40/.test(err.message),
   });
 }
 
-export function useGhlContactNotes(contactId: string | null) {
+export function useGhlContactNotes(
+  contactId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   return useQuery<GhlContactNote[]>({
-    queryKey: ["ghl-contact-notes", contactId],
+    queryKey: ["ghl-contact-notes", subAccountId, contactId],
     queryFn: () =>
-      fetchJson<GhlContactNote[]>(`/api/ghl/contacts/${encodeURIComponent(contactId!)}/notes`),
+      fetchJson<GhlContactNote[]>(withSub(`/api/ghl/contacts/${encodeURIComponent(contactId!)}/notes`, subAccountId)),
     enabled: Boolean(contactId),
     staleTime: 60_000,
   });
@@ -113,13 +139,16 @@ export function useGhlContactNotes(contactId: string | null) {
  *   - invalidates the per-contact notes list (refetches the chronological list)
  *   - invalidates `["ghl-contacts"]` so the row's noteCount badge updates
  */
-export function useCreateGhlNote(contactId: string | null) {
+export function useCreateGhlNote(
+  contactId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   const queryClient = useQueryClient();
   return useMutation<GhlContactNote, Error, { body: string }>({
     mutationFn: async ({ body }) => {
       if (!contactId) throw new Error("No contact selected");
       const res = await fetch(
-        `/api/ghl/contacts/${encodeURIComponent(contactId)}/notes`,
+        withSub(`/api/ghl/contacts/${encodeURIComponent(contactId)}/notes`, subAccountId),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -139,18 +168,21 @@ export function useCreateGhlNote(contactId: string | null) {
       return json.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ghl-contact-notes", contactId] });
-      queryClient.invalidateQueries({ queryKey: ["ghl-contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["ghl-contact-notes", subAccountId, contactId] });
+      queryClient.invalidateQueries({ queryKey: ["ghl-contacts", subAccountId] });
     },
   });
 }
 
-export function useGhlContactAppointments(contactId: string | null) {
+export function useGhlContactAppointments(
+  contactId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   return useQuery<GhlContactAppointment[]>({
-    queryKey: ["ghl-contact-appointments", contactId],
+    queryKey: ["ghl-contact-appointments", subAccountId, contactId],
     queryFn: () =>
       fetchJson<GhlContactAppointment[]>(
-        `/api/ghl/contacts/${encodeURIComponent(contactId!)}/appointments`
+        withSub(`/api/ghl/contacts/${encodeURIComponent(contactId!)}/appointments`, subAccountId)
       ),
     enabled: Boolean(contactId),
     staleTime: 60_000,
@@ -165,44 +197,47 @@ const CATALOG_OPTIONS = {
   gcTime: 30 * 60_000,    // 30 min: cache survives this long after last subscriber
 } as const;
 
-export function useGhlTags() {
+export function useGhlTags(subAccountId: GhlSubAccountId = DEFAULT_SUB) {
   return useQuery<GhlTag[]>({
-    queryKey: ["ghl-tags"],
-    queryFn: () => fetchJson<GhlTag[]>("/api/ghl/tags"),
+    queryKey: ["ghl-tags", subAccountId],
+    queryFn: () => fetchJson<GhlTag[]>(withSub("/api/ghl/tags", subAccountId)),
     ...CATALOG_OPTIONS,
   });
 }
 
-export function useGhlUsers() {
+export function useGhlUsers(subAccountId: GhlSubAccountId = DEFAULT_SUB) {
   return useQuery<Record<string, GhlUser>>({
-    queryKey: ["ghl-users"],
-    queryFn: () => fetchJson<Record<string, GhlUser>>("/api/ghl/users"),
+    queryKey: ["ghl-users", subAccountId],
+    queryFn: () => fetchJson<Record<string, GhlUser>>(withSub("/api/ghl/users", subAccountId)),
     ...CATALOG_OPTIONS,
   });
 }
 
-export function useGhlPipelines() {
+export function useGhlPipelines(subAccountId: GhlSubAccountId = DEFAULT_SUB) {
   return useQuery<GhlPipeline[]>({
-    queryKey: ["ghl-pipelines"],
-    queryFn: () => fetchJson<GhlPipeline[]>("/api/ghl/pipelines"),
+    queryKey: ["ghl-pipelines", subAccountId],
+    queryFn: () => fetchJson<GhlPipeline[]>(withSub("/api/ghl/pipelines", subAccountId)),
     ...CATALOG_OPTIONS,
   });
 }
 
-export function useGhlWorkflows() {
+export function useGhlWorkflows(subAccountId: GhlSubAccountId = DEFAULT_SUB) {
   return useQuery<GhlWorkflow[]>({
-    queryKey: ["ghl-workflows"],
-    queryFn: () => fetchJson<GhlWorkflow[]>("/api/ghl/workflows"),
+    queryKey: ["ghl-workflows", subAccountId],
+    queryFn: () => fetchJson<GhlWorkflow[]>(withSub("/api/ghl/workflows", subAccountId)),
     ...CATALOG_OPTIONS,
   });
 }
 
-export function useGhlContactConversations(contactId: string | null) {
+export function useGhlContactConversations(
+  contactId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   return useQuery<GhlConversation[]>({
-    queryKey: ["ghl-contact-conversations", contactId],
+    queryKey: ["ghl-contact-conversations", subAccountId, contactId],
     queryFn: () =>
       fetchJson<GhlConversation[]>(
-        `/api/ghl/contacts/${encodeURIComponent(contactId!)}/conversations`
+        withSub(`/api/ghl/contacts/${encodeURIComponent(contactId!)}/conversations`, subAccountId)
       ),
     enabled: Boolean(contactId),
     staleTime: 60_000,
@@ -217,6 +252,10 @@ export function useGhlContactConversations(contactId: string | null) {
  * Why composite-key not id: GHL's appointment payload doesn't expose the
  * synced Google Calendar event id. Title + start/end form a strict join
  * because GHL preserves them exactly when syncing to Google.
+ *
+ * Searches every configured sub-account in parallel; the response carries
+ * the winning sub-account id on each matched ref so callers can render a
+ * sub-account badge and route deep-links to the right tab.
  */
 export function useGhlCrossReference(input: { events: CrossReferenceEvent[] }) {
   // Stable cache key from sorted ids. Two consumers asking about the same
@@ -244,12 +283,15 @@ export function useGhlCrossReference(input: { events: CrossReferenceEvent[] }) {
   });
 }
 
-export function useGhlConversationMessages(conversationId: string | null) {
+export function useGhlConversationMessages(
+  conversationId: string | null,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB
+) {
   return useQuery<GhlMessage[]>({
-    queryKey: ["ghl-conversation-messages", conversationId],
+    queryKey: ["ghl-conversation-messages", subAccountId, conversationId],
     queryFn: () =>
       fetchJson<GhlMessage[]>(
-        `/api/ghl/conversations/${encodeURIComponent(conversationId!)}/messages`
+        withSub(`/api/ghl/conversations/${encodeURIComponent(conversationId!)}/messages`, subAccountId)
       ),
     enabled: Boolean(conversationId),
     staleTime: 60_000,

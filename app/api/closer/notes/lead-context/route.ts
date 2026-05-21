@@ -6,6 +6,7 @@ import { ensureMigrated, getDb } from "@/lib/db";
 import { getCalendarEvents } from "@/lib/google/calendar";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { findLinkByGoogleEventId } from "@/lib/ghlAppointmentLinks";
 
 /**
  * Aggregate everything known about a lead the user has linked to a note:
@@ -105,17 +106,32 @@ export async function GET(request: Request) {
   ]);
 
   // Fetch the Google Calendar event. Bounded 2-year window uses the shared
-  // cache (TTL.GOOGLE_EVENTS), so per-lead lookups are cheap.
+  // cache (TTL.GOOGLE_EVENTS), so per-lead lookups are cheap. Run in
+  // parallel with the GHL link lookup since neither depends on the other.
   let event = null;
+  let ghlLink: {
+    subAccountId: string;
+    ghlContactId: string | null;
+    ghlAppointmentId: string;
+  } | null = null;
   if (resolvedEventId) {
-    try {
-      const now = Date.now();
-      const timeMin = new Date(now - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
-      const timeMax = new Date(now + 24 * 60 * 60 * 1000).toISOString();
-      const events = await getCalendarEvents(timeMin, timeMax);
-      event = events.find((e) => e.id === resolvedEventId) ?? null;
-    } catch (err) {
-      console.error("[lead-context] Google fetch failed:", err);
+    const now = Date.now();
+    const timeMin = new Date(now - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
+    const timeMax = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    const [eventsRes, linkRes] = await Promise.all([
+      getCalendarEvents(timeMin, timeMax).catch((err) => {
+        console.error("[lead-context] Google fetch failed:", err);
+        return null;
+      }),
+      findLinkByGoogleEventId(resolvedEventId).catch(() => null),
+    ]);
+    if (eventsRes) event = eventsRes.find((e) => e.id === resolvedEventId) ?? null;
+    if (linkRes) {
+      ghlLink = {
+        subAccountId: linkRes.subAccountId,
+        ghlContactId: linkRes.ghlContactId,
+        ghlAppointmentId: linkRes.ghlAppointmentId,
+      };
     }
   }
 
@@ -123,6 +139,7 @@ export async function GET(request: Request) {
     data: {
       googleEventId: resolvedEventId,
       event,
+      ghlLink,
       appointments: appointmentsRes.rows.map((row) => ({
         id: String(row.id),
         setterId: String(row.setter_id),

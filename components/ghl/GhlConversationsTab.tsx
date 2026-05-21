@@ -16,6 +16,7 @@ import {
   useGhlContactConversations,
   useGhlConversationMessages,
 } from "@/hooks/useGhlContacts";
+import { useActiveGhlSubAccount } from "./GhlSubAccountContext";
 import type { GhlConversation, GhlMessage, GhlUser } from "@/types/ghl";
 
 interface Props {
@@ -24,7 +25,8 @@ interface Props {
 }
 
 export function GhlConversationsTab({ contactId, users }: Props) {
-  const threadsQuery = useGhlContactConversations(contactId);
+  const sub = useActiveGhlSubAccount();
+  const threadsQuery = useGhlContactConversations(contactId, sub);
   // Memoize the empty-array fallback so the dependency identity is stable
   // across re-renders (otherwise the auto-select effect re-fires every time).
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
@@ -131,7 +133,8 @@ function MessageStream({
   conversationId: string;
   users: Record<string, GhlUser>;
 }) {
-  const { data, isLoading, error } = useGhlConversationMessages(conversationId);
+  const sub = useActiveGhlSubAccount();
+  const { data, isLoading, error } = useGhlConversationMessages(conversationId, sub);
 
   // Sort oldest → newest for chat-style top-to-bottom rendering. GHL returns
   // newest-first. Guard against NaN: any malformed/missing dateAdded sorts

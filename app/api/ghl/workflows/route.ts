@@ -4,18 +4,22 @@ export const maxDuration = 30;
 const CATALOG_CACHE_HEADER = "private, max-age=60, stale-while-revalidate=300";
 
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { listWorkflows } from "@/lib/ghl/workflows";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
+import { parseSubAccountId } from "@/lib/ghl/subAccounts";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!getAdminSession() && !getCloserSession()) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const subAccountId = parseSubAccountId(request.nextUrl.searchParams.get("subAccount"));
+
   try {
-    const workflows = await listWorkflows();
+    const workflows = await listWorkflows(subAccountId);
     return NextResponse.json(
       { data: workflows },
       { headers: { "Cache-Control": CATALOG_CACHE_HEADER } }

@@ -1,4 +1,8 @@
 import { ghlRequest, getGhlConfig } from "./client";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "./subAccounts";
 import { pickStr, pickNum, pickIso, cachedSingleflight } from "./util";
 import type { GhlOpportunity } from "@/types/ghl";
 
@@ -33,11 +37,13 @@ interface RawOppPage {
 
 async function fetchOpportunitiesPage(
   locationId: string,
-  page: number
+  page: number,
+  subAccountId: GhlSubAccountId
 ): Promise<RawOppPage> {
   const raw = await ghlRequest<unknown>("/opportunities/search", {
     query: { location_id: locationId, limit: PAGE_LIMIT, page },
     version: VERSION,
+    subAccountId,
   });
   let list: unknown[] = [];
   let total = 0;
@@ -62,12 +68,17 @@ async function fetchOpportunitiesPage(
  * which all remaining pages are fetched in parallel — total wall-clock is
  * ~2 round-trips regardless of opportunity count, instead of 13+ sequential.
  */
-export async function getOpportunitiesByContact(): Promise<Map<string, GhlOpportunity[]>> {
-  const { locationId } = getGhlConfig();
-  return cachedSingleflight(`ghl:opps-by-contact:${locationId}`, TTL_OPPS, async () => {
+export async function getOpportunitiesByContact(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<Map<string, GhlOpportunity[]>> {
+  const { locationId } = getGhlConfig(subAccountId);
+  return cachedSingleflight(
+    `ghl:opps-by-contact:${subAccountId}:${locationId}`,
+    TTL_OPPS,
+    async () => {
     const collected: GhlOpportunity[] = [];
 
-    const first = await fetchOpportunitiesPage(locationId, 1);
+    const first = await fetchOpportunitiesPage(locationId, 1, subAccountId);
     collected.push(...first.opportunities);
 
     const reportedTotal = first.total > 0 ? first.total : first.opportunities.length;
@@ -81,7 +92,7 @@ export async function getOpportunitiesByContact(): Promise<Map<string, GhlOpport
       for (let i = 0; i < pageNums.length; i += PAGE_CONCURRENCY) {
         const slice = pageNums.slice(i, i + PAGE_CONCURRENCY);
         const batch = await Promise.all(
-          slice.map((p) => fetchOpportunitiesPage(locationId, p))
+          slice.map((p) => fetchOpportunitiesPage(locationId, p, subAccountId))
         );
         for (const page of batch) {
           collected.push(...page.opportunities);
@@ -99,5 +110,6 @@ export async function getOpportunitiesByContact(): Promise<Map<string, GhlOpport
       map.set(o.contactId, list);
     }
     return map;
-  });
+    }
+  );
 }

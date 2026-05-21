@@ -157,6 +157,11 @@ export interface GhlConversation {
  * mapping to the wrong contact), so cards now stay invisible unless the
  * GHL appointment exposes a `googleEventId` matching the calendar event.
  */
+// Imported here so the registry stays the single source of truth for
+// sub-account ids — adding a third sub-account is a one-file change in
+// lib/ghl/subAccounts.ts and this type widens automatically.
+import type { GhlSubAccountId } from "@/lib/ghl/subAccounts";
+
 export interface GhlContactRef {
   id: string;
   name: string | null;
@@ -164,6 +169,11 @@ export interface GhlContactRef {
   phone: string | null;
   tags: string[];
   source: string | null;
+  /** Which GHL sub-account this contact lives in. Drives the badge on the
+   *  calendar chip and the tab the contact link opens in. Optional only
+   *  for backwards-compat with stale clients during a deploy window — the
+   *  server always populates it now. */
+  subAccountId?: GhlSubAccountId;
 }
 
 export interface GhlMessage {

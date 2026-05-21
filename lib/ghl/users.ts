@@ -1,11 +1,19 @@
 import { ghlRequest, getGhlConfig, GhlApiError } from "./client";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "./subAccounts";
 import { pickStr, cachedSingleflight } from "./util";
 import type { GhlUser } from "@/types/ghl";
 
 const TTL_USERS = 600;
-// Memoize the resolved /users/* path across cache misses so we don't pay
-// the 3-step probe cost every 10 minutes.
-let resolvedUsersPath: ((locationId: string) => Promise<unknown>) | null = null;
+// Memoize the resolved /users/* path per sub-account so we don't pay the
+// 3-step probe cost every 10 minutes. Each PIT may have different scopes
+// and a different working endpoint shape.
+const resolvedUsersPathBySub = new Map<
+  GhlSubAccountId,
+  (locationId: string, subAccountId: GhlSubAccountId) => Promise<unknown>
+>();
 
 function normUser(raw: Record<string, unknown>): GhlUser {
   const id = pickStr(raw, "id", "_id") ?? "";
@@ -28,11 +36,15 @@ function normUser(raw: Record<string, unknown>): GhlUser {
  * each in order, fall through any that 404/422/401/403, and hand back
  * whatever the first successful call gives us.
  */
-async function tryListUsers(locationId: string): Promise<unknown[]> {
+async function tryListUsers(
+  locationId: string,
+  subAccountId: GhlSubAccountId
+): Promise<unknown[]> {
   // Fast path: if a previous call resolved a working path, use it directly.
-  if (resolvedUsersPath) {
+  const cachedFn = resolvedUsersPathBySub.get(subAccountId);
+  if (cachedFn) {
     try {
-      const raw = await resolvedUsersPath(locationId);
+      const raw = await cachedFn(locationId, subAccountId);
       return extractUsersFromRaw(raw);
     } catch (err) {
       // If the cached path now 404s/etc, fall through to probe again. This
@@ -41,20 +53,32 @@ async function tryListUsers(locationId: string): Promise<unknown[]> {
           ![404, 422, 401, 403].includes(err.status)) {
         throw err;
       }
-      resolvedUsersPath = null;
+      resolvedUsersPathBySub.delete(subAccountId);
     }
   }
 
-  const attempts: Array<{ fn: (loc: string) => Promise<unknown>; label: string }> = [
-    { fn: (loc) => ghlRequest("/users/", { query: { locationId: loc } }), label: "/users/" },
-    { fn: (loc) => ghlRequest("/users/search", { query: { locationId: loc } }), label: "/users/search" },
-    { fn: (loc) => ghlRequest(`/locations/${encodeURIComponent(loc)}/users`), label: "/locations/{id}/users" },
+  const attempts: Array<{
+    fn: (loc: string, sub: GhlSubAccountId) => Promise<unknown>;
+    label: string;
+  }> = [
+    {
+      fn: (loc, sub) => ghlRequest("/users/", { query: { locationId: loc }, subAccountId: sub }),
+      label: "/users/",
+    },
+    {
+      fn: (loc, sub) => ghlRequest("/users/search", { query: { locationId: loc }, subAccountId: sub }),
+      label: "/users/search",
+    },
+    {
+      fn: (loc, sub) => ghlRequest(`/locations/${encodeURIComponent(loc)}/users`, { subAccountId: sub }),
+      label: "/locations/{id}/users",
+    },
   ];
   for (const attempt of attempts) {
     try {
-      const raw = await attempt.fn(locationId);
+      const raw = await attempt.fn(locationId, subAccountId);
       // Remember the winning path so subsequent cache misses skip the probe.
-      resolvedUsersPath = attempt.fn;
+      resolvedUsersPathBySub.set(subAccountId, attempt.fn);
       return extractUsersFromRaw(raw);
     } catch (err) {
       if (
@@ -79,20 +103,24 @@ function extractUsersFromRaw(raw: unknown): unknown[] {
   return [];
 }
 
-export async function listLocationUsers(): Promise<GhlUser[]> {
-  const { locationId } = getGhlConfig();
-  return cachedSingleflight(`ghl:users:${locationId}`, TTL_USERS, async () => {
-    const raw = await tryListUsers(locationId);
+export async function listLocationUsers(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlUser[]> {
+  const { locationId } = getGhlConfig(subAccountId);
+  return cachedSingleflight(`ghl:users:${subAccountId}:${locationId}`, TTL_USERS, async () => {
+    const raw = await tryListUsers(locationId, subAccountId);
     return raw
       .map((u) => normUser(u as Record<string, unknown>))
       .filter((u) => u.id);
   });
 }
 
-export async function getUserMap(): Promise<Record<string, GhlUser>> {
-  const { locationId } = getGhlConfig();
-  return cachedSingleflight(`ghl:users-map:${locationId}`, TTL_USERS, async () => {
-    const users = await listLocationUsers();
+export async function getUserMap(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<Record<string, GhlUser>> {
+  const { locationId } = getGhlConfig(subAccountId);
+  return cachedSingleflight(`ghl:users-map:${subAccountId}:${locationId}`, TTL_USERS, async () => {
+    const users = await listLocationUsers(subAccountId);
     const out: Record<string, GhlUser> = {};
     for (const u of users) out[u.id] = u;
     return out;

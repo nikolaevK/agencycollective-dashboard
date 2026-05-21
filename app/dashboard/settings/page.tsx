@@ -938,8 +938,11 @@ export default function AdminDocumentationPage() {
                 chip rendered. Behaves like the pre-sync dashboard.
               </Bullet>
               <Bullet>
-                <Pill>GHL_PIT</Pill> / <Pill>GHL_LOCATION_ID</Pill> not
-                configured — chip never appears anywhere.
+                No GHL sub-account configured (<Pill>GHL_PIT</Pill> +{" "}
+                <Pill>GHL_LOCATION_ID</Pill> for Peptide Ads and/or{" "}
+                <Pill>GHL_PIT_AGENCY</Pill> +{" "}
+                <Pill>GHL_LOCATION_ID_AGENCY</Pill> for Agency Collective) —
+                chip never appears anywhere.
               </Bullet>
               <Bullet>
                 GHL automation immediately overwrites your push — chip flips
@@ -1141,9 +1144,14 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard/closers/ghl-contacts"
         >
           <p>
-            Read-only browser for the connected GoHighLevel sub-account
-            (configured via <Pill>GHL_PIT</Pill> + <Pill>GHL_LOCATION_ID</Pill>).
-            Refreshes server-side with a 5-minute cache.
+            Read-only browser for connected GoHighLevel sub-accounts. Two
+            tabs at the top: <strong>Agency Collective</strong> (configured
+            via <Pill>GHL_PIT_AGENCY</Pill> + <Pill>GHL_LOCATION_ID_AGENCY</Pill>,
+            default tab) and <strong>Peptide Ads</strong> (
+            <Pill>GHL_PIT</Pill> + <Pill>GHL_LOCATION_ID</Pill>). Each tab
+            scopes search, contact list, notes, appointments, conversations
+            and tag/pipeline catalogs to its own location. Refreshes
+            server-side with a 5-minute cache, per sub-account.
           </p>
           <SubSection title="What you can do">
             <ul className="space-y-1.5 list-none pl-0">
@@ -1469,8 +1477,16 @@ export default function AdminDocumentationPage() {
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
                 <Pill>GHL_PIT</Pill> + <Pill>GHL_LOCATION_ID</Pill> —
-                enables GHL contact browser + appointment status sync. Sync
-                degrades silently when these are unset.
+                Peptide Ads GHL sub-account. Enables the GHL contact browser
+                tab + appointment status sync for events scheduled through
+                Peptide Ads. Degrades silently when unset.
+              </Bullet>
+              <Bullet>
+                <Pill>GHL_PIT_AGENCY</Pill> +{" "}
+                <Pill>GHL_LOCATION_ID_AGENCY</Pill> — Agency Collective GHL
+                sub-account. Enables the same surfaces for events scheduled
+                through Agency Collective. Either sub-account can be
+                configured independently of the other.
               </Bullet>
               <Bullet>
                 <Pill>META_API_VERSION</Pill> (default <Pill>v25.0</Pill>),{" "}

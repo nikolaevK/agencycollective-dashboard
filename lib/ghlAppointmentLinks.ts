@@ -1,4 +1,9 @@
 import { getDb, ensureMigrated } from "./db";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  isValidSubAccountId,
+  type GhlSubAccountId,
+} from "./ghl/subAccounts";
 
 // Bridges a Google Calendar event id (the dashboard's universal key for an
 // appointment) to its corresponding GHL appointment id, plus the most-recent
@@ -7,6 +12,10 @@ import { getDb, ensureMigrated } from "./db";
 // entirely." `event_attendance` stays the canonical source of truth for the
 // dashboard side — `dashboard_status` here is denormalized so the link row
 // alone tells us whether the two systems agree.
+//
+// `ghl_sub_account_id` records which GHL sub-account owns the linked
+// appointment. Stamped once at discovery time and read on every push/pull
+// to route to the right PIT — sub-accounts are never re-resolved.
 
 export type SyncState = "synced" | "pending" | "out_of_sync";
 export type DashboardStatus = "showed" | "no_show" | null;
@@ -16,6 +25,10 @@ export interface GhlAppointmentLink {
   ghlAppointmentId: string;
   ghlContactId: string | null;
   ghlCalendarId: string | null;
+  /** Which GHL sub-account this link belongs to. Existing rows backfilled
+   *  to 'peptide' (the original sole sub-account) by the migration; new
+   *  rows always supply the value at insert time. */
+  subAccountId: GhlSubAccountId;
   dashboardStatus: DashboardStatus;
   ghlStatus: string | null;
   syncState: SyncState;
@@ -31,14 +44,23 @@ interface UpsertLinkInput {
   ghlAppointmentId: string;
   ghlContactId?: string | null;
   ghlCalendarId?: string | null;
+  subAccountId: GhlSubAccountId;
 }
 
 function rowToLink(row: Record<string, unknown>): GhlAppointmentLink {
+  const rawSub = row.ghl_sub_account_id;
+  // Defense in depth: the migration's backfill covers every existing row,
+  // but a row written outside the orchestrator with a NULL/unknown id should
+  // still be readable. Fall back to the default sub-account in that case.
+  const subAccountId: GhlSubAccountId = isValidSubAccountId(rawSub)
+    ? rawSub
+    : DEFAULT_SUB_ACCOUNT_ID;
   return {
     googleEventId: String(row.google_event_id),
     ghlAppointmentId: String(row.ghl_appointment_id),
     ghlContactId: row.ghl_contact_id != null ? String(row.ghl_contact_id) : null,
     ghlCalendarId: row.ghl_calendar_id != null ? String(row.ghl_calendar_id) : null,
+    subAccountId,
     dashboardStatus: (row.dashboard_status as DashboardStatus) ?? null,
     ghlStatus: row.ghl_status != null ? String(row.ghl_status) : null,
     syncState: String(row.sync_state ?? "synced") as SyncState,
@@ -111,6 +133,11 @@ export async function listAllLinks(): Promise<GhlAppointmentLink[]> {
  * second INSERT errors. We swallow that and return the existing row so the
  * sync layer can carry on; the second Google event won't auto-sync, but the
  * out-of-sync chip is still surfaced via drift detection on the next read.
+ *
+ * Cross-sub-account collisions: extraordinarily unlikely (GHL appointment
+ * ids are globally unique within GHL), but if a row already exists for the
+ * same ghl_appointment_id under a different sub-account, we log and keep
+ * the original — same convention as the single-account collision path.
  */
 export async function upsertLink(input: UpsertLinkInput): Promise<GhlAppointmentLink> {
   await ensureMigrated();
@@ -118,19 +145,21 @@ export async function upsertLink(input: UpsertLinkInput): Promise<GhlAppointment
   try {
     await db.execute({
       sql: `INSERT INTO ghl_appointment_links
-              (google_event_id, ghl_appointment_id, ghl_contact_id, ghl_calendar_id)
-            VALUES (?, ?, ?, ?)
+              (google_event_id, ghl_appointment_id, ghl_contact_id, ghl_calendar_id, ghl_sub_account_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(google_event_id)
             DO UPDATE SET
-              ghl_appointment_id = excluded.ghl_appointment_id,
-              ghl_contact_id     = COALESCE(excluded.ghl_contact_id, ghl_appointment_links.ghl_contact_id),
-              ghl_calendar_id    = COALESCE(excluded.ghl_calendar_id, ghl_appointment_links.ghl_calendar_id),
-              updated_at         = datetime('now')`,
+              ghl_appointment_id  = excluded.ghl_appointment_id,
+              ghl_contact_id      = COALESCE(excluded.ghl_contact_id, ghl_appointment_links.ghl_contact_id),
+              ghl_calendar_id     = COALESCE(excluded.ghl_calendar_id, ghl_appointment_links.ghl_calendar_id),
+              ghl_sub_account_id  = excluded.ghl_sub_account_id,
+              updated_at          = datetime('now')`,
       args: [
         input.googleEventId,
         input.ghlAppointmentId,
         input.ghlContactId ?? null,
         input.ghlCalendarId ?? null,
+        input.subAccountId,
       ],
     });
   } catch (err) {
@@ -138,9 +167,17 @@ export async function upsertLink(input: UpsertLinkInput): Promise<GhlAppointment
     if (/UNIQUE constraint failed.*ghl_appointment_id/i.test(msg)) {
       const owned = await findLinkByGhlAppointmentId(input.ghlAppointmentId);
       if (owned) {
-        console.warn(
-          `[ghl-links] ghl_appointment_id=${input.ghlAppointmentId} already linked to google_event_id=${owned.googleEventId}; refusing to bind to ${input.googleEventId}`
-        );
+        // Cross-sub-account collision is rare (would require identical
+        // ghl_appointment_id under two PITs — practically impossible since
+        // GHL appointment ids are globally unique). When it does happen
+        // it's almost certainly a misconfig (same PIT registered for both
+        // sub-accounts). Same-sub collisions are routine (duplicate Google
+        // events sharing title+time) and stay silent.
+        if (owned.subAccountId !== input.subAccountId) {
+          console.warn(
+            `[ghl-links] cross-sub collision: ghl_appointment_id=${input.ghlAppointmentId} owned by sub=${owned.subAccountId}, refused for sub=${input.subAccountId}. Check that GHL_PIT and GHL_PIT_AGENCY point to different GHL locations.`
+          );
+        }
         return owned;
       }
     }

@@ -1,5 +1,9 @@
 import cache from "@/lib/cache";
 import { ghlRequest, getGhlConfig, describeError } from "./client";
+import {
+  DEFAULT_SUB_ACCOUNT_ID,
+  type GhlSubAccountId,
+} from "./subAccounts";
 import { getOpportunitiesByContact } from "./opportunities";
 import { getAppointmentsByContact } from "./calendars";
 import { pickStr, pickBool, pickStringArray, pickIso, cachedSingleflight } from "./util";
@@ -85,7 +89,8 @@ async function searchContactsPage(
   locationId: string,
   query: string,
   page: number,
-  pageLimit: number
+  pageLimit: number,
+  subAccountId: GhlSubAccountId
 ): Promise<{ contacts: GhlContact[]; total: number }> {
   // Always newest-first. Pairs with the UI's default "Recently added" sort
   // so that the visible-row order matches the server's pagination order;
@@ -101,6 +106,7 @@ async function searchContactsPage(
         query: query || undefined,
         sort: [{ field: "dateAdded", direction: "desc" }],
       },
+      subAccountId,
     }
   );
   return {
@@ -145,13 +151,18 @@ function summarizeAppointments(
  * The infinite-query hook calls this repeatedly to walk the entire tenant.
  * Each page is independently cached, so rapid back/forward navigation is
  * effectively free.
+ *
+ * Scoped to one sub-account. The contacts page tabs pass the active tab id
+ * through so each tab shows its own location's contacts independently.
  */
 export async function getContactBatch(opts: {
   query?: string;
   page?: number;
   pageLimit?: number;
+  subAccountId?: GhlSubAccountId;
 }): Promise<GhlContactBatch> {
-  const { locationId } = getGhlConfig();
+  const subAccountId = opts.subAccountId ?? DEFAULT_SUB_ACCOUNT_ID;
+  const { locationId } = getGhlConfig(subAccountId);
   const q = (opts.query ?? "").trim();
   const page = Math.max(1, opts.page ?? 1);
   const pageLimit = Math.min(MAX_PAGE_LIMIT, Math.max(1, opts.pageLimit ?? MAX_PAGE_LIMIT));
@@ -160,17 +171,29 @@ export async function getContactBatch(opts: {
   // Holds the search response + bulk-derived enrichment (opportunities,
   // appointments). Excludes note counts so freshly-added notes don't wait
   // out the 5-min TTL to appear in the list.
-  const baseKey = `ghl:batch-base:${locationId}:q${q}:p${page}:l${pageLimit}`;
+  const baseKey = `ghl:batch-base:${subAccountId}:${locationId}:q${q}:p${page}:l${pageLimit}`;
   const base = await cachedSingleflight(baseKey, TTL_BATCH_BASE, async () => {
-    const { contacts: rawContacts, total } = await searchContactsPage(locationId, q, page, pageLimit);
+    const { contacts: rawContacts, total } = await searchContactsPage(
+      locationId,
+      q,
+      page,
+      pageLimit,
+      subAccountId
+    );
 
     const [oppsByContact, apptsByContact] = await Promise.all([
-      getOpportunitiesByContact().catch((err) => {
-        console.error("[ghl-contacts] opportunities bulk fetch failed:", describeError(err));
+      getOpportunitiesByContact(subAccountId).catch((err) => {
+        console.error(
+          `[ghl-contacts] opportunities bulk fetch failed (sub=${subAccountId}):`,
+          describeError(err)
+        );
         return new Map();
       }),
-      getAppointmentsByContact().catch((err) => {
-        console.error("[ghl-contacts] appointments bulk fetch failed:", describeError(err));
+      getAppointmentsByContact(subAccountId).catch((err) => {
+        console.error(
+          `[ghl-contacts] appointments bulk fetch failed (sub=${subAccountId}):`,
+          describeError(err)
+        );
         return new Map();
       }),
     ]);
@@ -198,7 +221,7 @@ export async function getContactBatch(opts: {
   // these calls are cheap on warm cache.
   const noteCounts = await Promise.all(
     base.contacts.map(async (c) => {
-      const count = await getContactNotes(c.id)
+      const count = await getContactNotes(c.id, subAccountId)
         .then((n) => n.length)
         .catch(() => 0);
       return [c.id, count] as const;
@@ -225,27 +248,43 @@ export async function getContactBatch(opts: {
 
 // ── Notes ────────────────────────────────────────────────────────────
 
-export async function getContactNotes(contactId: string): Promise<GhlContactNote[]> {
-  return cachedSingleflight(`ghl:notes:${contactId}`, TTL_DETAIL, async () => {
-    const raw = await ghlRequest<{ notes?: unknown[] }>(
-      `/contacts/${encodeURIComponent(contactId)}/notes`
-    );
-    return (raw.notes ?? []).map((n) => normNote(n as Record<string, unknown>));
-  });
+export async function getContactNotes(
+  contactId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlContactNote[]> {
+  return cachedSingleflight(
+    `ghl:notes:${subAccountId}:${contactId}`,
+    TTL_DETAIL,
+    async () => {
+      const raw = await ghlRequest<{ notes?: unknown[] }>(
+        `/contacts/${encodeURIComponent(contactId)}/notes`,
+        { subAccountId }
+      );
+      return (raw.notes ?? []).map((n) => normNote(n as Record<string, unknown>));
+    }
+  );
 }
 
 /**
  * Look up a single GHL contact by id. Cached per-id; safe to call from any
  * code path that needs full contact details (cross-reference, deep-links).
  */
-export async function getContactById(contactId: string): Promise<GhlContact | null> {
-  return cachedSingleflight(`ghl:contact-by-id:${contactId}`, TTL_DETAIL, async () => {
-    const raw = await ghlRequest<{ contact?: unknown }>(
-      `/contacts/${encodeURIComponent(contactId)}`
-    );
-    if (!raw.contact) return null;
-    return normContact(raw.contact as Record<string, unknown>);
-  });
+export async function getContactById(
+  contactId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlContact | null> {
+  return cachedSingleflight(
+    `ghl:contact-by-id:${subAccountId}:${contactId}`,
+    TTL_DETAIL,
+    async () => {
+      const raw = await ghlRequest<{ contact?: unknown }>(
+        `/contacts/${encodeURIComponent(contactId)}`,
+        { subAccountId }
+      );
+      if (!raw.contact) return null;
+      return normContact(raw.contact as Record<string, unknown>);
+    }
+  );
 }
 
 /**
@@ -254,7 +293,8 @@ export async function getContactById(contactId: string): Promise<GhlContact | nu
  */
 export async function createContactNote(
   contactId: string,
-  body: string
+  body: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
 ): Promise<GhlContactNote> {
   const trimmed = body.trim();
   if (!trimmed) throw new Error("Note body is required");
@@ -264,9 +304,10 @@ export async function createContactNote(
     {
       method: "POST",
       body: { body: trimmed },
+      subAccountId,
     }
   );
-  cache.delete(`ghl:notes:${contactId}`);
+  cache.delete(`ghl:notes:${subAccountId}:${contactId}`);
   if (!raw.note) {
     // Some GHL versions return the created entity unwrapped at the root.
     if (raw && typeof raw === "object" && "id" in raw) {
@@ -279,14 +320,22 @@ export async function createContactNote(
 
 // ── Appointments ─────────────────────────────────────────────────────
 
-export async function getContactAppointments(contactId: string) {
-  return cachedSingleflight(`ghl:appts:${contactId}`, TTL_DETAIL, async () => {
-    const raw = await ghlRequest<{ events?: unknown[]; appointments?: unknown[] }>(
-      `/contacts/${encodeURIComponent(contactId)}/appointments`
-    );
-    // GHL has shipped this endpoint with both `events` and `appointments`
-    // keys across API versions — accept either to avoid silent empty lists.
-    const list = raw.events ?? raw.appointments ?? [];
-    return list.map((a) => normAppointment(a as Record<string, unknown>));
-  });
+export async function getContactAppointments(
+  contactId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+) {
+  return cachedSingleflight(
+    `ghl:appts:${subAccountId}:${contactId}`,
+    TTL_DETAIL,
+    async () => {
+      const raw = await ghlRequest<{ events?: unknown[]; appointments?: unknown[] }>(
+        `/contacts/${encodeURIComponent(contactId)}/appointments`,
+        { subAccountId }
+      );
+      // GHL has shipped this endpoint with both `events` and `appointments`
+      // keys across API versions — accept either to avoid silent empty lists.
+      const list = raw.events ?? raw.appointments ?? [];
+      return list.map((a) => normAppointment(a as Record<string, unknown>));
+    }
+  );
 }

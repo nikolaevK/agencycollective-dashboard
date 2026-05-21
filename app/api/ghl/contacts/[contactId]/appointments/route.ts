@@ -2,18 +2,22 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { getContactAppointments } from "@/lib/ghl/contacts";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
+import { parseSubAccountId } from "@/lib/ghl/subAccounts";
 
-export async function GET(_req: Request, { params }: { params: { contactId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { contactId: string } }) {
   if (!getAdminSession() && !getCloserSession()) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const subAccountId = parseSubAccountId(request.nextUrl.searchParams.get("subAccount"));
+
   try {
-    const appointments = await getContactAppointments(params.contactId);
+    const appointments = await getContactAppointments(params.contactId, subAccountId);
     return NextResponse.json({ data: appointments });
   } catch (err) {
     if (err instanceof GhlNotConfiguredError) {

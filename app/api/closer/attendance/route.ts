@@ -96,6 +96,7 @@ export async function PATCH(request: Request) {
       syncState: "out_of_sync",
       ghlStatus: null,
       dashboardStatus: showStatus,
+      subAccountId: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -157,6 +158,7 @@ export async function DELETE(request: Request) {
       syncState: "out_of_sync",
       ghlStatus: null,
       dashboardStatus: null,
+      subAccountId: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }

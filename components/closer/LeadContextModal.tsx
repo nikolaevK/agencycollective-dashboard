@@ -36,6 +36,7 @@ import type { CalendarEvent, AttendeeResponseStatus } from "@/components/closer/
 import { formatCents } from "@/components/closers/types";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
+import { getSubAccount, isValidSubAccountId } from "@/lib/ghl/subAccounts";
 
 interface Appointment {
   id: string;
@@ -84,9 +85,19 @@ interface Attendance {
   updatedAt: string;
 }
 
+interface GhlLink {
+  subAccountId: string;
+  ghlContactId: string | null;
+  ghlAppointmentId: string;
+}
+
 interface LeadContext {
   googleEventId: string | null;
   event: CalendarEvent | null;
+  /** GHL link metadata when this lead is cross-referenced to a GHL
+   *  appointment. Drives the small "GHL: <sub-account>" badge in the
+   *  event header. Null for non-GHL events. */
+  ghlLink: GhlLink | null;
   appointments: Appointment[];
   deals: Deal[];
   attendance: Attendance[];
@@ -197,6 +208,21 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                           {event.calendarName}
                         </span>
                       )}
+                      {ctx?.ghlLink && isValidSubAccountId(ctx.ghlLink.subAccountId) && (() => {
+                        const sub = getSubAccount(ctx.ghlLink.subAccountId);
+                        return (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
+                              sub.badgeClass
+                            )}
+                            title={`Linked to GHL · ${sub.label}`}
+                          >
+                            <span className="font-bold">{sub.shortLabel}</span>
+                            GHL · {sub.label}
+                          </span>
+                        );
+                      })()}
                       {event.meetLink && (
                         <a
                           href={event.meetLink}

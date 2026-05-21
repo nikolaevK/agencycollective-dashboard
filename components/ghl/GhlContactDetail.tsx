@@ -26,6 +26,7 @@ import {
   useGhlContactAppointments,
   useCreateGhlNote,
 } from "@/hooks/useGhlContacts";
+import { useActiveGhlSubAccount } from "./GhlSubAccountContext";
 import { cleanGhlNoteBody } from "@/lib/ghl/noteFormat";
 import { GhlConversationsTab } from "./GhlConversationsTab";
 import type {
@@ -279,7 +280,8 @@ function Field({
 // ── Notes ────────────────────────────────────────────────────────────
 
 function NotesPane({ contactId, users }: { contactId: string; users: Record<string, GhlUser> }) {
-  const { data, isLoading, error } = useGhlContactNotes(contactId);
+  const sub = useActiveGhlSubAccount();
+  const { data, isLoading, error } = useGhlContactNotes(contactId, sub);
   // Memoize sort so a parent re-render doesn't rebuild the array (which
   // would change keys' positions and bust each row's React.memo).
   const sorted = useMemo(() => {
@@ -314,7 +316,8 @@ function NotesPane({ contactId, users }: { contactId: string; users: Record<stri
 
 function NoteComposer({ contactId }: { contactId: string }) {
   const [body, setBody] = useState("");
-  const create = useCreateGhlNote(contactId);
+  const sub = useActiveGhlSubAccount();
+  const create = useCreateGhlNote(contactId, sub);
 
   const submit = async () => {
     const trimmed = body.trim();
@@ -403,7 +406,8 @@ const NoteCard = memo(function NoteCard({ note, author }: { note: GhlContactNote
 // ── Appointments ─────────────────────────────────────────────────────
 
 function AppointmentsPane({ contactId, users }: { contactId: string; users: Record<string, GhlUser> }) {
-  const { data, isLoading, error } = useGhlContactAppointments(contactId);
+  const sub = useActiveGhlSubAccount();
+  const { data, isLoading, error } = useGhlContactAppointments(contactId, sub);
   const sorted = useMemo(() => {
     if (!data) return [];
     return [...data].sort((a, b) => {

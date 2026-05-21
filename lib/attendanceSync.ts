@@ -14,8 +14,13 @@
 //
 // Non-GHL events: `ensureLinkForEvent` returns null and every sync call
 // returns "non_ghl" early so the dashboard path stays identical to today.
+//
+// Multi-sub-account: discovery iterates every configured sub-account in
+// parallel and stamps the winning sub-account onto the link row. Every
+// subsequent push/pull reads that id and routes its PUT/GET to the right
+// PIT — sub-accounts are never re-resolved.
 
-import { isGhlConfigured } from "./ghl/client";
+import { describeError, isGhlConfigured } from "./ghl/client";
 import {
   getGhlAppointment,
   updateGhlAppointmentStatus,
@@ -23,6 +28,7 @@ import {
   resolveCloserByGhlAssignedUser,
   type GhlAppointmentStatus,
 } from "./ghl/appointments";
+import { isAnyGhlConfigured, type GhlSubAccountId } from "./ghl/subAccounts";
 import {
   findLinkByGoogleEventId,
   upsertLink,
@@ -62,10 +68,9 @@ export async function bestEffortPushAttendanceToGhl(input: {
       dashboardStatus: input.dashboardStatus,
     });
   } catch (err) {
-    console.error(
-      "[attendance-sync] best-effort push failed:",
-      err instanceof Error ? err.message : err
-    );
+    // describeError trims to "<status> <message>" — keeps PII out of the
+    // log (raw err.stack on a GhlApiError can echo the response body).
+    console.error("[attendance-sync] best-effort push failed:", describeError(err));
   }
 }
 
@@ -82,6 +87,10 @@ export interface SyncResult {
   syncState: SyncState | null;
   ghlStatus: string | null;
   dashboardStatus: AttendanceStatus | null;
+  /** Which sub-account the link is bound to, when one exists. UI uses this
+   *  to show the right badge in the out-of-sync chip. Null for non-GHL
+   *  events. */
+  subAccountId: GhlSubAccountId | null;
   error?: string;
 }
 
@@ -112,9 +121,10 @@ interface CalendarEventCoords {
 
 /**
  * Make sure we have a link row for this event. If one exists, return it.
- * Otherwise try to resolve via composite-key match against GHL's bulk
- * appointments listing; if that finds a candidate, persist the link and
- * return it. Returns null when no GHL counterpart exists (= non-GHL event).
+ * Otherwise try to resolve via composite-key match across every configured
+ * GHL sub-account; if any returns a candidate, persist the link (stamping
+ * the winning sub-account) and return it. Returns null when no GHL
+ * counterpart exists in any account (= non-GHL event).
  */
 export async function ensureLinkForEvent(
   evt: CalendarEventCoords
@@ -122,7 +132,7 @@ export async function ensureLinkForEvent(
   const existing = await findLinkByGoogleEventId(evt.googleEventId);
   if (existing) return existing;
 
-  if (!isGhlConfigured()) return null;
+  if (!isAnyGhlConfigured()) return null;
 
   const resolved = await resolveGhlAppointmentForGoogleEvent({
     googleEventId: evt.googleEventId,
@@ -137,6 +147,7 @@ export async function ensureLinkForEvent(
     ghlAppointmentId: resolved.id,
     ghlContactId: resolved.contactId,
     ghlCalendarId: resolved.calendarId,
+    subAccountId: resolved.subAccountId,
   });
 }
 
@@ -146,6 +157,10 @@ export async function ensureLinkForEvent(
  * failure can never lose the local mark.
  *
  * `dashboardStatus = null` means the closer unselected; we PUT confirmed.
+ *
+ * Routes the PUT to the link's stamped sub-account. If that sub-account is
+ * no longer configured (env vars dropped, etc.), the push fails with a
+ * descriptive out_of_sync outcome — surfaces as the red error chip in the UI.
  */
 export async function syncEventAttendanceToGhl(input: {
   evt: CalendarEventCoords;
@@ -158,14 +173,16 @@ export async function syncEventAttendanceToGhl(input: {
       syncState: null,
       ghlStatus: null,
       dashboardStatus: input.dashboardStatus,
+      subAccountId: null,
     };
   }
-  if (!isGhlConfigured()) {
+  if (!isGhlConfigured(link.subAccountId)) {
     return {
       outcome: "ghl_unavailable",
       syncState: link.syncState,
       ghlStatus: link.ghlStatus,
       dashboardStatus: input.dashboardStatus,
+      subAccountId: link.subAccountId,
     };
   }
 
@@ -182,6 +199,7 @@ export async function syncEventAttendanceToGhl(input: {
       syncState: "synced",
       ghlStatus: link.ghlStatus,
       dashboardStatus: input.dashboardStatus,
+      subAccountId: link.subAccountId,
     };
   }
 
@@ -198,7 +216,11 @@ export async function syncEventAttendanceToGhl(input: {
   // catches it on the next refetch and surfaces the chip.
   let observed: string | null = null;
   try {
-    const updated = await updateGhlAppointmentStatus(link.ghlAppointmentId, target);
+    const updated = await updateGhlAppointmentStatus(
+      link.ghlAppointmentId,
+      target,
+      link.subAccountId
+    );
     observed = updated?.appointmentStatus ?? null;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -206,13 +228,14 @@ export async function syncEventAttendanceToGhl(input: {
       googleEventId: input.evt.googleEventId,
       syncState: "out_of_sync",
       dashboardStatus: input.dashboardStatus,
-      lastError: msg,
+      lastError: `[sub=${link.subAccountId}] ${msg}`,
     });
     return {
       outcome: "out_of_sync",
       syncState: "out_of_sync",
       ghlStatus: link.ghlStatus,
       dashboardStatus: input.dashboardStatus,
+      subAccountId: link.subAccountId,
       error: msg,
     };
   }
@@ -232,6 +255,7 @@ export async function syncEventAttendanceToGhl(input: {
     syncState: matches ? "synced" : "out_of_sync",
     ghlStatus: observed,
     dashboardStatus: input.dashboardStatus,
+    subAccountId: link.subAccountId,
   };
 }
 
@@ -241,9 +265,9 @@ export async function syncEventAttendanceToGhl(input: {
  * read merge for events the dashboard hasn't yet marked.
  *
  * Attribution: `event_attendance` is keyed by (event, closer). For pulls,
- * we resolve the closer from GHL's `assignedUserId` via display-name match.
- * If the name doesn't match any dashboard closer, we log and skip the write
- * — never guess.
+ * we resolve the closer from GHL's `assignedUserId` via display-name match
+ * against the link's sub-account user roster. If the name doesn't match any
+ * dashboard closer, we log and skip the write — never guess.
  */
 export async function syncEventAttendanceFromGhl(input: {
   evt: CalendarEventCoords;
@@ -258,32 +282,35 @@ export async function syncEventAttendanceFromGhl(input: {
       syncState: null,
       ghlStatus: null,
       dashboardStatus: null,
+      subAccountId: null,
     };
   }
-  if (!isGhlConfigured()) {
+  if (!isGhlConfigured(link.subAccountId)) {
     return {
       outcome: "ghl_unavailable",
       syncState: link.syncState,
       ghlStatus: link.ghlStatus,
       dashboardStatus: link.dashboardStatus,
+      subAccountId: link.subAccountId,
     };
   }
 
   let snap: Awaited<ReturnType<typeof getGhlAppointment>> = null;
   try {
-    snap = await getGhlAppointment(link.ghlAppointmentId);
+    snap = await getGhlAppointment(link.ghlAppointmentId, link.subAccountId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updateLinkSyncState({
       googleEventId: input.evt.googleEventId,
       syncState: "out_of_sync",
-      lastError: msg,
+      lastError: `[sub=${link.subAccountId}] ${msg}`,
     });
     return {
       outcome: "out_of_sync",
       syncState: "out_of_sync",
       ghlStatus: link.ghlStatus,
       dashboardStatus: link.dashboardStatus,
+      subAccountId: link.subAccountId,
       error: msg,
     };
   }
@@ -310,11 +337,13 @@ export async function syncEventAttendanceFromGhl(input: {
       syncState: "synced",
       ghlStatus,
       dashboardStatus: null,
+      subAccountId: link.subAccountId,
     };
   }
 
   const attribution =
-    input.closerId ?? (await resolveCloserByGhlAssignedUser(snap?.assignedUserId));
+    input.closerId ??
+    (await resolveCloserByGhlAssignedUser(snap?.assignedUserId, link.subAccountId));
   if (!attribution) {
     // Can't auto-attribute the new row — GHL's assignedUserId doesn't
     // resolve to any active closer by display name (or there is no
@@ -347,6 +376,7 @@ export async function syncEventAttendanceFromGhl(input: {
         syncState: "synced",
         ghlStatus,
         dashboardStatus: targetDashboard,
+        subAccountId: link.subAccountId,
       };
     }
     await updateLinkSyncState({
@@ -361,6 +391,7 @@ export async function syncEventAttendanceFromGhl(input: {
       syncState: "out_of_sync",
       ghlStatus,
       dashboardStatus: link.dashboardStatus,
+      subAccountId: link.subAccountId,
       error: "no closer matched GHL assignedUserId by name",
     };
   }
@@ -385,6 +416,7 @@ export async function syncEventAttendanceFromGhl(input: {
     syncState: "synced",
     ghlStatus,
     dashboardStatus: targetDashboard,
+    subAccountId: link.subAccountId,
   };
 }
 
