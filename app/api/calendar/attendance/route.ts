@@ -10,8 +10,10 @@ import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { getLatestAttendanceByEvent } from "@/lib/eventAttendance";
 import {
+  findLinkByGhlAppointmentId,
   listAllLinks,
   listLinksByGoogleEventIds,
+  reassignLinkToNewGoogleEventId,
   updateLinkSyncState,
   upsertLink,
   type SyncState,
@@ -155,15 +157,41 @@ async function buildResponse(
       });
     }
     if (toCreate.length > 0) {
+      // Set of event ids visible in this discovery pass. Used to tell
+      // reschedules (old Google event gone, new one inheriting the GHL
+      // appointment) apart from legit duplicates (two distinct Google
+      // events both visible with identical title + time).
+      const visibleIdSet = new Set(
+        visibleEvents
+          .map((e) => e.id)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      );
       const created = await Promise.all(
-        toCreate.map((c) =>
-          upsertLink({
-            googleEventId: c.eventId,
-            ghlAppointmentId: c.ghlId,
-            ghlContactId: c.contactId,
-            ghlCalendarId: c.calendarId,
-            subAccountId: c.sub,
-          }).catch((err) => {
+        toCreate.map(async (c) => {
+          try {
+            // Check whether this GHL appointment is already bound to a
+            // different Google event id (rescheduled-in-place case). If
+            // the old binding's Google event isn't in the current visible
+            // set, treat as a reschedule and move the link to the new id.
+            const existing = await findLinkByGhlAppointmentId(c.ghlId);
+            if (
+              existing &&
+              existing.googleEventId !== c.eventId &&
+              !visibleIdSet.has(existing.googleEventId)
+            ) {
+              return await reassignLinkToNewGoogleEventId(
+                existing.googleEventId,
+                c.eventId
+              );
+            }
+            return await upsertLink({
+              googleEventId: c.eventId,
+              ghlAppointmentId: c.ghlId,
+              ghlContactId: c.contactId,
+              ghlCalendarId: c.calendarId,
+              subAccountId: c.sub,
+            });
+          } catch (err) {
             console.error(
               "[calendar/attendance] discovery upsert failed for",
               c.eventId,
@@ -171,8 +199,8 @@ async function buildResponse(
               err instanceof Error ? err.message : err
             );
             return null;
-          })
-        )
+          }
+        })
       );
       for (const link of created) {
         if (link) linksByGoogle.set(link.googleEventId, link);
@@ -191,15 +219,21 @@ async function buildResponse(
 
     const dashboardStatus = (data[link.googleEventId] as "showed" | "no_show" | undefined) ?? null;
     const ghlAttendance = mapGhlToDashboard(freshGhl);
-    const driftDetected =
-      link.ghlStatus !== freshGhl ||
-      (ghlAttendance !== dashboardStatus && link.syncState === "synced");
 
-    const computedState: SyncState = driftDetected
-      ? ghlAttendance === dashboardStatus
-        ? "synced"
-        : "out_of_sync"
-      : link.syncState;
+    // Always reconcile sync_state against the CURRENT values rather than
+    // only when a change is detected. The old logic could leave a row
+    // stuck on "out_of_sync" forever: once GHL state was observed to
+    // disagree, the stored state stayed amber even after a subsequent
+    // refetch where both sides agreed again (because `link.ghlStatus`
+    // already matched `freshGhl`, no drift was "detected" to trigger
+    // recomputation). `pending` is the one stored state we preserve —
+    // it represents a write that hasn't returned yet, not a drift fact.
+    const computedState: SyncState =
+      link.syncState === "pending"
+        ? "pending"
+        : ghlAttendance === dashboardStatus
+          ? "synced"
+          : "out_of_sync";
 
     sync[link.googleEventId] = {
       dashboardStatus,

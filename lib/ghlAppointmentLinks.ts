@@ -188,6 +188,42 @@ export async function upsertLink(input: UpsertLinkInput): Promise<GhlAppointment
   return link;
 }
 
+/**
+ * Move an existing link from one Google event id to another, preserving
+ * everything else (GHL appt id, contact, calendar, sub-account, sync state,
+ * push/pull timestamps). Used when a GHL appointment gets rescheduled and
+ * Google issues a NEW event id at the new time — the appointment id stays
+ * stable in GHL, but our link row points at the now-stale Google event.
+ * Without reassignment, discovery for the new Google event would silently
+ * collide on `UNIQUE(ghl_appointment_id)`, leaving the new event with no
+ * link and therefore no sync chip.
+ *
+ * Implemented as a single UPDATE on `google_event_id` (which is the PK).
+ * libSQL allows UPDATE on PK; the only failure mode is if the new id
+ * already exists in the table — callers must ensure that's checked before
+ * invoking this.
+ *
+ * Attendance rows in `event_attendance` are intentionally NOT migrated:
+ * they live per Google event id and a reschedule effectively creates a
+ * new bookable slot. Any show/no-show on the old slot stays attached to
+ * the old slot's history.
+ */
+export async function reassignLinkToNewGoogleEventId(
+  oldGoogleEventId: string,
+  newGoogleEventId: string
+): Promise<GhlAppointmentLink | null> {
+  await ensureMigrated();
+  const db = getDb();
+  await db.execute({
+    sql: `UPDATE ghl_appointment_links
+             SET google_event_id = ?,
+                 updated_at = datetime('now')
+           WHERE google_event_id = ?`,
+    args: [newGoogleEventId, oldGoogleEventId],
+  });
+  return findLinkByGoogleEventId(newGoogleEventId);
+}
+
 interface UpdateSyncStateInput {
   googleEventId: string;
   dashboardStatus?: DashboardStatus;
