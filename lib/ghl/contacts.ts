@@ -318,6 +318,66 @@ export async function createContactNote(
   return normNote(raw.note as Record<string, unknown>);
 }
 
+// ── Tags ─────────────────────────────────────────────────────────────
+
+/** Bust the per-contact caches that hold a contact's tag list so a freshly
+ *  added/removed tag shows up on the next read. The page-level `batch-base`
+ *  cache (search results) is left to expire on its own 5-min TTL — it's keyed
+ *  per query/page, so there's no single key to bust. */
+function invalidateContactCaches(
+  contactId: string,
+  subAccountId: GhlSubAccountId
+): void {
+  cache.delete(`ghl:contact-by-id:${subAccountId}:${contactId}`);
+}
+
+/**
+ * Add tags to a contact. POST /contacts/:contactId/tags with body
+ * `{ tags: [...] }`. Uses the contacts-default Version (2021-07-28) like the
+ * rest of this module. Returns the contact's resulting tag list.
+ */
+export async function addContactTags(
+  contactId: string,
+  tags: string[],
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<string[]> {
+  const clean = tags.map((t) => t.trim()).filter(Boolean);
+  if (clean.length === 0) return [];
+  const raw = await ghlRequest<Record<string, unknown>>(
+    `/contacts/${encodeURIComponent(contactId)}/tags`,
+    {
+      method: "POST",
+      body: { tags: clean },
+      subAccountId,
+    }
+  );
+  invalidateContactCaches(contactId, subAccountId);
+  return pickStringArray(raw, "tags");
+}
+
+/**
+ * Remove tags from a contact. DELETE /contacts/:contactId/tags with body
+ * `{ tags: [...] }`. Returns the contact's resulting tag list.
+ */
+export async function removeContactTags(
+  contactId: string,
+  tags: string[],
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<string[]> {
+  const clean = tags.map((t) => t.trim()).filter(Boolean);
+  if (clean.length === 0) return [];
+  const raw = await ghlRequest<Record<string, unknown>>(
+    `/contacts/${encodeURIComponent(contactId)}/tags`,
+    {
+      method: "DELETE",
+      body: { tags: clean },
+      subAccountId,
+    }
+  );
+  invalidateContactCaches(contactId, subAccountId);
+  return pickStringArray(raw, "tags");
+}
+
 // ── Appointments ─────────────────────────────────────────────────────
 
 export async function getContactAppointments(

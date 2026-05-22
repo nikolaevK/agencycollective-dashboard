@@ -1,10 +1,14 @@
 export const dynamic = "force-dynamic";
+// A status→closed transition auto-marks "showed" and runs the best-effort GHL
+// attendance push + CRM funnel sync, whose round-trips can take a few seconds.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getCloserSession } from "@/lib/closerSession";
 import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
+import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 
@@ -91,6 +95,11 @@ export async function PATCH(request: Request) {
       await bestEffortPushAttendanceToGhl({
         googleEventId: deal.googleEventId,
         dashboardStatus: "showed",
+      });
+      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
+      await bestEffortSyncShowedDidntClose({
+        googleEventId: deal.googleEventId,
+        leadName: deal.clientName,
       });
     }
 

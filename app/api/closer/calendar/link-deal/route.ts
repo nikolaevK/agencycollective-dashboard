@@ -1,4 +1,8 @@
 export const dynamic = "force-dynamic";
+// Deal creation triggers a synchronous best-effort GHL push (attendance) plus
+// the CRM funnel sync (opportunity stage + tags). With rate limiting those
+// round-trips can take a few seconds.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -7,6 +11,7 @@ import { insertDeal, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
+import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
@@ -94,6 +99,13 @@ export async function POST(request: Request) {
         dashboardStatus: "showed",
         title: eventTitle,
         startTime: eventDate,
+      });
+      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
+      await bestEffortSyncShowedDidntClose({
+        googleEventId: eventId,
+        title: eventTitle,
+        startTime: eventDate,
+        leadName: eventTitle,
       });
     }
 

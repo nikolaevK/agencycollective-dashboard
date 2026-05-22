@@ -8,6 +8,7 @@ import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
+import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
@@ -99,6 +100,11 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     await bestEffortPushAttendanceToGhl({
       googleEventId,
       dashboardStatus: "showed",
+    });
+    // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
+    await bestEffortSyncShowedDidntClose({
+      googleEventId,
+      leadName: clientName,
     });
   }
 

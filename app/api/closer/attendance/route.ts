@@ -15,6 +15,7 @@ import {
   syncEventAttendanceToGhl,
   type SyncResult,
 } from "@/lib/attendanceSync";
+import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 
 export async function GET() {
   const session = getCloserSession();
@@ -99,6 +100,19 @@ export async function PATCH(request: Request) {
       subAccountId: null,
       error: err instanceof Error ? err.message : String(err),
     };
+  }
+
+  // Step 3: CRM funnel sync. Only a "showed" mark advances the lead to the
+  // "Showed didn't close" stage + tag — a no-show leaves the funnel untouched.
+  // Best-effort and self-catching; never affects the dashboard write.
+  if (showStatus === "showed") {
+    await bestEffortSyncShowedDidntClose({
+      googleEventId: eventId,
+      title: body.eventTitle ?? null,
+      startTime: body.eventStart ?? null,
+      endTime: body.eventEnd ?? null,
+      leadName: body.eventTitle ?? null,
+    });
   }
 
   return NextResponse.json({

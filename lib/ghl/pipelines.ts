@@ -59,6 +59,67 @@ export async function listPipelines(
   );
 }
 
+/** Normalize a pipeline/stage name for tolerant matching: lowercase, drop
+ *  apostrophe variants (straight + curly), collapse runs of non-alphanumeric
+ *  to single spaces, trim. So "Showed didn't close" and "Showed didn’t close"
+ *  both reduce to "showed didnt close". */
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/['’‘`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export interface ResolvedPipelineStage {
+  pipelineId: string;
+  pipelineName: string;
+  pipelineStageId: string;
+  stageName: string;
+}
+
+/**
+ * Resolve a pipeline + stage by their human names to their GHL ids, tolerant
+ * of case / whitespace / apostrophe differences. Returns null (and logs which
+ * names were available) when either the pipeline or the stage can't be found,
+ * so the CRM-sync caller no-ops loudly instead of writing to the wrong place.
+ */
+export async function resolvePipelineStageByName(
+  pipelineName: string,
+  stageName: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<ResolvedPipelineStage | null> {
+  const pipelines = await listPipelines(subAccountId);
+  const wantPipeline = normalizeName(pipelineName);
+  const pipeline = pipelines.find((p) => normalizeName(p.name) === wantPipeline);
+  if (!pipeline) {
+    console.warn(
+      `[ghl-crm] pipeline "${pipelineName}" not found (sub=${subAccountId}). Available: ${pipelines
+        .map((p) => p.name)
+        .join(", ") || "(none)"}`
+    );
+    return null;
+  }
+
+  const wantStage = normalizeName(stageName);
+  const stage = pipeline.stages.find((s) => normalizeName(s.name) === wantStage);
+  if (!stage) {
+    console.warn(
+      `[ghl-crm] stage "${stageName}" not found in pipeline "${pipeline.name}" (sub=${subAccountId}). Available: ${pipeline.stages
+        .map((s) => s.name)
+        .join(", ") || "(none)"}`
+    );
+    return null;
+  }
+
+  return {
+    pipelineId: pipeline.id,
+    pipelineName: pipeline.name,
+    pipelineStageId: stage.id,
+    stageName: stage.name,
+  };
+}
+
 /**
  * Builds a (pipelineId|stageId)→{pipelineName, stageName} index. Cached
  * alongside `listPipelines` so callers don't repeatedly traverse stages.

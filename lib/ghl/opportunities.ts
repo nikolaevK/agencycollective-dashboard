@@ -1,3 +1,4 @@
+import cache from "@/lib/cache";
 import { ghlRequest, getGhlConfig } from "./client";
 import {
   DEFAULT_SUB_ACCOUNT_ID,
@@ -33,6 +34,28 @@ function normOpp(raw: Record<string, unknown>): GhlOpportunity {
 interface RawOppPage {
   opportunities: GhlOpportunity[];
   total: number;
+}
+
+/** Cache key for the bulk opportunities-by-contact map. Exported so write
+ *  paths (create/update opportunity) can bust it after a mutation, the same
+ *  way the appointments module busts its bulk listing after a status PUT. */
+export function opportunitiesByContactCacheKey(
+  subAccountId: GhlSubAccountId,
+  locationId: string
+): string {
+  return `ghl:opps-by-contact:${subAccountId}:${locationId}`;
+}
+
+/** Drop the cached opportunities-by-contact map for a sub-account so the next
+ *  read reflects an opportunity we just created or moved. Best-effort: if the
+ *  sub-account env is missing the caller already handled the unavailable path. */
+export function invalidateOpportunitiesCache(subAccountId: GhlSubAccountId): void {
+  try {
+    const { locationId } = getGhlConfig(subAccountId);
+    cache.delete(opportunitiesByContactCacheKey(subAccountId, locationId));
+  } catch {
+    // env missing — nothing cached for this sub-account anyway
+  }
 }
 
 async function fetchOpportunitiesPage(
@@ -73,7 +96,7 @@ export async function getOpportunitiesByContact(
 ): Promise<Map<string, GhlOpportunity[]>> {
   const { locationId } = getGhlConfig(subAccountId);
   return cachedSingleflight(
-    `ghl:opps-by-contact:${subAccountId}:${locationId}`,
+    opportunitiesByContactCacheKey(subAccountId, locationId),
     TTL_OPPS,
     async () => {
     const collected: GhlOpportunity[] = [];
@@ -112,4 +135,151 @@ export async function getOpportunitiesByContact(
     return map;
     }
   );
+}
+
+// ── Single-opportunity reads + writes (CRM funnel sync) ──────────────────
+//
+// These power lib/ghlCrmSync.ts: move a lead's opportunity into a target
+// pipeline stage when they show / a deal is linked, and again when the deal
+// is paid. Writes bust the bulk opportunities-by-contact cache so the contacts
+// page reflects the change on its next refetch.
+
+function unwrapOpportunity(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.opportunity && typeof obj.opportunity === "object") {
+    return obj.opportunity as Record<string, unknown>;
+  }
+  return obj;
+}
+
+/**
+ * Fetch a single contact's opportunities directly via the `contact_id` search
+ * filter. Deliberately NOT the cached bulk map (`getOpportunitiesByContact`):
+ * that map is capped at MAX_OPPORTUNITIES, so on a large location a contact's
+ * opportunity could fall outside the cap and we'd wrongly think they have none
+ * (then create a duplicate). A targeted search returns only this contact's
+ * rows — a contact never has more than a handful, so one page (limit 100) is
+ * always enough. Uncached so a just-created/-moved opportunity is seen fresh.
+ */
+export async function searchOpportunitiesByContact(
+  contactId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlOpportunity[]> {
+  const { locationId } = getGhlConfig(subAccountId);
+  const raw = await ghlRequest<unknown>("/opportunities/search", {
+    query: { location_id: locationId, contact_id: contactId, limit: PAGE_LIMIT },
+    version: VERSION,
+    subAccountId,
+  });
+  let list: unknown[] = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (raw && typeof raw === "object") {
+    const top = raw as Record<string, unknown>;
+    if (Array.isArray(top.opportunities)) list = top.opportunities as unknown[];
+    else if (Array.isArray(top.data)) list = top.data as unknown[];
+  }
+  return list
+    .map((o) => normOpp(o as Record<string, unknown>))
+    .filter((o) => o.id);
+}
+
+/**
+ * Find a contact's opportunity living in a specific pipeline, if any. Returns
+ * the most recently updated match when a contact has several in the pipeline.
+ */
+export async function findOpportunityForContactInPipeline(
+  contactId: string,
+  pipelineId: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlOpportunity | null> {
+  const opps = await searchOpportunitiesByContact(contactId, subAccountId);
+  // Re-filter by contactId client-side as a safety net: if the server-side
+  // contact_id filter were ever ignored we must never move a stranger's
+  // opportunity that merely happens to sit in the target pipeline.
+  const matches = opps.filter(
+    (o) => o.contactId === contactId && o.pipelineId === pipelineId
+  );
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  return matches[0];
+}
+
+interface CreateOpportunityInput {
+  contactId: string;
+  pipelineId: string;
+  pipelineStageId: string;
+  name: string;
+  /** GHL opportunity status — open | won | lost | abandoned. Defaults open. */
+  status?: string;
+  /** Dollars or cents? GHL stores the raw number you send; we pass 0 unless a
+   *  caller has a meaningful value. */
+  monetaryValue?: number;
+}
+
+/** Create a new opportunity in the given pipeline + stage. Busts the bulk
+ *  cache on success. POST /opportunities/ (Version 2023-02-21). */
+export async function createOpportunity(
+  input: CreateOpportunityInput,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlOpportunity | null> {
+  const { locationId } = getGhlConfig(subAccountId);
+  const body: Record<string, unknown> = {
+    locationId,
+    contactId: input.contactId,
+    pipelineId: input.pipelineId,
+    pipelineStageId: input.pipelineStageId,
+    name: input.name,
+    status: input.status ?? "open",
+  };
+  if (typeof input.monetaryValue === "number") {
+    body.monetaryValue = input.monetaryValue;
+  }
+  const raw = await ghlRequest<unknown>("/opportunities/", {
+    method: "POST",
+    body,
+    version: VERSION,
+    subAccountId,
+  });
+  invalidateOpportunitiesCache(subAccountId);
+  const inner = unwrapOpportunity(raw);
+  return inner ? normOpp(inner) : null;
+}
+
+interface UpdateOpportunityInput {
+  pipelineId: string;
+  pipelineStageId: string;
+  /** Preserve the existing status unless the caller wants to change it. */
+  status?: string;
+  name?: string;
+}
+
+/** Move an existing opportunity to a new stage (and optionally status/name).
+ *  GHL's update wants the pipelineId alongside the stage id, so we send both.
+ *  Busts the bulk cache on success. PUT /opportunities/:id (Version 2023-02-21). */
+export async function updateOpportunity(
+  opportunityId: string,
+  input: UpdateOpportunityInput,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlOpportunity | null> {
+  const body: Record<string, unknown> = {
+    pipelineId: input.pipelineId,
+    pipelineStageId: input.pipelineStageId,
+  };
+  if (input.status) body.status = input.status;
+  if (input.name) body.name = input.name;
+
+  const raw = await ghlRequest<unknown>(
+    `/opportunities/${encodeURIComponent(opportunityId)}`,
+    {
+      method: "PUT",
+      body,
+      version: VERSION,
+      subAccountId,
+    }
+  );
+  invalidateOpportunitiesCache(subAccountId);
+  const inner = unwrapOpportunity(raw);
+  return inner ? normOpp(inner) : null;
 }

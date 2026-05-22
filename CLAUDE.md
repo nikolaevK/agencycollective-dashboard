@@ -288,6 +288,31 @@ Dashboard `event_attendance` (show/no-show) and GHL `appointmentStatus` are kept
 
 **Non-GHL events** (no composite-key match) skip the sync code path entirely — every sync function returns `outcome: "non_ghl"` early so dashboard behavior is identical to pre-sync.
 
+### GHL CRM Funnel Sync (pipeline stage + contact tags)
+
+Separate from appointment-status sync (`lib/attendanceSync.ts`), the **CRM funnel sync** (`lib/ghlCrmSync.ts`) drives the agency's sales pipeline + tags in GHL off dashboard events. Both modules bridge to GHL through the same `ghl_appointment_links` row (composite-key matched, sub-account-stamped); CRM sync reads `ghl_contact_id` + `ghl_sub_account_id` off that link.
+
+**Triggers + effects.**
+| Dashboard event | GHL effect |
+|---|---|
+| Closer marks **Showed** on the calendar, or a deal auto-marks "showed" (deal created closed / status→closed via closer or admin) | Tag contact `showed_didnt_close` + move their opportunity to the **"Showed didn't close"** stage |
+| A **linked** deal is marked **paid** on the admin dashboard (unpaid→paid edge) | Swap tags `showed_didnt_close` → `active_client` + move the opportunity to the **"Active Client"** stage |
+
+A **no-show** or unselect leaves the funnel untouched (only "showed" advances it). The "Active Client" promotion requires the deal to be GHL-linked (`google_event_id` resolves to a link row with a contact) — non-linked deals are a no-op, same as appointment-status sync.
+
+**Per-sub-account pipeline.** The pipeline name differs by sub-account; stage + tag names are shared. Config lives at the top of `lib/ghlCrmSync.ts`:
+- Agency Collective → pipeline **"MASTER PIPELINE"**
+- Peptide Ads → pipeline **"Website Leads"**
+- Stages: **"Showed didn't close"**, **"Active Client"** · Tags: `showed_didnt_close`, `active_client`
+
+`PIPELINE_NAME_BY_SUB` is a `Record<GhlSubAccountId, string>`, so adding a sub-account to the registry forces a pipeline name here at compile time.
+
+**Opportunity handling.** `update existing, else create` — `findOpportunityForContactInPipeline` looks for the contact's opportunity already in the target pipeline; found → PUT it to the new stage (preserving its open/won/lost status + name); none → POST a new opportunity (`status: "open"`, name from the deal/event or the GHL contact). It uses a **targeted `contact_id` search** (`searchOpportunitiesByContact`), NOT the cached bulk `getOpportunitiesByContact` map — the bulk map is capped at `MAX_OPPORTUNITIES`, so on a large location a contact's existing opportunity could fall outside the cap and we'd create a duplicate instead of moving it. Pipeline + stage names resolve to ids via `resolvePipelineStageByName` (case/whitespace/apostrophe-tolerant; logs available names and no-ops if the pipeline or stage can't be found, so a renamed stage fails loudly in logs rather than writing to the wrong place).
+
+**Versions + endpoints.** Opportunities use `POST /opportunities/` + `PUT /opportunities/:id` (Version `2023-02-21`, same as the existing opportunities reads). Tags use `POST` / `DELETE /contacts/:id/tags` (contacts-default Version `2021-07-28`, like the rest of `lib/ghl/contacts.ts`). Every write busts the relevant in-process cache (`opportunitiesByContactCacheKey`, `contact-by-id`) so the GHL Contacts page reflects it on next refetch; the page-level `batch-base` search cache expires on its own 5-min TTL.
+
+**Best-effort.** `bestEffortSyncShowedDidntClose` / `bestEffortSyncActiveClient` never throw and never block or roll back the dashboard write that triggered them — failures are logged via `describeError` (PII-safe). Like attendance push, they only resolve a brand-new link first-sight when called with event title/start/end coords (calendar "Showed" path); the deal-creation/close paths rely on a link already existing (created by calendar discovery or a prior attendance mark). Routes that newly run these syncs set `maxDuration = 30`.
+
 ## Notes (per-user scratchpad with sharing)
 
 Dedicated page at `/closer/notes` (closer-only) and `/closer/setter/notes` (setter-only). Same component, same `notes` table, filtered by owner.
@@ -390,6 +415,7 @@ Each GHL sub-account is enabled independently. When none are set the chip never 
 - **GHL appointment status sync uses `Version: 2023-02-21`** for `/calendars/events/appointments/*`. Other GHL endpoint families use different versions (`/calendars/events` bulk uses the same, contacts uses 2021-07-28). Sending the wrong version returns 200 but silently no-ops the PUT. PUT body must include `calendarId` + `startTime` + `endTime` + `title` + `assignedUserId` alongside the status or the write doesn't persist — fetch the current appointment first and round-trip those fields
 - **Bidirectional sync is opt-in per event** via the composite-key match. There is no manual override to "force-link" a Google event to a specific GHL appointment id — if titles or times don't match, the chip never appears and the event behaves as non-GHL. Surface this for support cases where ops expects the chip on a known-mismatched pair
 - **GHL closer attribution uses display-name matching.** GHL `assignedUserId` → user name (via `/users` cached 10 min) → normalized lookup in `closers.display_name` (lowercase, whitespace-collapsed, cached 5 min). No `closers.ghl_user_id` column — renames in either system break attribution until names re-align. If this becomes a problem, add the column as a strictly additive migration. The GHL user roster is **per-sub-account** (different PIT = different `/users` namespace), so name resolution always reads the link's stamped `subAccountId` to pick the right roster
+- **CRM funnel sync resolves pipeline + stage by NAME** (`lib/ghlCrmSync.ts` → `resolvePipelineStageByName`). The expected names are hard-coded: pipelines "MASTER PIPELINE" (agency) / "Website Leads" (peptide), stages "Showed didn't close" / "Active Client". Matching is case/whitespace/apostrophe-tolerant but a real **rename of a pipeline or stage in GHL silently disables the funnel sync** for that effect — it logs `[ghl-crm] pipeline/stage "…" not found` with the available names and no-ops (no opportunity is moved/created). First place to look when ops reports "leads stopped moving to Showed didn't close / Active Client." Fix is to re-align the GHL name or update the constant in `lib/ghlCrmSync.ts`
 - **GHL bulk-listing cache is in-process only** — invalidation via `cache.delete(...)` after a PUT works on a single Node process but doesn't propagate across Vercel serverless instances. Drift detection catches the stale-cache window on the next read. Acceptable for current scale; would need a shared cache (Upstash / Redis) before fan-out becomes a problem
 - **GHL sub-account registry** lives in `lib/ghl/subAccounts.ts`. All `lib/ghl/*` functions take an optional `subAccountId` (defaults to `peptide` for server-side backward compat with stored data); client-side hook defaults are `agency` (the UI's default tab). Every cache key is sub-account-scoped — concurrent reads of both accounts don't collide. The 50 r/s rate limiter is **shared across PITs** in process; if one account starves the other under load, split into per-PIT limiters
 - **Per-sub-account in-process state**: `resolvedCalendarsPathBySub` (`lib/ghl/calendars.ts`), `resolvedUsersPathBySub` (`lib/ghl/users.ts`), and `cachedSingleflight` keys (`ghl:...:<subAccountId>:...`) all live per-process. Adding/removing a sub-account at runtime requires a redeploy to flush — Vercel does this on env var change automatically. `_closerNameMapCache` in `lib/ghl/appointments.ts` is global (sub-account-agnostic) because the dashboard `closers` table is shared across all sub-accounts

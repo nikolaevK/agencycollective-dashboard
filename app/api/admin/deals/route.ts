@@ -1,4 +1,8 @@
 export const dynamic = "force-dynamic";
+// A status→closed or paid transition runs best-effort GHL syncs (attendance
+// push + CRM funnel: opportunity stage + tags), whose round-trips can take a
+// few seconds under rate limiting.
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
@@ -8,6 +12,10 @@ import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
+import {
+  bestEffortSyncShowedDidntClose,
+  bestEffortSyncActiveClient,
+} from "@/lib/ghlCrmSync";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { isSetterTier } from "@/lib/appointments";
@@ -161,9 +169,34 @@ export async function PATCH(request: Request) {
         googleEventId: deal.googleEventId,
         dashboardStatus: "showed",
       });
+      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage) —
+      // unless this same request also marks the deal paid, in which case the
+      // "Active Client" promotion below supersedes it (and running both would
+      // race GHL's create→search consistency into a duplicate opportunity).
+      if (changes.paidStatus !== "paid") {
+        await bestEffortSyncShowedDidntClose({
+          googleEventId: deal.googleEventId,
+          leadName: deal.clientName,
+        });
+      }
     }
 
     await updateDeal(id, changes);
+
+    // Paid transition: a linked deal becoming paid promotes the GHL lead to
+    // "Active Client" (swaps showed_didnt_close → active_client + moves the
+    // opportunity stage). Only fire on the unpaid→paid edge for GHL-linked
+    // deals; re-saving an already-paid deal is a no-op.
+    if (
+      changes.paidStatus === "paid" &&
+      deal.paidStatus !== "paid" &&
+      deal.googleEventId
+    ) {
+      await bestEffortSyncActiveClient({
+        googleEventId: deal.googleEventId,
+        leadName: deal.clientName,
+      });
+    }
 
     // Sync email to linked invoice when clientEmail changes
     if (changes.clientEmail !== undefined) {
