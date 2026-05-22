@@ -16,6 +16,7 @@ import {
 import { SUB_ACCOUNTS } from "@/lib/ghl/subAccounts";
 import { useElementHeightVar } from "@/hooks/useElementHeightVar";
 import { MobileFiltersSheet } from "@/components/closer/MobileFiltersSheet";
+import { ScrollToTopButton } from "@/components/closer/ScrollToTopButton";
 import type { DealPublic } from "@/components/closers/types";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
 
@@ -436,6 +437,8 @@ export default function CloserCalendarPage() {
                 onEditDeal={(dealId) => setEditingDealId(dealId)}
               />
             )}
+
+            <ScrollToTopButton />
           </>
         )}
 
