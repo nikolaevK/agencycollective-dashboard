@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
-import { CreateUserForm } from "@/components/users/CreateUserForm";
-import { AccountUtilization } from "@/components/users/AccountUtilization";
 import { ClientDirectory } from "@/components/users/ClientDirectory";
+import { ClientSummaryCards } from "@/components/users/ClientSummaryCards";
+import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
+import { AddClientModal } from "@/components/users/AddClientModal";
+import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "@/components/users/types";
@@ -19,12 +22,45 @@ async function fetchClients(): Promise<ClientPublic[]> {
   return json.data as ClientPublic[];
 }
 
+function applyFilters(clients: ClientPublic[], f: ClientFilterState): ClientPublic[] {
+  const q = f.search.trim().toLowerCase();
+  const mrrMin = f.mrrMin ? Number(f.mrrMin) : null;
+  const mrrMax = f.mrrMax ? Number(f.mrrMax) : null;
+
+  return clients.filter((c) => {
+    if (f.status !== "all" && c.status !== f.status) return false;
+    if (f.category && c.category !== f.category) return false;
+    if (f.rebill !== "all" && c.schedule.status !== f.rebill) return false;
+
+    if (q) {
+      const hay = `${c.displayName} ${c.email ?? ""} ${c.category ?? ""} ${
+        c.payoutBrand ?? ""
+      }`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+
+    const mrrDollars = c.payoutMrr / 100;
+    if (mrrMin != null && mrrDollars < mrrMin) return false;
+    if (mrrMax != null && mrrDollars > mrrMax) return false;
+
+    if (f.joined.from && (!c.joinedAt || c.joinedAt < f.joined.from)) return false;
+    if (f.joined.to && (!c.joinedAt || c.joinedAt > f.joined.to)) return false;
+
+    const lr = c.schedule.lastRebilledAt;
+    if (f.lastRebill.from && (!lr || lr < f.lastRebill.from)) return false;
+    if (f.lastRebill.to && (!lr || lr > f.lastRebill.to)) return false;
+
+    return true;
+  });
+}
+
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabId>("clients");
+  const [filters, setFilters] = useState<ClientFilterState>(DEFAULT_FILTERS);
+  const [showAdd, setShowAdd] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
-  // Unread count drives the badge on the Support tab pill so admins see
-  // incoming messages even when they're sitting on the Clients tab.
   const { data: unreadSupport = 0 } = useQuery<number>({
     queryKey: ["admin-support-unread"],
     queryFn: async () => {
@@ -38,81 +74,109 @@ export default function UsersPage() {
     refetchIntervalInBackground: false,
   });
 
-  const { data: clients, isLoading } = useQuery({
+  const { data: clients = [], isLoading } = useQuery({
     queryKey: ["admin-users"],
     queryFn: fetchClients,
     staleTime: 30_000,
     enabled: tab === "clients",
   });
 
+  // Shared with the alerts panel via the same query key (deduped).
+  const { data: alerts } = useRebillAlerts();
+
+  const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
+
+  const totalMrr = clients.reduce((s, c) => s + c.payoutMrr, 0);
+  const activeClients = clients.filter((c) => c.status === "active").length;
+
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
   }
 
-  const totalAccounts = clients?.reduce((sum, c) => sum + c.accounts.length, 0) ?? 0;
-  const activeClients = clients?.filter((c) => c.status === "active").length ?? 0;
-
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
+        {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-foreground">Clients</h1>
+            <h1 className="text-2xl lg:text-3xl font-black text-foreground">Client Directory</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage client accounts, assign Meta ad accounts, and respond to feedback.
+              Cross-referenced with the Payout DB — MRR, join dates, billing schedule.
             </p>
           </div>
-          <div className="flex bg-muted rounded-lg p-1 self-start">
-            <TabButton active={tab === "clients"} onClick={() => setTab("clients")}>
-              Directory
-            </TabButton>
-            <TabButton
-              active={tab === "support"}
-              onClick={() => setTab("support")}
-              badge={unreadSupport}
-            >
-              Support
-            </TabButton>
+          <div className="flex items-center gap-3">
+            <div className="flex bg-muted rounded-lg p-1 self-start">
+              <TabButton active={tab === "clients"} onClick={() => setTab("clients")}>
+                Directory
+              </TabButton>
+              <TabButton
+                active={tab === "support"}
+                onClick={() => setTab("support")}
+                badge={unreadSupport}
+              >
+                Support
+              </TabButton>
+            </div>
+            {tab === "clients" && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="hidden md:flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                Add Client
+              </button>
+            )}
           </div>
         </div>
 
         {tab === "clients" ? (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-4 space-y-6">
-              <CreateUserForm onCreated={handleRefresh} />
-              <AccountUtilization
-                assignedAccounts={totalAccounts}
-                totalClients={activeClients}
-              />
-            </div>
+          <>
+            <ClientSummaryCards
+              totalClients={clients.length}
+              activeClients={activeClients}
+              totalMrr={totalMrr}
+              rebillsDue={alerts?.rebills.length ?? 0}
+              overdueCount={alerts?.overdueCount ?? 0}
+              onRebillsClick={() => setAlertsOpen(true)}
+              isLoading={isLoading}
+            />
 
-            <div className="lg:col-span-8 flex flex-col">
-              {isLoading ? (
-                <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] p-8 flex-1">
-                  <div className="space-y-4">
-                    <div className="h-6 w-48 animate-pulse rounded-lg bg-muted" />
-                    <div className="h-10 w-full animate-pulse rounded-lg bg-muted" />
-                    <div className="space-y-3 mt-6">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <div key={i} className="h-14 w-full animate-pulse rounded-lg bg-muted/60" />
-                      ))}
-                    </div>
-                  </div>
+            <RebillAlertsPanel open={alertsOpen} onOpenChange={setAlertsOpen} />
+
+            <ClientFilters value={filters} onChange={setFilters} />
+
+            {isLoading ? (
+              <div className="rounded-xl border border-border/50 bg-card p-8">
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
+                  ))}
                 </div>
-              ) : (
-                <div className="flex-1 min-h-0">
-                  <ClientDirectory
-                    clients={clients ?? []}
-                    onRefresh={handleRefresh}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+              </div>
+            ) : (
+              <ClientDirectory clients={filtered} onRefresh={handleRefresh} />
+            )}
+          </>
         ) : (
           <UsersSupportTab />
         )}
       </div>
+
+      {/* Mobile FAB */}
+      {tab === "clients" && (
+        <button
+          onClick={() => setShowAdd(true)}
+          className="md:hidden fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl shadow-primary/30 ac-gradient active:scale-95 transition-transform"
+          aria-label="Add client"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      )}
+
+      {showAdd && (
+        <AddClientModal onClose={() => setShowAdd(false)} onCreated={handleRefresh} />
+      )}
     </DashboardShell>
   );
 }

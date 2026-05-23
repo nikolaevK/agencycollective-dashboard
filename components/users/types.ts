@@ -1,5 +1,6 @@
 import type { UserStatus } from "@/lib/users";
 import type { ClientAccount } from "@/lib/clientAccounts";
+import type { ClientBilling, RebillSchedule } from "@/lib/clientBilling";
 
 export interface ClientPublic {
   id: string;
@@ -17,6 +18,24 @@ export interface ClientPublic {
   hasPassword: boolean;
   analystEnabled: boolean;
   accounts: ClientAccount[];
+  // Client Directory additions (payout cross-reference + re-bill schedule)
+  payoutBrand: string | null;
+  matchedBrand: string | null;
+  isLinked: boolean;
+  joinedAt: string | null;
+  billing: ClientBilling | null;
+  schedule: RebillSchedule;
+}
+
+/** A brand in the Payout DB not yet linked to a client (add-client picker). */
+export interface PayoutPoolEntry {
+  brandName: string;
+  normalizedName: string;
+  dateJoined: string | null;
+  monthlyAmount: number; // cents
+  totalPaid: number; // cents
+  vertical: string | null;
+  service: string | null;
 }
 
 export const CATEGORIES = [

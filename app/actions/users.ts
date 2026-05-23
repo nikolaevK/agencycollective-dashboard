@@ -109,6 +109,8 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     category,
     createdAt: new Date().toISOString(),
     analystEnabled: true,
+    joinedAt: null,
+    payoutBrand: null,
   });
 
   revalidatePath("/dashboard/users");
@@ -190,6 +192,17 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
     if (next !== user.analystEnabled) {
       changes.analystEnabled = next;
     }
+  }
+
+  // Client Directory: explicit payout-brand link + join date (additive). Empty
+  // string clears the field. Does not touch slug/account_id/portal linkage.
+  const payoutBrand = formData.get("payoutBrand");
+  if (typeof payoutBrand === "string") {
+    changes.payoutBrand = payoutBrand.trim() || null;
+  }
+  const joinedAt = formData.get("joinedAt");
+  if (typeof joinedAt === "string") {
+    changes.joinedAt = joinedAt.trim() || null;
   }
 
   await updateUser(id, changes);

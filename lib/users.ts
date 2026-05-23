@@ -16,6 +16,8 @@ export interface UserRecord {
   category: string | null;
   createdAt: string;
   analystEnabled: boolean;    // gates client-portal AI analyst access
+  joinedAt: string | null;    // client start date (seeded from payout date_joined)
+  payoutBrand: string | null; // explicit link to a Payout-DB brand_name
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +101,23 @@ async function hasAnalystEnabledColumn(db: Client): Promise<boolean> {
   }
 }
 
+/**
+ * Probe for the Client Directory columns (joined_at, payout_brand). Same
+ * cache-on-success pattern as the analyst flag — these are additive and a DB
+ * that hasn't migrated yet simply skips the write until the column lands.
+ */
+let _hasClientDirCols: boolean = false;
+async function hasClientDirectoryColumns(db: Client): Promise<boolean> {
+  if (_hasClientDirCols) return true;
+  try {
+    await db.execute("SELECT joined_at, payout_brand FROM users LIMIT 0");
+    _hasClientDirCols = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function rowToUser(row: Row): UserRecord {
   return {
     id: String(row.id),
@@ -114,6 +133,8 @@ function rowToUser(row: Row): UserRecord {
     createdAt: String(row.created_at || new Date().toISOString()),
     // Default true if column missing (pre-migration row read).
     analystEnabled: row.analyst_enabled == null ? true : Number(row.analyst_enabled) === 1,
+    joinedAt: row.joined_at != null ? String(row.joined_at) : null,
+    payoutBrand: row.payout_brand != null ? String(row.payout_brand) : null,
   };
 }
 
@@ -253,6 +274,21 @@ export async function updateUser(
     args.push(changes.analystEnabled ? 1 : 0);
   }
 
+  // Client Directory columns — only emitted when the migration has landed.
+  if (
+    (changes.joinedAt !== undefined || changes.payoutBrand !== undefined) &&
+    (await hasClientDirectoryColumns(db))
+  ) {
+    if (changes.joinedAt !== undefined) {
+      fields.push("joined_at = ?");
+      args.push(changes.joinedAt);
+    }
+    if (changes.payoutBrand !== undefined) {
+      fields.push("payout_brand = ?");
+      args.push(changes.payoutBrand);
+    }
+  }
+
   if (fields.length === 0) return;
   args.push(id);
 
@@ -264,6 +300,21 @@ export async function updateUser(
 
 export async function deleteUser(id: string): Promise<boolean> {
   const db = getDb();
+
+  // Explicit cleanup of Client Directory child rows. libSQL FK cascade is not
+  // guaranteed to fire (see CLAUDE.md), so we don't rely on it for these
+  // additive tables. Best-effort + tolerant of a not-yet-migrated DB.
+  for (const table of ["client_notes", "client_billing"]) {
+    try {
+      await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [id] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/no such table/i.test(msg)) {
+        console.error(`[deleteUser] cleanup of ${table} failed (non-fatal):`, err);
+      }
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM users WHERE id = ?",
     args: [id],

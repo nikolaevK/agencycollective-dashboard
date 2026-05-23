@@ -1,12 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { readUsers, deleteUser } from "@/lib/users";
-import { readAllClientAccounts } from "@/lib/clientAccounts";
+import { deleteUser } from "@/lib/users";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-import { getPayoutAggregatesByBrand } from "@/lib/payouts";
+import { buildClientDirectory } from "@/lib/clientDirectory";
 
 async function requireAdminSession() {
   const session = getAdminSession();
@@ -24,67 +23,27 @@ export async function GET(request: Request) {
   const statusFilter = searchParams.get("status");
   const searchTerm = searchParams.get("search")?.toLowerCase();
 
-  let users = await readUsers();
+  // Aggregator joins users + accounts + payout cross-reference + billing
+  // schedule. passwordHash is never included (only the hasPassword boolean),
+  // and the accounts array still comes straight from client_accounts — the
+  // portal/account linkage is unchanged; this response only gained fields.
+  let rows = await buildClientDirectory();
 
-  // Filter by status
   if (statusFilter && statusFilter !== "all") {
-    users = users.filter((u) => u.status === statusFilter);
+    rows = rows.filter((r) => r.status === statusFilter);
   }
 
-  // Search filter
   if (searchTerm) {
-    users = users.filter(
-      (u) =>
-        u.displayName.toLowerCase().includes(searchTerm) ||
-        u.email?.toLowerCase().includes(searchTerm) ||
-        u.category?.toLowerCase().includes(searchTerm)
+    rows = rows.filter(
+      (r) =>
+        r.displayName.toLowerCase().includes(searchTerm) ||
+        r.email?.toLowerCase().includes(searchTerm) ||
+        r.category?.toLowerCase().includes(searchTerm) ||
+        r.payoutBrand?.toLowerCase().includes(searchTerm)
     );
   }
 
-  // Load all client accounts and group by userId
-  const allAccounts = await readAllClientAccounts();
-  const accountsByUser = new Map<string, typeof allAccounts>();
-  for (const account of allAccounts) {
-    const list = accountsByUser.get(account.userId) ?? [];
-    list.push(account);
-    accountsByUser.set(account.userId, list);
-  }
-
-  // Fetch payout aggregates for MRR and total revenue
-  const now = new Date();
-  const payoutAggregates = await getPayoutAggregatesByBrand(
-    now.getMonth() + 1,
-    now.getFullYear()
-  );
-
-  function normalize(s: string): string {
-    return s.toLowerCase().replace(/\s/g, "");
-  }
-
-  // Build response — strip passwordHash, include accounts + payout metrics
-  const safe = users.map(({ passwordHash, ...rest }) => {
-    const normName = normalize(rest.displayName);
-    let payoutMrr = 0;
-    let totalRevenue = 0;
-    if (normName.length > 0) {
-      for (const agg of payoutAggregates) {
-        if (agg.normalizedBrandName.includes(normName)) {
-          payoutMrr += agg.currentMonthAmountDue;
-          totalRevenue += agg.totalAmountPaid;
-        }
-      }
-    }
-
-    return {
-      ...rest,
-      hasPassword: Boolean(passwordHash),
-      accounts: accountsByUser.get(rest.id) ?? [],
-      payoutMrr,
-      totalRevenue,
-    };
-  });
-
-  return NextResponse.json({ data: safe });
+  return NextResponse.json({ data: rows });
 }
 
 export async function DELETE(request: Request) {

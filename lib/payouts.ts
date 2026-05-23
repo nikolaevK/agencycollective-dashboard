@@ -1,5 +1,11 @@
 import { getDb, ensureMigrated } from "./db";
+import cache from "./cache";
 import type { Row } from "@libsql/client";
+
+// In-memory cache for the full brand-history fold — read on every Client
+// Directory build / re-bill computation, busted on any payout write below.
+const BRAND_HISTORIES_CACHE_KEY = "brand_histories:all";
+const BRAND_HISTORIES_TTL_SECONDS = 90;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,6 +212,7 @@ export async function insertPayout(payout: PayoutRecord): Promise<void> {
       payout.updatedAt,
     ],
   });
+  cache.delete(BRAND_HISTORIES_CACHE_KEY);
 }
 
 export async function updatePayout(
@@ -311,6 +318,7 @@ export async function updatePayout(
     sql: `UPDATE payouts SET ${fields.join(", ")} WHERE id = ?`,
     args,
   });
+  cache.delete(BRAND_HISTORIES_CACHE_KEY);
 }
 
 export async function deletePayout(id: string): Promise<boolean> {
@@ -320,40 +328,13 @@ export async function deletePayout(id: string): Promise<boolean> {
     sql: "DELETE FROM payouts WHERE id = ?",
     args: [id],
   });
+  cache.delete(BRAND_HISTORIES_CACHE_KEY);
   return (result.rowsAffected ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------
 // Aggregates — brand-level
 // ---------------------------------------------------------------------------
-
-export interface BrandPayoutAggregate {
-  normalizedBrandName: string;
-  currentMonthAmountDue: number; // cents
-  totalAmountPaid: number; // cents
-}
-
-export async function getPayoutAggregatesByBrand(
-  currentMonth: number,
-  currentYear: number
-): Promise<BrandPayoutAggregate[]> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT
-            LOWER(REPLACE(brand_name, ' ', '')) AS norm_brand,
-            COALESCE(SUM(CASE WHEN payout_month = ? AND payout_year = ? THEN amount_due ELSE 0 END), 0) AS current_month_due,
-            COALESCE(SUM(amount_paid), 0) AS total_paid
-          FROM payouts
-          GROUP BY LOWER(REPLACE(brand_name, ' ', ''))`,
-    args: [currentMonth, currentYear],
-  });
-  return result.rows.map((row) => ({
-    normalizedBrandName: String(row.norm_brand),
-    currentMonthAmountDue: Number(row.current_month_due ?? 0),
-    totalAmountPaid: Number(row.total_paid ?? 0),
-  }));
-}
 
 export async function readPayoutsByNormalizedBrand(
   clientName: string,
@@ -372,6 +353,142 @@ export async function readPayoutsByNormalizedBrand(
     args: [month, year, `%${normName}%`],
   });
   return result.rows.map(rowToPayout);
+}
+
+// ---------------------------------------------------------------------------
+// Brand histories — full per-brand payment timeline (Client Directory)
+// ---------------------------------------------------------------------------
+
+export interface BrandMonthly {
+  month: number;
+  year: number;
+  amountDue: number; // cents
+  amountPaid: number; // cents
+}
+
+export interface BrandHistory {
+  /** robust normalized key (normalizeBrandName) — use with brandsMatch */
+  normalizedName: string;
+  /** representative original brand_name (from the most recent payout row) */
+  displayBrand: string;
+  /** earliest non-null date_joined across this brand's payouts */
+  earliestDateJoined: string | null;
+  /** one entry per (year, month), summed across duplicate rows, sorted asc */
+  months: BrandMonthly[];
+  /** total amount_paid across all months (cents) */
+  totalPaid: number;
+  /** most recent month entry (or null if none) */
+  latestMonth: BrandMonthly | null;
+  /** most recent month's amount_due — the recurring MRR proxy (cents) */
+  latestAmountDue: number;
+  /** vertical from the most recent payout row */
+  vertical: string | null;
+  /** service from the most recent payout row */
+  service: string | null;
+}
+
+/**
+ * Read every payout once and fold it into a per-brand timeline keyed by the
+ * robust normalized brand name. Powers the Client Directory's payout
+ * cross-reference (MRR, total revenue, last/next re-bill) and the
+ * add-from-payout pool. ~hundreds of rows → cheap to aggregate in JS.
+ */
+export async function getAllBrandHistories(): Promise<BrandHistory[]> {
+  await ensureMigrated();
+
+  const cached = cache.get<BrandHistory[]>(BRAND_HISTORIES_CACHE_KEY);
+  if (cached) return cached;
+
+  const db = getDb();
+  const result = await db.execute(
+    `SELECT brand_name, payout_month, payout_year, amount_due, amount_paid, date_joined, vertical, service, created_at
+     FROM payouts`
+  );
+
+  interface Acc {
+    normalizedName: string;
+    displayBrand: string;
+    displayBrandAt: string; // created_at of the row that set displayBrand
+    earliestDateJoined: string | null;
+    monthMap: Map<string, BrandMonthly>;
+    totalPaid: number;
+    vertical: string | null;
+    service: string | null;
+  }
+  const groups = new Map<string, Acc>();
+
+  for (const row of result.rows) {
+    const brand = String(row.brand_name);
+    const norm = normalizeBrandName(brand);
+    if (!norm) continue;
+
+    let acc = groups.get(norm);
+    if (!acc) {
+      acc = {
+        normalizedName: norm,
+        displayBrand: brand,
+        displayBrandAt: String(row.created_at ?? ""),
+        earliestDateJoined: null,
+        monthMap: new Map(),
+        totalPaid: 0,
+        vertical: row.vertical != null ? String(row.vertical) : null,
+        service: row.service != null ? String(row.service) : null,
+      };
+      groups.set(norm, acc);
+    }
+
+    // Most-recent row wins the display brand name + vertical/service.
+    const createdAt = String(row.created_at ?? "");
+    if (createdAt >= acc.displayBrandAt) {
+      acc.displayBrand = brand;
+      acc.displayBrandAt = createdAt;
+      acc.vertical = row.vertical != null ? String(row.vertical) : null;
+      acc.service = row.service != null ? String(row.service) : null;
+    }
+
+    const dateJoined = row.date_joined != null ? String(row.date_joined) : "";
+    if (dateJoined) {
+      if (!acc.earliestDateJoined || dateJoined < acc.earliestDateJoined) {
+        acc.earliestDateJoined = dateJoined;
+      }
+    }
+
+    const amountDue = Number(row.amount_due ?? 0);
+    const amountPaid = Number(row.amount_paid ?? 0);
+    acc.totalPaid += amountPaid;
+
+    const month = Number(row.payout_month);
+    const year = Number(row.payout_year);
+    const key = `${year}-${month}`;
+    const existing = acc.monthMap.get(key);
+    if (existing) {
+      existing.amountDue += amountDue;
+      existing.amountPaid += amountPaid;
+    } else {
+      acc.monthMap.set(key, { month, year, amountDue, amountPaid });
+    }
+  }
+
+  const histories = Array.from(groups.values()).map((acc) => {
+    const months = Array.from(acc.monthMap.values()).sort(
+      (a, b) => a.year - b.year || a.month - b.month
+    );
+    const latestMonth = months.length > 0 ? months[months.length - 1] : null;
+    return {
+      normalizedName: acc.normalizedName,
+      displayBrand: acc.displayBrand,
+      earliestDateJoined: acc.earliestDateJoined,
+      months,
+      totalPaid: acc.totalPaid,
+      latestMonth,
+      latestAmountDue: latestMonth ? latestMonth.amountDue : 0,
+      vertical: acc.vertical,
+      service: acc.service,
+    };
+  });
+
+  cache.set(BRAND_HISTORIES_CACHE_KEY, histories, BRAND_HISTORIES_TTL_SECONDS);
+  return histories;
 }
 
 // ---------------------------------------------------------------------------

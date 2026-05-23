@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AvatarInitials } from "./AvatarInitials";
 import { StatusBadge } from "./StatusBadge";
@@ -10,72 +9,41 @@ import { ClientActionsMenu } from "./ClientActionsMenu";
 import { ManageAccountsModal } from "./ManageAccountsModal";
 import { EditClientModal } from "./EditClientModal";
 import { MrrDetailModal } from "./MrrDetailModal";
+import { RebillStatusChip } from "./RebillStatusChip";
+import { formatMoney, formatDate } from "./format";
 import { updateUserAction, deleteUserAction } from "@/app/actions/users";
 import type { ClientPublic } from "./types";
 import type { UserStatus } from "@/lib/users";
 
-type Tab = "all" | "active" | "archived";
-const TABS: { value: Tab; label: string }[] = [
-  { value: "all", label: "All Clients" },
-  { value: "active", label: "Active" },
-  { value: "archived", label: "Archived" },
-];
-
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 interface ClientDirectoryProps {
   clients: ClientPublic[];
   onRefresh: () => void;
 }
 
-function formatMrr(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
-
 export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("all");
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [mrrClientId, setMrrClientId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
-  // Derive current client objects from fresh data so modals never show stale state
+  // Reset to page 1 when the (externally-filtered) list changes, so applying a
+  // filter doesn't strand the user on a now-out-of-range page.
+  useEffect(() => setPage(1), [clients]);
+
   const editingClient = editingId ? clients.find((c) => c.id === editingId) ?? null : null;
   const managingClient = managingId ? clients.find((c) => c.id === managingId) ?? null : null;
   const mrrClient = mrrClientId ? clients.find((c) => c.id === mrrClientId) ?? null : null;
 
-  const filtered = useMemo(() => {
-    let result = clients;
-
-    if (tab === "active") result = result.filter((c) => c.status === "active");
-    else if (tab === "archived") result = result.filter((c) => c.status === "archived");
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.displayName.toLowerCase().includes(q) ||
-          c.email?.toLowerCase().includes(q) ||
-          c.category?.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [clients, tab, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(clients.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
-  const activeCount = clients.filter((c) => c.status === "active").length;
+  const paginated = useMemo(
+    () => clients.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [clients, currentPage]
+  );
 
   function handleArchive(client: ClientPublic) {
     const newStatus: UserStatus = client.status === "archived" ? "active" : "archived";
@@ -83,7 +51,11 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
     formData.set("id", client.id);
     formData.set("status", newStatus);
     startTransition(async () => {
-      await updateUserAction(formData);
+      const res = await updateUserAction(formData);
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
       onRefresh();
     });
   }
@@ -91,79 +63,46 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
   function handleDelete(client: ClientPublic) {
     if (!confirm(`Delete "${client.displayName}"? This cannot be undone.`)) return;
     startTransition(async () => {
-      await deleteUserAction(client.id);
+      const res = await deleteUserAction(client.id);
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
       onRefresh();
     });
   }
 
   return (
-    <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden h-full flex flex-col">
-      {/* Header */}
-      <div className="p-5 lg:p-8 border-b border-border/50">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg lg:text-xl font-bold text-foreground">Client Directory</h3>
-            <p className="text-sm text-muted-foreground">
-              Managing {activeCount} active client{activeCount !== 1 ? "s" : ""}
-            </p>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-1 bg-muted/40 dark:bg-white/5 p-1 rounded-xl">
-            {TABS.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => { setTab(t.value); setPage(1); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                  tab === t.value
-                    ? "bg-card dark:bg-white/10 text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative mt-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search clients..."
-            className="w-full pl-9 pr-4 py-2 bg-muted/40 dark:bg-white/5 border-none rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all"
-          />
-        </div>
-      </div>
-
+    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
       {/* Desktop Table */}
-      <div className="hidden lg:block overflow-x-auto flex-1">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="bg-muted/30 dark:bg-white/[0.03]">
-              <th className="px-8 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Client Name</th>
-              <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Status</th>
-              <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Accounts</th>
-              <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Monthly MRR</th>
-              <th className="px-6 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Total Revenue</th>
-              <th className="px-8 py-3.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Actions</th>
+            <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
+              <Th className="pl-4">Client</Th>
+              <Th>Status</Th>
+              <Th>Date Joined</Th>
+              <Th className="text-right">Monthly MRR</Th>
+              <Th>Last Re-bill</Th>
+              <Th>Next Re-bill</Th>
+              <Th className="text-center">Accounts</Th>
+              <Th className="text-right pr-4">Actions</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/30">
+          <tbody>
             {paginated.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-8 py-12 text-center text-sm text-muted-foreground">
-                  {search ? "No clients match your search." : "No clients yet. Create one using the form."}
+                <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  No clients match your filters.
                 </td>
               </tr>
             ) : (
               paginated.map((client) => (
-                <tr key={client.id} className="group hover:bg-muted/20 dark:hover:bg-white/[0.02] transition-colors">
-                  <td className="px-8 py-4">
+                <tr
+                  key={client.id}
+                  className="border-b border-border/50 dark:border-white/[0.06] hover:bg-muted/20 transition-colors"
+                >
+                  <td className="px-4 py-3">
                     <div
                       className="flex items-center gap-3 cursor-pointer"
                       onClick={() => router.push(`/dashboard/users/${client.id}`)}
@@ -184,37 +123,50 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <StatusBadge status={client.status} />
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-medium text-foreground">
-                      {client.accounts.length}
-                    </span>
-                    <span className="text-xs text-muted-foreground ml-1">
-                      {client.accounts.length === 1 ? "account" : "accounts"}
-                    </span>
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-foreground">{formatDate(client.joinedAt)}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3 text-right">
                     {client.payoutMrr > 0 ? (
                       <button
-                        onClick={(e) => { e.stopPropagation(); setMrrClientId(client.id); }}
-                        className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-2 hover:decoration-emerald-600 dark:hover:decoration-emerald-400 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMrrClientId(client.id);
+                        }}
+                        className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 underline-offset-2 hover:decoration-emerald-600 transition-colors"
                       >
-                        {formatMrr(client.payoutMrr)}
+                        {formatMoney(client.payoutMrr)}
                       </button>
                     ) : (
                       <span className="text-sm font-semibold text-foreground">
-                        {formatMrr(client.payoutMrr)}
+                        {formatMoney(client.payoutMrr)}
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-semibold text-foreground">
-                      {formatMrr(client.totalRevenue)}
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-muted-foreground">
+                      {formatDate(client.schedule.lastRebilledAt)}
                     </span>
                   </td>
-                  <td className="px-8 py-4 text-right">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <RebillStatusChip status={client.schedule.status} />
+                      {client.schedule.nextRebillAt && (
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(client.schedule.nextRebillAt)}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-sm font-medium text-foreground">
+                      {client.accounts.length}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
                     <ClientActionsMenu
                       client={client}
                       onEdit={() => setEditingId(client.id)}
@@ -231,44 +183,29 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
       </div>
 
       {/* Mobile Cards */}
-      <div className="lg:hidden p-4 space-y-3">
+      <div className="md:hidden p-3 space-y-3">
         {paginated.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            {search ? "No clients match your search." : "No clients yet."}
+            No clients match your filters.
           </p>
         ) : (
           paginated.map((client) => (
             <div
               key={client.id}
-              className="flex items-center justify-between p-4 bg-muted/20 dark:bg-white/[0.03] rounded-xl border border-border/30"
+              className="rounded-xl border border-border/50 dark:border-white/[0.06] p-4"
             >
-              <div
-                className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer active:scale-[0.98] transition-all"
-                onClick={() => router.push(`/dashboard/users/${client.id}`)}
-              >
-                <AvatarInitials name={client.displayName} className="w-12 h-12" />
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-foreground truncate">
-                    {client.displayName}
-                  </p>
-                  <StatusBadge status={client.status} />
-                </div>
-              </div>
-              <div className="text-right shrink-0 ml-3 flex items-center gap-2">
-                <div>
-                  {client.payoutMrr > 0 ? (
-                    <button onClick={(e) => { e.stopPropagation(); setMrrClientId(client.id); }}>
-                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-2">{formatMrr(client.payoutMrr)}</p>
-                      <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
-                    </button>
-                  ) : (
-                    <>
-                      <p className="text-sm font-bold text-foreground">{formatMrr(client.payoutMrr)}</p>
-                      <p className="text-[10px] font-medium text-muted-foreground uppercase">MRR</p>
-                    </>
-                  )}
-                  <p className="text-xs font-medium text-foreground mt-1">{formatMrr(client.totalRevenue)}</p>
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Revenue</p>
+              <div className="flex items-start justify-between gap-3">
+                <div
+                  className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer active:scale-[0.98] transition-all"
+                  onClick={() => router.push(`/dashboard/users/${client.id}`)}
+                >
+                  <AvatarInitials name={client.displayName} className="w-11 h-11" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-foreground truncate">
+                      {client.displayName}
+                    </p>
+                    <StatusBadge status={client.status} />
+                  </div>
                 </div>
                 <ClientActionsMenu
                   client={client}
@@ -278,6 +215,25 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                   onDelete={() => handleDelete(client)}
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                <Field label="Joined" value={formatDate(client.joinedAt)} />
+                <Field
+                  label="Monthly MRR"
+                  value={formatMoney(client.payoutMrr)}
+                  onClick={
+                    client.payoutMrr > 0 ? () => setMrrClientId(client.id) : undefined
+                  }
+                />
+                <Field label="Last re-bill" value={formatDate(client.schedule.lastRebilledAt)} />
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                    Next re-bill
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <RebillStatusChip status={client.schedule.status} />
+                  </div>
+                </div>
+              </div>
             </div>
           ))
         )}
@@ -285,26 +241,25 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-6 lg:px-8 py-4 border-t border-border/30">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border/50">
           <p className="text-xs font-medium text-muted-foreground">
-            Showing {paginated.length} of {filtered.length} clients
+            Showing {paginated.length} of {clients.length}
           </p>
           <div className="flex gap-1.5">
             <button
               onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
+              aria-label="Previous page"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
             >
               &lsaquo;
             </button>
             {(() => {
-              // Sliding window centered on currentPage
               const maxButtons = 5;
               const half = Math.floor(maxButtons / 2);
               let start = Math.max(1, currentPage - half);
               const end = Math.min(totalPages, start + maxButtons - 1);
               if (end - start + 1 < maxButtons) start = Math.max(1, end - maxButtons + 1);
-
               return Array.from({ length: end - start + 1 }, (_, i) => {
                 const pageNum = start + i;
                 return (
@@ -312,7 +267,7 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                     key={pageNum}
                     onClick={() => setPage(pageNum)}
                     className={cn(
-                      "w-9 h-9 flex items-center justify-center rounded-lg text-sm font-semibold transition-colors",
+                      "w-8 h-8 flex items-center justify-center rounded-lg text-sm font-semibold transition-colors",
                       currentPage === pageNum
                         ? "text-white shadow-lg shadow-primary/20 ac-gradient"
                         : "border border-border/50 hover:bg-muted/50 text-foreground"
@@ -326,7 +281,8 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
             <button
               onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
+              aria-label="Next page"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
             >
               &rsaquo;
             </button>
@@ -356,6 +312,45 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
           clientName={mrrClient.displayName}
           mrrCents={mrrClient.payoutMrr}
         />
+      )}
+    </div>
+  );
+}
+
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <th
+      className={cn(
+        "px-4 py-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider",
+        className
+      )}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  onClick?: () => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-medium text-muted-foreground uppercase">{label}</p>
+      {onClick ? (
+        <button
+          onClick={onClick}
+          className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 underline-offset-2"
+        >
+          {value}
+        </button>
+      ) : (
+        <p className="text-sm font-medium text-foreground mt-0.5">{value}</p>
       )}
     </div>
   );

@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-16.ghl-appt-links.r1";
+const SCHEMA_VERSION = "2026-05-23.client-directory.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -370,6 +370,26 @@ export async function migrate(): Promise<void> {
     );
   } catch {
     // Column already exists — no-op.
+  }
+
+  // ── Client Directory: payout cross-reference + join date (additive) ──
+  // joined_at    — client start date, seeded from the matching payout's
+  //                date_joined; drives the directory "Date Joined" column and
+  //                the re-bill schedule anchor. Nullable; resolved with a
+  //                read-time fallback (payout date_joined → users.created_at).
+  // payout_brand — canonical Payout-DB brand_name this client maps to (the
+  //                explicit client↔payout link). The normalized key is derived
+  //                in JS at read time, so no _norm column is stored.
+  // Both nullable + additive. Does NOT touch slug/account_id/portal linkage.
+  for (const sql of [
+    "ALTER TABLE users ADD COLUMN joined_at TEXT",
+    "ALTER TABLE users ADD COLUMN payout_brand TEXT",
+  ]) {
+    try {
+      await db.execute(sql);
+    } catch {
+      // Column already exists — no-op.
+    }
   }
 
   // ── Migrate existing single account_id to client_accounts ───────────
@@ -1290,6 +1310,83 @@ export async function migrate(): Promise<void> {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_ghl_appt_links_sub_account ON ghl_appointment_links(ghl_sub_account_id)`);
   } catch {
     // index may already exist
+  }
+
+  // ── Client billing config (per-client re-bill schedule + overrides) ────
+  // One row per client, created lazily on first edit — absence means "use
+  // defaults" (monthly cadence anchored on the client's joined_at). Holds the
+  // exception (paused), extension (extend_until), manual hybrid override
+  // (last_rebilled_override), and the alert lead window. Re-bill history is
+  // otherwise derived from the Payout DB. FK CASCADE so deleting a client
+  // cleans this up. Strictly additive.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_billing (
+      user_id                TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      cadence                TEXT NOT NULL DEFAULT 'monthly',
+      billing_day            INTEGER,
+      paused                 INTEGER NOT NULL DEFAULT 0,
+      pause_reason           TEXT,
+      extend_until           TEXT,
+      last_rebilled_override TEXT,
+      lead_days              INTEGER NOT NULL DEFAULT 5,
+      settings_notes         TEXT,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Client notes + reminders (admin-side, per-client) ──────────────────
+  // Internal scratchpad shown on the per-client info page. A note with
+  // remind_at set is a reminder; due reminders surface in the re-bill alert
+  // panel. Distinct from the closer/setter `notes` table (different audience).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_notes (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      author_id   TEXT,
+      author_name TEXT,
+      body        TEXT NOT NULL DEFAULT '',
+      remind_at   TEXT,
+      done        INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_client_notes_user ON client_notes(user_id, updated_at)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_client_notes_remind ON client_notes(remind_at)`);
+  } catch {
+    // indexes may already exist
+  }
+
+  // ── Best-effort backfill: link existing clients to a Payout-DB brand ────
+  // Fills NULLs only (idempotent, never clobbers an admin-set value). Uses a
+  // crude compacted-name match in SQL (brand contains the client's name);
+  // the robust normaliser re-matches at read time, and admins can correct the
+  // mapping in client Settings. Additive UPDATEs on existing rows.
+  try {
+    await db.execute(`
+      UPDATE users SET joined_at = (
+        SELECT MIN(p.date_joined) FROM payouts p
+        WHERE p.date_joined IS NOT NULL AND p.date_joined != ''
+          AND LENGTH(REPLACE(LOWER(users.display_name), ' ', '')) >= 4
+          AND REPLACE(LOWER(p.brand_name), ' ', '') LIKE
+              '%' || REPLACE(LOWER(users.display_name), ' ', '') || '%'
+      )
+      WHERE joined_at IS NULL
+    `);
+    await db.execute(`
+      UPDATE users SET payout_brand = (
+        SELECT p.brand_name FROM payouts p
+        WHERE LENGTH(REPLACE(LOWER(users.display_name), ' ', '')) >= 4
+          AND REPLACE(LOWER(p.brand_name), ' ', '') LIKE
+              '%' || REPLACE(LOWER(users.display_name), ' ', '') || '%'
+        ORDER BY p.created_at DESC LIMIT 1
+      )
+      WHERE payout_brand IS NULL
+    `);
+  } catch (err) {
+    console.error("[migrate] client↔payout backfill failed (non-fatal):", err);
   }
 
   // ── Schema-version sentinel ───────────────────────────────────────────

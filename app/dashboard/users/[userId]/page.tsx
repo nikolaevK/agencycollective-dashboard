@@ -32,6 +32,12 @@ import type { ClientAccount } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
 import { MrrDetailModal } from "@/components/users/MrrDetailModal";
+import { RebillStatusChip } from "@/components/users/RebillStatusChip";
+import { ClientBillingTab } from "@/components/users/ClientBillingTab";
+import { ClientDocumentsTab } from "@/components/users/ClientDocumentsTab";
+import { ClientNotesTab } from "@/components/users/ClientNotesTab";
+import { ClientSettingsTab } from "@/components/users/ClientSettingsTab";
+import { formatDate as formatDay } from "@/components/users/format";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +47,16 @@ import { mergeTimeSeries } from "@/lib/timeseries";
 interface ClientProfilePageProps {
   params: { userId: string };
 }
+
+type DetailTab = "overview" | "billing" | "documents" | "notes" | "settings";
+
+const DETAIL_TABS: { id: DetailTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "billing", label: "Billing" },
+  { id: "documents", label: "Documents" },
+  { id: "notes", label: "Notes & Reminders" },
+  { id: "settings", label: "Settings" },
+];
 
 async function fetchClient(userId: string): Promise<ClientPublic> {
   const res = await fetch("/api/admin/users");
@@ -59,14 +75,6 @@ function formatMrr(cents: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(cents / 100);
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 // ---------- Mini KPI card per linked account ----------
@@ -279,6 +287,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [showMrrDetail, setShowMrrDetail] = useState(false);
+  const [tab, setTab] = useState<DetailTab>("overview");
 
   const { dateRange } = useDateRange();
   const { data: allMetaAccounts } = useAccounts(dateRange);
@@ -362,6 +371,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-2xl font-black text-foreground">{client.displayName}</h1>
                   <StatusBadge status={client.status} />
+                  <RebillStatusChip status={client.schedule.status} />
                   {!client.email && (
                     <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded text-[10px] font-bold uppercase">
                       No email
@@ -390,7 +400,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                   )}
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
-                    Joined {formatDate(client.createdAt)}
+                    Joined {formatDay(client.joinedAt ?? client.createdAt)}
                   </span>
                 </div>
               </div>
@@ -468,8 +478,28 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
           </div>
         </div>
 
-        {/* Onboarding Progress */}
-        <OnboardingProgressCard userId={params.userId} />
+        {/* Tab strip */}
+        <div className="flex items-center gap-1 border-b border-border/50 overflow-x-auto">
+          {DETAIL_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors",
+                tab === t.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "overview" && (
+          <div className="space-y-6">
+            {/* Onboarding Progress */}
+            <OnboardingProgressCard userId={params.userId} />
 
         {/* Linked accounts with KPIs */}
         <div>
@@ -515,7 +545,23 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
               ))}
             </div>
           )}
-        </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "billing" && (
+          <ClientBillingTab userId={params.userId} onChanged={() => refetch()} />
+        )}
+        {tab === "documents" && <ClientDocumentsTab userId={params.userId} />}
+        {tab === "notes" && <ClientNotesTab userId={params.userId} />}
+        {tab === "settings" && (
+          <ClientSettingsTab
+            client={client}
+            onEdit={() => setShowEdit(true)}
+            onManageAccounts={() => setShowAccounts(true)}
+            onChanged={() => refetch()}
+          />
+        )}
 
         {/* Modals */}
         {showEdit && (
