@@ -555,7 +555,7 @@ export default function AdminDocumentationPage() {
         >
           <p>
             Full-screen directory of client portal accounts, cross-referenced
-            with the Payout DB. The page has two tabs:
+            with the Payout DB. The page has three tabs:
           </p>
           <Tabs
             items={[
@@ -568,6 +568,11 @@ export default function AdminDocumentationPage() {
                 name: "Support",
                 what:
                   "Live admin↔client chat across all client conversations. Unread count surfaces as a red badge on the tab. Replies appear in the client portal instantly via polling.",
+              },
+              {
+                name: "Welcome Kit",
+                what:
+                  "A builder for the global client onboarding kit — add, edit, reorder, and delete sections and content blocks, with a live preview. Publish a no-login public link anyone can open. Edits update what every client sees in their portal.",
               },
             ]}
           />
@@ -644,6 +649,50 @@ export default function AdminDocumentationPage() {
               <span className="font-medium text-foreground">Re-bills Due</span>{" "}
               summary card opens the alerts banner.
             </p>
+          </SubSection>
+          <SubSection title="Welcome Kit builder">
+            <p>
+              The <span className="font-medium text-foreground">Welcome Kit</span>{" "}
+              tab edits the single, global client onboarding kit — the same kit
+              every client sees at <Pill>/[client]/portal/welcome-kit</Pill>.
+              Build it from content blocks and watch the live preview update as
+              you type.
+            </p>
+            <ul className="space-y-2 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">Sections &amp; blocks</span>{" "}
+                — add, reorder (↑/↓), and delete sections. Inside each section,
+                add content blocks: text, callout, stat, checklist, cards,
+                columns, and label/tag rows. Each block has its own simple form
+                and an icon picker.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Save</span> — the
+                Save button is enabled only when there are unsaved changes;
+                Discard reverts to the last save. Saving updates every
+                client&apos;s portal kit immediately.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Downloadable PDF</span>{" "}
+                — in the closing call-to-action, upload a PDF (up to 10 MB) that
+                appears as a &ldquo;Download PDF&rdquo; button and a sidebar link
+                wherever the kit shows. Replace or remove it anytime; an uploaded
+                file takes precedence over a typed PDF URL. Uploading/removing is
+                immediate (no Save needed).
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Public link</span>{" "}
+                — toggle <span className="font-medium text-foreground">Publish</span>{" "}
+                to expose a no-login page at <Pill>/welcome-kit</Pill> that anyone
+                with the link can open. Copy or open the link from the same card.
+                Toggle it off to take the public page down.
+              </Bullet>
+            </ul>
+            <Note>
+              There is one kit for all clients (not per-client). Until you edit
+              it, the portal shows the original built-in kit, so nothing changes
+              for clients until you save.
+            </Note>
           </SubSection>
           <SubSection title="Per-client page">
             <p>

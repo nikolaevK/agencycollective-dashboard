@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-23.client-directory.r1";
+const SCHEMA_VERSION = "2026-05-24.welcome-kit.r3";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -103,6 +103,13 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // Must self-heal because the SCHEMA_VERSION probe below was already
     // stamped on existing deploys when this column didn't exist yet.
     { table: "ghl_appointment_links",  column: "ghl_sub_account_id", defn: "TEXT" },
+    // Welcome Kit downloadable PDF — runtime upload/serve depends on these.
+    // welcome_kit's CREATE TABLE is gated by the version body (created inline
+    // with these columns on a fresh DB), so "no such table" here is benign.
+    { table: "welcome_kit",            column: "pdf_data",           defn: "BLOB" },
+    { table: "welcome_kit",            column: "pdf_name",           defn: "TEXT" },
+    { table: "welcome_kit",            column: "pdf_size",           defn: "INTEGER" },
+    { table: "welcome_kit",            column: "pdf_uploaded_at",    defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -120,7 +127,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       // CREATE TABLE is gated by the SCHEMA_VERSION body below). Treat
       // "no such table" as benign — the body will create it with the
       // column inline on the same run.
-      if (table === "ghl_appointment_links" && /no such table/i.test(msg)) {
+      if (
+        (table === "ghl_appointment_links" || table === "welcome_kit") &&
+        /no such table/i.test(msg)
+      ) {
         continue;
       }
       // Two concurrent Vercel cold starts can both observe the column as
@@ -1357,6 +1367,41 @@ export async function migrate(): Promise<void> {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_client_notes_remind ON client_notes(remind_at)`);
   } catch {
     // indexes may already exist
+  }
+
+  // ── Welcome Kit (single global, builder-editable client onboarding doc) ──
+  // One row (id = 'default') holding the whole kit as a JSON `doc` blob — hero,
+  // sections, blocks, CTA. Absence means "use the in-code default kit". The
+  // client portal renders this; `share_enabled` gates the public /welcome-kit
+  // page. Content is a structured block model (see lib/welcomeKit.ts), kept as
+  // JSON rather than normalized tables because it's one document edited as a
+  // whole. Strictly additive.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS welcome_kit (
+      id              TEXT PRIMARY KEY,
+      doc             TEXT NOT NULL,
+      share_enabled   INTEGER NOT NULL DEFAULT 0,
+      pdf_data        BLOB,
+      pdf_name        TEXT,
+      pdf_size        INTEGER,
+      pdf_uploaded_at TEXT,
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by      TEXT
+    )
+  `);
+
+  // One-time cleanup: the built-in /Agency_Collective_Welcome_Kit.pdf was
+  // removed in favour of admin-uploaded PDFs. Scrub the dead link from any kit
+  // that was already saved with it (precise JSON key/value replace, idempotent)
+  // so no client is left with a 404 "Download PDF" link.
+  try {
+    await db.execute(
+      `UPDATE welcome_kit
+         SET doc = REPLACE(doc, '"pdfUrl":"/Agency_Collective_Welcome_Kit.pdf"', '"pdfUrl":""')
+       WHERE doc LIKE '%/Agency_Collective_Welcome_Kit.pdf%'`
+    );
+  } catch (err) {
+    console.warn("[migrate] welcome_kit pdfUrl cleanup skipped:", err);
   }
 
   // ── Best-effort backfill: link existing clients to a Payout-DB brand ────

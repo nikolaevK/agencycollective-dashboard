@@ -10,10 +10,11 @@ import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/compon
 import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
+import { WelcomeKitBuilder } from "@/components/users/WelcomeKitBuilder";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "@/components/users/types";
 
-type TabId = "clients" | "support";
+type TabId = "clients" | "support" | "welcomeKit";
 
 async function fetchClients(): Promise<ClientPublic[]> {
   const res = await fetch("/api/admin/users");
@@ -117,6 +118,9 @@ export default function UsersPage() {
               >
                 Support
               </TabButton>
+              <TabButton active={tab === "welcomeKit"} onClick={() => setTab("welcomeKit")}>
+                Welcome Kit
+              </TabButton>
             </div>
             {tab === "clients" && (
               <button
@@ -130,7 +134,7 @@ export default function UsersPage() {
           </div>
         </div>
 
-        {tab === "clients" ? (
+        {tab === "clients" && (
           <>
             <ClientSummaryCards
               totalClients={clients.length}
@@ -158,9 +162,11 @@ export default function UsersPage() {
               <ClientDirectory clients={filtered} onRefresh={handleRefresh} />
             )}
           </>
-        ) : (
-          <UsersSupportTab />
         )}
+
+        {tab === "support" && <UsersSupportTab />}
+
+        {tab === "welcomeKit" && <WelcomeKitBuilder />}
       </div>
 
       {/* Mobile FAB */}

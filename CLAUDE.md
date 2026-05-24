@@ -50,9 +50,10 @@ app/
       attendance/         # PATCH/DELETE marks + sync to GHL; resync/ for Push/Pull
       setter/             # Setter-only: stats, appointments
       notes/              # Notes CRUD + share + archive + lead-context
-    admin/clients/        # Client Directory: payout-pool, from-payout, billing, notes, documents, rebill-alerts, invoice (prefill + send)
+    admin/clients/        # Client Directory: payout-pool, from-payout, billing, notes, documents, rebill-alerts, invoice (prefill + send), welcome-kit (GET/PUT doc + PATCH publish; pdf/ POST upload + DELETE)
   dashboard/              # Admin dashboard pages
   admin/login/            # Admin login
+  welcome-kit/            # Public, no-login Welcome Kit share page (/welcome-kit; gated by publish toggle)
   [slug]/portal/          # Client portal (dynamic slug)
   closer/                 # Closer + setter portal (shared c_sess, role-gated)
     (protected)/
@@ -80,7 +81,8 @@ components/
   admins/                 # Admin panel components
   users/                  # Client Directory UI (ClientDirectory, ClientFilters, AddClientModal,
                           #   RebillAlertsPanel, RebillStatusChip, ClientInvoiceDrawer,
-                          #   Client{Billing,Documents,Notes,Settings}Tab)
+                          #   Client{Billing,Documents,Notes,Settings}Tab, WelcomeKitBuilder)
+  welcome-kit/            # Welcome Kit shared renderer + icon registry; builder/ (admin editor: fields, BlockEditor, SectionEditor)
   alerts/                 # Alert feed
   chat/                   # AI chat interface
   ad-copy/                # Ad copy editor
@@ -112,6 +114,8 @@ lib/
   clientBilling.ts        # Per-client re-bill schedule engine (hybrid) + billing config CRUD
   clientNotes.ts          # Per-client admin notes + reminders
   clientInvoice.ts        # Re-bill invoice prefill (InvoiceData) + unique client invoice number
+  welcomeKit.ts           # Welcome Kit block model (types) + normalize/validate + CRUD (single global row, share toggle)
+  welcomeKitDefault.ts    # Built-in default kit (block-model reproduction of the original portal page)
   auditLog.ts             # Audit log writes/reads
   meta/
     client.ts             # Meta API client (rate limiting, error classes)
@@ -180,7 +184,7 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/dashboard/chat` — AI analyst (requires `analyst` perm)
 - `/dashboard/generate` — Image studio (requires `studio` perm)
 - `/dashboard/ad-copy` — Ad copy (requires `adcopy` perm)
-- `/dashboard/users` — Client Directory: full-screen, payout-cross-referenced client list + re-bill alerts; per-client page at `/dashboard/users/[userId]` (Overview / Billing / Documents / Notes / Settings tabs) (requires `users` perm)
+- `/dashboard/users` — Client Directory (tabs: **Directory** / **Support** / **Welcome Kit**): full-screen, payout-cross-referenced client list + re-bill alerts; per-client page at `/dashboard/users/[userId]` (Overview / Billing / Documents / Notes / Settings tabs); the Welcome Kit tab is the builder for the global onboarding kit (requires `users` perm)
 - `/dashboard/closers` — Closer management (requires `closers` perm)
 - `/dashboard/admins` — Admin management (requires `admin` perm)
 - `/dashboard/settings` — Admin documentation (page-by-page reference; rendered server-side, no client JS)
@@ -200,6 +204,10 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/closer/setter/notes` — same notes component as closer
 - `/closer/docs` — same documentation page as closer (sidebar link present in both roles)
 
+**Public** (no session, not in middleware matcher):
+- `/welcome-kit` — read-only Welcome Kit, viewable by anyone with the link when the admin has toggled publishing on (otherwise an "unavailable" page). Same renderer/design as the client-portal kit. Edited from the Client Directory → Welcome Kit tab.
+- `/welcome-kit/pdf` — streams the uploaded Welcome Kit PDF as a download (404 if none). Ungated (the logged-in portal AND the public page both link here; the file is a generic client resource, same exposure as a static `/public` asset).
+
 ### Database
 
 Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
@@ -215,6 +223,7 @@ Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
 - `note_shares` — Junction for note sharing. (`note_id` FK CASCADE, `shared_with_id`, `archived_at` nullable — recipient soft-dismiss)
 - `client_billing` — Per-client re-bill config (PK `user_id`; `billing_day`, `paused`/`pause_reason`, `extend_until`, `last_rebilled_override`, `lead_days`). Absent row = monthly defaults anchored on join date
 - `client_notes` — Per-client admin notes + reminders (`remind_at` nullable; a due reminder surfaces in the directory's re-bill alerts)
+- `welcome_kit` — Single global row (`id='default'`) holding the editable Welcome Kit as a JSON `doc` blob (hero + sections + blocks + CTA), a `share_enabled` flag gating the public `/welcome-kit` page, and an optional downloadable PDF stored as a BLOB (`pdf_data` + `pdf_name`/`pdf_size`/`pdf_uploaded_at`, matching the payout-documents pattern; Vercel's FS is read-only at runtime). Absent row = use the in-code default kit (`lib/welcomeKitDefault.ts`). PDF writes deliberately don't bump `updated_at` so they never trigger a doc save-conflict
 - `audit_log` — Admin action log
 - `google_calendar_config` — Encrypted OAuth tokens. `scope` column (NODE_ENV-keyed) isolates dev/prod token sets in a shared database
 - Plus invoice/contract/payout/onboarding tables (see `lib/db.ts`)
@@ -342,7 +351,7 @@ Dedicated page at `/closer/notes` (closer-only) and `/closer/setter/notes` (sett
 
 ## Client Directory (`/dashboard/users`)
 
-Full-screen, Payouts-style admin surface for managing client portal accounts, cross-referenced with the Payout DB. **Permission: `users`** (route-level admin auth + middleware gate on `/api/admin/clients/*`). Two tabs: **Directory** (the client table) and **Support** (the existing admin↔client chat inbox). The redesign is **strictly additive** and **does not touch portal login or Meta-account linking** — `slug` / `password_hash` / `email` / `u_sess` / `client_accounts` are unchanged. The "client ↔ payout brand" link is a separate concept from the "client ↔ Meta account" and "client ↔ portal" links.
+Full-screen, Payouts-style admin surface for managing client portal accounts, cross-referenced with the Payout DB. **Permission: `users`** (route-level admin auth + middleware gate on `/api/admin/clients/*`). Three tabs: **Directory** (the client table), **Support** (the existing admin↔client chat inbox), and **Welcome Kit** (the onboarding-kit builder). The redesign is **strictly additive** and **does not touch portal login or Meta-account linking** — `slug` / `password_hash` / `email` / `u_sess` / `client_accounts` are unchanged. The "client ↔ payout brand" link is a separate concept from the "client ↔ Meta account" and "client ↔ portal" links.
 
 ### Payout cross-reference
 
@@ -369,6 +378,19 @@ On `POST /api/admin/clients/[userId]/invoice/send` the PDF is generated client-s
 ### Filters
 
 Client-side (data bounded to the directory): search, status, category, re-bill status, MRR range, date-joined range, last-re-bill range. The "Re-bills Due" summary card opens the alerts banner.
+
+### Welcome Kit builder + public share page
+
+The **Welcome Kit** tab (`WelcomeKitBuilder`) is a CMS-style editor for the single **global** client onboarding kit that previously lived only as a hardcoded client-portal page. There is one kit shared by all clients (not per-client).
+
+**Block model (`lib/welcomeKit.ts`).** The kit is a `WelcomeKitDoc` = `{ hero, sections[], cta }`, persisted as one JSON blob in the `welcome_kit` table (single row, `id='default'`). Each section has `{ num, icon, title, blocks[] }`; each block is one of seven reusable types that map to the original design's visual primitives: `text` (markdown), `callout` (info/success/warning/danger/neutral), `stat` (big-number card), `checklist` (check/dot markers), `cards` (icon grid or icon-left list, 1–4 cols), `columns` (1–3 side-by-side info cards with bullets), `rows` (label + right-aligned tag). Icons are stable string keys from a curated registry (`components/welcome-kit/icons.tsx`), not component names, so the set can grow without breaking stored content. All writes go through `normalizeDoc` (manual validation: clamps lengths, ensures ids, coerces enums, drops unknown block types).
+
+**One renderer, three surfaces.** `components/welcome-kit/WelcomeKitRenderer.tsx` ("use client", react-markdown, sanitized) renders a `WelcomeKitDoc` into the exact portal design (uses the global `portal-*` tokens, so it looks identical in the portal, the admin preview, and the standalone public page). The `variant` prop (`portal` | `public` | `preview`) only changes CTA button behavior (portal: empty URL → `/{slug}/portal/onboarding`; public: button hidden unless a URL is set).
+- **Client portal** `/[slug]/portal/welcome-kit` is now a server component that loads `getWelcomeKitDoc()` (saved-or-default) and renders it — admin edits propagate to every client. Absent row = the in-code default kit, so nothing changes visually until an admin edits.
+- **Public** `/welcome-kit` is a no-login server page reading `getPublishedWelcomeKit()` (returns the doc only when `share_enabled=1`). Not in the middleware matcher, so it's reachable by anyone with the link; off by default.
+- **Admin preview** is the right pane of the builder.
+
+**Builder.** `components/users/WelcomeKitBuilder.tsx` (orchestrator) + `components/welcome-kit/builder/{fields,BlockEditor,SectionEditor,blocks,PreviewFrame}`. Loads via `GET /api/admin/clients/welcome-kit`; edits a local draft with live preview (Desktop = direct render; Mobile = an `about:blank` `PreviewFrame` iframe so the renderer's viewport-based breakpoints reflect a real phone width); `PUT` saves the doc; `PATCH { shareEnabled }` toggles publishing (copy/open the public link). Add/reorder/delete sections and blocks; per-block forms; icon picker. The closing CTA can **upload/remove a downloadable PDF** (immediate, standalone ops like publishing — not part of the doc draft); an uploaded file is injected at read time as `cta.pdfUrl = /welcome-kit/pdf` and **takes precedence over the typed external URL**, so the renderer stays doc-only. Saves carry an **optimistic-concurrency** token — the editor's loaded `updatedAt` is sent as `baseUpdatedAt`; if the stored row moved on (another admin saved), `saveWelcomeKitDoc` throws `WelcomeKitConflictError`, the PUT returns **409** with the current record, and the builder offers reload/overwrite. API auth = admin session + the existing `users` middleware gate on `/api/admin/clients/*`. **The deal-invoice/onboarding flows are untouched.**
 
 ## Code Conventions
 
