@@ -660,7 +660,7 @@ export default function AdminDocumentationPage() {
                 {
                   name: "Billing",
                   what:
-                    "Re-bill schedule + config (pause, extend, billing day, manual last-rebill, lead days) and the client's payout payment history.",
+                    "Re-bill schedule + config (pause, extend, billing day, manual last-rebill, lead days), the client's payout payment history, and a Send re-bill invoice action.",
                 },
                 {
                   name: "Documents",
@@ -679,6 +679,35 @@ export default function AdminDocumentationPage() {
                 },
               ]}
             />
+          </SubSection>
+          <SubSection title="Re-bill invoicing">
+            <p>
+              The <span className="font-medium text-foreground">Billing</span> tab
+              has a{" "}
+              <span className="font-medium text-foreground">
+                Send re-bill invoice
+              </span>{" "}
+              button. It opens an invoice composer prefilled with the
+              client&apos;s details and a line item from their monthly amount
+              (agency sender, payment terms, and a unique invoice number come from
+              your settings). Adjust line items, descriptions, CC, dates, and
+              local/international payment terms, then preview, download, or send.
+            </p>
+            <p>
+              Sending emails the client a{" "}
+              <span className="font-medium text-foreground">re-bill</span> message
+              (distinct from the new-client onboarding email) and files the PDF
+              under the client&apos;s brand &mdash; so it appears in both this
+              client&apos;s{" "}
+              <span className="font-medium text-foreground">Documents</span> tab
+              and the Payout page&apos;s brand documents.
+            </p>
+            <Note>
+              Sending an invoice does <span className="font-medium">not</span>{" "}
+              record a payment or advance the next re-bill date &mdash; the
+              re-bill schedule is still driven by the Payout page. (Email requires
+              SMTP to be configured.)
+            </Note>
           </SubSection>
           <SubSection title="Multi-account support">
             <p>

@@ -50,7 +50,7 @@ app/
       attendance/         # PATCH/DELETE marks + sync to GHL; resync/ for Push/Pull
       setter/             # Setter-only: stats, appointments
       notes/              # Notes CRUD + share + archive + lead-context
-    admin/clients/        # Client Directory: payout-pool, from-payout, billing, notes, documents, rebill-alerts
+    admin/clients/        # Client Directory: payout-pool, from-payout, billing, notes, documents, rebill-alerts, invoice (prefill + send)
   dashboard/              # Admin dashboard pages
   admin/login/            # Admin login
   [slug]/portal/          # Client portal (dynamic slug)
@@ -79,7 +79,8 @@ components/
                           #   NoShowFollowUpList, CalendarEventList
   admins/                 # Admin panel components
   users/                  # Client Directory UI (ClientDirectory, ClientFilters, AddClientModal,
-                          #   RebillAlertsPanel, RebillStatusChip, Client{Billing,Documents,Notes,Settings}Tab)
+                          #   RebillAlertsPanel, RebillStatusChip, ClientInvoiceDrawer,
+                          #   Client{Billing,Documents,Notes,Settings}Tab)
   alerts/                 # Alert feed
   chat/                   # AI chat interface
   ad-copy/                # Ad copy editor
@@ -110,6 +111,7 @@ lib/
   clientDirectory.ts      # Client Directory aggregator (users + accounts + payout xref + re-bill schedule)
   clientBilling.ts        # Per-client re-bill schedule engine (hybrid) + billing config CRUD
   clientNotes.ts          # Per-client admin notes + reminders
+  clientInvoice.ts        # Re-bill invoice prefill (InvoiceData) + unique client invoice number
   auditLog.ts             # Audit log writes/reads
   meta/
     client.ts             # Meta API client (rate limiting, error classes)
@@ -356,7 +358,13 @@ Each client links to a Payout-DB brand via `users.payout_brand` (set when added 
 
 ### Per-client page (`/dashboard/users/[userId]`)
 
-Tabs: **Overview** (profile + onboarding + linked-account KPIs), **Billing** (schedule + config + payout payment history), **Documents** (invoices/scopes; `users`-gated client-scoped download at `/api/admin/clients/[userId]/documents/[docId]`, separate from the `closers`-gated Payouts download), **Notes & Reminders** (`client_notes` CRUD), **Settings** (profile/status/category, AI-analyst toggle, Meta-account management, payout-brand link editor).
+Tabs: **Overview** (profile + onboarding + linked-account KPIs), **Billing** (schedule + config + payout payment history + **Send re-bill invoice**), **Documents** (invoices/scopes; `users`-gated client-scoped download at `/api/admin/clients/[userId]/documents/[docId]`, separate from the `closers`-gated Payouts download), **Notes & Reminders** (`client_notes` CRUD), **Settings** (profile/status/category, AI-analyst toggle, Meta-account management, payout-brand link editor).
+
+### Re-bill invoicing
+
+The Billing tab's **Send re-bill invoice** button opens `ClientInvoiceDrawer`, reusing the deal-invoice machinery (`@react-pdf/renderer` `InvoicePdfDocument`, `InvoiceServiceSelector` presets, `agency_config` sender/payment/logo/theme, `sendInvoiceEmail`) **without** scope/contract. Prefilled via `GET /api/admin/clients/[userId]/invoice/prefill` (`lib/clientInvoice.ts`): recipient = the client, a line item seeded from the client's payout MRR, agency sender + payment terms, and a unique number `INV-YYYYMMDD-<hex>` (random suffix — client invoices live in `payout_documents`, which has no invoice-number column). The admin adjusts line items + descriptions, CC, dates, and local/international payment terms.
+
+On `POST /api/admin/clients/[userId]/invoice/send` the PDF is generated client-side, emailed via `sendInvoiceEmail(variant: "rebill")` (a billing-specific message; the onboarding/deal email is unchanged via the default `variant`), then **filed in `payout_documents`** (`doc_type='invoice'`, keyed to the client's brand) so it shows on both the Payout page and the client's Documents tab. **Send-only** — it does NOT create a payout row or advance the re-bill schedule (that stays driven by the Payout DB). Sender is `SMTP_USER`; recipient is the client's email (editable per send). The drawer is lazy-loaded (`next/dynamic`, `ssr:false`) to keep `@react-pdf/renderer` out of the per-client page's initial bundle.
 
 ### Filters
 
