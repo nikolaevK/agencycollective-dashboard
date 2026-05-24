@@ -6,7 +6,7 @@ import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 
 interface UserOverviewData {
   accountId: string;
-  accountName: string;
+  accountName: string | null;
   displayName: string;
   currency: string;
   logoPath: string | null;

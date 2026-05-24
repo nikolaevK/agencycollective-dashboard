@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
-import { readActiveAccountsForUser } from "@/lib/clientAccounts";
+import { resolvePortalAccountId } from "@/lib/clientAccounts";
 import { fetchAccountPixels, fetchPixelStats, fetchPixelDaChecks } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
@@ -43,18 +43,19 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const requestedAccountId = searchParams.get("accountId");
-    let accountId = session.accountId || userRecord.accountId;
+    const { accountId } = await resolvePortalAccountId(
+      session.userId,
+      session.accountId || userRecord.accountId,
+      requestedAccountId
+    );
 
-    // Validate account ownership
-    const userAccounts = await readActiveAccountsForUser(session.userId);
-    if (requestedAccountId) {
-      if (userAccounts.some((a) => a.accountId === requestedAccountId)) {
-        accountId = requestedAccountId;
-      }
-    }
-
+    // No ad account connected yet — empty pixel list (no Meta call, no error card).
     if (!accountId || !/^act_\d+$/.test(accountId)) {
-      return NextResponse.json({ error: "No valid account ID available" }, { status: 400 });
+      const empty: ApiResponse<PixelHealth[]> = {
+        data: [],
+        meta: { cached: false, timestamp: Date.now(), dateRange: "" },
+      };
+      return NextResponse.json(empty);
     }
 
     const rawPeriod = searchParams.get("period");

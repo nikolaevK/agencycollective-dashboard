@@ -48,6 +48,34 @@ export async function readActiveAccountsForUser(userId: string): Promise<ClientA
   return result.rows.map(rowToClientAccount);
 }
 
+/**
+ * Resolve which ad account a portal request should target:
+ *   1. a validated, requested account id (client-side selection), else
+ *   2. the legacy/default `account_id` (when set), else
+ *   3. the first active linked account, else
+ *   4. "" — the client has no ad accounts connected yet.
+ *
+ * Returns the active linked accounts alongside, so callers can look up labels
+ * and distinguish "no accounts" (accountId === "") from a normal fetch. This is
+ * the single place that knows how to find a portal user's account, so a client
+ * created via the Client Directory (legacy `account_id` = "") still resolves to
+ * its linked account instead of falling through to Meta as `act_`.
+ */
+export async function resolvePortalAccountId(
+  userId: string,
+  defaultAccountId: string,
+  requestedAccountId: string | null
+): Promise<{ accountId: string; accounts: ClientAccount[] }> {
+  const accounts = await readActiveAccountsForUser(userId);
+  let accountId = defaultAccountId || "";
+  if (requestedAccountId && accounts.some((a) => a.accountId === requestedAccountId)) {
+    accountId = requestedAccountId;
+  } else if (!accountId && accounts.length > 0) {
+    accountId = accounts[0].accountId;
+  }
+  return { accountId, accounts };
+}
+
 export async function readAllClientAccounts(): Promise<ClientAccount[]> {
   const db = getDb();
   const result = await db.execute(

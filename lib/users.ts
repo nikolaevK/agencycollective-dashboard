@@ -298,6 +298,64 @@ export async function updateUser(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Brand logo — stored as a BLOB on the user row (filesystem is read-only at
+// runtime on Vercel). Served publicly via /api/clients/[id]/logo.
+// ---------------------------------------------------------------------------
+
+function blobToBuffer(raw: unknown): Buffer | null {
+  if (raw == null) return null;
+  if (raw instanceof ArrayBuffer) return Buffer.from(raw);
+  if (raw instanceof Uint8Array) return Buffer.from(raw);
+  if (typeof raw === "string") return Buffer.from(raw, "base64");
+  return null;
+}
+
+/** Store (or replace) a user's logo blob + content type, and its serve URL. */
+export async function setUserLogo(
+  id: string,
+  data: Buffer,
+  contentType: string,
+  logoPath: string
+): Promise<void> {
+  const db = getDb();
+  await db.execute({
+    sql: "UPDATE users SET logo_data = ?, logo_type = ?, logo_path = ? WHERE id = ?",
+    args: [data, contentType, logoPath, id],
+  });
+}
+
+/** Remove a user's logo (blob, type, and path). */
+export async function clearUserLogo(id: string): Promise<void> {
+  const db = getDb();
+  await db.execute({
+    sql: "UPDATE users SET logo_data = NULL, logo_type = NULL, logo_path = NULL WHERE id = ?",
+    args: [id],
+  });
+}
+
+/** The logo bytes + content type for the serve route; null when none. */
+export async function getUserLogo(
+  id: string
+): Promise<{ data: Buffer; contentType: string } | null> {
+  const db = getDb();
+  let result;
+  try {
+    result = await db.execute({
+      sql: "SELECT logo_data, logo_type FROM users WHERE id = ?",
+      args: [id],
+    });
+  } catch {
+    // Columns not migrated yet on this DB.
+    return null;
+  }
+  const row = result.rows[0];
+  if (!row) return null;
+  const data = blobToBuffer(row.logo_data);
+  if (!data) return null;
+  return { data, contentType: row.logo_type != null ? String(row.logo_type) : "image/png" };
+}
+
 export async function deleteUser(id: string): Promise<boolean> {
   const db = getDb();
 

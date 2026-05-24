@@ -11,7 +11,7 @@ import cache, { TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
 import { findUser } from "@/lib/users";
-import { readActiveAccountsForUser } from "@/lib/clientAccounts";
+import { resolvePortalAccountId } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 
 // Use portal-specific cache keys to avoid colliding with admin insight caches,
@@ -47,17 +47,33 @@ export async function GET(request: Request) {
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
 
-    // Allow client-side account selection via query param, with ownership validation
+    // Allow client-side account selection via query param, with ownership
+    // validation; falls back to the first linked account.
     const requestedAccountId = searchParams.get("accountId");
-    let accountId = session.accountId || userRecord.accountId;
+    const { accountId, accounts: userAccounts } = await resolvePortalAccountId(
+      session.userId,
+      session.accountId || userRecord.accountId,
+      requestedAccountId
+    );
 
-    // Fetch linked accounts for ownership validation and label lookup
-    const userAccounts = await readActiveAccountsForUser(session.userId);
-
-    if (requestedAccountId && requestedAccountId !== accountId) {
-      if (userAccounts.some((a) => a.accountId === requestedAccountId)) {
-        accountId = requestedAccountId;
-      }
+    // No ad accounts connected yet — return a graceful empty payload so the
+    // portal renders an empty state instead of hitting Meta with `act_`.
+    if (!accountId) {
+      return NextResponse.json(
+        {
+          data: {
+            accountId: "",
+            accountName: null,
+            displayName: userRecord.displayName,
+            currency: "USD",
+            logoPath: userRecord.logoPath ?? null,
+            metrics: emptyInsights(),
+            timeSeries: [],
+            analystEnabled: userRecord.analystEnabled,
+          },
+        },
+        { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=240" } }
+      );
     }
 
     // Get admin-assigned label for this account

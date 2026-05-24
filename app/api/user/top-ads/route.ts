@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
-import { readActiveAccountsForUser } from "@/lib/clientAccounts";
+import { resolvePortalAccountId } from "@/lib/clientAccounts";
 import { fetchTopAdsForAccount } from "@/lib/meta/endpoints";
 import cache, { TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
@@ -26,15 +26,18 @@ export async function GET(request: Request) {
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
 
-    // Allow client-side account selection via query param, with ownership validation
+    // Allow client-side account selection via query param, with ownership
+    // validation; falls back to the first linked account.
     const requestedAccountId = searchParams.get("accountId");
-    let accountId = session.accountId || userRecord.accountId;
+    const { accountId } = await resolvePortalAccountId(
+      session.userId,
+      session.accountId || userRecord.accountId,
+      requestedAccountId
+    );
 
-    if (requestedAccountId && requestedAccountId !== accountId) {
-      const userAccounts = await readActiveAccountsForUser(session.userId);
-      if (userAccounts.some((a) => a.accountId === requestedAccountId)) {
-        accountId = requestedAccountId;
-      }
+    // No ad accounts connected yet — empty list, no Meta call.
+    if (!accountId) {
+      return NextResponse.json({ data: [] });
     }
 
     const cacheKey = `top_ads:${accountId}:${dateKey}`;

@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-24.welcome-kit.r3";
+const SCHEMA_VERSION = "2026-05-24.welcome-kit.r4";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -110,6 +110,9 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "welcome_kit",            column: "pdf_name",           defn: "TEXT" },
     { table: "welcome_kit",            column: "pdf_size",           defn: "INTEGER" },
     { table: "welcome_kit",            column: "pdf_uploaded_at",    defn: "TEXT" },
+    // Client brand logo stored as a BLOB (filesystem is read-only on Vercel).
+    { table: "users",                  column: "logo_data",          defn: "BLOB" },
+    { table: "users",                  column: "logo_type",          defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -128,7 +131,9 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       // "no such table" as benign — the body will create it with the
       // column inline on the same run.
       if (
-        (table === "ghl_appointment_links" || table === "welcome_kit") &&
+        (table === "ghl_appointment_links" ||
+          table === "welcome_kit" ||
+          table === "users") &&
         /no such table/i.test(msg)
       ) {
         continue;
@@ -186,6 +191,9 @@ export async function migrate(): Promise<void> {
   console.log("[migrate] Starting database migration...");
 
   // ── Users table ────────────────────────────────────────────────────
+  // logo_data/logo_type hold the brand logo as a BLOB (served via
+  // /api/clients/[id]/logo) — Vercel's filesystem is read-only at runtime, so
+  // public/uploads logos 404 in prod. logo_path holds the serve URL.
   await db.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id           TEXT PRIMARY KEY,
@@ -193,6 +201,8 @@ export async function migrate(): Promise<void> {
       account_id   TEXT NOT NULL,
       display_name TEXT NOT NULL,
       logo_path    TEXT,
+      logo_data    BLOB,
+      logo_type    TEXT,
       password_hash TEXT
     )
   `);

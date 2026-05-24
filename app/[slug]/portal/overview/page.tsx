@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, Suspense } from "react";
+import { BarChart3 } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useUserOverview } from "@/hooks/useUserOverview";
 import { useTopAds } from "@/hooks/useTopAds";
@@ -80,16 +81,53 @@ function OverviewContent() {
     ? "all linked accounts"
     : (data?.accountName ?? "your account");
 
+  // No Meta ad account connected to this client yet (admin hasn't linked any).
+  // The overview endpoint resolves the account server-side (linked accounts +
+  // legacy account_id) and returns "" only when there's truly none — a more
+  // accurate signal than the linked-accounts list alone (which omits the
+  // legacy account_id of pre-existing clients).
+  const noAccounts = !isLoading && data?.accountId === "";
+
   return (
     <DashboardShell>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Overview</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Performance for {displayTitle}
+            {noAccounts
+              ? "Your ad accounts will appear here once your account manager connects them."
+              : `Performance for ${displayTitle}`}
           </p>
         </div>
 
+        {noAccounts ? (
+          <div className="flex min-h-[55vh] items-center justify-center px-2 py-8 sm:px-4">
+            <Card className="w-full max-w-lg">
+              {/* Plain div, not CardContent — CardContent hard-codes md:pt-0,
+                  which tailwind-merge can't override across the breakpoint and
+                  would collapse the top padding (icon flush to the border). */}
+              <div className="flex flex-col items-center gap-4 px-6 py-12 text-center sm:px-10 sm:py-14">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <BarChart3 className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    No ad accounts connected yet
+                  </h3>
+                  <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground">
+                    Your account manager hasn&apos;t linked any Meta ad accounts to your
+                    portal yet. Once they do, your campaign performance will show up here
+                    automatically.
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Think this is a mistake? Reach out on the Support tab.
+                </p>
+              </div>
+            </Card>
+          </div>
+        ) : (
+          <>
         {/* Account selector grid */}
         {hasMultipleAccounts && (
           <AccountsOverviewGrid
@@ -157,6 +195,8 @@ function OverviewContent() {
               isLoading={topAdsLoading}
               currency={data?.currency}
             />
+          </>
+        )}
           </>
         )}
       </div>

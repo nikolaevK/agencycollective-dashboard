@@ -1,8 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 import {
   findUser,
@@ -10,6 +8,8 @@ import {
   insertUser,
   updateUser,
   deleteUser,
+  setUserLogo,
+  clearUserLogo,
   slugify,
   generateUniqueSlug,
 } from "@/lib/users";
@@ -26,10 +26,17 @@ import { logAuditEvent } from "@/lib/auditLog";
 const ALLOWED_EXTS = ["png", "jpg", "jpeg", "webp"] as const;
 const MAX_BYTES = 2 * 1024 * 1024;
 
-async function saveLogo(
-  userId: string,
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
+
+/** Validate + read an uploaded logo into bytes (stored as a DB BLOB, not on disk). */
+async function readLogo(
   file: File
-): Promise<{ logoPath: string } | { error: string }> {
+): Promise<{ data: Buffer; contentType: string } | { error: string }> {
   if (file.size === 0) return { error: "Empty file" };
   if (file.size > MAX_BYTES) return { error: "File too large (max 2 MB)" };
 
@@ -38,15 +45,15 @@ async function saveLogo(
     return { error: "Invalid file type. Allowed: PNG, JPG, WEBP" };
   }
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "logos");
-  fs.mkdirSync(uploadDir, { recursive: true });
+  const data = Buffer.from(await file.arrayBuffer());
+  if (data.length > MAX_BYTES) return { error: "File too large (max 2 MB)" };
 
-  const safeId = userId.replace(/[^a-zA-Z0-9-_]/g, "_");
-  const filename = `${safeId}.${ext}`;
-  const bytes = await file.arrayBuffer();
-  fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(bytes));
+  return { data, contentType: EXT_TO_MIME[ext] ?? "image/png" };
+}
 
-  return { logoPath: `/uploads/logos/${filename}` };
+/** Public serve URL for a user's logo; `?v=` busts the cache on replace. */
+function logoServeUrl(userId: string): string {
+  return `/api/clients/${userId}/logo?v=${Date.now()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,11 +96,11 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
   const id = baseSlug + "-" + crypto.randomBytes(4).toString("hex");
   const slug = await generateUniqueSlug(baseSlug || "client");
 
-  let logoPath: string | null = null;
+  let logoPayload: { data: Buffer; contentType: string } | null = null;
   if (logoFile && logoFile.size > 0) {
-    const result = await saveLogo(id, logoFile);
+    const result = await readLogo(logoFile);
     if ("error" in result) return result;
-    logoPath = result.logoPath;
+    logoPayload = result;
   }
 
   await insertUser({
@@ -101,7 +108,7 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     slug,
     accountId: "",  // legacy field — accounts managed via client_accounts
     displayName,
-    logoPath,
+    logoPath: null,
     passwordHash: null,
     email,
     status: "active",
@@ -112,6 +119,11 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     joinedAt: null,
     payoutBrand: null,
   });
+
+  // Logo blob is written after the row exists.
+  if (logoPayload) {
+    await setUserLogo(id, logoPayload.data, logoPayload.contentType, logoServeUrl(id));
+  }
 
   revalidatePath("/dashboard/users");
   return {};
@@ -170,9 +182,10 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 
   const logoFile = formData.get("logo") as File | null;
   if (logoFile && logoFile.size > 0) {
-    const result = await saveLogo(id, logoFile);
+    const result = await readLogo(logoFile);
     if ("error" in result) return result;
-    changes.logoPath = result.logoPath;
+    // setUserLogo also sets logo_path; don't duplicate it in `changes`.
+    await setUserLogo(id, result.data, result.contentType, logoServeUrl(id));
   }
 
   // Legacy: also accept accountId for backward compat
@@ -240,7 +253,7 @@ export async function removeUserLogoAction(id: string): Promise<{ error?: string
   const user = await findUser(id);
   if (!user) return { error: "User not found" };
 
-  await updateUser(id, { logoPath: null });
+  await clearUserLogo(id);
   revalidatePath("/dashboard/users");
   return {};
 }

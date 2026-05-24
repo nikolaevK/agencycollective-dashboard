@@ -31,7 +31,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <UserTopBar
-          accountName={data?.accountName}
+          accountName={data?.accountName ?? undefined}
           currency={data?.currency}
           logoPath={data?.logoPath}
           onMenuClick={() => setSidebarOpen(true)}

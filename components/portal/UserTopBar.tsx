@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Menu } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
@@ -16,6 +17,10 @@ interface UserTopBarProps {
 export function UserTopBar({ accountName, currency, logoPath, onMenuClick }: UserTopBarProps) {
   const { dateRange, setDateRange } = useDateRange();
   const { theme } = useTheme();
+  // Fall back to the brand name if the logo fails to load (e.g. a legacy
+  // /uploads/… path that 404s now that logos are served from the DB).
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  const showLogo = Boolean(logoPath) && erroredSrc !== logoPath;
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b bg-card px-4 md:px-6 gap-2">
@@ -29,10 +34,11 @@ export function UserTopBar({ accountName, currency, logoPath, onMenuClick }: Use
           <Menu className="h-4 w-4" />
         </button>
 
-        {logoPath ? (
+        {showLogo ? (
           <img
-            src={logoPath}
+            src={logoPath as string}
             alt={accountName ?? "Brand logo"}
+            onError={() => setErroredSrc(logoPath ?? null)}
             className="h-8 max-w-[140px] object-contain object-left transition-[filter] duration-200"
             style={theme === "dark" ? { filter: "invert(1)" } : undefined}
           />
