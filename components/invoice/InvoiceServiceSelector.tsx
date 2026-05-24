@@ -9,9 +9,13 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   onSelect: (item: InvoiceItem) => void;
+  /** Which edge of the trigger the panel aligns to. Default "left" (opens
+   *  rightward, unchanged for existing callers). Use "right" when the trigger
+   *  sits near a right viewport/drawer edge so the panel doesn't clip. */
+  align?: "left" | "right";
 }
 
-export function InvoiceServiceSelector({ onSelect }: Props) {
+export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
   const [open, setOpen] = useState(false);
 
   const { data: services = [] } = useQuery<InvoiceServiceRecord[]>({
@@ -71,7 +75,12 @@ export function InvoiceServiceSelector({ onSelect }: Props) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute left-0 top-full z-50 mt-2 w-80 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+          <div
+            className={cn(
+              "absolute top-full z-50 mt-2 w-80 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg",
+              align === "right" ? "right-0" : "left-0"
+            )}
+          >
             {services.map((service) => (
               <button
                 key={service.id}

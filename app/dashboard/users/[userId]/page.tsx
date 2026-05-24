@@ -550,7 +550,11 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
         )}
 
         {tab === "billing" && (
-          <ClientBillingTab userId={params.userId} onChanged={() => refetch()} />
+          <ClientBillingTab
+            userId={params.userId}
+            clientName={client.displayName}
+            onChanged={() => refetch()}
+          />
         )}
         {tab === "documents" && <ClientDocumentsTab userId={params.userId} />}
         {tab === "notes" && <ClientNotesTab userId={params.userId} />}

@@ -16,6 +16,9 @@ export async function sendInvoiceEmail(
     includesContract?: boolean;
     cc?: string | string[];
     additionalPdfs?: Array<{ buffer: Buffer; invoiceNumber: string }>;
+    /** "onboarding" (default) = new-client email with scope/contract/onboarding
+     *  language; "rebill" = recurring monthly invoice email (no scope/contract). */
+    variant?: "onboarding" | "rebill";
   }
 ): Promise<boolean> {
   if (!isEmailConfigured()) {
@@ -62,6 +65,35 @@ export async function sendInvoiceEmail(
             Once the ${invoiceLabel.toLowerCase()} ${hasMultiple ? "are" : "is"} taken care of, we'll get your onboarding call on the calendar.
           </p>`;
 
+  const variant = options?.variant ?? "onboarding";
+
+  const onboardingBody = `
+          <p style="line-height: 1.7; margin: 0 0 16px;">Hello!</p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Great chatting with you today, excited to get started.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 8px;">We've sent you 2 separate emails. In those you'll find:</p>
+          <ul style="line-height: 1.7; margin: 0 0 16px; padding-left: 20px;">
+            <li><strong>Project Scope</strong> &mdash; an overview of what we'll be tackling together</li>
+            <li><strong>${invoiceLabel}</strong> &mdash; payment details for your month-to-month agreement</li>
+          </ul>
+          ${contractParagraph}
+          <p style="line-height: 1.7; margin: 0 0 16px;">Looking forward to it!</p>
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Onboarding Team</p>`;
+
+  const rebillBody = `
+          <p style="line-height: 1.7; margin: 0 0 16px;">Hi there,</p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Thanks for your continued partnership with Agency Collective &mdash; your ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Please review and submit payment at your convenience using the details on the ${invoiceLabel.toLowerCase()}. If you have any questions, just reply to this email and we'll be happy to help.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">We appreciate your business!</p>
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
+
+  const bodyHtml = variant === "rebill" ? rebillBody : onboardingBody;
+
   const attachments = [
     { filename, content: pdfBuffer, contentType: "application/pdf" as const },
     ...additionalPdfs.map((p) => ({
@@ -81,18 +113,7 @@ export async function sendInvoiceEmail(
       subject,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #333;">
-          <p style="line-height: 1.7; margin: 0 0 16px;">Hello!</p>
-          <p style="line-height: 1.7; margin: 0 0 16px;">
-            Great chatting with you today, excited to get started.
-          </p>
-          <p style="line-height: 1.7; margin: 0 0 8px;">We've sent you 2 separate emails. In those you'll find:</p>
-          <ul style="line-height: 1.7; margin: 0 0 16px; padding-left: 20px;">
-            <li><strong>Project Scope</strong> &mdash; an overview of what we'll be tackling together</li>
-            <li><strong>${invoiceLabel}</strong> &mdash; payment details for your month-to-month agreement</li>
-          </ul>
-          ${contractParagraph}
-          <p style="line-height: 1.7; margin: 0 0 16px;">Looking forward to it!</p>
-          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Onboarding Team</p>
+          ${bodyHtml}
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
             <strong style="color: #333;">Agency Collective</strong><br>
             White-Glove Advertising for Niche Verticals<br>

@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, CalendarClock, History } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Save, CalendarClock, History, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RebillStatusChip } from "./RebillStatusChip";
+
+// Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
+// invoice drawer, keeping the per-client page's initial bundle light.
+const ClientInvoiceDrawer = dynamic(
+  () => import("./ClientInvoiceDrawer").then((m) => m.ClientInvoiceDrawer),
+  { ssr: false }
+);
 import { formatMoney, formatDate } from "./format";
 import type { ClientBilling, RebillSchedule } from "@/lib/clientBilling";
 import type { BrandHistory } from "@/lib/payouts";
@@ -46,9 +54,11 @@ async function fetchBilling(userId: string): Promise<BillingResponse> {
 
 export function ClientBillingTab({
   userId,
+  clientName,
   onChanged,
 }: {
   userId: string;
+  clientName: string;
   onChanged?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -62,6 +72,7 @@ export function ClientBillingTab({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -150,6 +161,12 @@ export function ClientBillingTab({
           <CalendarClock className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-bold text-foreground">Re-bill schedule</h3>
           <RebillStatusChip status={data.schedule.status} className="ml-1" />
+          <button
+            onClick={() => setShowInvoice(true)}
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
+          >
+            <Send className="h-3.5 w-3.5" /> Send re-bill invoice
+          </button>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Stat label="Anchor (joined)" value={formatDate(data.schedule.anchorDate)} />
@@ -299,6 +316,18 @@ export function ClientBillingTab({
           </table>
         )}
       </div>
+
+      {showInvoice && (
+        <ClientInvoiceDrawer
+          userId={userId}
+          clientName={clientName}
+          onClose={() => setShowInvoice(false)}
+          onSent={() => {
+            queryClient.invalidateQueries({ queryKey: ["client-documents", userId] });
+            onChanged?.();
+          }}
+        />
+      )}
     </div>
   );
 }
