@@ -550,68 +550,146 @@ export default function AdminDocumentationPage() {
         {/* ------------------------------------------------------ */}
         <Section
           icon={Users}
-          title="Clients"
+          title="Client Directory"
           subtitle="/dashboard/users · permission: users"
         >
           <p>
-            Manage client portal accounts and provide live support. The page
-            has two tabs:
+            Full-screen directory of client portal accounts, cross-referenced
+            with the Payout DB. The page has two tabs:
           </p>
           <Tabs
             items={[
               {
-                name: "Clients",
+                name: "Directory",
                 what:
-                  "Full list of client users. Add, edit, and remove client portals here. Each user binds a login identity to one or more Meta ad accounts.",
+                  "Full-width table of every client with payout-derived Monthly MRR, total revenue, date joined, last re-bill, and next re-bill status. Summary cards, a re-bill alerts banner, and filters sit above it. Click a row to open the per-client page.",
               },
               {
                 name: "Support",
                 what:
-                  "Live admin↔client chat across all client conversations. Unread count surfaces as a red badge on the sidebar nav. Replies appear in the client portal instantly via polling.",
+                  "Live admin↔client chat across all client conversations. Unread count surfaces as a red badge on the tab. Replies appear in the client portal instantly via polling.",
               },
             ]}
           />
-          <SubSection title="Creating a client">
-            <Step n={1}>
-              Click <span className="font-medium text-foreground">Add User</span>.
-              Enter a display name (shown in their portal top bar), a User ID
-              (their login username — lowercase, no spaces), and the Meta
-              ad account in the format <Pill>act_123456789</Pill>.
-            </Step>
-            <Step n={2}>
-              Optionally upload a brand logo (PNG/JPG/WEBP/SVG, max 2 MB) and
-              set service category, MRR, and status.
-            </Step>
-            <Step n={3}>
-              Save. The portal URL is derived from the slug, e.g.{" "}
-              <Pill>/inner-glow/portal/overview</Pill>. The user starts in a{" "}
-              <Pill>Pending</Pill> state until they create their password
-              on first login.
-            </Step>
+          <Note>
+            The redesign is additive and does{" "}
+            <span className="font-medium">not</span> change how clients log in or
+            how Meta ad accounts are linked — only a new client↔Payout-DB brand
+            link was added.
+          </Note>
+          <SubSection title="Adding a client">
+            <p>
+              <span className="font-medium text-foreground">Add Client</span>{" "}
+              opens a modal with two paths:
+            </p>
+            <ul className="space-y-2 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">From Payout DB</span>{" "}
+                — pick a brand that exists in the Payout tracker but isn&apos;t in
+                the directory yet. Defaults to brands joined in the past week;
+                widen the date window to pull older ones. Date joined and MRR are
+                seeded from the matching payout record and the client is linked to
+                that brand.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Manual entry</span>{" "}
+                — name, email, category, logo. The slug (portal URL) is
+                auto-derived, e.g. <Pill>/inner-glow/portal/overview</Pill>.
+                Email can be added later; the client can&apos;t log in until it
+                is.
+              </Bullet>
+            </ul>
+            <Note>
+              Adding from the pool never duplicates an existing client — a brand
+              already represented (by link or name) is rejected.
+            </Note>
+          </SubSection>
+          <SubSection title="Payout cross-reference">
+            <p>
+              Each client maps to a brand in the Payout DB via an explicit{" "}
+              <Pill>payout_brand</Pill> link (set when added from the pool, or
+              editable in the client&apos;s Settings tab). That link drives the
+              directory&apos;s{" "}
+              <span className="font-medium text-foreground">Monthly MRR</span>{" "}
+              (latest payout month), total revenue, payment history, and the
+              invoices/scopes shown on the Documents tab. Unlinked clients fall
+              back to fuzzy brand-name matching until linked.
+            </p>
+          </SubSection>
+          <SubSection title="Re-bill schedule & alerts">
+            <p>
+              Every client has a monthly re-bill schedule anchored on their join
+              date. The model is{" "}
+              <span className="font-medium text-foreground">hybrid</span>: the
+              last re-bill is derived from the Payout DB (a payout row for a month
+              = that month&apos;s re-bill) and can be overridden manually.
+              Per-client exceptions live on the Billing tab —{" "}
+              <span className="font-medium text-foreground">pause</span> (skip
+              re-billing) and{" "}
+              <span className="font-medium text-foreground">extend</span> (defer
+              the next bill to a date), plus billing day and alert lead time.
+            </p>
+            <p>
+              Clients that are due or overdue surface in a live{" "}
+              <span className="font-medium text-foreground">Re-bill alerts</span>{" "}
+              banner at the top of the directory (with a count badge), alongside
+              any due client reminders. It&apos;s recomputed on each load — no
+              background job.
+            </p>
+          </SubSection>
+          <SubSection title="Filters">
+            <p>
+              Filter the directory by search, status, category, re-bill status,
+              MRR range, date-joined range, and last-re-bill range. The{" "}
+              <span className="font-medium text-foreground">Re-bills Due</span>{" "}
+              summary card opens the alerts banner.
+            </p>
+          </SubSection>
+          <SubSection title="Per-client page">
+            <p>
+              Clicking a row opens <Pill>/dashboard/users/[userId]</Pill> with
+              tabs:
+            </p>
+            <Tabs
+              items={[
+                {
+                  name: "Overview",
+                  what:
+                    "Profile, onboarding progress, and linked Meta accounts with per-account KPI cards (plus a combined-performance chart when 2+ accounts).",
+                },
+                {
+                  name: "Billing",
+                  what:
+                    "Re-bill schedule + config (pause, extend, billing day, manual last-rebill, lead days) and the client's payout payment history.",
+                },
+                {
+                  name: "Documents",
+                  what:
+                    "Invoices and project scopes pulled from the Payout DB for this client's brand, with download.",
+                },
+                {
+                  name: "Notes & Reminders",
+                  what:
+                    "Internal admin notes; a note with a remind-on date becomes a reminder that surfaces in the directory's alerts when due.",
+                },
+                {
+                  name: "Settings",
+                  what:
+                    "Edit profile / status / category, toggle AI Analyst, manage Meta accounts, and edit the Payout-DB brand link + join date.",
+                },
+              ]}
+            />
           </SubSection>
           <SubSection title="Multi-account support">
             <p>
-              A client can own more than one Meta ad account. From the user
-              detail page (<Pill>/dashboard/users/[userId]</Pill>), add
-              additional accounts via the client_accounts junction. The
-              client&apos;s portal will show data aggregated across all
-              their accounts with an account selector.
-            </p>
-          </SubSection>
-          <SubSection title="Per-user feature toggles">
-            <p>
-              The user detail page exposes per-user flags such as{" "}
-              <span className="font-medium text-foreground">AI Analyst</span>{" "}
-              (defaults on; toggle off to revoke a client&apos;s portal AI
-              access). Toggles take effect immediately on the client side
-              without a re-login.
-            </p>
-          </SubSection>
-          <SubSection title="Onboarding progress">
-            <p>
-              Each client&apos;s portal shows them an onboarding checklist
-              (set up password, view first overview, etc.). Admins can see
-              progress on the user detail page.
+              A client can own more than one Meta ad account. Manage links from
+              the <span className="font-medium text-foreground">Settings</span>{" "}
+              tab of the per-client page; the client&apos;s portal aggregates
+              data across all their accounts with an account selector.{" "}
+              <span className="font-medium text-foreground">
+                Portal login and account linking are unchanged by the directory
+                redesign.
+              </span>
             </p>
           </SubSection>
           <SubSection title="Support inbox">

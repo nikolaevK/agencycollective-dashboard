@@ -50,6 +50,7 @@ app/
       attendance/         # PATCH/DELETE marks + sync to GHL; resync/ for Push/Pull
       setter/             # Setter-only: stats, appointments
       notes/              # Notes CRUD + share + archive + lead-context
+    admin/clients/        # Client Directory: payout-pool, from-payout, billing, notes, documents, rebill-alerts
   dashboard/              # Admin dashboard pages
   admin/login/            # Admin login
   [slug]/portal/          # Client portal (dynamic slug)
@@ -77,7 +78,8 @@ components/
                           #   SetterCalendarEventList, SetterAppointmentEditor
                           #   NoShowFollowUpList, CalendarEventList
   admins/                 # Admin panel components
-  users/                  # User management UI
+  users/                  # Client Directory UI (ClientDirectory, ClientFilters, AddClientModal,
+                          #   RebillAlertsPanel, RebillStatusChip, Client{Billing,Documents,Notes,Settings}Tab)
   alerts/                 # Alert feed
   chat/                   # AI chat interface
   ad-copy/                # Ad copy editor
@@ -105,6 +107,9 @@ lib/
   ghlAppointmentLinks.ts  # Google event ↔ GHL appointment id bridge + denormalized sync state
   attendanceSync.ts       # Orchestrator: push (dashboard → GHL), pull (GHL → dashboard), discovery
   notes.ts                # Notes CRUD + sharing + archive + validation helpers
+  clientDirectory.ts      # Client Directory aggregator (users + accounts + payout xref + re-bill schedule)
+  clientBilling.ts        # Per-client re-bill schedule engine (hybrid) + billing config CRUD
+  clientNotes.ts          # Per-client admin notes + reminders
   auditLog.ts             # Audit log writes/reads
   meta/
     client.ts             # Meta API client (rate limiting, error classes)
@@ -173,7 +178,7 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/dashboard/chat` — AI analyst (requires `analyst` perm)
 - `/dashboard/generate` — Image studio (requires `studio` perm)
 - `/dashboard/ad-copy` — Ad copy (requires `adcopy` perm)
-- `/dashboard/users` — User management (requires `users` perm)
+- `/dashboard/users` — Client Directory: full-screen, payout-cross-referenced client list + re-bill alerts; per-client page at `/dashboard/users/[userId]` (Overview / Billing / Documents / Notes / Settings tabs) (requires `users` perm)
 - `/dashboard/closers` — Closer management (requires `closers` perm)
 - `/dashboard/admins` — Admin management (requires `admin` perm)
 - `/dashboard/settings` — Admin documentation (page-by-page reference; rendered server-side, no client JS)
@@ -196,7 +201,7 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 ### Database
 
 Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
-- `users` — Client portal users (slug, email, status, mrr, category)
+- `users` — Client portal users (slug, email, status, mrr, category). `joined_at` + `payout_brand` (additive) link a client to the Payout DB and anchor the re-bill schedule
 - `client_accounts` — Many-to-many user-to-Meta-account mapping
 - `admins` — Dashboard admins with permission columns (`perm_*`)
 - `closers` — Sales team AND setters (discriminated by `role` column; commission in basis points, quota in cents)
@@ -206,6 +211,8 @@ Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
 - `ghl_appointment_links` — Bridges Google Calendar event id → GHL appointment id, plus denormalized last-observed status on each side, a `sync_state` (`synced` / `out_of_sync`), and `ghl_sub_account_id` (`peptide` / `agency`) recording which GHL sub-account owns the appointment. PK `google_event_id`, UNIQUE `ghl_appointment_id`. Presence of a row = event is GHL-linked; absence = non-GHL event (sync code is a no-op). Every push/pull reads the stamped sub-account to route to the right PIT — sub-accounts are never re-resolved after discovery
 - `notes` — Personal scratchpad per user (title, markdown body, priority, due date, tags JSON, linked `google_event_id` / `deal_id`)
 - `note_shares` — Junction for note sharing. (`note_id` FK CASCADE, `shared_with_id`, `archived_at` nullable — recipient soft-dismiss)
+- `client_billing` — Per-client re-bill config (PK `user_id`; `billing_day`, `paused`/`pause_reason`, `extend_until`, `last_rebilled_override`, `lead_days`). Absent row = monthly defaults anchored on join date
+- `client_notes` — Per-client admin notes + reminders (`remind_at` nullable; a due reminder surfaces in the directory's re-bill alerts)
 - `audit_log` — Admin action log
 - `google_calendar_config` — Encrypted OAuth tokens. `scope` column (NODE_ENV-keyed) isolates dev/prod token sets in a shared database
 - Plus invoice/contract/payout/onboarding tables (see `lib/db.ts`)
@@ -219,6 +226,7 @@ In-memory TTL cache (`lib/cache.ts`):
 - Alerts, Activities: 3 min
 - Pixel Health: 10 min
 - Google Calendar events: 2 min (scope-keyed so dev + prod don't share)
+- Payout brand histories (Client Directory MRR / re-bill): 90s, busted on any payout write
 
 HTTP: `Cache-Control: private, max-age=60, stale-while-revalidate=240`
 
@@ -329,6 +337,30 @@ Dedicated page at `/closer/notes` (closer-only) and `/closer/setter/notes` (sett
 - Cap: 50 recipients per note. Share list validated against active closers directory on POST/PATCH.
 
 **Lead-context modal** (opens from any note's linked-lead chip): aggregates the Google event + every setter claim + every deal + every attendance mark for that lead. One endpoint, one modal — setter, closer, admin all get the full picture.
+
+## Client Directory (`/dashboard/users`)
+
+Full-screen, Payouts-style admin surface for managing client portal accounts, cross-referenced with the Payout DB. **Permission: `users`** (route-level admin auth + middleware gate on `/api/admin/clients/*`). Two tabs: **Directory** (the client table) and **Support** (the existing admin↔client chat inbox). The redesign is **strictly additive** and **does not touch portal login or Meta-account linking** — `slug` / `password_hash` / `email` / `u_sess` / `client_accounts` are unchanged. The "client ↔ payout brand" link is a separate concept from the "client ↔ Meta account" and "client ↔ portal" links.
+
+### Payout cross-reference
+
+Each client links to a Payout-DB brand via `users.payout_brand` (set when added from the payout pool; editable in the per-client Settings tab; unlinked clients fall back to robust fuzzy brand-name matching via `normalizeBrandName`/`brandsMatch`). The link drives the directory's **Monthly MRR** (latest payout month's `amount_due`), total revenue, payment history, and the invoices/scopes on the Documents tab. Aggregation lives in `lib/clientDirectory.ts` (`buildClientDirectory` / `getClientDetail` / `getPayoutPool`) over `getAllBrandHistories()` in `lib/payouts.ts` (cached 90s, busted on payout writes).
+
+### Adding clients
+
+`AddClientModal` has two paths: **From Payout DB** (`POST /api/admin/clients/from-payout`) — pick an unlinked brand from `GET /api/admin/clients/payout-pool?since&until` (defaults to the past week, widenable), seeding `joined_at` / MRR / `payout_brand`; and **Manual** (reuses `CreateUserForm` → `createUserAction`). Both funnel through the same creation invariants (slug gen + `account_id=""`); from-payout rejects re-adding an already-represented brand (409).
+
+### Re-bill schedule (hybrid) + alerts
+
+`lib/clientBilling.ts` `computeRebillSchedule()` is a pure engine: `lastRebilledAt = max(latest payout month, manual override)`, `nextRebillAt = one month after`, anchored on `joined_at`. **Exception** = pause (skip re-billing); **extension** = `extend_until` (defer the next bill). Status ∈ `upcoming | due | overdue | paused | extended | unscheduled`; a client with no payment history schedules from today (never false-overdue against a past join date). Due/overdue clients (+ due `client_notes` reminders) surface in a live in-app **re-bill alerts** banner + count badge (`GET /api/admin/clients/rebill-alerts`) — computed on load, **no cron** (mirrors the Meta alert feed). Config persists via `PATCH /api/admin/clients/[userId]/billing`.
+
+### Per-client page (`/dashboard/users/[userId]`)
+
+Tabs: **Overview** (profile + onboarding + linked-account KPIs), **Billing** (schedule + config + payout payment history), **Documents** (invoices/scopes; `users`-gated client-scoped download at `/api/admin/clients/[userId]/documents/[docId]`, separate from the `closers`-gated Payouts download), **Notes & Reminders** (`client_notes` CRUD), **Settings** (profile/status/category, AI-analyst toggle, Meta-account management, payout-brand link editor).
+
+### Filters
+
+Client-side (data bounded to the directory): search, status, category, re-bill status, MRR range, date-joined range, last-re-bill range. The "Re-bills Due" summary card opens the alerts banner.
 
 ## Code Conventions
 
