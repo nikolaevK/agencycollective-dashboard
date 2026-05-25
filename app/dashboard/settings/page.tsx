@@ -724,10 +724,67 @@ export default function AdminDocumentationPage() {
                 {
                   name: "Settings",
                   what:
-                    "Edit profile / status / category, toggle AI Analyst, manage Meta accounts, and edit the Payout-DB brand link + join date.",
+                    "Edit profile / status / category, toggle AI Analyst, set the Design Board (Figma) link + toggle, manage Meta accounts, and edit the Payout-DB brand link + join date.",
                 },
               ]}
             />
+          </SubSection>
+          <SubSection title="Design Board (per-client Figma embed)">
+            <p>
+              Give a client a live{" "}
+              <span className="font-medium text-foreground">Figma</span> board
+              (creative concepts, mockups, design deliverables) embedded right
+              in their portal. It&apos;s controlled per-client from the{" "}
+              <span className="font-medium text-foreground">Settings</span> tab,
+              the same way AI Analyst access is.
+            </p>
+            <Step n={1}>
+              In Figma, set the file&apos;s share access to{" "}
+              <span className="font-medium text-foreground">
+                &ldquo;Anyone with the link&rdquo;
+              </span>{" "}
+              and copy the link.
+            </Step>
+            <Step n={2}>
+              On the client&apos;s{" "}
+              <span className="font-medium text-foreground">Settings</span> tab,
+              click <span className="font-medium text-foreground">Edit profile</span>,
+              turn on{" "}
+              <span className="font-medium text-foreground">
+                Design Board access
+              </span>
+              , and paste the link.
+            </Step>
+            <Step n={3}>
+              Save. The client gets a{" "}
+              <span className="font-medium text-foreground">Design Board</span>{" "}
+              item in their portal sidebar at{" "}
+              <Pill>/[client]/portal/design-board</Pill>.
+            </Step>
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                The nav item appears only when the toggle is{" "}
+                <span className="font-medium text-foreground">on</span> AND a
+                link is set — so the toggle is a kill-switch that hides the board
+                without discarding the saved link.
+              </Bullet>
+              <Bullet>
+                Design, file, FigJam board, and prototype links all work — paste
+                the normal share link and it&apos;s wrapped for embedding
+                automatically.
+              </Bullet>
+              <Bullet>
+                Works even for clients with no connected Meta ad account.
+              </Bullet>
+            </ul>
+            <Note tone="warn">
+              If the Figma file isn&apos;t shared{" "}
+              <span className="font-medium">
+                &ldquo;Anyone with the link&rdquo;
+              </span>
+              , the client sees a Figma permission error instead of the board —
+              the first thing to check if a client reports a blank board.
+            </Note>
           </SubSection>
           <SubSection title="Re-bill invoicing">
             <p>
@@ -1510,6 +1567,11 @@ export default function AdminDocumentationPage() {
               <span className="font-medium text-foreground">AI Analyst</span>{" "}
               — Claude-powered chat scoped to their data. Toggleable per-user
               via the Clients page.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">Design Board</span>{" "}
+              — an embedded Figma board (design deliverables / mockups), set
+              per-client from the Settings tab. Hidden unless you set a link.
             </Bullet>
             <Bullet>
               <span className="font-medium text-foreground">Support chat</span>{" "}

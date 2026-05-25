@@ -3,18 +3,17 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
 interface UserSidebarProps {
   displayName?: string;
-  analystEnabled?: boolean;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-export function UserSidebar({ displayName, analystEnabled = true, isOpen = false, onClose }: UserSidebarProps) {
+export function UserSidebar({ displayName, isOpen = false, onClose }: UserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -36,6 +35,31 @@ export function UserSidebar({ displayName, analystEnabled = true, isOpen = false
     refetchInterval: 90_000,
     refetchIntervalInBackground: false,
   });
+
+  // Per-client portal nav visibility (AI Analyst + Design Board). Lightweight
+  // (one DB row, no Meta API) so it polls far more often than the metrics
+  // overview — an admin enabling a feature surfaces here within ~60s / on focus
+  // instead of being stuck behind the overview's 5-min stale window.
+  const { data: navConfig } = useQuery<{
+    analystEnabled: boolean;
+    designBoardVisible: boolean;
+  }>({
+    queryKey: ["portal-nav-config"],
+    queryFn: async () => {
+      const res = await fetch("/api/portal/nav-config");
+      if (!res.ok) return { analystEnabled: true, designBoardVisible: false };
+      const json = await res.json();
+      return {
+        analystEnabled: Boolean(json.data?.analystEnabled ?? true),
+        designBoardVisible: Boolean(json.data?.designBoardVisible ?? false),
+      };
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+  const analystEnabled = navConfig?.analystEnabled ?? true;
+  const designBoardVisible = navConfig?.designBoardVisible ?? false;
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -127,6 +151,19 @@ export function UserSidebar({ displayName, analystEnabled = true, isOpen = false
           >
             <Sparkles className="h-4 w-4 shrink-0" />
             <span>AI Analyst</span>
+          </Link>
+        )}
+        {designBoardVisible && (
+          <Link
+            href={`/${slug}/portal/design-board`}
+            onClick={onClose}
+            className={cn(
+              "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+              pathname.includes("/portal/design-board") && "active"
+            )}
+          >
+            <Frame className="h-4 w-4 shrink-0" />
+            <span>Design Board</span>
           </Link>
         )}
         <Link

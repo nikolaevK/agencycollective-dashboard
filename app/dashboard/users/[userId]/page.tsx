@@ -385,6 +385,14 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                       AI Off
                     </span>
                   )}
+                  {client.designBoardEnabled && client.designBoardUrl && (
+                    <span
+                      className="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-bold uppercase"
+                      title="Design Board (Figma) is live in this client's portal"
+                    >
+                      Design Board
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 mt-1.5 flex-wrap text-sm text-muted-foreground">
                   {client.email && (

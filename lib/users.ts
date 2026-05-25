@@ -16,6 +16,8 @@ export interface UserRecord {
   category: string | null;
   createdAt: string;
   analystEnabled: boolean;    // gates client-portal AI analyst access
+  designBoardEnabled: boolean;   // gates client-portal Design Board (Figma embed)
+  designBoardUrl: string | null; // raw Figma share link shown on the Design Board
   joinedAt: string | null;    // client start date (seeded from payout date_joined)
   payoutBrand: string | null; // explicit link to a Payout-DB brand_name
 }
@@ -118,6 +120,23 @@ async function hasClientDirectoryColumns(db: Client): Promise<boolean> {
   }
 }
 
+/**
+ * Probe for the Design Board columns (design_board_enabled, design_board_url).
+ * Same cache-on-success pattern — a not-yet-migrated DB skips the write until
+ * the columns land.
+ */
+let _hasDesignBoardCols: boolean = false;
+async function hasDesignBoardColumns(db: Client): Promise<boolean> {
+  if (_hasDesignBoardCols) return true;
+  try {
+    await db.execute("SELECT design_board_enabled, design_board_url FROM users LIMIT 0");
+    _hasDesignBoardCols = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function rowToUser(row: Row): UserRecord {
   return {
     id: String(row.id),
@@ -133,6 +152,8 @@ function rowToUser(row: Row): UserRecord {
     createdAt: String(row.created_at || new Date().toISOString()),
     // Default true if column missing (pre-migration row read).
     analystEnabled: row.analyst_enabled == null ? true : Number(row.analyst_enabled) === 1,
+    designBoardEnabled: row.design_board_enabled == null ? true : Number(row.design_board_enabled) === 1,
+    designBoardUrl: row.design_board_url != null ? String(row.design_board_url) : null,
     joinedAt: row.joined_at != null ? String(row.joined_at) : null,
     payoutBrand: row.payout_brand != null ? String(row.payout_brand) : null,
   };
@@ -175,47 +196,43 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
 
 export async function insertUser(user: UserRecord): Promise<void> {
   const db = getDb();
-  const includeAnalyst = await hasAnalystEnabledColumn(db);
 
-  if (includeAnalyst) {
-    await db.execute({
-      sql: `INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash, email, status, mrr, category, analyst_enabled)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        user.id,
-        user.slug,
-        user.accountId,
-        user.displayName,
-        user.logoPath,
-        user.passwordHash,
-        user.email,
-        user.status,
-        user.mrr,
-        user.category,
-        user.analystEnabled ? 1 : 0,
-      ],
-    });
-    return;
+  // Base columns are always present. Optional additive columns are appended only
+  // when the migration has landed on this DB; otherwise they fall back to their
+  // schema DEFAULTs (analyst_enabled → 1, design_board_enabled → 1,
+  // design_board_url → NULL) and are coerced on read. Building the column list
+  // dynamically keeps every present-column combination correct without a branch
+  // per column.
+  const cols = [
+    "id", "slug", "account_id", "display_name", "logo_path",
+    "password_hash", "email", "status", "mrr", "category",
+  ];
+  const args: (string | number | null)[] = [
+    user.id,
+    user.slug,
+    user.accountId,
+    user.displayName,
+    user.logoPath,
+    user.passwordHash,
+    user.email,
+    user.status,
+    user.mrr,
+    user.category,
+  ];
+
+  if (await hasAnalystEnabledColumn(db)) {
+    cols.push("analyst_enabled");
+    args.push(user.analystEnabled ? 1 : 0);
+  }
+  if (await hasDesignBoardColumns(db)) {
+    cols.push("design_board_enabled", "design_board_url");
+    args.push(user.designBoardEnabled ? 1 : 0, user.designBoardUrl);
   }
 
-  // Column not present yet (migration hasn't reached this DB) — write the
-  // base columns; the new flag will be NULL → coerced to true on read until
-  // the migration adds the column with its DEFAULT 1.
+  const placeholders = cols.map(() => "?").join(", ");
   await db.execute({
-    sql: `INSERT INTO users (id, slug, account_id, display_name, logo_path, password_hash, email, status, mrr, category)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      user.id,
-      user.slug,
-      user.accountId,
-      user.displayName,
-      user.logoPath,
-      user.passwordHash,
-      user.email,
-      user.status,
-      user.mrr,
-      user.category,
-    ],
+    sql: `INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders})`,
+    args,
   });
 }
 
@@ -272,6 +289,21 @@ export async function updateUser(
   if (changes.analystEnabled !== undefined && (await hasAnalystEnabledColumn(db))) {
     fields.push("analyst_enabled = ?");
     args.push(changes.analystEnabled ? 1 : 0);
+  }
+
+  // Design Board columns — only emitted when the migration has landed.
+  if (
+    (changes.designBoardEnabled !== undefined || changes.designBoardUrl !== undefined) &&
+    (await hasDesignBoardColumns(db))
+  ) {
+    if (changes.designBoardEnabled !== undefined) {
+      fields.push("design_board_enabled = ?");
+      args.push(changes.designBoardEnabled ? 1 : 0);
+    }
+    if (changes.designBoardUrl !== undefined) {
+      fields.push("design_board_url = ?");
+      args.push(changes.designBoardUrl);
+    }
   }
 
   // Client Directory columns — only emitted when the migration has landed.

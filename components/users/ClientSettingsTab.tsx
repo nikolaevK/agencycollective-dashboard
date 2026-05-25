@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Link2, Save, Database, ShieldCheck, ShieldOff } from "lucide-react";
+import { Pencil, Link2, Save, Database, ShieldCheck, ShieldOff, Frame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateUserAction } from "@/app/actions/users";
 import type { ClientPublic } from "./types";
@@ -24,6 +24,18 @@ export function ClientSettingsTab({
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const designBoardLive = client.designBoardEnabled && Boolean(client.designBoardUrl);
+  const designTone = designBoardLive
+    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+    : client.designBoardEnabled
+      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+      : "bg-red-500/10 text-red-600 dark:text-red-400";
+  const designLabel = designBoardLive
+    ? "Design Board live"
+    : client.designBoardEnabled
+      ? "Design Board · no link"
+      : "Design Board disabled";
 
   function saveLink() {
     setError(null);
@@ -53,7 +65,7 @@ export function ClientSettingsTab({
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
         <h3 className="text-sm font-bold text-foreground mb-1">Profile & access</h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Name, email, category, status, logo and AI Analyst access.
+          Name, email, category, status, logo, AI Analyst and Design Board access.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -84,6 +96,10 @@ export function ClientSettingsTab({
               <ShieldOff className="h-3.5 w-3.5" />
             )}
             AI Analyst {client.analystEnabled ? "enabled" : "disabled"}
+          </span>
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold", designTone)}>
+            <Frame className="h-3.5 w-3.5" />
+            {designLabel}
           </span>
         </div>
       </div>

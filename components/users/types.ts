@@ -17,6 +17,8 @@ export interface ClientPublic {
   createdAt: string;
   hasPassword: boolean;
   analystEnabled: boolean;
+  designBoardEnabled: boolean;
+  designBoardUrl: string | null;
   accounts: ClientAccount[];
   // Client Directory additions (payout cross-reference + re-bill schedule)
   payoutBrand: string | null;

@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-24.welcome-kit.r4";
+const SCHEMA_VERSION = "2026-05-24.design-board.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -390,6 +390,22 @@ export async function migrate(): Promise<void> {
     );
   } catch {
     // Column already exists — no-op.
+  }
+
+  // ── Design Board (per-client Figma embed) — additive, idempotent ────
+  // design_board_enabled — master on/off (DEFAULT 1, like analyst_enabled).
+  // design_board_url      — raw Figma share link; NULL = no board set. The
+  //                         portal nav item shows only when enabled AND a url
+  //                         is set, so existing clients (url NULL) are unaffected.
+  for (const sql of [
+    "ALTER TABLE users ADD COLUMN design_board_enabled INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN design_board_url TEXT",
+  ]) {
+    try {
+      await db.execute(sql);
+    } catch {
+      // Column already exists — no-op.
+    }
   }
 
   // ── Client Directory: payout cross-reference + join date (additive) ──

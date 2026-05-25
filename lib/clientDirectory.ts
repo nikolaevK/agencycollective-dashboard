@@ -37,6 +37,8 @@ export interface ClientDirectoryRow {
   createdAt: string;
   hasPassword: boolean;
   analystEnabled: boolean;
+  designBoardEnabled: boolean;
+  designBoardUrl: string | null;
   accounts: ClientAccount[];
   // Payout cross-reference
   payoutBrand: string | null; // explicit link (users.payout_brand)
@@ -143,6 +145,8 @@ function buildRow(
     createdAt: user.createdAt,
     hasPassword: Boolean(user.passwordHash),
     analystEnabled: user.analystEnabled,
+    designBoardEnabled: user.designBoardEnabled,
+    designBoardUrl: user.designBoardUrl,
     accounts,
     payoutBrand: user.payoutBrand,
     matchedBrand,

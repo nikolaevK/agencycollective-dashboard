@@ -18,7 +18,7 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com",
       "worker-src 'self' blob:",
       "connect-src 'self' data: https://graph.facebook.com https://fonts.googleapis.com https://fonts.gstatic.com https://docuseal.com https://*.docuseal.com",
-      "frame-src 'self' https://docuseal.com https://*.docuseal.com",
+      "frame-src 'self' https://docuseal.com https://*.docuseal.com https://www.figma.com https://embed.figma.com",
       "frame-ancestors 'none'",
     ].join("; "),
   },

@@ -12,7 +12,6 @@ interface UserOverviewData {
   logoPath: string | null;
   metrics: InsightMetrics;
   timeSeries: TimeSeriesDataPoint[];
-  analystEnabled: boolean;
 }
 
 async function fetchUserOverview(dateRange: DateRangeInput, accountId?: string): Promise<UserOverviewData> {

@@ -114,6 +114,8 @@ export async function POST(request: Request) {
       category: body.category ? String(body.category).trim().slice(0, 100) : null,
       createdAt: new Date().toISOString(),
       analystEnabled: true,
+      designBoardEnabled: true,
+      designBoardUrl: null,
       joinedAt: null,
       payoutBrand: null,
     });

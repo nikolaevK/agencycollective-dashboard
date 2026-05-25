@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useTransition } from "react";
-import { X, Upload, Trash2, Sparkles } from "lucide-react";
+import { X, Upload, Trash2, Sparkles, Frame } from "lucide-react";
 import { updateUserAction, removeUserLogoAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import type { ClientPublic } from "./types";
@@ -26,6 +26,8 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
   // stale frontend reading a fresh server (or vice versa) can't accidentally
   // disable an enabled user when the admin saves without touching the toggle.
   const [analystEnabled, setAnalystEnabled] = useState<boolean>(client.analystEnabled ?? true);
+  const [designBoardEnabled, setDesignBoardEnabled] = useState<boolean>(client.designBoardEnabled ?? true);
+  const [designBoardUrl, setDesignBoardUrl] = useState(client.designBoardUrl ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -39,6 +41,8 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     formData.set("category", category);
     formData.set("status", status);
     formData.set("analystEnabled", analystEnabled ? "true" : "false");
+    formData.set("designBoardEnabled", designBoardEnabled ? "true" : "false");
+    formData.set("designBoardUrl", designBoardUrl);
 
     // Append new logo file if selected
     const logoFile = fileInputRef.current?.files?.[0];
@@ -174,6 +178,53 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
                 />
               </span>
             </button>
+          </div>
+
+          {/* Design Board access toggle + Figma link */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={designBoardEnabled}
+              onClick={() => setDesignBoardEnabled((v) => !v)}
+              className="w-full flex items-center justify-between gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl border-2 border-transparent hover:border-primary/30 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${designBoardEnabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  <Frame className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Design Board access</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {designBoardEnabled
+                      ? "Client sees an embedded Figma board — once a link is set below."
+                      : "Disabled — client sees no Design Board nav item or page."}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${designBoardEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
+                aria-hidden="true"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${designBoardEnabled ? "translate-x-5" : "translate-x-0.5"}`}
+                />
+              </span>
+            </button>
+            {designBoardEnabled && (
+              <div>
+                <input
+                  type="url"
+                  value={designBoardUrl}
+                  onChange={(e) => setDesignBoardUrl(e.target.value)}
+                  placeholder="https://www.figma.com/design/…"
+                  className={INPUT_CLS}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Paste a Figma share link (set the file to “Anyone with the link”). Leave empty to hide the board.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Logo */}

@@ -54,7 +54,7 @@ app/
   dashboard/              # Admin dashboard pages
   admin/login/            # Admin login
   welcome-kit/            # Public, no-login Welcome Kit share page (/welcome-kit; gated by publish toggle)
-  [slug]/portal/          # Client portal (dynamic slug)
+  [slug]/portal/          # Client portal (dynamic slug): welcome-kit, onboarding, overview, analyst, design-board (Figma embed), support
   closer/                 # Closer + setter portal (shared c_sess, role-gated)
     (protected)/
       dashboard/          # Closer dashboard (closers-only layout gate)
@@ -87,7 +87,7 @@ components/
   chat/                   # AI chat interface
   ad-copy/                # Ad copy editor
   generate/               # Image generation UI
-  portal/                 # Client portal components
+  portal/                 # Client portal components (UserSidebar, UserTopBar, DesignBoardEmbed, …)
   drilldown/              # Drill-down analytics
   filters/                # Date range and filter controls
 hooks/                    # Custom React Query hooks (useAccounts, useCampaigns, etc.)
@@ -116,6 +116,7 @@ lib/
   clientInvoice.ts        # Re-bill invoice prefill (InvoiceData) + unique client invoice number
   welcomeKit.ts           # Welcome Kit block model (types) + normalize/validate + CRUD (single global row, share toggle)
   welcomeKitDefault.ts    # Built-in default kit (block-model reproduction of the original portal page)
+  figma.ts                # Figma embed helpers (validate share link + build iframe src for the Design Board)
   auditLog.ts             # Audit log writes/reads
   meta/
     client.ts             # Meta API client (rate limiting, error classes)
@@ -189,7 +190,13 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 - `/dashboard/admins` — Admin management (requires `admin` perm)
 - `/dashboard/settings` — Admin documentation (page-by-page reference; rendered server-side, no client JS)
 
-**Client Portal** (`/[slug]/portal/*`) — requires `u_sess`
+**Client Portal** (`/[slug]/portal/*`) — requires `u_sess`:
+- `/[slug]/portal/welcome-kit` — global onboarding kit (admin-built; see Welcome Kit builder)
+- `/[slug]/portal/onboarding` — onboarding checklist
+- `/[slug]/portal/overview` — Meta ad-account KPIs + charts
+- `/[slug]/portal/analyst` — AI Analyst chat (per-client, gated by `users.analyst_enabled`)
+- `/[slug]/portal/design-board` — embedded Figma canvas (per-client; gated by `users.design_board_enabled` + a set `users.design_board_url`). Nav item appears only when both are present; admin sets the link in the per-client **Settings** tab
+- `/[slug]/portal/support` — admin↔client chat
 
 **Closer Portal** (`/closer/*`) — requires `c_sess`. Closer-only sub-routes (gated by role in the layout tree):
 - `/closer/dashboard` — metrics + deals + no-show follow-ups (closer-scoped)
@@ -211,7 +218,7 @@ Super admins (`isSuper`) bypass all permission checks. Cannot set `isSuper` via 
 ### Database
 
 Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
-- `users` — Client portal users (slug, email, status, mrr, category). `joined_at` + `payout_brand` (additive) link a client to the Payout DB and anchor the re-bill schedule
+- `users` — Client portal users (slug, email, status, mrr, category). `joined_at` + `payout_brand` (additive) link a client to the Payout DB and anchor the re-bill schedule. `analyst_enabled` (DEFAULT 1) gates the portal AI Analyst; `design_board_enabled` (DEFAULT 1) + `design_board_url` (nullable) gate/configure the per-client Design Board (Figma embed)
 - `client_accounts` — Many-to-many user-to-Meta-account mapping
 - `admins` — Dashboard admins with permission columns (`perm_*`)
 - `closers` — Sales team AND setters (discriminated by `role` column; commission in basis points, quota in cents)
@@ -367,7 +374,7 @@ Each client links to a Payout-DB brand via `users.payout_brand` (set when added 
 
 ### Per-client page (`/dashboard/users/[userId]`)
 
-Tabs: **Overview** (profile + onboarding + linked-account KPIs), **Billing** (schedule + config + payout payment history + **Send re-bill invoice**), **Documents** (invoices/scopes; `users`-gated client-scoped download at `/api/admin/clients/[userId]/documents/[docId]`, separate from the `closers`-gated Payouts download), **Notes & Reminders** (`client_notes` CRUD), **Settings** (profile/status/category, AI-analyst toggle, Meta-account management, payout-brand link editor).
+Tabs: **Overview** (profile + onboarding + linked-account KPIs), **Billing** (schedule + config + payout payment history + **Send re-bill invoice**), **Documents** (invoices/scopes; `users`-gated client-scoped download at `/api/admin/clients/[userId]/documents/[docId]`, separate from the `closers`-gated Payouts download), **Notes & Reminders** (`client_notes` CRUD), **Settings** (profile/status/category, AI-analyst toggle, Design-Board toggle + Figma link, Meta-account management, payout-brand link editor).
 
 ### Re-bill invoicing
 
@@ -470,6 +477,7 @@ Each GHL sub-account is enabled independently. When none are set the chip never 
 - **Setter is a closer with `role='setter'`.** Everywhere a closer lookup happens, setters are included unless explicitly filtered (e.g., `getTeamStats` excludes them from closer leaderboards)
 - **libSQL FK cascade is not guaranteed to fire** — explicit cleanup in `deleteCloser` covers appointments, deals.setter_id, notes, and note_shares (both owner and recipient directions)
 - **Markdown rendering** uses react-markdown with default (safe) config — no `rehype-raw`, no `dangerouslySetInnerHTML`, raw HTML in user notes is escaped
+- **Design Board (per-client Figma embed)** stores the raw Figma share link in `users.design_board_url`; `lib/figma.ts` builds the iframe `src` at render time via **Embed Kit 1.0** (`www.figma.com/embed?embed_host=…&url=…`), chosen because it needs no OAuth `client-id` and renders design/file/board/**prototype** links uniformly — Embed Kit 2.0 (`embed.figma.com`) requires a registered OAuth app + `client-id` for prototypes, which would break them for us. An already-embed (`embed.figma.com`) link an admin pastes is reused as-is with `embed-host` ensured. Rendering requires `https://www.figma.com` + `https://embed.figma.com` in the CSP `frame-src` (next.config.js) — without it the iframe loads blank. The link is validated (Figma host + ≤2048 chars) server-side in `updateUserAction`, before any side-effecting write so a bad link can't half-apply the save. Sidebar nav visibility comes from a dedicated lightweight `GET /api/portal/nav-config` (analyst + design-board booleans, ~60s poll) — NOT the Meta-heavy `user/overview` — so admin changes surface within ~60s instead of behind overview's 5-min stale window, and the raw URL never ships in the overview payload. The nav item shows only when `design_board_enabled` AND a link are set; the toggle is a kill-switch that preserves the stored link. The Figma file must be shared "Anyone with the link" or the embed shows a permission error (surface this when a client reports a blank/locked board)
 - **Notes sharing** junction uses FK CASCADE on `note_shares.note_id`, loose text on `shared_with_id` — handled by explicit cleanup rather than relying on libSQL FK behavior
 - **No role-based redirects in middleware for closer/setter routes.** Layout-level DB checks are authoritative (prevents loops when admin changes a user's role mid-session)
 - **Client-side dashboards cap queries to what maps to a screen** — notes list 500, team no-shows 500, setter recent deals 50. Pagination is client-side where data is already bounded

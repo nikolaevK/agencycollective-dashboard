@@ -24,7 +24,6 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       <UserSidebar
         displayName={data?.displayName}
-        analystEnabled={data?.analystEnabled ?? true}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />

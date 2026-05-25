@@ -18,6 +18,7 @@ import { ensureMigrated } from "@/lib/db";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { logAuditEvent } from "@/lib/auditLog";
+import { isFigmaUrl } from "@/lib/figma";
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
@@ -116,6 +117,8 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
     category,
     createdAt: new Date().toISOString(),
     analystEnabled: true,
+    designBoardEnabled: true,
+    designBoardUrl: null,
     joinedAt: null,
     payoutBrand: null,
   });
@@ -178,6 +181,34 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
   const category = formData.get("category") as string | null;
   if (category !== null) {
     changes.category = category.trim() || null;
+  }
+
+  // Design Board: master toggle + raw Figma link. Validated BEFORE any
+  // side-effecting write (e.g. the logo upload below) so a bad link can't leave
+  // a half-applied update — keeps the "validation errors before writes"
+  // invariant the email check above relies on. Same string-only guard as the
+  // analyst flag; an empty string clears the link (which hides the board).
+  const designFlag = formData.get("designBoardEnabled");
+  if (typeof designFlag === "string") {
+    const next = designFlag === "true" || designFlag === "1" || designFlag === "on";
+    if (next !== user.designBoardEnabled) {
+      changes.designBoardEnabled = next;
+    }
+  }
+  const designUrlRaw = formData.get("designBoardUrl");
+  if (typeof designUrlRaw === "string") {
+    const trimmed = designUrlRaw.trim();
+    if (trimmed === "") {
+      if (user.designBoardUrl !== null) changes.designBoardUrl = null;
+    } else if (trimmed.length > 2048) {
+      return { error: "Design Board link is too long (max 2048 characters)" };
+    } else if (!isFigmaUrl(trimmed)) {
+      return {
+        error: "Design Board link must be a Figma URL (e.g. https://www.figma.com/design/…)",
+      };
+    } else if (trimmed !== user.designBoardUrl) {
+      changes.designBoardUrl = trimmed;
+    }
   }
 
   const logoFile = formData.get("logo") as File | null;
