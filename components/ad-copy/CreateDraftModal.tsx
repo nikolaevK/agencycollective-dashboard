@@ -5,6 +5,7 @@ import { Loader2, Check, X, AlertCircle, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdSets } from "@/hooks/useAdSets";
 import { useQuery } from "@tanstack/react-query";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 import type { DateRangeInput, ApiResponse } from "@/types/api";
 import type { CampaignCreative, UploadedImage, CopyVariation } from "@/types/dashboard";
 
@@ -99,7 +100,8 @@ export function CreateDraftModal({
       return json.data;
     },
     enabled: needsPagesFetch,
-    staleTime: 5 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ApiResponse, DateRangeInput } from "@/types/api";
 import type { ActivityFeedItem } from "@/types/dashboard";
 import { dateRangeCacheKey } from "@/lib/utils";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 async function fetchActivityFeed(
   accountId: string,
@@ -39,7 +40,8 @@ export function useActivityFeed(
     queryKey: ["activity-feed", accountId, dateKey, apiBase],
     queryFn: () => fetchActivityFeed(accountId!, dateRange, apiBase),
     enabled: Boolean(accountId),
-    staleTime: 2 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401) return false;

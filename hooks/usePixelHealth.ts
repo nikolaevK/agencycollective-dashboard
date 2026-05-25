@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ApiResponse } from "@/types/api";
 import type { PixelHealth, PixelStatsPeriod } from "@/types/dashboard";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 interface PixelHealthResponse {
   pixels: PixelHealth[];
@@ -38,7 +39,8 @@ export function usePixelHealth(
     queryKey: ["pixel-health", accountId, period, apiBase],
     queryFn: () => fetchPixelHealth(accountId!, period, apiBase),
     enabled: Boolean(accountId),
-    staleTime: 8 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401) return false;

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApiResponse, DateRangeInput } from "@/types/api";
 import type { Alert } from "@/types/alerts";
 import { dateRangeCacheKey } from "@/lib/utils";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 async function fetchAlerts(dateRange: DateRangeInput): Promise<Alert[]> {
   const params = new URLSearchParams();
@@ -31,9 +32,10 @@ export function useAlerts(dateRange: DateRangeInput) {
   return useQuery({
     queryKey: ["alerts", dateKey],
     queryFn: () => fetchAlerts(dateRange),
-    staleTime: 2 * 60 * 1000,           // 2 minutes (shorter than others)
-    refetchInterval: 5 * 60 * 1000,     // Poll every 5 minutes
-    refetchIntervalInBackground: false,
+    // Meta-backed: 24h to match the server cache. No interval polling — the old
+    // 5-min poll was the kind of frequent automation that risks Meta bans.
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401) return false;

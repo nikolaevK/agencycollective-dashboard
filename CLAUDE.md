@@ -98,7 +98,8 @@ lib/
   closerSession.ts        # Closer/setter session (c_sess cookie)
   closerGuards.ts         # Role-aware gates: requireCloserRecord, getSetterFromSession
   permissions.ts          # RBAC system (9 keys)
-  cache.ts                # In-memory TTL cache (5-min default, Google events 2-min)
+  cache.ts                # In-memory TTL cache (5-min default, Google events 2-min) — L1 in front of meta/persistentCache
+  queryConfig.ts          # META_QUERY_STALE_MS (24h) — shared staleTime for client-side Meta hooks
   admins.ts               # Admin CRUD
   users.ts                # User CRUD
   closers.ts              # Closer/setter CRUD (single table, role column)
@@ -119,7 +120,8 @@ lib/
   figma.ts                # Figma embed helpers (validate share link + build iframe src for the Design Board)
   auditLog.ts             # Audit log writes/reads
   meta/
-    client.ts             # Meta API client (rate limiting, error classes)
+    client.ts             # Meta API client (rate limiting, error classes) + 24h persistent cache + single-flight on metaFetch/metaBatchFetch
+    persistentCache.ts    # Turso-backed 24h cache for raw Meta responses (ban-avoidance choke point); serve-stale-on-error
     endpoints.ts          # Meta API endpoint helpers
     schemas.ts            # Zod schemas for Meta API responses
   google/
@@ -232,6 +234,7 @@ Turso (libSQL) with raw parameterized SQL (no ORM). Tables:
 - `client_notes` — Per-client admin notes + reminders (`remind_at` nullable; a due reminder surfaces in the directory's re-bill alerts)
 - `welcome_kit` — Single global row (`id='default'`) holding the editable Welcome Kit as a JSON `doc` blob (hero + sections + blocks + CTA), a `share_enabled` flag gating the public `/welcome-kit` page, and an optional downloadable PDF stored as a BLOB (`pdf_data` + `pdf_name`/`pdf_size`/`pdf_uploaded_at`, matching the payout-documents pattern; Vercel's FS is read-only at runtime). Absent row = use the in-code default kit (`lib/welcomeKitDefault.ts`). PDF writes deliberately don't bump `updated_at` so they never trigger a doc save-conflict
 - `audit_log` — Admin action log
+- `meta_cache` — Persistent cache of raw Meta Graph API responses (`cache_key` PK, `payload` JSON, `fetched_at`, `expires_at`). Default 24h TTL caps how often we hit Meta (ban-avoidance). Created in `ensureCriticalColumns`, not the version-gated body. See Caching
 - `google_calendar_config` — Encrypted OAuth tokens. `scope` column (NODE_ENV-keyed) isolates dev/prod token sets in a shared database
 - Plus invoice/contract/payout/onboarding tables (see `lib/db.ts`)
 
@@ -239,7 +242,22 @@ Migrations are code-driven in `lib/db.ts`, run automatically via `instrumentatio
 
 ### Caching
 
-In-memory TTL cache (`lib/cache.ts`):
+**Meta Graph API persistent cache (24h)** — the authoritative cap on how often we call Meta. Rationale: frequent automated polling can get client ad accounts banned. `lib/meta/persistentCache.ts` is wired into `metaFetch` + `metaBatchFetch` (`lib/meta/client.ts`), the single choke point every Meta read funnels through — admin dashboard, client portal, AND the AI chat/analyst paths. A given query hits the Graph API **at most once per 24h**, shared across all serverless instances and all users.
+
+- **Where it's stored.** Turso table `meta_cache` (`cache_key` PK, `payload` = raw Meta JSON as text, `fetched_at` = epoch ms Meta was actually called, `expires_at` = `fetched_at` + TTL), created in `ensureCriticalColumns` so it survives the SCHEMA_VERSION gate. One row per unique query. This is the 24h store — NOT the in-memory `lib/cache.ts` (a per-process L1, wiped on cold start, minutes-long TTL; it does NOT bound Meta frequency).
+- **Cache key.** GET → `GET <full request URL>` (path + all params: `act_<accountId>`, date range, fields, pagination cursor); batch → `BATCH <version> <sha256(requests)>`. Keyed by data identity, NOT by user. The Meta access token is never in the key.
+- **Read.** Fresh row (`expires_at > now`) → served straight from Turso, no Meta call. The cached payload is re-validated against its Zod schema on read; if validation fails (a deploy tightened a schema mid-TTL, or a corrupt row) we **refetch once to rebuild** instead of erroring for the rest of the window.
+- **Update / what happens to old data.** On expiry+miss, Meta is called once and `INSERT OR REPLACE` **overwrites the same row in place** — old payload discarded, `fetched_at`/`expires_at` reset. **No history/versioning** — only the latest snapshot per query, so table size ≈ number of distinct queries, not queries×days. Abandoned keys (not requested for >7 days) are GC'd opportunistically (~2% of writes).
+- **Single-flight + serve-stale-on-error.** Concurrent identical requests share one in-process Meta call (no cold-cache stampede). On a Meta error (outage / rate-limit / token) we return the last-known payload and bump only its `expires_at` by a 10-min cooldown (`extendMetaCacheExpiry` — payload/`fetched_at` untouched), so a sustained failure can't hammer Meta. Old data is deliberately kept; an error never overwrites it.
+- **Never cached:** mutations (`metaFetchPost`/`metaFetchMultipart` — create ad, upload image).
+- **Graceful degradation.** Any `meta_cache` DB failure degrades to a live Meta fetch (logged) rather than breaking data.
+- **TTL** override via `META_PERSISTENT_CACHE_TTL_SECONDS` (default 86400). **Strict by design — no manual force-refresh override.** A one-off live read uses `cache: { skip: true }` (or a shorter `ttlSeconds`) at the `metaFetch` call site.
+
+**Client portal + connected accounts.** The portal uses the SAME `meta_cache` (same routes → same `metaFetch`). Because keys are per-Meta-account (`act_<id>`), the admin dashboard and every client linked to an account **share** its cached rows — connecting a client to an account the admin already views adds **zero** Meta calls. The `client_accounts` (user↔account) mapping is our own DB, NOT cached: link/unlink is immediate, and a newly connected account is a cache miss → **one fresh pull on first view**, then 24h after (the 24h delay only applies to refreshing already-cached data). **No cross-client leakage**: authorization (`resolvePortalAccountId` against `client_accounts`, `lib/clientAccounts.ts`) runs BEFORE the cache and only lets a client resolve `accountId`s they're linked to; the key fully identifies data by account, so a client can't produce a key for an account they don't own.
+
+**Caveats (bounded, not bugs).** (1) Single-flight is per-process, so at a fresh deploy / 24h-expiry boundary, concurrent cold misses for the same key across multiple Vercel instances can each make one Meta call — bounded by instance count, not unbounded polling (exact-once would need a distributed lock; overkill at this scale). (2) Relative ranges (`since`/`until` path) get a new key at midnight = one fresh pull/day (intended); `date_preset` keys expire on their own 24h TTL. (3) The `meta.cached` flag in API responses reflects only the in-memory L1, so it can read `false` while still serving from the 24h Turso layer (no Meta call) — telemetry cosmetic. (4) `/api/settings` token check is 24h-cached too — a newly-fixed `META_ACCESS_TOKEN` may show stale for up to a day.
+
+In-memory TTL cache (`lib/cache.ts`) — a per-process **L1** in front of the persistent layer. NOTE: it's wiped on every serverless cold start and not shared across instances, so on its own it does NOT bound Meta call frequency — the persistent 24h layer is what actually shields Meta:
 - Accounts, Insights, Campaigns, AdSets, Ads, Creatives, Pages: 5 min
 - Alerts, Activities: 3 min
 - Pixel Health: 10 min
@@ -249,13 +267,14 @@ In-memory TTL cache (`lib/cache.ts`):
 HTTP: `Cache-Control: private, max-age=60, stale-while-revalidate=240`
 
 Client-side React Query:
+- **Meta ad-data hooks (admin dashboard + client portal): `staleTime` 24h, `refetchOnWindowFocus` off, no interval polling** (`META_QUERY_STALE_MS` in `lib/queryConfig.ts`) — mirrors the server's once-daily cadence. These requests only ever hit our own cached API routes, never Meta directly.
 - Setter + closer dashboards: `staleTime` + `refetchInterval` both 120s (matches Google cache TTL so polling lands on cached data)
 - Notes + lead-context: 30–60s
 - Google Calendar status, share targets: 60–120s
 
 ### External Integrations
 
-- **Meta Graph API** — Ad accounts, campaigns, insights, creatives, pixels. Zod-validated responses. Rate limit handling (code 80000) with exponential backoff. Concurrency limit configurable via `META_CONCURRENCY_LIMIT`. **Not touched by the closer or setter portal** — those code paths have zero Meta API consumption.
+- **Meta Graph API** — Ad accounts, campaigns, insights, creatives, pixels. Zod-validated responses. Rate limit handling (code 80000) with exponential backoff. Concurrency limit configurable via `META_CONCURRENCY_LIMIT`. **Every read is wrapped in a persistent 24h cache** (`lib/meta/persistentCache.ts`) so a given query hits Meta at most once per day — frequent automated polling can get ad accounts banned (see Caching). **Not touched by the closer or setter portal** — those code paths have zero Meta API consumption.
 - **Google Calendar** — OAuth 2.0 (read-only scope). Tokens encrypted with AES-256-GCM at rest, **scope-keyed by `NODE_ENV`** so dev and prod tokens coexist in a shared database without thrashing. Auto-refresh with 5-min buffer. Calendar fetches cached server-side (2 min). Decrypt path format-sniffs our cipher format; on mismatch we throw loudly rather than silently passing ciphertext to Google.
 - **Anthropic Claude** — Chat analytics with rate limiting (20 req/min per admin). Streaming responses.
 - **Google Gemini** — Image generation capabilities.
@@ -453,7 +472,8 @@ Optional:
 ```
 META_API_VERSION         # Default: v25.0
 META_CONCURRENCY_LIMIT   # Default: 5
-META_CACHE_TTL_SECONDS   # Default: 300
+META_CACHE_TTL_SECONDS   # Default: 300 (in-memory L1)
+META_PERSISTENT_CACHE_TTL_SECONDS  # Default: 86400 (24h persistent Meta cache — the ban-avoidance layer)
 GHL_PIT                  # Peptide Ads sub-account PIT (enables appointment status sync + GHL contact surfaces for Peptide Ads)
 GHL_LOCATION_ID          # Peptide Ads location id; paired with GHL_PIT
 GHL_PIT_AGENCY           # Agency Collective sub-account PIT (same surfaces, scoped to Agency Collective)
@@ -465,6 +485,9 @@ Each GHL sub-account is enabled independently. When none are set the chip never 
 ## Key Implementation Notes
 
 - Database migrations run on every app startup — keep `migrate()` idempotent; all additions wrapped in `CREATE TABLE IF NOT EXISTS` or try/catch'd `ALTER ... ADD COLUMN`
+- **Meta data is 24h-stale by design** (persistent cache, see Caching). The delay applies to *refreshing already-cached* data: a newly published draft ad, a Meta-side budget/status change, or new campaigns/ads on an account already being viewed won't surface for up to 24h. Intentional ban-avoidance — there is deliberately **no force-refresh override**. For a single live read, pass `cache: { skip: true }` (or a shorter `ttlSeconds`) to `metaFetch`/`metaBatchFetch` at that call site — don't add a user-facing refresh button (reopens the frequent-polling vector). The first read after a deploy / 24h expiry triggers exactly one Meta call (single-flighted).
+  - The 24h is NOT a first-fetch delay: a newly **connected** account appears immediately — `client_accounts` (the user↔account link) is live DB, not cached, so its metrics are a cache miss → one fresh pull on first view, then 24h after. Cache is keyed per `act_<id>`, so admin + all clients on an account share its rows (extra clients/links = zero extra Meta calls), and authorization (`resolvePortalAccountId`) gates which accounts a client can query *before* the cache — no cross-client leakage.
+  - A cached payload that fails Zod validation on read (e.g. a schema change mid-TTL, or a corrupt row) refetches once to self-heal rather than erroring for the rest of the 24h window.
 - All SQL uses parameterized queries (no string concatenation) — SQL injection safe
 - Passwords never exposed in API responses (stripped via destructuring)
 - Google OAuth tokens encrypted at rest with AES-256-GCM derived from SESSION_SECRET. Tokens are **scope-keyed by NODE_ENV** so the same Turso database can serve dev and prod without thrashing; reconnecting in one env doesn't clobber the other

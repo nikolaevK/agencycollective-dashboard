@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ApiResponse, DateRangeInput } from "@/types/api";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { dateRangeCacheKey } from "@/lib/utils";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 interface InsightsResponse {
   metrics: InsightMetrics;
@@ -47,7 +48,8 @@ export function useInsights(
     queryKey: ["insights", accountId, dateKey, withTimeSeries],
     queryFn: () => fetchInsights(accountId!, dateRange, withTimeSeries),
     enabled: Boolean(accountId),
-    staleTime: 4 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401) return false;

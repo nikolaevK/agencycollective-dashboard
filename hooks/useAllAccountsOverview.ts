@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { DateRangeInput } from "@/types/api";
 import type { InsightMetrics } from "@/types/dashboard";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 export interface AccountOverview {
   accountId: string;
@@ -32,6 +33,7 @@ export function useAllAccountsOverview(dateRange: DateRangeInput) {
   return useQuery({
     queryKey: ["user-all-accounts", dateRange],
     queryFn: () => fetchAllAccountsOverview(dateRange),
-    staleTime: 5 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 }

@@ -5,6 +5,7 @@ import type { ApiResponse } from "@/types/api";
 import type { AccountSummary } from "@/types/dashboard";
 import type { DateRangeInput } from "@/types/api";
 import { dateRangeCacheKey } from "@/lib/utils";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 async function fetchAccounts(dateRange: DateRangeInput): Promise<AccountSummary[]> {
   const params = new URLSearchParams();
@@ -46,7 +47,8 @@ export function useAccounts(dateRange: DateRangeInput) {
   return useQuery({
     queryKey: ["accounts", dateKey],
     queryFn: () => fetchAccounts(dateRange),
-    staleTime: 4 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401 || err?.status === 403) return false;

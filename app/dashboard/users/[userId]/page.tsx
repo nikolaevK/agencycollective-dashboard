@@ -24,6 +24,7 @@ import { ManageAccountsModal } from "@/components/users/ManageAccountsModal";
 import { useInsights } from "@/hooks/useInsights";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDateRange } from "@/hooks/useDateRange";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 import { aggregateInsights } from "@/lib/meta/transformers";
 import { cn, formatCurrency, formatRoas } from "@/lib/utils";
 import { useState, useMemo } from "react";
@@ -206,7 +207,8 @@ function CombinedPerformanceSection({
     queryKey: ["admin-combined-ts", accountIds, dateRange],
     queryFn: () => fetchCombinedTimeSeries(accountIds, dateRange),
     enabled: expanded && accountIds.length > 0,
-    staleTime: 4 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 
   return (

@@ -94,6 +94,25 @@ const SCHEMA_VERSION = "2026-05-24.design-board.r1";
  * table. No data is rewritten, no table is dropped, no column is altered.
  */
 async function ensureCriticalColumns(db: Client): Promise<void> {
+  // Persistent Meta Graph API response cache (default 24h TTL). Created here —
+  // not in the SCHEMA_VERSION body — so a stuck version stamp can never skip it.
+  // It shields Meta from repeated polling that can trigger automation bans
+  // (see lib/meta/persistentCache.ts). Not fatal if it fails: the cache helpers
+  // degrade to "no cache" (fetch from Meta) when the table is missing, so we
+  // log and continue rather than taking down all data fetching.
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS meta_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )
+    `);
+  } catch (err) {
+    console.error("[migrate] Failed to create meta_cache table:", err);
+  }
+
   const adds: { table: string; column: string; defn: string }[] = [
     { table: "appointments",           column: "setter_tier",        defn: "TEXT" },
     { table: "appointments",           column: "setter_tier_at",     defn: "TEXT" },

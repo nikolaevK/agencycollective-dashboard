@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { DateRangeInput } from "@/types/api";
 import type { TimeSeriesDataPoint } from "@/types/dashboard";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 interface CombinedTimeSeriesData {
   timeSeries: TimeSeriesDataPoint[];
@@ -27,7 +28,8 @@ export function useCombinedOverview(dateRange: DateRangeInput, enabled = true) {
   return useQuery({
     queryKey: ["user-combined-timeseries", dateRange],
     queryFn: () => fetchCombinedTimeSeries(dateRange),
-    staleTime: 5 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     enabled,
   });
 }

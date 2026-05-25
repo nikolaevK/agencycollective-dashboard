@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ApiResponse, DateRangeInput } from "@/types/api";
 import type { AdRow } from "@/types/dashboard";
 import { dateRangeCacheKey } from "@/lib/utils";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 async function fetchAds(
   adSetId: string,
@@ -35,7 +36,8 @@ export function useAds(adSetId: string | undefined, dateRange: DateRangeInput) {
     queryKey: ["ads", adSetId, dateKey],
     queryFn: () => fetchAds(adSetId!, dateRange),
     enabled: Boolean(adSetId),
-    staleTime: 4 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { status?: number };
       if (err?.status === 401) return false;

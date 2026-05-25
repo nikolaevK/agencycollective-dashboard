@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { DateRangeInput } from "@/types/api";
 import type { MetaAdWithCreative } from "@/lib/meta/types";
+import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
 
 async function fetchTopAds(dateRange: DateRangeInput, accountId?: string): Promise<MetaAdWithCreative[]> {
   const params = new URLSearchParams();
@@ -26,6 +27,7 @@ export function useTopAds(dateRange: DateRangeInput, accountId?: string) {
   return useQuery({
     queryKey: ["user-top-ads", dateRange, accountId],
     queryFn: () => fetchTopAds(dateRange, accountId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: META_QUERY_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 }

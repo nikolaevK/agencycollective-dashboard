@@ -308,9 +308,12 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <Note>
             <span className="font-semibold">Caching:</span> Meta data is
-            cached server-side for 5 minutes by default
-            (<Pill>META_CACHE_TTL_SECONDS</Pill>). Use the refresh button to
-            force a fresh fetch.
+            cached server-side for{" "}
+            <span className="font-semibold">24 hours</span> in a persistent
+            store, so a given query calls Meta at most once per day. This
+            avoids ad-account bans from frequent automated requests — the
+            numbers refresh about once a day and there is intentionally no
+            force-refresh. See &ldquo;Caching and freshness&rdquo; below.
           </Note>
         </Section>
 
@@ -1604,9 +1607,15 @@ export default function AdminDocumentationPage() {
                 <span className="font-medium text-foreground">
                   Meta data
                 </span>{" "}
-                — Accounts, Insights, Campaigns, Ad Sets, Ads, Creatives,
-                Pages: 5 min default (configurable via{" "}
-                <Pill>META_CACHE_TTL_SECONDS</Pill>).
+                — cached{" "}
+                <span className="font-medium text-foreground">24 hours</span>{" "}
+                in a persistent store so a given query (account + date range)
+                calls Meta at most once per day. Ban-avoidance; configurable
+                via <Pill>META_PERSISTENT_CACHE_TTL_SECONDS</Pill> (default
+                86400), no force-refresh. The shorter in-memory TTLs below
+                (Meta 5 min via <Pill>META_CACHE_TTL_SECONDS</Pill>, alerts
+                3 min, pixel 10 min) are only a fast layer in front and do
+                NOT change how often Meta is actually called.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Alerts</span>{" "}
@@ -1642,6 +1651,13 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <SubSection title="Client-side polling">
             <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Meta dashboards (admin + client portal)
+                </span>{" "}
+                — no polling; 24 hour staleTime, no refetch on window focus
+                (mirrors the server&apos;s once-a-day Meta cache).
+              </Bullet>
               <Bullet>
                 Setter + closer dashboards: 120 sec refetch interval
                 (matches Google cache TTL so polling lands on cached data).
@@ -1709,8 +1725,10 @@ export default function AdminDocumentationPage() {
               <Bullet>
                 <Pill>META_API_VERSION</Pill> (default <Pill>v25.0</Pill>),{" "}
                 <Pill>META_CONCURRENCY_LIMIT</Pill> (default <Pill>5</Pill>),{" "}
+                <Pill>META_PERSISTENT_CACHE_TTL_SECONDS</Pill> (default{" "}
+                <Pill>86400</Pill> — the 24h Meta cache),{" "}
                 <Pill>META_CACHE_TTL_SECONDS</Pill> (default{" "}
-                <Pill>300</Pill>)
+                <Pill>300</Pill> — in-memory layer)
               </Bullet>
             </ul>
           </SubSection>
