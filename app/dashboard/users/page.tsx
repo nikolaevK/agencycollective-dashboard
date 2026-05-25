@@ -87,7 +87,13 @@ export default function UsersPage() {
 
   const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
 
-  const totalMrr = clients.reduce((s, c) => s + c.payoutMrr, 0);
+  // Monthly MRR reflects ACTIVE clients only (same definition as the "Active"
+  // card below) — paused/onboarding/inactive/archived clients don't count
+  // toward recurring revenue even though their row still shows its own MRR.
+  const totalMrr = clients.reduce(
+    (s, c) => s + (c.status === "active" ? c.payoutMrr : 0),
+    0
+  );
   const activeClients = clients.filter((c) => c.status === "active").length;
 
   function handleRefresh() {

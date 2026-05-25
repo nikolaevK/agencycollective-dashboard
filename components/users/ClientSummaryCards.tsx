@@ -43,7 +43,7 @@ export function ClientSummaryCards({
       value: formatMoney(totalMrr),
       icon: DollarSign,
       color: "text-foreground",
-      sub: undefined,
+      sub: "Active clients only",
     },
   ];
 
@@ -61,7 +61,12 @@ export function ClientSummaryCards({
           {isLoading ? (
             <div className="h-8 w-24 rounded bg-muted/50 animate-pulse mt-1" />
           ) : (
-            <p className={cn("text-2xl font-bold mt-1", card.color)}>{card.value}</p>
+            <>
+              <p className={cn("text-2xl font-bold mt-1", card.color)}>{card.value}</p>
+              {card.sub && (
+                <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
+              )}
+            </>
           )}
         </div>
       ))}
