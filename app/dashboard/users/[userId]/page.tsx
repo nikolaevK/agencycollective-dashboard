@@ -563,6 +563,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
           <ClientBillingTab
             userId={params.userId}
             clientName={client.displayName}
+            clientEmail={client.email}
             onChanged={() => refetch()}
           />
         )}

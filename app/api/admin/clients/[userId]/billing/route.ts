@@ -38,6 +38,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
       payoutMrr: detail.row.payoutMrr,
       totalRevenue: detail.row.totalRevenue,
       history: detail.history,
+      // Currently-sent invoice for this client (already reconciled in
+      // getClientDetail) — drives the Billing tab's awaiting-payment banner
+      // + Mark Unpaid action. Null when nothing is awaiting payment.
+      activeSentInvoice: detail.row.activeSentInvoice,
     },
   });
 }

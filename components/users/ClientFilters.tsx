@@ -96,6 +96,7 @@ export function ClientFilters({
           <option value="all">All re-bill</option>
           <option value="overdue">Overdue</option>
           <option value="due">Due soon</option>
+          <option value="invoice_sent">Invoice sent</option>
           <option value="upcoming">Upcoming</option>
           <option value="extended">Extended</option>
           <option value="paused">Paused</option>

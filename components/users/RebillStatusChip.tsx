@@ -10,6 +10,10 @@ const STYLES: Record<RebillStatus, { label: string; cls: string }> = {
     label: "Due soon",
     cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   },
+  invoice_sent: {
+    label: "Invoice sent",
+    cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  },
   upcoming: {
     label: "Upcoming",
     cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",

@@ -9,6 +9,7 @@ import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import { normalizeBrandName } from "@/lib/payouts";
+import { createRebillInvoice } from "@/lib/clientRebillInvoices";
 
 interface RouteContext {
   params: { userId: string };
@@ -110,14 +111,46 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     };
 
     // Email already went out — don't fail the request if filing the copy hiccups.
+    let docSaved = true;
     try {
       await insertDocument(doc, buffer);
     } catch (err) {
       console.error("[client-invoice/send] document save failed (email sent):", err);
-      return NextResponse.json({ success: true, saved: false });
+      docSaved = false;
     }
 
-    return NextResponse.json({ success: true, saved: true });
+    // Record the sent invoice so the client moves into the `invoice_sent`
+    // state until a payout for this cycle lands in the Payout DB (auto-
+    // promoted on read) or an admin marks it unpaid. Best-effort — the email
+    // already went out, and the directory's reconciliation can retry on the
+    // next build. `cycle_anchor` is the schedule's nextRebillAt at this
+    // moment; if absent (unscheduled client), fall back to today so a "Sent
+    // Invoices" entry still surfaces.
+    const cycleAnchor =
+      detail.row.schedule.nextRebillAt ?? now.toISOString().slice(0, 10);
+    const rawAmount = Number(formData.get("amountCents"));
+    const amountCents =
+      Number.isFinite(rawAmount) && rawAmount >= 0
+        ? Math.min(Math.round(rawAmount), 1_000_000_000) // 10M USD safety cap
+        : 0;
+    try {
+      await createRebillInvoice({
+        userId: params.userId,
+        invoiceNumber: safeNumber,
+        payoutDocumentId: docSaved ? doc.id : null,
+        cycleAnchor,
+        amountCents,
+        recipientEmail: email,
+        sentByAdminId: session.adminId,
+      });
+    } catch (err) {
+      console.error("[client-invoice/send] invoice record failed:", err);
+      // Email + (maybe) doc save already succeeded — surfacing partial save
+      // is enough; the next directory build won't show invoice_sent, but the
+      // admin can re-send to re-establish the record if needed.
+    }
+
+    return NextResponse.json({ success: true, saved: docSaved });
   } catch (err) {
     console.error("[client-invoice/send]", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

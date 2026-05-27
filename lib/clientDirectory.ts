@@ -17,6 +17,12 @@ import {
   type ClientBilling,
   type RebillSchedule,
 } from "./clientBilling";
+import {
+  getLatestActiveInvoice,
+  getLatestActiveInvoicesByUser,
+  reconcileInvoiceForUser,
+  type RebillInvoice,
+} from "./clientRebillInvoices";
 
 // ---------------------------------------------------------------------------
 // Aggregated row — superset of the legacy ClientPublic shape. Every field the
@@ -50,6 +56,12 @@ export interface ClientDirectoryRow {
   // Re-bill schedule
   billing: ClientBilling | null;
   schedule: RebillSchedule;
+  /**
+   * Current sent re-bill invoice (status='sent'), if one is awaiting payment.
+   * Drives the `invoice_sent` schedule status and the dashboard's Sent
+   * Invoices panel. Null when no invoice is awaiting payment.
+   */
+  activeSentInvoice: RebillInvoice | null;
 }
 
 /** Normalize a stored timestamp/date to yyyy-mm-dd, best-effort. */
@@ -94,6 +106,13 @@ function buildRow(
   accounts: ClientAccount[],
   histories: BrandHistory[],
   billing: ClientBilling | null,
+  /**
+   * Already-reconciled invoice for this user. Callers must run
+   * `reconcileInvoiceForUser` first so a `paid` promotion is applied before we
+   * read its status here — otherwise the schedule would still say
+   * `invoice_sent` for a cycle the payout DB has already recognised.
+   */
+  activeSentInvoice: RebillInvoice | null,
   today?: Date
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
   const matched = matchHistories(user, histories);
@@ -122,11 +141,19 @@ function buildRow(
     h.months.map((m) => ({ year: m.year, month: m.month }))
   );
 
+  // Only a still-sent invoice influences the schedule status (paid/unpaid/
+  // superseded are historical records, not awaiting-payment signals).
+  const sentForSchedule =
+    activeSentInvoice && activeSentInvoice.status === "sent"
+      ? { cycleAnchor: activeSentInvoice.cycleAnchor }
+      : null;
+
   const schedule = computeRebillSchedule({
     anchorDate: joinedAt,
     billing,
     payoutMonths,
     today,
+    activeSentInvoice: sentForSchedule,
   });
 
   const matchedBrand =
@@ -156,6 +183,13 @@ function buildRow(
     joinedAt,
     billing,
     schedule,
+    // Surface only a still-sent invoice. Once promoted to paid (or marked
+    // unpaid / superseded), it's no longer "current" — the panel & banner
+    // should ignore it.
+    activeSentInvoice:
+      activeSentInvoice && activeSentInvoice.status === "sent"
+        ? activeSentInvoice
+        : null,
   };
   return { row, matched };
 }
@@ -168,12 +202,14 @@ function buildRow(
 export async function buildClientDirectory(
   today?: Date
 ): Promise<ClientDirectoryRow[]> {
-  const [users, allAccounts, histories, billingMap] = await Promise.all([
-    readUsers(),
-    readAllClientAccounts(),
-    getAllBrandHistories(),
-    getAllClientBilling(),
-  ]);
+  const [users, allAccounts, histories, billingMap, invoiceMap] =
+    await Promise.all([
+      readUsers(),
+      readAllClientAccounts(),
+      getAllBrandHistories(),
+      getAllClientBilling(),
+      getLatestActiveInvoicesByUser(),
+    ]);
 
   const accountsByUser = new Map<string, ClientAccount[]>();
   for (const account of allAccounts) {
@@ -182,6 +218,24 @@ export async function buildClientDirectory(
     accountsByUser.set(account.userId, list);
   }
 
+  // Pre-compute each matched-user's payout months and reconcile their active
+  // invoice (sent → paid if the cycle's payout has landed) in parallel before
+  // we build the rows. Reconciliation is best-effort: a write failure leaves
+  // the invoice as `sent` and the next directory build retries.
+  const reconciled = await Promise.all(
+    users.map(async (user) => {
+      const invoice = invoiceMap.get(user.id) ?? null;
+      if (!invoice) return [user.id, null] as const;
+      const matched = matchHistories(user, histories);
+      const payoutMonths = matched.flatMap((h) =>
+        h.months.map((m) => ({ year: m.year, month: m.month }))
+      );
+      const updated = await reconcileInvoiceForUser(invoice, payoutMonths);
+      return [user.id, updated] as const;
+    })
+  );
+  const invoiceByUser = new Map(reconciled);
+
   return users.map(
     (user) =>
       buildRow(
@@ -189,6 +243,7 @@ export async function buildClientDirectory(
         accountsByUser.get(user.id) ?? [],
         histories,
         billingMap.get(user.id) ?? null,
+        invoiceByUser.get(user.id) ?? null,
         today
       ).row
   );
@@ -212,13 +267,29 @@ export async function getClientDetail(
   const user = await findUser(userId);
   if (!user) return null;
 
-  const [accounts, histories, billing] = await Promise.all([
+  const [accounts, histories, billing, rawInvoice] = await Promise.all([
     readAccountsForUser(userId),
     getAllBrandHistories(),
     getClientBilling(userId),
+    getLatestActiveInvoice(userId),
   ]);
 
-  const { row, matched } = buildRow(user, accounts, histories, billing, today);
+  // Reconcile this user's invoice against their payouts before building the
+  // row so a freshly-recognised payment promotes status before render.
+  const matchedHistories = matchHistories(user, histories);
+  const payoutMonths = matchedHistories.flatMap((h) =>
+    h.months.map((m) => ({ year: m.year, month: m.month }))
+  );
+  const invoice = await reconcileInvoiceForUser(rawInvoice, payoutMonths);
+
+  const { row, matched } = buildRow(
+    user,
+    accounts,
+    histories,
+    billing,
+    invoice,
+    today
+  );
   return { row, history: matched };
 }
 

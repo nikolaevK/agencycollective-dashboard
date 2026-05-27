@@ -9,6 +9,7 @@ import { ClientSummaryCards } from "@/components/users/ClientSummaryCards";
 import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
 import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
+import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { WelcomeKitBuilder } from "@/components/users/WelcomeKitBuilder";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ export default function UsersPage() {
   const [filters, setFilters] = useState<ClientFilterState>(DEFAULT_FILTERS);
   const [showAdd, setShowAdd] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [sentInvoicesOpen, setSentInvoicesOpen] = useState(false);
 
   const { data: unreadSupport = 0 } = useQuery<number>({
     queryKey: ["admin-support-unread"],
@@ -84,6 +86,8 @@ export default function UsersPage() {
 
   // Shared with the alerts panel via the same query key (deduped).
   const { data: alerts } = useRebillAlerts();
+  // Same dedupe pattern — feeds the summary card + the SentInvoicesPanel.
+  const { data: sentInvoices } = useSentInvoices();
 
   const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
 
@@ -99,6 +103,7 @@ export default function UsersPage() {
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
   }
 
   return (
@@ -148,11 +153,17 @@ export default function UsersPage() {
               totalMrr={totalMrr}
               rebillsDue={alerts?.rebills.length ?? 0}
               overdueCount={alerts?.overdueCount ?? 0}
+              sentInvoices={sentInvoices?.count ?? 0}
               onRebillsClick={() => setAlertsOpen(true)}
+              onSentInvoicesClick={() => setSentInvoicesOpen(true)}
               isLoading={isLoading}
             />
 
             <RebillAlertsPanel open={alertsOpen} onOpenChange={setAlertsOpen} />
+            <SentInvoicesPanel
+              open={sentInvoicesOpen}
+              onOpenChange={setSentInvoicesOpen}
+            />
 
             <ClientFilters value={filters} onChange={setFilters} />
 

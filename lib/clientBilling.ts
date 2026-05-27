@@ -9,6 +9,7 @@ export type RebillStatus =
   | "upcoming" // next bill is further out than the lead window
   | "due" // within the lead window
   | "overdue" // past due, no payout recorded
+  | "invoice_sent" // re-bill invoice sent for the current cycle, awaiting payment
   | "paused" // exception: billing paused
   | "extended" // extension active, alerts suppressed until extend_until
   | "unscheduled"; // no anchor date — can't schedule yet
@@ -128,8 +129,17 @@ export function computeRebillSchedule(params: {
   billing: ClientBilling | null;
   payoutMonths: Array<{ year: number; month: number }>;
   today?: Date;
+  /**
+   * The client's currently-active sent re-bill invoice, if any. When present
+   * AND its `cycleAnchor` matches the computed `nextRebillAt`, the resulting
+   * status is promoted to `invoice_sent` instead of `due`/`overdue` — we've
+   * already billed for this cycle and are awaiting payment in the Payout DB.
+   * An invoice for a different (past) cycle is ignored here — the schedule has
+   * moved on (the auto-paid promotion lives in clientRebillInvoices).
+   */
+  activeSentInvoice?: { cycleAnchor: string } | null;
 }): RebillSchedule {
-  const { anchorDate, billing, payoutMonths } = params;
+  const { anchorDate, billing, payoutMonths, activeSentInvoice } = params;
   const today = toUtcMidnight(params.today ?? new Date());
 
   const paused = billing?.paused ?? false;
@@ -213,6 +223,21 @@ export function computeRebillSchedule(params: {
     } else {
       status = "upcoming";
     }
+
+    // An invoice for THIS cycle (anchor matches the resolved nextRebillAt)
+    // suppresses the due/overdue alert in favour of `invoice_sent` — we've
+    // billed and are waiting for the payment to land in the Payout DB. An
+    // invoice for an earlier cycle is stale (a payout has already advanced
+    // the schedule) and is ignored. `paused`/`extended` keep precedence —
+    // those are intentional exceptions to billing altogether.
+    if (
+      activeSentInvoice &&
+      next &&
+      activeSentInvoice.cycleAnchor === toIsoDate(next) &&
+      (status === "due" || status === "overdue" || status === "upcoming")
+    ) {
+      status = "invoice_sent";
+    }
   }
 
   return {
@@ -227,9 +252,18 @@ export function computeRebillSchedule(params: {
   };
 }
 
-/** Statuses that should raise an in-app re-bill alert. */
+/**
+ * Statuses that should raise an in-app re-bill alert. `invoice_sent` is
+ * intentionally NOT an alert — the client has already been billed for this
+ * cycle and is showcased in the parallel "Sent invoices" panel instead.
+ */
 export function isRebillAlertStatus(status: RebillStatus): boolean {
   return status === "due" || status === "overdue";
+}
+
+/** True when this client is awaiting payment on a sent re-bill invoice. */
+export function isRebillSentStatus(status: RebillStatus): boolean {
+  return status === "invoice_sent";
 }
 
 // ---------------------------------------------------------------------------

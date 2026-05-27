@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-24.design-board.r1";
+const SCHEMA_VERSION = "2026-05-27.rebill-invoices.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -1410,6 +1410,58 @@ export async function migrate(): Promise<void> {
   try {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_client_notes_user ON client_notes(user_id, updated_at)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_client_notes_remind ON client_notes(remind_at)`);
+  } catch {
+    // indexes may already exist
+  }
+
+  // ── Client re-bill invoices (sent-invoice lifecycle, per cycle) ────────
+  // One row per re-bill invoice sent from the Billing tab. Bridges the
+  // dashboard's "I sent this" with the Payout DB's "money landed" so a client
+  // can carry a transient `invoice_sent` status between the two events
+  // (otherwise they'd stay 'overdue' until the payment row appears).
+  //
+  //   cycle_anchor = the schedule.nextRebillAt at send time — which billing
+  //     period this invoice is paying for. Used to match against payouts and
+  //     decide when the invoice has been recognised.
+  //   status       = sent → paid (auto-promoted when a payout for the cycle's
+  //                   month-or-later lands after sent_at), unpaid (admin marks
+  //                   the period as gone unpaid — historical only; does NOT
+  //                   advance the schedule), superseded (a fresh invoice was
+  //                   sent for the same client while this one was still sent).
+  //   payout_document_id = id from payout_documents (best-effort link; the
+  //                   doc save is already non-fatal in the send route).
+  //
+  // FK CASCADE on user_id so deleting a client cleans this up. Strictly
+  // additive — no other tables touched.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_rebill_invoices (
+      id                       TEXT PRIMARY KEY,
+      user_id                  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invoice_number           TEXT NOT NULL,
+      payout_document_id       TEXT,
+      cycle_anchor             TEXT NOT NULL,
+      amount_cents             INTEGER NOT NULL DEFAULT 0,
+      recipient_email          TEXT,
+      sent_at                  TEXT NOT NULL DEFAULT (datetime('now')),
+      sent_by_admin_id         TEXT,
+      status                   TEXT NOT NULL DEFAULT 'sent',
+      paid_at                  TEXT,
+      paid_payout_month        INTEGER,
+      paid_payout_year         INTEGER,
+      marked_unpaid_at         TEXT,
+      marked_unpaid_by_admin_id TEXT,
+      marked_unpaid_reason     TEXT,
+      created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_client_rebill_invoices_user_status ON client_rebill_invoices(user_id, status, sent_at)`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_client_rebill_invoices_status_sent ON client_rebill_invoices(status, sent_at)`
+    );
   } catch {
     // indexes may already exist
   }

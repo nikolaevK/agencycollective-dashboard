@@ -209,6 +209,13 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
       const fd = new FormData();
       fd.set("email", email);
       fd.set("invoiceNumber", data.details.invoiceNumber);
+      // Amount in cents — feeds the client_rebill_invoices record so the Sent
+      // Invoices panel can show the total without re-parsing the PDF. Server
+      // re-validates and clamps.
+      fd.set(
+        "amountCents",
+        String(Math.max(0, Math.round((data.details.totalAmount ?? 0) * 100)))
+      );
       fd.set("pdf", new File([blob], `invoice-${data.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
       for (const cc of finalCcs) fd.append("cc", cc);
       const res = await fetch(`/api/admin/clients/${userId}/invoice/send`, {
