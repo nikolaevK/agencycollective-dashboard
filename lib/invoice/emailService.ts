@@ -19,6 +19,19 @@ export async function sendInvoiceEmail(
     /** "onboarding" (default) = new-client email with scope/contract/onboarding
      *  language; "rebill" = recurring monthly invoice email (no scope/contract). */
     variant?: "onboarding" | "rebill";
+    /**
+     * Free-form files to include in the email alongside the invoice PDF —
+     * receipts, contract addendums, supporting docs. Distinct from
+     * `additionalPdfs` (which renders them as additional INVOICES with the
+     * `invoice-` filename prefix and counts them in the subject line).
+     * Filenames are passed straight through to nodemailer; the route layer is
+     * responsible for size/extension/count limits.
+     */
+    additionalAttachments?: Array<{
+      filename: string;
+      buffer: Buffer;
+      contentType: string;
+    }>;
   }
 ): Promise<boolean> {
   if (!isEmailConfigured()) {
@@ -81,10 +94,17 @@ export async function sendInvoiceEmail(
           <p style="line-height: 1.7; margin: 0 0 16px;">Looking forward to it!</p>
           <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Onboarding Team</p>`;
 
+  const hasExtraAttachments = (options?.additionalAttachments?.length ?? 0) > 0;
+  // Wording sidesteps "you requested" — the admin chose what to attach, not
+  // the recipient. "Supporting files" stays neutral.
+  const rebillAttachedPhrase = hasExtraAttachments
+    ? `your ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached, along with the supporting files for this cycle.`
+    : `your ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached.`;
+
   const rebillBody = `
           <p style="line-height: 1.7; margin: 0 0 16px;">Hi there,</p>
           <p style="line-height: 1.7; margin: 0 0 16px;">
-            Thanks for your continued partnership with Agency Collective &mdash; your ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached.
+            Thanks for your continued partnership with Agency Collective &mdash; ${rebillAttachedPhrase}
           </p>
           <p style="line-height: 1.7; margin: 0 0 16px;">
             Please review and submit payment at your convenience using the details on the ${invoiceLabel.toLowerCase()}. If you have any questions, just reply to this email and we'll be happy to help.
@@ -94,12 +114,29 @@ export async function sendInvoiceEmail(
 
   const bodyHtml = variant === "rebill" ? rebillBody : onboardingBody;
 
+  // Sanitise free-form attachment filenames: strip control chars + path
+  // separators (no relative-path nodemailer surprises), cap at 200 chars, and
+  // keep the extension. Empty filenames fall back to "attachment".
+  const sanitiseFilename = (name: string): string => {
+    const cleaned = name
+      .replace(/[\r\n\x00-\x1f]/g, "")
+      .replace(/[\\/]/g, "_")
+      .trim();
+    if (!cleaned) return "attachment";
+    return cleaned.slice(0, 200);
+  };
+
   const attachments = [
     { filename, content: pdfBuffer, contentType: "application/pdf" as const },
     ...additionalPdfs.map((p) => ({
       filename: `invoice-${p.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100)}.pdf`,
       content: p.buffer,
       contentType: "application/pdf" as const,
+    })),
+    ...(options?.additionalAttachments ?? []).map((a) => ({
+      filename: sanitiseFilename(a.filename),
+      content: a.buffer,
+      contentType: a.contentType || "application/octet-stream",
     })),
   ];
 
