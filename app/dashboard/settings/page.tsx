@@ -565,7 +565,7 @@ export default function AdminDocumentationPage() {
               {
                 name: "Directory",
                 what:
-                  "Full-width table of every client with payout-derived Monthly MRR, total revenue, date joined, last re-bill, and next re-bill status. Summary cards, a re-bill alerts banner, and filters sit above it. Click a row to open the per-client page.",
+                  "Full-width table of every client with payout-derived Monthly MRR, total revenue, date joined, last re-bill, and next re-bill status. Summary cards (Total / Active / MRR / Re-bills Due / Invoices Sent), a re-bill alerts banner, a sent-invoices banner, and filters sit above it. Click a row to open the per-client page.",
               },
               {
                 name: "Support",
@@ -643,6 +643,21 @@ export default function AdminDocumentationPage() {
               banner at the top of the directory (with a count badge), alongside
               any due client reminders. It&apos;s recomputed on each load — no
               background job.
+            </p>
+            <p>
+              Once you send a re-bill invoice (or register an existing one), the
+              client drops out of the alerts banner and into a parallel{" "}
+              <span className="font-medium text-foreground">
+                Sent Invoices
+              </span>{" "}
+              panel — grouped &ldquo;this month&rdquo; plus &ldquo;earlier — still
+              awaiting payment.&rdquo; The status chip flips to{" "}
+              <span className="font-medium text-foreground">Invoice sent</span>{" "}
+              (violet). They auto-clear when the payment lands in the Payout DB,
+              or you can{" "}
+              <span className="font-medium text-foreground">Mark unpaid</span> as
+              a historical marker (schedule unaffected; the client returns to
+              overdue alerts).
             </p>
           </SubSection>
           <SubSection title="Filters">
@@ -817,6 +832,77 @@ export default function AdminDocumentationPage() {
               re-bill schedule is still driven by the Payout page. (Email requires
               SMTP to be configured.)
             </Note>
+            <SubSection title="What happens after Send">
+              <p>
+                The client immediately enters the{" "}
+                <span className="font-medium text-foreground">Invoice sent</span>{" "}
+                state — a violet banner appears at the top of the Billing tab,
+                the status chip flips to{" "}
+                <span className="font-medium text-foreground">Invoice sent</span>
+                , and the client moves out of the Re-bill alerts panel into the
+                parallel{" "}
+                <span className="font-medium text-foreground">Sent Invoices</span>{" "}
+                panel on the directory.
+              </p>
+              <p>Three exits:</p>
+              <ul className="space-y-2 list-none pl-0">
+                <Bullet>
+                  <span className="font-medium text-foreground">Payment lands</span>{" "}
+                  — when a payout for this cycle&apos;s month-or-later appears in
+                  the Payout DB, the invoice auto-promotes to{" "}
+                  <span className="font-medium text-foreground">paid</span> on
+                  the next directory load. The schedule advances naturally and
+                  the row clears from the panel. No clicks needed.
+                </Bullet>
+                <Bullet>
+                  <span className="font-medium text-foreground">Mark unpaid</span>{" "}
+                  — if the client didn&apos;t pay this period, click Mark unpaid
+                  (either on the Billing tab banner or in the panel). This is a{" "}
+                  <span className="font-medium text-foreground">historical marker only</span>
+                  : the schedule is{" "}
+                  <span className="font-medium text-foreground">not</span>{" "}
+                  advanced, and the client returns to overdue alerts. Choose
+                  Pause / Extend / resend explicitly as your next step.
+                </Bullet>
+                <Bullet>
+                  <span className="font-medium text-foreground">Resend</span> —
+                  sending a fresh invoice while one is still{" "}
+                  <span className="font-medium text-foreground">sent</span>{" "}
+                  supersedes the old one automatically. Only the latest is the
+                  &ldquo;current&rdquo; invoice for this cycle.
+                </Bullet>
+              </ul>
+            </SubSection>
+            <SubSection title="Register existing (backfill)">
+              <p>
+                Small{" "}
+                <span className="font-medium text-foreground">
+                  Register existing
+                </span>{" "}
+                text link next to the Send button. Use it for invoices you sent{" "}
+                <span className="font-medium">outside this UI</span> — before
+                this feature shipped, or via a direct email — so they pick up the
+                same{" "}
+                <span className="font-medium text-foreground">Invoice sent</span>{" "}
+                lifecycle without re-emailing or re-generating the PDF.
+              </p>
+              <ul className="space-y-2 list-none pl-0">
+                <Bullet>
+                  Pick from the client&apos;s filed invoice docs (auto-fills the
+                  invoice number from the filename and the sent date from when
+                  the doc was filed), or enter manually.
+                </Bullet>
+                <Bullet>
+                  Defaults: cycle = next re-bill date, amount = current monthly
+                  MRR, recipient = client email — adjust as needed.
+                </Bullet>
+                <Bullet>
+                  No email goes out. No PDF is generated. If a current{" "}
+                  <span className="font-medium text-foreground">sent</span>{" "}
+                  invoice already exists for the client, it&apos;s superseded.
+                </Bullet>
+              </ul>
+            </SubSection>
           </SubSection>
           <SubSection title="Multi-account support">
             <p>
