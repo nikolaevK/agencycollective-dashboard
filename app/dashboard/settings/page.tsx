@@ -832,6 +832,48 @@ export default function AdminDocumentationPage() {
               re-bill schedule is still driven by the Payout page. (Email requires
               SMTP to be configured.)
             </Note>
+            <SubSection title="Attachments (optional)">
+              <p>
+                The drawer has an{" "}
+                <span className="font-medium text-foreground">Attachments</span>{" "}
+                section between CC and the dates. Pick free-form supporting
+                files &mdash; receipts, contract addendums, screenshots &mdash;
+                that ride with the email alongside the invoice PDF.
+              </p>
+              <ul className="space-y-2 list-none pl-0">
+                <Bullet>
+                  <span className="font-medium text-foreground">Limits.</span>{" "}
+                  Up to <span className="font-medium text-foreground">5 files</span>,{" "}
+                  <span className="font-medium text-foreground">3 MB each</span>,{" "}
+                  <span className="font-medium text-foreground">3 MB total</span>.
+                  Tuned for the hosting platform&apos;s request size cap; the
+                  picker shows a live count/size badge as you add files.
+                </Bullet>
+                <Bullet>
+                  <span className="font-medium text-foreground">Blocked types.</span>{" "}
+                  Executable-ish extensions (
+                  <Pill>.exe</Pill>, <Pill>.bat</Pill>, <Pill>.js</Pill>,{" "}
+                  <Pill>.vbs</Pill>, <Pill>.jar</Pill>, etc.) are rejected
+                  &mdash; many mail providers silently strip these and the
+                  client would never see them.
+                </Bullet>
+                <Bullet>
+                  <span className="font-medium text-foreground">Email-only.</span>{" "}
+                  Attachments are <span className="font-medium">not</span> filed
+                  in the client&apos;s Documents tab and{" "}
+                  <span className="font-medium">not</span> stored on the Payout
+                  page. They&apos;re transient send-time additions. If you want
+                  a file to live alongside the client&apos;s invoice docs,
+                  upload it separately through the Payout page.
+                </Bullet>
+                <Bullet>
+                  When attachments are present, the rebill email body adds a
+                  brief mention (&ldquo;along with the supporting files for
+                  this cycle&rdquo;) so the recipient knows to look beyond the
+                  invoice PDF.
+                </Bullet>
+              </ul>
+            </SubSection>
             <SubSection title="What happens after Send">
               <p>
                 The client immediately enters the{" "}
