@@ -486,8 +486,10 @@ Optional:
 ```
 META_API_VERSION         # Default: v25.0
 META_CONCURRENCY_LIMIT   # Default: 5
-META_CACHE_TTL_SECONDS   # Default: 300 (in-memory L1)
 META_PERSISTENT_CACHE_TTL_SECONDS  # Default: 86400 (24h persistent Meta cache — the ban-avoidance layer)
+# Note: the in-memory L1 cache (lib/cache.ts) uses hard-coded per-resource TTLs
+# (accounts/insights/campaigns 300s, alerts/activities 180s, pixel 600s, Google events 120s).
+# There is no env override for it — only META_PERSISTENT_CACHE_TTL_SECONDS bounds how often Meta is called.
 GHL_PIT                  # Peptide Ads sub-account PIT (enables appointment status sync + GHL contact surfaces for Peptide Ads)
 GHL_LOCATION_ID          # Peptide Ads location id; paired with GHL_PIT
 GHL_PIT_AGENCY           # Agency Collective sub-account PIT (same surfaces, scoped to Agency Collective)

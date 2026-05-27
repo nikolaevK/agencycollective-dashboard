@@ -1699,9 +1699,9 @@ export default function AdminDocumentationPage() {
                 calls Meta at most once per day. Ban-avoidance; configurable
                 via <Pill>META_PERSISTENT_CACHE_TTL_SECONDS</Pill> (default
                 86400), no force-refresh. The shorter in-memory TTLs below
-                (Meta 5 min via <Pill>META_CACHE_TTL_SECONDS</Pill>, alerts
-                3 min, pixel 10 min) are only a fast layer in front and do
-                NOT change how often Meta is actually called.
+                (Meta 5 min, alerts 3 min, pixel 10 min — hard-coded per
+                resource in <Pill>lib/cache.ts</Pill>) are only a fast layer
+                in front and do NOT change how often Meta is actually called.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Alerts</span>{" "}
@@ -1812,9 +1812,9 @@ export default function AdminDocumentationPage() {
                 <Pill>META_API_VERSION</Pill> (default <Pill>v25.0</Pill>),{" "}
                 <Pill>META_CONCURRENCY_LIMIT</Pill> (default <Pill>5</Pill>),{" "}
                 <Pill>META_PERSISTENT_CACHE_TTL_SECONDS</Pill> (default{" "}
-                <Pill>86400</Pill> — the 24h Meta cache),{" "}
-                <Pill>META_CACHE_TTL_SECONDS</Pill> (default{" "}
-                <Pill>300</Pill> — in-memory layer)
+                <Pill>86400</Pill> — the 24h Meta cache). The in-memory L1
+                layer has no env override; its TTLs are hard-coded per
+                resource in <Pill>lib/cache.ts</Pill>.
               </Bullet>
             </ul>
           </SubSection>
