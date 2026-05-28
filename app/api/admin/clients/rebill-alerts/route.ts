@@ -15,10 +15,15 @@ async function requireAdminSession() {
 }
 
 /**
- * Live-computed re-bill alerts: clients whose next bill is due/overdue (and not
- * paused or extended), plus any due client reminders. No background job — the
- * schedule is recomputed from the Payout DB + billing config on each call,
- * matching how the Meta alert feed already works.
+ * Live-computed re-bill alerts: ACTIVE clients whose next bill is due/overdue
+ * (and not paused or extended), plus any due client reminders. No background
+ * job — the schedule is recomputed from the Payout DB + billing config on each
+ * call, matching how the Meta alert feed already works.
+ *
+ * Only `status === "active"` clients raise a re-bill alert. Onboarding clients
+ * aren't billing yet; inactive/archived clients have been stood down — neither
+ * should nag in the alerts banner even if their schedule math says overdue
+ * (an inactive client doesn't need a separate billing pause to go quiet).
  */
 export async function GET() {
   if (!(await requireAdminSession()))
@@ -32,7 +37,7 @@ export async function GET() {
   ]);
 
   const rebills = rows
-    .filter((r) => isRebillAlertStatus(r.schedule.status))
+    .filter((r) => r.status === "active" && isRebillAlertStatus(r.schedule.status))
     .map((r) => ({
       id: r.id,
       slug: r.slug,
