@@ -6,8 +6,15 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { UserSidebar } from "@/components/portal/UserSidebar";
 import { UserTopBar } from "@/components/portal/UserTopBar";
 import { PortalBottomNav } from "@/components/portal/PortalBottomNav";
+import { MaintenanceNotice } from "@/components/portal/MaintenanceNotice";
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  maintenanceMessage,
+}: {
+  children: React.ReactNode;
+  maintenanceMessage?: string | null;
+}) {
   const { dateRange } = useDateRange();
   const { data } = useUserOverview(dateRange);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,6 +42,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           logoPath={data?.logoPath}
           onMenuClick={() => setSidebarOpen(true)}
         />
+        {maintenanceMessage && <MaintenanceNotice message={maintenanceMessage} />}
         {children}
         <PortalBottomNav />
       </div>
@@ -42,7 +50,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function PortalShell({ children }: { children: React.ReactNode }) {
+export function PortalShell({
+  children,
+  maintenanceMessage,
+}: {
+  children: React.ReactNode;
+  maintenanceMessage?: string | null;
+}) {
   return (
     <Suspense
       fallback={
@@ -54,7 +68,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </div>
       }
     >
-      <Shell>{children}</Shell>
+      <Shell maintenanceMessage={maintenanceMessage}>{children}</Shell>
     </Suspense>
   );
 }

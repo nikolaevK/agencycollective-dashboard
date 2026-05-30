@@ -12,6 +12,7 @@ import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAle
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { WelcomeKitBuilder } from "@/components/users/WelcomeKitBuilder";
+import { MaintenanceToggle } from "@/components/users/MaintenanceToggle";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "@/components/users/types";
 
@@ -133,6 +134,7 @@ export default function UsersPage() {
                 Welcome Kit
               </TabButton>
             </div>
+            <MaintenanceToggle />
             {tab === "clients" && (
               <button
                 onClick={() => setShowAdd(true)}
