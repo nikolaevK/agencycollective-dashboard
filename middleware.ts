@@ -75,6 +75,7 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
+  { match: (p) => p.startsWith("/dashboard/projection"), perm: "dashboard" },
   // Dashboard overview, accounts, alerts, settings need 'dashboard'
   { match: (p) => p === "/dashboard" || p.startsWith("/dashboard/accounts") || p === "/dashboard/alerts" || p === "/dashboard/settings", perm: "dashboard" },
 ];
@@ -99,6 +100,7 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/admin/payouts"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
+  { match: (p) => p.startsWith("/api/admin/projection"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/accounts"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/ads"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/adsets"), perm: "dashboard" },
@@ -248,6 +250,7 @@ export const config = {
     "/api/admin/agency-config/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
+    "/api/admin/projection/:path*",
     "/api/closer/:path*",
     "/api/calendar/:path*",
     "/api/accounts/:path*",
