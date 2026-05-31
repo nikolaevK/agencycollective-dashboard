@@ -22,6 +22,7 @@ export interface ClientBilling {
   pauseReason: string | null;
   extendUntil: string | null; // ISO date (yyyy-mm-dd)
   lastRebilledOverride: string | null; // ISO date — hybrid manual override
+  mrrMonthOverride: string | null; // "yyyy-mm" — pin recurring MRR to this payout month (null = latest)
   leadDays: number;
   settingsNotes: string | null;
   createdAt: string;
@@ -289,6 +290,8 @@ function rowToBilling(row: Row): ClientBilling {
       row.last_rebilled_override != null
         ? String(row.last_rebilled_override)
         : null,
+    mrrMonthOverride:
+      row.mrr_month_override != null ? String(row.mrr_month_override) : null,
     leadDays: Number(row.lead_days ?? DEFAULT_LEAD_DAYS),
     settingsNotes: row.settings_notes != null ? String(row.settings_notes) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
@@ -327,6 +330,7 @@ export interface ClientBillingInput {
   pauseReason?: string | null;
   extendUntil?: string | null;
   lastRebilledOverride?: string | null;
+  mrrMonthOverride?: string | null;
   leadDays?: number;
   settingsNotes?: string | null;
 }
@@ -364,6 +368,8 @@ export async function upsertClientBilling(
   if (changes.extendUntil !== undefined) set("extend_until", changes.extendUntil);
   if (changes.lastRebilledOverride !== undefined)
     set("last_rebilled_override", changes.lastRebilledOverride);
+  if (changes.mrrMonthOverride !== undefined)
+    set("mrr_month_override", changes.mrrMonthOverride);
   if (changes.leadDays !== undefined) set("lead_days", changes.leadDays);
   if (changes.settingsNotes !== undefined)
     set("settings_notes", changes.settingsNotes);

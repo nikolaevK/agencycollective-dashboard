@@ -48,6 +48,7 @@ interface FormState {
   leadDays: string;
   extendUntil: string;
   lastRebilledOverride: string;
+  mrrMonthOverride: string; // "yyyy-mm" or "" (= latest, default)
   settingsNotes: string;
 }
 
@@ -104,6 +105,7 @@ export function ClientBillingTab({
       leadDays: b?.leadDays != null ? String(b.leadDays) : "5",
       extendUntil: b?.extendUntil ?? "",
       lastRebilledOverride: b?.lastRebilledOverride ?? "",
+      mrrMonthOverride: b?.mrrMonthOverride ?? "",
       settingsNotes: b?.settingsNotes ?? "",
     });
   }, [data]);
@@ -162,6 +164,7 @@ export function ClientBillingTab({
           leadDays: form.leadDays ? Number(form.leadDays) : 5,
           extendUntil: form.extendUntil || null,
           lastRebilledOverride: form.lastRebilledOverride || null,
+          mrrMonthOverride: form.mrrMonthOverride || null,
           settingsNotes: form.settingsNotes || null,
         }),
       });
@@ -365,6 +368,26 @@ export function ClientBillingTab({
               onChange={(e) => set("lastRebilledOverride", e.target.value)}
               className={FIELD}
             />
+          </Field>
+          <Field
+            label="MRR source month"
+            hint="Which payment counts as recurring MRR. Default = latest; pin a prior month to ignore one-off service charges."
+          >
+            <select
+              value={form.mrrMonthOverride}
+              onChange={(e) => set("mrrMonthOverride", e.target.value)}
+              className={FIELD}
+            >
+              <option value="">Latest payment (default)</option>
+              {months.map((m) => (
+                <option
+                  key={`${m.year}-${m.month}`}
+                  value={`${m.year}-${String(m.month).padStart(2, "0")}`}
+                >
+                  {monthLabel(m.year, m.month)} · {formatMoney(m.amountDue)}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 

@@ -132,6 +132,11 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // Client brand logo stored as a BLOB (filesystem is read-only on Vercel).
     { table: "users",                  column: "logo_data",          defn: "BLOB" },
     { table: "users",                  column: "logo_type",          defn: "TEXT" },
+    // Per-client MRR source override (yyyy-mm). Read on every directory build
+    // to pin recurring MRR to a chosen month instead of the latest payment.
+    // client_billing's CREATE TABLE is gated by the version body, so "no such
+    // table" here is benign on a fresh DB (the body creates it with the column).
+    { table: "client_billing",         column: "mrr_month_override", defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -152,7 +157,8 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       if (
         (table === "ghl_appointment_links" ||
           table === "welcome_kit" ||
-          table === "users") &&
+          table === "users" ||
+          table === "client_billing") &&
         /no such table/i.test(msg)
       ) {
         continue;
@@ -1383,6 +1389,7 @@ export async function migrate(): Promise<void> {
       pause_reason           TEXT,
       extend_until           TEXT,
       last_rebilled_override TEXT,
+      mrr_month_override     TEXT,
       lead_days              INTEGER NOT NULL DEFAULT 5,
       settings_notes         TEXT,
       created_at             TEXT NOT NULL DEFAULT (datetime('now')),

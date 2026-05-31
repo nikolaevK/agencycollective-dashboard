@@ -117,7 +117,30 @@ function buildRow(
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
   const matched = matchHistories(user, histories);
 
-  const payoutMrr = matched.reduce((s, h) => s + h.latestAmountDue, 0);
+  // Recurring MRR. Default = the latest payout month's amount_due (summed
+  // across matched brands). A per-client override (billing.mrrMonthOverride,
+  // "yyyy-mm") pins MRR to a chosen month so a one-off "additional service"
+  // payment landing as the newest month isn't mistaken for recurring revenue.
+  // Falls back to latest if the pinned month is no longer present.
+  let payoutMrr = matched.reduce((s, h) => s + h.latestAmountDue, 0);
+  const mrrOverride = billing?.mrrMonthOverride ?? null;
+  if (mrrOverride) {
+    const mm = mrrOverride.match(/^(\d{4})-(\d{2})$/);
+    if (mm) {
+      const y = Number(mm[1]);
+      const mo = Number(mm[2]);
+      let sum = 0;
+      let found = false;
+      for (const h of matched) {
+        const entry = h.months.find((e) => e.year === y && e.month === mo);
+        if (entry) {
+          sum += entry.amountDue;
+          found = true;
+        }
+      }
+      if (found) payoutMrr = sum;
+    }
+  }
   const totalRevenue = matched.reduce((s, h) => s + h.totalPaid, 0);
 
   // Earliest payout join date across matched brands.

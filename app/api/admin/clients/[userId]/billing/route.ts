@@ -79,6 +79,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       changes.lastRebilledOverride = body.lastRebilledOverride
         ? String(body.lastRebilledOverride)
         : null;
+    if (body.mrrMonthOverride !== undefined) {
+      const v = body.mrrMonthOverride ? String(body.mrrMonthOverride) : null;
+      if (v !== null && !/^\d{4}-\d{2}$/.test(v)) {
+        return NextResponse.json(
+          { error: "mrrMonthOverride must be 'yyyy-mm' or null" },
+          { status: 400 }
+        );
+      }
+      changes.mrrMonthOverride = v;
+    }
     if (body.leadDays !== undefined)
       changes.leadDays = Math.max(0, Number(body.leadDays) || 0);
     if (body.settingsNotes !== undefined)
