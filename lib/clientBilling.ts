@@ -11,7 +11,7 @@ export type RebillStatus =
   | "overdue" // past due, no payout recorded
   | "invoice_sent" // re-bill invoice sent for the current cycle, awaiting payment
   | "paused" // exception: billing paused
-  | "extended" // extension active, alerts suppressed until extend_until
+  | "extended" // extension active; deferred bill not yet within the lead window
   | "unscheduled"; // no anchor date — can't schedule yet
 
 export interface ClientBilling {
@@ -179,11 +179,12 @@ export function computeRebillSchedule(params: {
     payoutLast = billingDateFor(latest.year, latest.month - 1, day);
   }
 
+  // Manual override is authoritative when set — the field is labelled
+  // "Overrides the date derived from payouts", so an admin who sets it expects
+  // the schedule to follow it (even to a date earlier than the latest payout).
+  // With no override we fall back to the payout-derived last re-bill.
   const overrideDate = parseDate(override);
-  let lastRebilled: Date | null = payoutLast;
-  if (overrideDate && (!lastRebilled || overrideDate > lastRebilled)) {
-    lastRebilled = overrideDate;
-  }
+  const lastRebilled: Date | null = overrideDate ?? payoutLast;
 
   // Next re-bill: one cadence after the last recorded re-bill. With NO payment
   // history (no payout rows, no override) we can't claim the client is overdue
@@ -214,12 +215,18 @@ export function computeRebillSchedule(params: {
     status = "unscheduled";
   } else {
     daysUntilDue = diffDays(next, today);
-    if (extend && today < extend) {
-      status = "extended";
-    } else if (daysUntilDue < 0) {
+    if (daysUntilDue < 0) {
       status = "overdue";
     } else if (daysUntilDue <= leadDays) {
+      // Within the lead window the bill is imminent and SHOULD alert — even for
+      // an extended client. An extension defers the bill date; it does not mute
+      // the reminder once the (deferred) date is close.
       status = "due";
+    } else if (extend && today < extend) {
+      // Extension active and the deferred bill is still further out than the
+      // lead window — suppress the alert until it comes within lead_days, at
+      // which point it falls through to "due" above.
+      status = "extended";
     } else {
       status = "upcoming";
     }
