@@ -11,12 +11,13 @@ import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
+import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
 import { WelcomeKitBuilder } from "@/components/users/WelcomeKitBuilder";
 import { MaintenanceToggle } from "@/components/users/MaintenanceToggle";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "@/components/users/types";
 
-type TabId = "clients" | "support" | "welcomeKit";
+type TabId = "clients" | "adAccounts" | "support" | "welcomeKit";
 
 async function fetchClients(): Promise<ClientPublic[]> {
   const res = await fetch("/api/admin/users");
@@ -123,6 +124,9 @@ export default function UsersPage() {
               <TabButton active={tab === "clients"} onClick={() => setTab("clients")}>
                 Directory
               </TabButton>
+              <TabButton active={tab === "adAccounts"} onClick={() => setTab("adAccounts")}>
+                Ad Accounts
+              </TabButton>
               <TabButton
                 active={tab === "support"}
                 onClick={() => setTab("support")}
@@ -182,6 +186,8 @@ export default function UsersPage() {
             )}
           </>
         )}
+
+        {tab === "adAccounts" && <AdAccountsDirectory />}
 
         {tab === "support" && <UsersSupportTab />}
 

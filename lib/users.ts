@@ -405,6 +405,21 @@ export async function deleteUser(id: string): Promise<boolean> {
     }
   }
 
+  // Ad accounts survive a client deletion — they're standalone billable
+  // entities. Just unattach them (the FK is ON DELETE SET NULL, but libSQL
+  // cascade isn't guaranteed to fire, so do it explicitly). Best-effort.
+  try {
+    await db.execute({
+      sql: "UPDATE ad_accounts SET user_id = NULL, updated_at = datetime('now') WHERE user_id = ?",
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] unattach of ad_accounts failed (non-fatal):", err);
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM users WHERE id = ?",
     args: [id],

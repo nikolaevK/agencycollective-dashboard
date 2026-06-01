@@ -17,8 +17,9 @@ export async function sendInvoiceEmail(
     cc?: string | string[];
     additionalPdfs?: Array<{ buffer: Buffer; invoiceNumber: string }>;
     /** "onboarding" (default) = new-client email with scope/contract/onboarding
-     *  language; "rebill" = recurring monthly invoice email (no scope/contract). */
-    variant?: "onboarding" | "rebill";
+     *  language; "rebill" = recurring monthly client invoice (no scope/contract);
+     *  "adaccount" = recurring ad-account invoice (retainer + ad-spend fee). */
+    variant?: "onboarding" | "rebill" | "adaccount";
     /**
      * Free-form files to include in the email alongside the invoice PDF —
      * receipts, contract addendums, supporting docs. Distinct from
@@ -64,9 +65,12 @@ export async function sendInvoiceEmail(
   const hasMultiple = additionalPdfs.length > 0;
 
   const allNumbers = [safeNumber, ...additionalPdfs.map((p) => p.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100))];
+  // Ad-account invoices get an "Ad Account Invoice" subject; everything else
+  // (onboarding / client re-bill) keeps the plain "Invoice" subject.
+  const subjectNoun = options?.variant === "adaccount" ? "Ad Account Invoice" : "Invoice";
   const subject = hasMultiple
-    ? `Invoices ${allNumbers.map((n) => `#${n}`).join(", ")} — Agency Collective`
-    : `Invoice #${safeNumber} — Agency Collective`;
+    ? `${subjectNoun}s ${allNumbers.map((n) => `#${n}`).join(", ")} — Agency Collective`
+    : `${subjectNoun} #${safeNumber} — Agency Collective`;
 
   const invoiceLabel = hasMultiple ? "Invoices" : "Invoice";
 
@@ -112,7 +116,27 @@ export async function sendInvoiceEmail(
           <p style="line-height: 1.7; margin: 0 0 16px;">We appreciate your business!</p>
           <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
 
-  const bodyHtml = variant === "rebill" ? rebillBody : onboardingBody;
+  const adAccountAttachedPhrase = hasExtraAttachments
+    ? `your ad account ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached, along with the supporting files for this cycle.`
+    : `your ad account ${invoiceLabel.toLowerCase()} for this billing cycle ${hasMultiple ? "are" : "is"} attached.`;
+
+  const adAccountBody = `
+          <p style="line-height: 1.7; margin: 0 0 16px;">Hi there,</p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Thanks for your continued partnership with Agency Collective &mdash; ${adAccountAttachedPhrase} It covers your monthly retainer and any ad spend fees for this period.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Please review and submit payment at your convenience using the details on the ${invoiceLabel.toLowerCase()}. Keeping your account current ensures uninterrupted delivery across your ad accounts. If you have any questions, just reply to this email and we'll be happy to help.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">We appreciate your business!</p>
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
+
+  const bodyHtml =
+    variant === "rebill"
+      ? rebillBody
+      : variant === "adaccount"
+      ? adAccountBody
+      : onboardingBody;
 
   // Sanitise free-form attachment filenames: strip control chars + path
   // separators (no relative-path nodemailer surprises), cap at 200 chars, and

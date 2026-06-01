@@ -35,6 +35,7 @@ import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCar
 import { MrrDetailModal } from "@/components/users/MrrDetailModal";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { ClientBillingTab } from "@/components/users/ClientBillingTab";
+import { ClientAdAccountsTab } from "@/components/users/ClientAdAccountsTab";
 import { ClientDocumentsTab } from "@/components/users/ClientDocumentsTab";
 import { ClientNotesTab } from "@/components/users/ClientNotesTab";
 import { ClientSettingsTab } from "@/components/users/ClientSettingsTab";
@@ -49,11 +50,18 @@ interface ClientProfilePageProps {
   params: { userId: string };
 }
 
-type DetailTab = "overview" | "billing" | "documents" | "notes" | "settings";
+type DetailTab =
+  | "overview"
+  | "billing"
+  | "adAccounts"
+  | "documents"
+  | "notes"
+  | "settings";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "billing", label: "Billing" },
+  { id: "adAccounts", label: "Ad Accounts" },
   { id: "documents", label: "Documents" },
   { id: "notes", label: "Notes & Reminders" },
   { id: "settings", label: "Settings" },
@@ -373,7 +381,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-2xl font-black text-foreground">{client.displayName}</h1>
                   <StatusBadge status={client.status} />
-                  <RebillStatusChip status={client.schedule.status} />
+                  <RebillStatusChip status={client.schedule.status} paid={client.schedule.paid} />
                   {!client.email && (
                     <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded text-[10px] font-bold uppercase">
                       No email
@@ -566,6 +574,9 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             clientEmail={client.email}
             onChanged={() => refetch()}
           />
+        )}
+        {tab === "adAccounts" && (
+          <ClientAdAccountsTab userId={params.userId} clientName={client.displayName} />
         )}
         {tab === "documents" && <ClientDocumentsTab userId={params.userId} />}
         {tab === "notes" && <ClientNotesTab userId={params.userId} />}

@@ -35,6 +35,13 @@ export interface RebillSchedule {
   lastRebilledAt: string | null; // max(latest payout month, manual override)
   nextRebillAt: string | null; // yyyy-mm-dd
   status: RebillStatus;
+  /**
+   * The current cycle has a confirmed qualifying payment that still covers
+   * today (settled until the next re-bill date). Independent of `status`: a
+   * re-bill can be `upcoming`/`due` AND already `paid` for the current cycle,
+   * or `upcoming` and NOT paid (a brand-new account that's never billed).
+   */
+  paid: boolean;
   paused: boolean;
   extendUntil: string | null;
   daysUntilDue: number | null; // negative = overdue
@@ -139,8 +146,17 @@ export function computeRebillSchedule(params: {
    * moved on (the auto-paid promotion lives in clientRebillInvoices).
    */
   activeSentInvoice?: { cycleAnchor: string } | null;
+  /**
+   * Months with a CONFIRMED qualifying payment (Ad-Account-flagged payout for ad
+   * accounts; REBILL-flagged payout matching name + amount for clients). When
+   * the latest such payment still covers today (its cycle hasn't elapsed), the
+   * status is `paid` — settled until the next re-bill date — overriding
+   * upcoming/due/overdue/invoice_sent (but not paused/unscheduled).
+   */
+  paidMonths?: Array<{ year: number; month: number }>;
 }): RebillSchedule {
   const { anchorDate, billing, payoutMonths, activeSentInvoice } = params;
+  const paidMonths = params.paidMonths ?? [];
   const today = toUtcMidnight(params.today ?? new Date());
 
   const paused = billing?.paused ?? false;
@@ -149,10 +165,16 @@ export function computeRebillSchedule(params: {
   const override = billing?.lastRebilledOverride ?? null;
 
   const anchor = parseDate(anchorDate);
+  const overrideDate = parseDate(override);
 
-  // Day-of-month: explicit override, else derived from the anchor, else null.
+  // Day-of-month, in priority order: explicit billing day → the "last billed"
+  // override's day (pinning "last billed = May 28" means the cycle recurs on
+  // the 28th, so the next bill is June 28 — a working manual lever) → the
+  // anchor's day.
   const billingDay =
-    billing?.billingDay ?? (anchor ? anchor.getUTCDate() : null);
+    billing?.billingDay ??
+    (overrideDate ? overrideDate.getUTCDate() : null) ??
+    (anchor ? anchor.getUTCDate() : null);
 
   // No anchor and no billing day → can't schedule.
   if (!anchor && billingDay == null) {
@@ -162,6 +184,7 @@ export function computeRebillSchedule(params: {
       lastRebilledAt: override,
       nextRebillAt: null,
       status: paused ? "paused" : "unscheduled",
+      paid: false,
       paused,
       extendUntil,
       daysUntilDue: null,
@@ -184,7 +207,6 @@ export function computeRebillSchedule(params: {
   // "Overrides the date derived from payouts", so an admin who sets it expects
   // the schedule to follow it (even to a date earlier than the latest payout).
   // With no override we fall back to the payout-derived last re-bill.
-  const overrideDate = parseDate(override);
   const lastRebilled: Date | null = overrideDate ?? payoutLast;
 
   // Next re-bill: one cadence after the last recorded re-bill. With NO payment
@@ -248,12 +270,30 @@ export function computeRebillSchedule(params: {
     }
   }
 
+  // `paid` is computed independently of `status`: take the latest qualifying
+  // payment month, advance one cycle to find when the next payment is due, and
+  // if that's still in the future the current cycle is settled (`paid`). The
+  // UI shows this as a separate chip alongside the upcoming/due/overdue status,
+  // so an account can be e.g. "Paid" AND "Upcoming", or "Upcoming" and not paid.
+  let paid = false;
+  if (paidMonths.length > 0) {
+    const latestPaid = [...paidMonths].sort(
+      (a, b) => a.year - b.year || a.month - b.month
+    )[paidMonths.length - 1];
+    const paidThrough = nextCycleAfter(
+      billingDateFor(latestPaid.year, latestPaid.month - 1, day),
+      day
+    );
+    paid = paidThrough.getTime() > today.getTime();
+  }
+
   return {
     anchorDate: anchor ? toIsoDate(anchor) : anchorDate,
     billingDay: day,
     lastRebilledAt: lastRebilled ? toIsoDate(lastRebilled) : null,
     nextRebillAt: next ? toIsoDate(next) : null,
     status,
+    paid,
     paused,
     extendUntil,
     daysUntilDue,

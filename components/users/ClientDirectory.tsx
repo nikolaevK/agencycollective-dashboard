@@ -153,7 +153,7 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <RebillStatusChip status={client.schedule.status} />
+                      <RebillStatusChip status={client.schedule.status} paid={client.schedule.paid} />
                       {client.schedule.nextRebillAt && (
                         <span className="text-xs text-muted-foreground">
                           {formatDate(client.schedule.nextRebillAt)}
@@ -230,7 +230,7 @@ export function ClientDirectory({ clients, onRefresh }: ClientDirectoryProps) {
                     Next re-bill
                   </p>
                   <div className="mt-0.5 flex items-center gap-1.5">
-                    <RebillStatusChip status={client.schedule.status} />
+                    <RebillStatusChip status={client.schedule.status} paid={client.schedule.paid} />
                   </div>
                 </div>
               </div>

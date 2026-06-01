@@ -688,6 +688,97 @@ function isRebillSalesRep(salesRep: string | null): boolean {
   return salesRep.toLowerCase().includes("rebill");
 }
 
+/**
+ * Payout rows whose Sales Rep column flags them as an ad-account payment —
+ * the marker the Ad Accounts tab reconciles against, mirroring how `rebill`
+ * tags re-bill payments. Case-insensitive substring on "ad account".
+ */
+export function isAdAccountSalesRep(salesRep: string | null): boolean {
+  if (!salesRep) return false;
+  return salesRep.toLowerCase().includes("ad account");
+}
+
+/**
+ * Per-brand REBILL-flagged payout months WITH their summed amount_due (cents),
+ * grouped by normalized brand. Powers the Client Directory's `paid` status: a
+ * REBILL payout whose amount_due matches the client's expected recurring amount
+ * confirms the cycle is paid. Keyed by `normalizeBrandName(brand)`.
+ */
+export async function getRebillPayoutMonthsByBrand(): Promise<
+  Map<string, Array<{ year: number; month: number; amountDue: number }>>
+> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute(
+    `SELECT brand_name, payout_month, payout_year, amount_due, sales_rep FROM payouts`
+  );
+  // Sum amount_due per (brand, year, month) across REBILL rows.
+  const byKey = new Map<string, { year: number; month: number; amountDue: number }>();
+  const brandKeys = new Map<string, Set<string>>(); // norm → set of "year-month"
+  for (const row of result.rows) {
+    const salesRep = row.sales_rep != null ? String(row.sales_rep) : null;
+    if (!isRebillSalesRep(salesRep)) continue;
+    const norm = normalizeBrandName(String(row.brand_name));
+    if (!norm) continue;
+    const month = Number(row.payout_month);
+    const year = Number(row.payout_year);
+    if (!Number.isFinite(month) || !Number.isFinite(year)) continue;
+    const key = `${norm}|${year}-${month}`;
+    const existing = byKey.get(key);
+    const amountDue = Number(row.amount_due ?? 0);
+    if (existing) existing.amountDue += amountDue;
+    else byKey.set(key, { year, month, amountDue });
+    let set = brandKeys.get(norm);
+    if (!set) {
+      set = new Set();
+      brandKeys.set(norm, set);
+    }
+    set.add(`${year}-${month}`);
+  }
+  const map = new Map<string, Array<{ year: number; month: number; amountDue: number }>>();
+  for (const [norm, set] of brandKeys) {
+    const arr: Array<{ year: number; month: number; amountDue: number }> = [];
+    for (const ym of set) {
+      const entry = byKey.get(`${norm}|${ym}`);
+      if (entry) arr.push(entry);
+    }
+    map.set(norm, arr);
+  }
+  return map;
+}
+
+/**
+ * (year, month) pairs of every payout flagged as an "Ad Account" in the Sales
+ * Rep column, grouped by normalized brand. The Ad Accounts directory uses this
+ * to confirm payment of a sent ad-account invoice: a brand's ad-account payout
+ * landing at/after the invoice's cycle anchor auto-promotes it to paid (see
+ * lib/adAccountInvoices.ts). Keyed by `normalizeBrandName(brand)`; match a
+ * client's brand with `brandsMatch`.
+ */
+export async function getAdAccountPayoutMonthsByBrand(): Promise<
+  Map<string, Array<{ year: number; month: number }>>
+> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute(
+    `SELECT brand_name, payout_month, payout_year, sales_rep FROM payouts`
+  );
+  const map = new Map<string, Array<{ year: number; month: number }>>();
+  for (const row of result.rows) {
+    const salesRep = row.sales_rep != null ? String(row.sales_rep) : null;
+    if (!isAdAccountSalesRep(salesRep)) continue;
+    const norm = normalizeBrandName(String(row.brand_name));
+    if (!norm) continue;
+    const month = Number(row.payout_month);
+    const year = Number(row.payout_year);
+    if (!Number.isFinite(month) || !Number.isFinite(year)) continue;
+    const arr = map.get(norm);
+    if (arr) arr.push({ year, month });
+    else map.set(norm, [{ year, month }]);
+  }
+  return map;
+}
+
 function deduplicatePriorMonths(entries: HistoricalEntry[]): PriorMonth[] {
   const monthMap = new Map<string, PriorMonth>();
   for (const e of entries) {

@@ -269,7 +269,7 @@ export function ClientBillingTab({
         <div className="flex items-center gap-2 mb-4">
           <CalendarClock className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-bold text-foreground">Re-bill schedule</h3>
-          <RebillStatusChip status={data.schedule.status} className="ml-1" />
+          <RebillStatusChip status={data.schedule.status} paid={data.schedule.paid} className="ml-1" />
           {/* Secondary, low-emphasis: backfill a historical/external send so
               it picks up the new invoice_sent state without re-emailing. */}
           <button

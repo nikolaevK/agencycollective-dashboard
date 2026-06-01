@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-27.rebill-invoices.r1";
+const SCHEMA_VERSION = "2026-05-31.ad-accounts.r2";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -137,6 +137,15 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // client_billing's CREATE TABLE is gated by the version body, so "no such
     // table" here is benign on a fresh DB (the body creates it with the column).
     { table: "client_billing",         column: "mrr_month_override", defn: "TEXT" },
+    // Per-ad-account billing-schedule controls — read on every Ad Accounts
+    // directory build to compute pause/billing-day/lead/extend/override. The
+    // ad_accounts CREATE TABLE is gated by the version body, so "no such table"
+    // here is benign on a fresh DB (the body creates it with these columns).
+    { table: "ad_accounts",            column: "billing_paused",       defn: "INTEGER NOT NULL DEFAULT 0" },
+    { table: "ad_accounts",            column: "billing_day",          defn: "INTEGER" },
+    { table: "ad_accounts",            column: "lead_days",            defn: "INTEGER NOT NULL DEFAULT 5" },
+    { table: "ad_accounts",            column: "extend_until",         defn: "TEXT" },
+    { table: "ad_accounts",            column: "last_billed_override", defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -158,7 +167,8 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
         (table === "ghl_appointment_links" ||
           table === "welcome_kit" ||
           table === "users" ||
-          table === "client_billing") &&
+          table === "client_billing" ||
+          table === "ad_accounts") &&
         /no such table/i.test(msg)
       ) {
         continue;
@@ -1493,6 +1503,87 @@ export async function migrate(): Promise<void> {
       updated_by      TEXT
     )
   `);
+
+  // ── Ad Accounts (optional client purchase: monthly retainer + ad-spend fee) ──
+  // One row = one agency ad account, optionally linked to one client
+  // (user_id nullable → an unattached account can still be invoiced freely).
+  // The per-assignment ad-spend fee (basis points, 200–700 in 50 steps =
+  // 2–7% in 0.5% steps) and monthly retainer (cents) live on the row. Mirrors
+  // the client_accounts one-to-many shape but with billing fields. user_id FK
+  // is ON DELETE SET NULL — libSQL cascade isn't guaranteed, so deleteUser()
+  // also explicitly nulls it (keeps the account, just unattaches it).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS ad_accounts (
+      id                     TEXT PRIMARY KEY,
+      user_id                TEXT REFERENCES users(id) ON DELETE SET NULL,
+      account_name           TEXT NOT NULL,
+      vendor                 TEXT,
+      platform               TEXT,
+      ad_spend_fee_bps       INTEGER NOT NULL DEFAULT 350,
+      monthly_retainer_cents INTEGER NOT NULL DEFAULT 0,
+      status                 TEXT NOT NULL DEFAULT 'active',
+      notes                  TEXT,
+      billing_paused         INTEGER NOT NULL DEFAULT 0,
+      billing_day            INTEGER,
+      lead_days              INTEGER NOT NULL DEFAULT 5,
+      extend_until           TEXT,
+      last_billed_override   TEXT,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_ad_accounts_user ON ad_accounts(user_id, status)`
+    );
+  } catch {
+    // index may already exist
+  }
+
+  // ── Ad-account invoices (send + payout reconciliation) ────────────────────
+  // Mirrors client_rebill_invoices: when an ad-account invoice is sent we file
+  // a tracking row, then auto-promote sent → paid on read once a payout for the
+  // matching brand flagged as an "Ad Account" in the Sales Rep column lands
+  // (see lib/adAccountInvoices.ts). ad_account_id is nullable so a free invoice
+  // (no account attached) can still be recorded; user_id/brand are snapshots of
+  // the attached client at send time, used to match the payout.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS ad_account_invoices (
+      id                        TEXT PRIMARY KEY,
+      ad_account_id             TEXT,
+      user_id                   TEXT,
+      brand                     TEXT,
+      invoice_number            TEXT NOT NULL,
+      invoice_type              TEXT NOT NULL DEFAULT 'retainer',
+      payout_document_id        TEXT,
+      cycle_anchor              TEXT NOT NULL,
+      amount_cents              INTEGER NOT NULL DEFAULT 0,
+      spend_cents               INTEGER,
+      fee_bps                   INTEGER,
+      recipient_email           TEXT,
+      sent_at                   TEXT NOT NULL DEFAULT (datetime('now')),
+      sent_by_admin_id          TEXT,
+      status                    TEXT NOT NULL DEFAULT 'sent',
+      paid_at                   TEXT,
+      paid_payout_month         INTEGER,
+      paid_payout_year          INTEGER,
+      marked_unpaid_at          TEXT,
+      marked_unpaid_by_admin_id TEXT,
+      marked_unpaid_reason      TEXT,
+      created_at                TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_ad_account_invoices_acct_status ON ad_account_invoices(ad_account_id, status, sent_at)`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_ad_account_invoices_status_sent ON ad_account_invoices(status, sent_at)`
+    );
+  } catch {
+    // indexes may already exist
+  }
 
   // One-time cleanup: the built-in /Agency_Collective_Welcome_Kit.pdf was
   // removed in favour of admin-uploaded PDFs. Scrub the dead link from any kit

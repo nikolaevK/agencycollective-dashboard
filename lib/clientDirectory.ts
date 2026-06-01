@@ -6,10 +6,16 @@ import {
 } from "./clientAccounts";
 import {
   getAllBrandHistories,
+  getRebillPayoutMonthsByBrand,
   normalizeBrandName,
   brandsMatch,
   type BrandHistory,
 } from "./payouts";
+
+type RebillMonthsByBrand = Map<
+  string,
+  Array<{ year: number; month: number; amountDue: number }>
+>;
 import {
   getAllClientBilling,
   getClientBilling,
@@ -113,6 +119,7 @@ function buildRow(
    * `invoice_sent` for a cycle the payout DB has already recognised.
    */
   activeSentInvoice: RebillInvoice | null,
+  rebillByBrand: RebillMonthsByBrand,
   today?: Date
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
   const matched = matchHistories(user, histories);
@@ -171,10 +178,28 @@ function buildRow(
       ? { cycleAnchor: activeSentInvoice.cycleAnchor }
       : null;
 
+  // Confirmed-paid months: REBILL-flagged payouts whose amount_due matches the
+  // brand's recurring re-bill amount (its most recent REBILL month — the
+  // established baseline), evaluated PER BRAND so a multi-brand client or a
+  // month with mixed rebill/non-rebill rows still resolves correctly. A
+  // matching REBILL payment marks the client `paid` until the next re-bill date.
+  const paidMonths = matched.flatMap((h) => {
+    const months = rebillByBrand.get(h.normalizedName) ?? [];
+    if (months.length === 0) return [];
+    const sorted = [...months].sort(
+      (a, b) => a.year - b.year || a.month - b.month
+    );
+    const baseline = sorted[sorted.length - 1].amountDue;
+    return sorted
+      .filter((m) => m.amountDue === baseline)
+      .map((m) => ({ year: m.year, month: m.month }));
+  });
+
   const schedule = computeRebillSchedule({
     anchorDate: joinedAt,
     billing,
     payoutMonths,
+    paidMonths,
     today,
     activeSentInvoice: sentForSchedule,
   });
@@ -225,13 +250,14 @@ function buildRow(
 export async function buildClientDirectory(
   today?: Date
 ): Promise<ClientDirectoryRow[]> {
-  const [users, allAccounts, histories, billingMap, invoiceMap] =
+  const [users, allAccounts, histories, billingMap, invoiceMap, rebillByBrand] =
     await Promise.all([
       readUsers(),
       readAllClientAccounts(),
       getAllBrandHistories(),
       getAllClientBilling(),
       getLatestActiveInvoicesByUser(),
+      getRebillPayoutMonthsByBrand(),
     ]);
 
   const accountsByUser = new Map<string, ClientAccount[]>();
@@ -267,6 +293,7 @@ export async function buildClientDirectory(
         histories,
         billingMap.get(user.id) ?? null,
         invoiceByUser.get(user.id) ?? null,
+        rebillByBrand,
         today
       ).row
   );
@@ -290,11 +317,12 @@ export async function getClientDetail(
   const user = await findUser(userId);
   if (!user) return null;
 
-  const [accounts, histories, billing, rawInvoice] = await Promise.all([
+  const [accounts, histories, billing, rawInvoice, rebillByBrand] = await Promise.all([
     readAccountsForUser(userId),
     getAllBrandHistories(),
     getClientBilling(userId),
     getLatestActiveInvoice(userId),
+    getRebillPayoutMonthsByBrand(),
   ]);
 
   // Reconcile this user's invoice against their payouts before building the
@@ -311,6 +339,7 @@ export async function getClientDetail(
     histories,
     billing,
     invoice,
+    rebillByBrand,
     today
   );
   return { row, history: matched };
