@@ -203,6 +203,11 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
                 The <ReceiptText className="inline h-3.5 w-3.5" /> Invoices button on each row
                 opens that account&rsquo;s full invoice history.
               </li>
+              <li>
+                The bank details printed on these invoices (Local and International) are editable
+                under <strong>Payment settings</strong> in the toolbar — they apply to ad-account
+                invoices <em>only</em>, never deal or client re-bill invoices.
+              </li>
             </ul>
           </Section>
 

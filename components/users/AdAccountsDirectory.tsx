@@ -14,6 +14,7 @@ import {
   FileText,
   ReceiptText,
   HelpCircle,
+  CreditCard,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ import {
 } from "./AdAccountSentInvoicesPanel";
 import { AdAccountInvoicesDrawer } from "./AdAccountInvoicesDrawer";
 import { AdAccountsGuide } from "./AdAccountsGuide";
+import { AdAccountPaymentSettingsModal } from "./AdAccountPaymentSettingsModal";
 import { formatMoney, formatDate } from "./format";
 import type { AdAccountDirectoryRow, AdAccountSummary } from "@/lib/adAccountDirectory";
 
@@ -75,6 +77,7 @@ export function AdAccountsDirectory() {
   const [sentOpen, setSentOpen] = useState(false);
   const [invoicesRow, setInvoicesRow] = useState<AdAccountDirectoryRow | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [paymentSettingsOpen, setPaymentSettingsOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ad-accounts"],
@@ -269,6 +272,14 @@ export function AdAccountsDirectory() {
           >
             <HelpCircle className="h-4 w-4" />
             <span className="whitespace-nowrap">Guide</span>
+          </button>
+          <button
+            onClick={() => setPaymentSettingsOpen(true)}
+            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            title="Edit the bank details on ad-account invoices"
+          >
+            <CreditCard className="h-4 w-4" />
+            <span className="whitespace-nowrap">Payment settings</span>
           </button>
           <button
             onClick={() => setInvoiceTarget(null)}
@@ -554,6 +565,9 @@ export function AdAccountsDirectory() {
         />
       )}
       {guideOpen && <AdAccountsGuide onClose={() => setGuideOpen(false)} />}
+      {paymentSettingsOpen && (
+        <AdAccountPaymentSettingsModal onClose={() => setPaymentSettingsOpen(false)} />
+      )}
     </div>
   );
 }

@@ -20,7 +20,7 @@ import {
   createEmptyItem,
   formatCurrencyValue,
 } from "@/lib/invoice/validation";
-import type { InvoiceData, InvoiceItem, PaymentType } from "@/types/invoice";
+import type { InvoiceData, InvoiceItem, PaymentType, PaymentInfo } from "@/types/invoice";
 import { buildAdAccountLineItems } from "@/lib/adAccountLineItem";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -98,6 +98,10 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
   const [savedOk, setSavedOk] = useState(true);
 
   const paymentReqRef = useRef(0);
+  // Both payment blocks (local + international) are fetched once at load and
+  // cached here, so toggling switches instantly and can never silently leave
+  // the invoice on the local block if a per-toggle fetch fails.
+  const paymentInfoCacheRef = useRef<Partial<Record<PaymentType, PaymentInfo>>>({});
   const readyRef = useRef(false);
   // Stable ids for the two canonical lines, so we can reconcile them against
   // any extra admin-added line items without churning keys or losing extras.
@@ -135,18 +139,32 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
     return `/api/admin/ad-accounts/invoice/prefill?${p.toString()}`;
   }
 
-  // Initial load — sets the full invoice (receiver + line item).
+  // Initial load — fetch BOTH payment variants up front: the local one seeds the
+  // full invoice shell, and both payment blocks are cached so the Local/
+  // International toggle is instant and reliable (no per-toggle fetch that could
+  // fail and silently leave the wrong block in place).
   useEffect(() => {
     let active = true;
-    fetch(prefillUrl("local"))
-      .then((r) => {
+    Promise.all([
+      fetch(prefillUrl("local")).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
-      })
-      .then((json) => {
+      }),
+      // International is best-effort — if it fails we fall back to fetching it
+      // lazily on first toggle.
+      fetch(prefillUrl("international"))
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ])
+      .then(([localJson, intlJson]) => {
         if (!active) return;
-        const d = json.data.invoiceData as InvoiceData;
+        const d = localJson.data.invoiceData as InvoiceData;
         if (d.sender?.name) providerRef.current = d.sender.name;
+        // Cache both payment blocks for instant, fail-proof switching.
+        if (d.details.paymentInfo) paymentInfoCacheRef.current.local = d.details.paymentInfo;
+        const intl = (intlJson?.data?.invoiceData as InvoiceData | undefined)?.details
+          ?.paymentInfo;
+        if (intl) paymentInfoCacheRef.current.international = intl;
         const t = new Date();
         const localToday = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
         // Own the line items locally (stable ids) from the start.
@@ -254,13 +272,25 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
 
   async function changePaymentType(next: PaymentType) {
     setPaymentType(next);
+    // Prefer the cached block — instant and reliable.
+    const cached = paymentInfoCacheRef.current[next];
+    if (cached) {
+      patchDetails({ paymentInfo: cached });
+      return;
+    }
+    // Fallback: only hit the network if this variant wasn't prefetched (e.g.
+    // the initial international prefetch failed).
     const reqId = ++paymentReqRef.current;
     try {
       const res = await fetch(prefillUrl(next));
       if (!res.ok) return;
       const json = await res.json();
       if (!mounted.current || reqId !== paymentReqRef.current) return;
-      patchDetails({ paymentInfo: (json.data.invoiceData as InvoiceData).details.paymentInfo });
+      const pi = (json.data.invoiceData as InvoiceData).details.paymentInfo;
+      if (pi) {
+        paymentInfoCacheRef.current[next] = pi;
+        patchDetails({ paymentInfo: pi });
+      }
     } catch {
       /* keep existing */
     }

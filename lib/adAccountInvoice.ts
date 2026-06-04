@@ -3,7 +3,7 @@ import type { InvoiceData, PaymentType } from "@/types/invoice";
 import { calculateTotals } from "./invoice/validation";
 import {
   getAgencySender,
-  getPaymentTemplate,
+  getAdAccountPaymentTemplate,
   getDefaultLogo,
   getDefaultThemeColor,
 } from "./agencyConfig";
@@ -22,7 +22,10 @@ export {
 
 /**
  * Build a prefilled InvoiceData for an ad-account invoice. Reuses the agency
- * sender / payment template / logo / theme (Agency Collective branding). The
+ * sender / logo / theme (Agency Collective branding), and pulls the payment
+ * block from the DEDICATED ad-account payment template (`getAdAccountPayment-
+ * Template`) — admin-editable in the Ad Accounts → Payment settings modal,
+ * separate from the shared template deal / client-rebill invoices use. The
  * invoice carries both the monthly retainer and the ad-spend fee as canonical
  * line items (each included only when its amount is > 0); the drawer recomputes
  * them locally via the same shared helper.
@@ -41,10 +44,10 @@ export async function generateAdAccountInvoiceData(params: {
   const paymentType: PaymentType =
     params.paymentType === "international" ? "international" : "local";
 
-  const [sender, paymentTemplate, defaultLogo, defaultThemeColor] =
+  const [sender, paymentInfo, defaultLogo, defaultThemeColor] =
     await Promise.all([
       getAgencySender(),
-      getPaymentTemplate(paymentType),
+      getAdAccountPaymentTemplate(paymentType),
       getDefaultLogo(),
       getDefaultThemeColor(),
     ]);
@@ -87,7 +90,7 @@ export async function generateAdAccountInvoiceData(params: {
       discountDetails: null,
       taxDetails: null,
       shippingDetails: null,
-      paymentInfo: paymentTemplate,
+      paymentInfo,
       additionalNotes: "",
       noteToCustomer: "",
       paymentTerms: "",
