@@ -13,6 +13,7 @@ import {
   RefreshCcw,
   FileText,
   ReceiptText,
+  HelpCircle,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ import {
   useAdAccountSentInvoices,
 } from "./AdAccountSentInvoicesPanel";
 import { AdAccountInvoicesDrawer } from "./AdAccountInvoicesDrawer";
+import { AdAccountsGuide } from "./AdAccountsGuide";
 import { formatMoney, formatDate } from "./format";
 import type { AdAccountDirectoryRow, AdAccountSummary } from "@/lib/adAccountDirectory";
 
@@ -72,6 +74,7 @@ export function AdAccountsDirectory() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [sentOpen, setSentOpen] = useState(false);
   const [invoicesRow, setInvoicesRow] = useState<AdAccountDirectoryRow | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ad-accounts"],
@@ -259,6 +262,14 @@ export function AdAccountsDirectory() {
           className="w-full sm:flex-1 sm:max-w-sm rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setGuideOpen(true)}
+            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            title="How Ad Accounts billing works"
+          >
+            <HelpCircle className="h-4 w-4" />
+            <span className="whitespace-nowrap">Guide</span>
+          </button>
           <button
             onClick={() => setInvoiceTarget(null)}
             className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"
@@ -542,6 +553,7 @@ export function AdAccountsDirectory() {
           onChanged={refresh}
         />
       )}
+      {guideOpen && <AdAccountsGuide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Send, Pencil, Trash2, Megaphone, ReceiptText } from "lucide-react";
+import { Plus, Send, Pencil, Trash2, Megaphone, ReceiptText, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { AdAccountFormModal } from "./AdAccountFormModal";
@@ -11,6 +11,7 @@ import {
   type AdAccountInvoiceTarget,
 } from "./AdAccountInvoiceDrawer";
 import { AdAccountInvoicesDrawer } from "./AdAccountInvoicesDrawer";
+import { AdAccountsGuide } from "./AdAccountsGuide";
 import { formatMoney, formatDate } from "./format";
 import type { AdAccountDirectoryRow, AdAccountSummary } from "@/lib/adAccountDirectory";
 
@@ -42,6 +43,7 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
   >(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [invoicesRow, setInvoicesRow] = useState<AdAccountDirectoryRow | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ad-accounts"],
@@ -91,13 +93,23 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
             Agency ad accounts this client has purchased — retainer + ad-spend fee.
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
-        >
-          <Plus className="h-4 w-4" />
-          Add
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setGuideOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            title="How Ad Accounts billing works"
+          >
+            <HelpCircle className="h-4 w-4" />
+            Guide
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            Add
+          </button>
+        </div>
       </div>
 
       {isError ? (
@@ -230,6 +242,7 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
           onChanged={refresh}
         />
       )}
+      {guideOpen && <AdAccountsGuide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }
