@@ -52,7 +52,8 @@ lib/
   meta/                   # client.ts (rate-limit, errors) + persistentCache.ts (24h ban-avoidance) + schemas.ts
   google/                 # OAuth + Calendar + encrypted token storage
   ghl/                    # GHL v2 multi-sub-account client + appointment/contact/opportunity modules
-  clientDirectory.ts, clientBilling.ts, clientInvoice.ts, clientRebillInvoices.ts, welcomeKit.ts, ...
+  docuseal/               # DocuSeal client + schemas + signedDocument.ts
+  payouts.ts, payoutDocuments.ts, clientDirectory.ts, clientBilling.ts, clientInvoice.ts, clientRebillInvoices.ts, welcomeKit.ts, ...
 types/                    # dashboard.ts, api.ts, alerts.ts
 middleware.ts             # Edge auth + admin route permission checks
 instrumentation.ts        # DB migration trigger on startup
@@ -71,7 +72,7 @@ Three HMAC-SHA256 signed session types (7-day expiry): `a_sess` (admin), `c_sess
 ### Database (Turso / libSQL)
 Migrations are code-driven in `lib/db.ts`, run on startup via `instrumentation.ts`. **Strictly additive** — `CREATE TABLE IF NOT EXISTS`, try/catch'd `ALTER ... ADD COLUMN`. Idempotent, concurrency-safe.
 
-Key tables: `users` (clients), `client_accounts` (user↔Meta-account), `admins`, `closers` (closers+setters), `deals` (`closer_id` + nullable `setter_id`), `appointments` (setter claims), `event_attendance`, `ghl_appointment_links` (Google↔GHL bridge), `notes`/`note_shares`, `client_billing`/`client_notes`/`client_rebill_invoices`, `ad_accounts` (optional client ad-account purchase) + `ad_account_invoices`, `welcome_kit`, `meta_cache` (24h Meta cache), `google_calendar_config` (encrypted tokens, NODE_ENV-scoped), `audit_log`.
+Key tables: `users` (clients), `client_accounts` (user↔Meta-account), `admins`, `closers` (closers+setters), `deals` (`closer_id` + nullable `setter_id`), `deal_contracts`/`deal_invoices` (+ `_additional` variants), `appointments` (setter claims), `event_attendance`, `ghl_appointment_links` (Google↔GHL bridge), `notes`/`note_shares`, `payouts` (Payout Tracker; nullable `source_deal_id` = imported-from-deal, partial-unique), `payout_documents` (PDF BLOBs by fuzzy `normalized_brand`), `client_billing`/`client_notes`/`client_rebill_invoices`, `ad_accounts` (optional client ad-account purchase) + `ad_account_invoices`, `welcome_kit`, `meta_cache` (24h Meta cache), `google_calendar_config` (encrypted tokens, NODE_ENV-scoped), `audit_log`.
 
 ### Caching — Meta 24h persistent cache (CRITICAL)
 `lib/meta/persistentCache.ts` wraps `metaFetch`/`metaBatchFetch` — the single choke point all Meta reads funnel through. A given query hits Meta **at most once per 24h**, shared across all instances/users. Rationale: frequent automated polling can get client ad accounts **banned**.
@@ -92,6 +93,11 @@ In-memory L1 (`lib/cache.ts`): per-process, wiped on cold start — does NOT bou
 Deals credit both a **closer** (required) and **setter** (optional), auto-attributed by `google_event_id`: setter claims an event → closer links a deal to the same event → `resolveSetterForEvent` stores the setter. Out-of-order resolved by `reassignDealsForEvent`. Multi-setter: latest `updated_at` wins.
 
 **GHL sync** (no webhooks): Google↔GHL bridged via composite key `(title|startMs|endMs)`, persisted in `ghl_appointment_links` (stamped with owning sub-account, the routing key for all later syncs). Push (dashboard→GHL) is real-time PUT after each `event_attendance` write; Pull is on-demand. Non-matching events behave as non-GHL (sync no-ops). CRM funnel sync moves opportunities + tags by pipeline/stage **name** (rename in GHL silently disables it).
+
+## Payout Tracker (`/dashboard/closers/payouts`, perm `closers`)
+Brand-keyed payment ledger (`payouts`). Manual entry via `AddEditPayoutModal`. Per-brand docs (`payout_documents`, `doc_type` ∈ `project_scope|invoice`) are ≤10 MB PDF BLOBs (DB-side; Vercel FS read-only), fuzzy-matched by `normalizeBrandName`/`brandsMatch`, shown in `BrandDocumentsModal` (dates render in viewer-local TZ via `formatDate` — SQLite stamps are zone-less UTC).
+- **Import from Deal** (`ImportDealModal` → POST `/api/admin/payouts/from-deal`; picker = GET `/importable-deals`): admin picks a `closed` deal whose **primary** contract is `signed`, the form pre-fills (brand/amounts/contact/notes/sales-rep=closer), and on save the route inserts the payout (`source_deal_id`) and attaches **all** signed scopes + **all** invoice PDFs (primary + additionals) into `payout_documents` — as if uploaded manually.
+- **One payout per deal**: `source_deal_id` + partial unique index `idx_payouts_source_deal` (race → 409). Doc attach is **non-blocking + non-transactional, no re-attach** — payout created first, failures returned as `warnings[]`; docs don't affect revenue/MRR/reconciliation. Scope bytes via `lib/docuseal/signedDocument.ts` (fresh `GET /submissions/{id}` URL first — stored `document_urls` go stale; HTTPS+private-host SSRF guard, 10 MB cap, URL-free logs).
 
 ## Client Directory (`/dashboard/users`, perm `users`)
 Full-screen admin surface cross-referenced with the Payout DB via `users.payout_brand`. Tabs: **Directory** / **Ad Accounts** / **Support** / **Welcome Kit**. Strictly additive — does NOT touch portal login or Meta-account linking. **Monthly MRR** = the latest payout month's `amount_due` (summed across matched brands) by default; a per-client `client_billing.mrr_month_override` (`yyyy-mm`, set in the Billing tab) pins MRR to a chosen month so a one-off additional-service payment landing as the newest month isn't mistaken for recurring revenue (falls back to latest if that month disappears). The resolved `payoutMrr` flows through the directory, summary cards, re-bill invoice prefill, and the Revenue Projection baseline.
@@ -143,5 +149,6 @@ Optional: `META_API_VERSION` (v25.0), `META_CONCURRENCY_LIMIT` (5), `META_PERSIS
 - **GHL link row's `ghl_sub_account_id`** is stamped once at discovery and is the routing key for all later syncs — never re-resolved.
 - **SQL always parameterized.** Passwords stripped from API responses. Google tokens AES-256-GCM encrypted, NODE_ENV-scoped. Markdown is react-markdown safe-default (no `rehype-raw`/`dangerouslySetInnerHTML`).
 - **Payout reconciliation matches the Sales Rep column by substring** — `"rebill"` → client re-bill, `"ad account"` → ad-account payment (case-insensitive, `lib/payouts.ts`). Renaming/removing these markers silently breaks the auto `paid` promotion.
+- **Deal→payout import**: one payout per deal (`source_deal_id` + partial unique index in `ensureCriticalColumns`, so it self-heals); doc attach is non-blocking — never make the payout insert depend on a DocuSeal/invoice fetch. Keep scope download fresh-URL-first + SSRF/10 MB/URL-free-log guards (`lib/docuseal/signedDocument.ts`).
 - **Setter = closer with `role='setter'`** — included in closer lookups unless explicitly filtered.
 - Audit log is fire-and-forget; notes/shares/setter actions are not audit-logged (v1 scope).
