@@ -148,6 +148,34 @@ export async function generateInvoiceNumber(): Promise<string> {
   return `${prefix}-${String(seq).padStart(3, "0")}`;
 }
 
+/**
+ * Batch-resolve which of the given deals have an invoice with a stored PDF blob
+ * — checking BOTH the primary (`deal_invoices`) and additional
+ * (`deal_additional_invoices`) tables, since the importer attaches every
+ * invoice PDF a deal has. Mirrors `hasPdf` (pdf_data present & non-empty) so a
+ * caller can tell whether a real PDF is available to attach/serve.
+ */
+export async function getDealsWithInvoicePdf(
+  dealIds: string[]
+): Promise<Set<string>> {
+  if (dealIds.length === 0) return new Set();
+  const capped = dealIds.slice(0, 500);
+  await ensureMigrated();
+  const db = getDb();
+  const placeholders = capped.map(() => "?").join(",");
+  const result = await db.execute({
+    sql: `SELECT deal_id FROM deal_invoices
+          WHERE deal_id IN (${placeholders})
+            AND pdf_data IS NOT NULL AND LENGTH(pdf_data) > 0
+          UNION
+          SELECT deal_id FROM deal_additional_invoices
+          WHERE deal_id IN (${placeholders})
+            AND pdf_data IS NOT NULL AND LENGTH(pdf_data) > 0`,
+    args: [...capped, ...capped],
+  });
+  return new Set(result.rows.map((r) => String(r.deal_id)));
+}
+
 /** Batch fetch invoice statuses for a list of deal IDs. */
 export async function getDealInvoiceStatuses(
   dealIds: string[]

@@ -33,7 +33,15 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(iso: string): string {
+function formatDate(raw: string): string {
+  // SQLite's datetime('now') stores UTC as "YYYY-MM-DD HH:MM:SS" with no zone
+  // marker. Parsed as-is, JS treats it as LOCAL time, which rolls the day
+  // forward for viewers behind UTC (e.g. a doc saved at 01:00 UTC shows the
+  // next day). Normalize to an explicit UTC instant so toLocaleDateString
+  // converts it back to the viewer's real local date.
+  const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)
+    ? raw
+    : raw.replace(" ", "T") + "Z";
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {
     month: "short",

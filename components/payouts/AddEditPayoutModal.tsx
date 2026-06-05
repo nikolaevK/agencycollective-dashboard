@@ -1,15 +1,34 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, ChevronLeft, Plus, Trash2 } from "lucide-react";
+import { X, ChevronLeft, Plus, Trash2, FileCheck2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PayoutRecord, SplitParty } from "@/lib/payouts";
+
+/** Pre-fill values + linkage when adding a payout from a signed deal. */
+export interface SourceDealPrefill {
+  dealId: string;
+  brandName: string;
+  pointOfContact: string;
+  service: string;
+  vertical: string;
+  dateJoined: string;
+  amountDue: string; // dollars, as entered in the form
+  amountPaid: string;
+  isSigned: boolean;
+  isPaid: boolean;
+  paymentNotes: string;
+  salesRep: string;
+}
 
 interface AddEditPayoutModalProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   payout?: PayoutRecord | null;
+  /** When set (and not editing), the form imports from a closed+signed deal:
+   *  fields are pre-filled and save attaches the scope + invoice PDFs. */
+  sourceDeal?: SourceDealPrefill | null;
   defaultMonth: number;
   defaultYear: number;
   salesRepOptions: string[];
@@ -25,6 +44,7 @@ export function AddEditPayoutModal({
   onClose,
   onSaved,
   payout,
+  sourceDeal,
   defaultMonth,
   defaultYear,
   salesRepOptions,
@@ -35,6 +55,7 @@ export function AddEditPayoutModal({
   onReferralsChanged,
 }: AddEditPayoutModalProps) {
   const isEdit = Boolean(payout);
+  const isImport = !isEdit && Boolean(sourceDeal);
 
   const [brandName, setBrandName] = useState("");
   const [dateJoined, setDateJoined] = useState("");
@@ -57,6 +78,10 @@ export function AddEditPayoutModal({
   const [referralPct, setReferralPct] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Import result: once a deal import succeeds we switch to a confirmation view
+  // (the payout already exists, so the form must not be resubmittable).
+  const [imported, setImported] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   // Referral "add new" state
   const [addingReferral, setAddingReferral] = useState(false);
@@ -94,6 +119,26 @@ export function AddEditPayoutModal({
       setSplitDetails(payout.splitDetails.length > 0 ? payout.splitDetails : []);
       setReferral(payout.referral ?? "");
       setReferralPct(payout.referralPct != null ? String(payout.referralPct) : "");
+    } else if (sourceDeal) {
+      setBrandName(sourceDeal.brandName);
+      setDateJoined(sourceDeal.dateJoined);
+      setFirstDayAdSpend("");
+      setVertical(sourceDeal.vertical);
+      setPointOfContact(sourceDeal.pointOfContact);
+      setService(sourceDeal.service);
+      setIsSigned(sourceDeal.isSigned);
+      setIsPaid(sourceDeal.isPaid);
+      setAddedToSlack(false);
+      setAmountDue(sourceDeal.amountDue);
+      setAmountPaid(sourceDeal.amountPaid);
+      setPaymentNotes(sourceDeal.paymentNotes);
+      setSalesRep(sourceDeal.salesRep);
+      setPayDistributed("No");
+      setPayDistributedDate("");
+      setCommissionSplit(false);
+      setSplitDetails([]);
+      setReferral("");
+      setReferralPct("");
     } else {
       setBrandName("");
       setDateJoined("");
@@ -116,13 +161,15 @@ export function AddEditPayoutModal({
       setReferralPct("");
     }
     setError("");
+    setImported(false);
+    setImportWarnings([]);
     setAddingRep(false);
     setNewRepName("");
     setAddingVertical(false);
     setNewVerticalName("");
     setAddingReferral(false);
     setNewReferralName("");
-  }, [payout, open]);
+  }, [payout, sourceDeal, open]);
 
   useEffect(() => {
     if (addingRep && newRepRef.current) newRepRef.current.focus();
@@ -209,6 +256,31 @@ export function AddEditPayoutModal({
           payload.payoutMonth = defaultMonth;
           payload.payoutYear = defaultYear;
         }
+
+        if (isImport && sourceDeal) {
+          // Import path: create the payout AND attach the signed scope + invoice.
+          payload.dealId = sourceDeal.dealId;
+          const res = await fetch("/api/admin/payouts/from-deal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          // Tolerate a non-JSON error body (proxy 502/504 HTML, empty 500).
+          const d = await res.json().catch(() => ({} as { error?: string; warnings?: string[] }));
+          if (!res.ok) throw new Error(d.error || "Import failed");
+          onSaved();
+          const warnings: string[] = Array.isArray(d.warnings) ? d.warnings : [];
+          if (warnings.length > 0) {
+            // Keep the modal open to surface what couldn't be attached.
+            setImportWarnings(warnings);
+            setImported(true);
+            setSaving(false);
+            return;
+          }
+          onClose();
+          return;
+        }
+
         const res = await fetch("/api/admin/payouts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -313,6 +385,16 @@ export function AddEditPayoutModal({
       {error && (
         <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {isImport && (
+        <div className="flex items-start gap-2.5 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm text-foreground">
+          <FileCheck2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            Importing from a signed deal — the signed scope &amp; invoice PDF
+            will be attached to this brand&apos;s documents on save.
+          </span>
         </div>
       )}
 
@@ -531,6 +613,9 @@ export function AddEditPayoutModal({
                   {opt}
                 </option>
               ))}
+              {salesRep && !salesRepOptions.includes(salesRep) && (
+                <option value={salesRep}>{salesRep}</option>
+              )}
               <option value="__add_new__">+ Add new rep...</option>
             </select>
           </div>
@@ -786,6 +871,29 @@ export function AddEditPayoutModal({
     </>
   );
 
+  const importedView = (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-sm text-foreground">
+        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <span>Payout created and imported from the signed deal.</span>
+      </div>
+      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Some documents need a manual upload
+        </div>
+        <ul className="mt-2 list-disc pl-8 space-y-1 text-sm text-muted-foreground">
+          {importWarnings.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+        <p className="mt-2 pl-1 text-xs text-muted-foreground">
+          Use the brand&apos;s Documents panel to upload them when ready.
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <>
       {/* Mobile: full-screen form */}
@@ -799,7 +907,7 @@ export function AddEditPayoutModal({
             <ChevronLeft className="h-5 w-5" />
           </button>
           <h3 className="text-lg font-semibold text-foreground">
-            {isEdit ? "Edit Payout" : "Add Payout"}
+            {isEdit ? "Edit Payout" : isImport ? "Import from Deal" : "Add Payout"}
           </h3>
         </div>
 
@@ -809,25 +917,37 @@ export function AddEditPayoutModal({
           className="flex flex-1 flex-col overflow-hidden"
         >
           <div className="flex-1 overflow-y-auto px-4 py-5 pb-28 space-y-5">
-            {formFields}
+            {imported ? importedView : formFields}
           </div>
 
           {/* Mobile fixed bottom bar */}
           <div className="border-t border-border bg-card px-4 py-3 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 h-11 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {saving ? "Saving..." : isEdit ? "Save Changes" : "Add Payout"}
-            </button>
+            {imported ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity"
+              >
+                Done
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 h-11 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : isEdit ? "Save Changes" : isImport ? "Import Payout" : "Add Payout"}
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>
@@ -842,7 +962,7 @@ export function AddEditPayoutModal({
           {/* Desktop header */}
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 dark:border-white/[0.06] bg-card px-6 py-4 rounded-t-2xl">
             <h3 className="text-lg font-semibold text-foreground">
-              {isEdit ? "Edit Payout" : "Add Payout"}
+              {isEdit ? "Edit Payout" : isImport ? "Import from Deal" : "Add Payout"}
             </h3>
             <button
               onClick={onClose}
@@ -854,28 +974,40 @@ export function AddEditPayoutModal({
 
           {/* Desktop form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-5">
-            {formFields}
+            {imported ? importedView : formFields}
 
             {/* Desktop actions */}
             <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-sm font-medium text-white transition-all",
-                  "ac-gradient shadow-lg shadow-primary/20",
-                  saving && "opacity-60 cursor-not-allowed"
-                )}
-              >
-                {saving ? "Saving..." : isEdit ? "Save Changes" : "Add Payout"}
-              </button>
+              {imported ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2 rounded-lg text-sm font-medium text-white ac-gradient shadow-lg shadow-primary/20 transition-all"
+                >
+                  Done
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className={cn(
+                      "px-5 py-2 rounded-lg text-sm font-medium text-white transition-all",
+                      "ac-gradient shadow-lg shadow-primary/20",
+                      saving && "opacity-60 cursor-not-allowed"
+                    )}
+                  >
+                    {saving ? "Saving..." : isEdit ? "Save Changes" : isImport ? "Import Payout" : "Add Payout"}
+                  </button>
+                </>
+              )}
             </div>
           </form>
         </div>

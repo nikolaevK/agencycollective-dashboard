@@ -146,6 +146,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "ad_accounts",            column: "lead_days",            defn: "INTEGER NOT NULL DEFAULT 5" },
     { table: "ad_accounts",            column: "extend_until",         defn: "TEXT" },
     { table: "ad_accounts",            column: "last_billed_override", defn: "TEXT" },
+    // Source deal for payouts imported from a closed+signed deal. Read on every
+    // importable-deals build (de-dupe) and written by insertPayout, so it must
+    // self-heal here rather than only in the gated body.
+    { table: "payouts",                column: "source_deal_id",       defn: "TEXT" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -168,7 +172,8 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
           table === "welcome_kit" ||
           table === "users" ||
           table === "client_billing" ||
-          table === "ad_accounts") &&
+          table === "ad_accounts" ||
+          table === "payouts") &&
         /no such table/i.test(msg)
       ) {
         continue;
@@ -200,6 +205,22 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     if (!/no such table/i.test(msg)) {
       console.error("[migrate] ghl_appointment_links backfill failed:", err);
+    }
+  }
+
+  // One payout per imported deal — DB-level backstop for the app-level de-dupe
+  // in /api/admin/payouts/from-deal (guards the read-then-insert race). Partial
+  // index so the many NULL source_deal_id manual rows are unaffected. Benign
+  // "no such table" on a fresh DB (the gated body creates payouts after this).
+  try {
+    await db.execute(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_payouts_source_deal
+       ON payouts(source_deal_id) WHERE source_deal_id IS NOT NULL`
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[migrate] payouts source_deal_id index failed:", err);
     }
   }
 }
@@ -721,6 +742,7 @@ export async function migrate(): Promise<void> {
       payment_notes     TEXT,
       sales_rep         TEXT,
       pay_distributed   TEXT NOT NULL DEFAULT 'No',
+      source_deal_id    TEXT,
       created_at        TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )

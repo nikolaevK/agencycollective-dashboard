@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Calendar, ChevronDown } from "lucide-react";
+import { Search, Plus, Calendar, ChevronDown, FileDown } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { MonthYearSelector } from "@/components/payouts/MonthYearSelector";
@@ -10,6 +10,9 @@ import { PayoutSummaryCards } from "@/components/payouts/PayoutSummaryCards";
 import type { MetricCardType } from "@/components/payouts/PayoutSummaryCards";
 import { PayoutTable } from "@/components/payouts/PayoutTable";
 import { AddEditPayoutModal } from "@/components/payouts/AddEditPayoutModal";
+import type { SourceDealPrefill } from "@/components/payouts/AddEditPayoutModal";
+import { ImportDealModal } from "@/components/payouts/ImportDealModal";
+import type { ImportableDeal } from "@/components/payouts/ImportDealModal";
 import { RebillDetailModal } from "@/components/payouts/RebillDetailModal";
 import { BrandDocumentsModal } from "@/components/payouts/BrandDocumentsModal";
 import type { PayoutRecord, PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
@@ -214,6 +217,8 @@ export default function PayoutsPage() {
   const [customTo, setCustomTo] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPayout, setEditingPayout] = useState<PayoutRecord | null>(null);
+  const [importPickerOpen, setImportPickerOpen] = useState(false);
+  const [sourceDeal, setSourceDeal] = useState<SourceDealPrefill | null>(null);
   const [rebillModalOpen, setRebillModalOpen] = useState(false);
   const [rebillModalView, setRebillModalView] = useState<MetricCardType>("new");
   const [docsModalBrand, setDocsModalBrand] = useState<string | null>(null);
@@ -319,6 +324,8 @@ export default function PayoutsPage() {
     queryClient.invalidateQueries({
       queryKey: ["admin-payouts-rebill", month, year],
     });
+    // Keep the deal importer in sync — a just-imported deal must show as "Imported".
+    queryClient.invalidateQueries({ queryKey: ["importable-deals"] });
   };
 
   // Counts for filter pills
@@ -374,6 +381,38 @@ export default function PayoutsPage() {
 
   const handleAdd = () => {
     setEditingPayout(null);
+    setSourceDeal(null);
+    setModalOpen(true);
+  };
+
+  const handleImportClick = () => {
+    setEditingPayout(null);
+    setSourceDeal(null);
+    setImportPickerOpen(true);
+  };
+
+  const handlePickDeal = (deal: ImportableDeal) => {
+    const dollars = (deal.dealValue / 100).toString();
+    // Only carry a close date the form can parse into month/year; a malformed
+    // value would otherwise derive NaN and bounce off the server as a 400.
+    const closeDate = deal.closingDate ?? "";
+    const dateJoined = /^\d{4}-\d{2}-\d{2}/.test(closeDate) ? closeDate.slice(0, 10) : "";
+    setSourceDeal({
+      dealId: deal.dealId,
+      brandName: deal.brandName || deal.clientName,
+      pointOfContact: deal.clientName,
+      service: deal.serviceCategory ?? "",
+      vertical: deal.industry ?? "",
+      dateJoined,
+      amountDue: dollars,
+      amountPaid: deal.paidStatus === "paid" ? dollars : "",
+      isSigned: true,
+      isPaid: deal.paidStatus === "paid",
+      paymentNotes: deal.notes ?? "",
+      salesRep: deal.closerName ?? "",
+    });
+    setEditingPayout(null);
+    setImportPickerOpen(false);
     setModalOpen(true);
   };
 
@@ -391,16 +430,25 @@ export default function PayoutsPage() {
               distributions
             </p>
           </div>
-          <button
-            onClick={handleAdd}
-            className={cn(
-              "hidden md:inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-all",
-              "ac-gradient shadow-lg shadow-primary/20"
-            )}
-          >
-            <Plus className="h-4 w-4" />
-            Add Payout
-          </button>
+          <div className="hidden md:flex items-center gap-2">
+            <button
+              onClick={handleImportClick}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-foreground border border-border bg-background hover:bg-accent transition-colors"
+            >
+              <FileDown className="h-4 w-4" />
+              Import from Deal
+            </button>
+            <button
+              onClick={handleAdd}
+              className={cn(
+                "inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-all",
+                "ac-gradient shadow-lg shadow-primary/20"
+              )}
+            >
+              <Plus className="h-4 w-4" />
+              Add Payout
+            </button>
+          </div>
         </div>
 
         <CloserSubNav />
@@ -516,15 +564,24 @@ export default function PayoutsPage() {
         <Plus className="h-6 w-6" />
       </button>
 
+      {/* Deal importer (picker) */}
+      <ImportDealModal
+        open={importPickerOpen}
+        onClose={() => setImportPickerOpen(false)}
+        onPick={handlePickDeal}
+      />
+
       {/* Add/Edit modal */}
       <AddEditPayoutModal
         open={modalOpen}
         onClose={() => {
           setModalOpen(false);
           setEditingPayout(null);
+          setSourceDeal(null);
         }}
         onSaved={refresh}
         payout={editingPayout}
+        sourceDeal={sourceDeal}
         defaultMonth={month}
         defaultYear={year}
         salesRepOptions={salesRepOptions}

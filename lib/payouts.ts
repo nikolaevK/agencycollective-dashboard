@@ -41,6 +41,9 @@ export interface PayoutRecord {
   splitDetails: SplitParty[];
   referral: string | null;
   referralPct: number | null;
+  /** Set when this payout was imported from a closed+signed deal (deals.id).
+   *  Null for manually-created entries. Used to de-dupe the deal importer. */
+  sourceDealId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -147,6 +150,7 @@ function rowToPayout(row: Row): PayoutRecord {
     splitDetails: parseSplitDetails(row.split_details),
     referral: row.referral != null ? String(row.referral) : null,
     referralPct: row.referral_pct != null ? Number(row.referral_pct) : null,
+    sourceDealId: row.source_deal_id != null ? String(row.source_deal_id) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -183,8 +187,8 @@ export async function insertPayout(payout: PayoutRecord): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO payouts (id, payout_month, payout_year, date_joined, first_day_ad_spend, brand_name, vertical, point_of_contact, service, is_signed, is_paid, added_to_slack, amount_due, amount_paid, payment_notes, sales_rep, pay_distributed, pay_distributed_date, commission_split, split_details, referral, referral_pct, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO payouts (id, payout_month, payout_year, date_joined, first_day_ad_spend, brand_name, vertical, point_of_contact, service, is_signed, is_paid, added_to_slack, amount_due, amount_paid, payment_notes, sales_rep, pay_distributed, pay_distributed_date, commission_split, split_details, referral, referral_pct, source_deal_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payout.id,
       payout.payoutMonth,
@@ -208,11 +212,29 @@ export async function insertPayout(payout: PayoutRecord): Promise<void> {
       payout.splitDetails.length > 0 ? JSON.stringify(payout.splitDetails) : null,
       payout.referral,
       payout.referralPct,
+      payout.sourceDealId,
       payout.createdAt,
       payout.updatedAt,
     ],
   });
   cache.delete(BRAND_HISTORIES_CACHE_KEY);
+}
+
+/**
+ * Set of deal IDs already imported into the payout tracker (one payout per
+ * deal). Used to grey-out / block re-importing the same closed+signed deal.
+ */
+export async function getImportedDealIds(): Promise<Set<string>> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute(
+    "SELECT source_deal_id FROM payouts WHERE source_deal_id IS NOT NULL"
+  );
+  const ids = new Set<string>();
+  for (const row of result.rows) {
+    if (row.source_deal_id != null) ids.add(String(row.source_deal_id));
+  }
+  return ids;
 }
 
 export async function updatePayout(

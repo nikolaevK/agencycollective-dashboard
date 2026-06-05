@@ -166,6 +166,7 @@ export async function POST(request: Request) {
       referralPct: body.referralPct !== undefined && body.referralPct !== null
         ? Math.max(0, Math.min(100, Math.round(Number(body.referralPct))))
         : null,
+      sourceDealId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
