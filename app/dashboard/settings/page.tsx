@@ -1404,12 +1404,49 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <SubSection title="Document attachments">
             <p>
-              Each brand can have a project scope and an invoice attached
+              Each brand can have project scopes and invoices attached
               (stored as BLOBs in the <Pill>payout_documents</Pill> table —
-              max ~2 MB per file, PDF / image / standard doc formats).
-              Upload from the row; download anytime; replace by uploading
-              over the existing file.
+              max 10 MB per file, PDF only). Upload from the row, download
+              anytime, and matching runs across brand-name spelling
+              variants so documents follow the client.
             </p>
+          </SubSection>
+          <SubSection title="Import from Deal">
+            <p>
+              Instead of re-keying a closed deal, click{" "}
+              <span className="font-medium text-foreground">
+                Import from Deal
+              </span>{" "}
+              to pull a signed deal straight into a payout row — with its
+              documents attached automatically.
+            </p>
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                The picker lists{" "}
+                <span className="font-medium text-foreground">closed</span>{" "}
+                deals whose contract is{" "}
+                <span className="font-medium text-foreground">signed</span>{" "}
+                in DocuSeal — with closer, deal value, and an Invoice ✓/—
+                badge. Already-imported deals are shown as disabled.
+              </Bullet>
+              <Bullet>
+                Selecting one pre-fills the payout form: brand, amount due
+                / paid, point of contact, closer notes, sales rep (the
+                closer), and Signed. Review and edit, then save.
+              </Bullet>
+              <Bullet>
+                On save, every signed scope and every invoice PDF on the
+                deal is fetched and attached to the brand as{" "}
+                <Pill>payout_documents</Pill> — exactly as if you uploaded
+                each one by hand.
+              </Bullet>
+            </ul>
+            <Note>
+              One payout per deal — a deal can only be imported once.
+              Attachment is best-effort: if a scope or invoice can&apos;t be
+              fetched, the row is still created and a notice lists what to
+              upload manually.
+            </Note>
           </SubSection>
           <SubSection title="Sales rep / vertical / referral options">
             <p>
