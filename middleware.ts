@@ -195,14 +195,28 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Closer portal API routes — session enforcement ────────────────────
+  // A few endpoints under /api/closer are intentionally dual-auth (admin OR
+  // closer) because the admin team-calendar reuses them — e.g. the GHL
+  // attendance resync. For those, a valid admin session is sufficient; the
+  // route handler still enforces fine-grained attribution rules (asAdmin
+  // requires an admin session). Without this exception an admin-only user
+  // (a_sess but no c_sess) is rejected here before the handler ever runs.
   if (pathname.startsWith("/api/closer/")) {
-    const token = request.cookies.get(CLOSER_COOKIE)?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const valid = secret ? await verifyToken(token, secret) : false;
-    if (!valid) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const DUAL_AUTH_CLOSER_APIS = ["/api/closer/attendance/resync"];
+    const allowsAdmin = DUAL_AUTH_CLOSER_APIS.some((p) => pathname === p);
+
+    const closerToken = request.cookies.get(CLOSER_COOKIE)?.value;
+    const closerValid = closerToken && secret ? await verifyToken(closerToken, secret) : false;
+
+    if (!closerValid) {
+      let adminValid = false;
+      if (allowsAdmin) {
+        const adminToken = request.cookies.get(ADMIN_COOKIE)?.value;
+        adminValid = adminToken && secret ? await verifyToken(adminToken, secret) : false;
+      }
+      if (!adminValid) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
     }
   }
 
