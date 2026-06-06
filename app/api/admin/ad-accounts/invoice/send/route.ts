@@ -12,7 +12,8 @@ import {
   brandsMatch,
   getAdAccountPayoutMonthsByBrand,
 } from "@/lib/payouts";
-import { computeRebillSchedule } from "@/lib/clientBilling";
+import { computeRebillSchedule, type ClientBilling } from "@/lib/clientBilling";
+import { businessToday, businessTodayYmd } from "@/lib/businessTime";
 import { getAdAccount, normalizeFeeBps } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import { createAdAccountInvoice } from "@/lib/adAccountInvoices";
@@ -207,7 +208,11 @@ export async function POST(req: NextRequest) {
     // Compute the cycle anchor: for an attached account, the next bill date from
     // its schedule (so the directory shows `invoice_sent` for this cycle). For a
     // free invoice, today. Best-effort — falls back to today on any hiccup.
-    let cycleAnchor = now.toISOString().slice(0, 10);
+    // "Today" is the business-timezone date (NOT the UTC server clock) so an
+    // evening-PT send doesn't anchor a day ahead — and it matches the basis the
+    // directory uses to recompute `nextRebillAt`, so the `invoice_sent` chip
+    // lights up for this cycle.
+    let cycleAnchor = businessTodayYmd();
     if (account && brand) {
       try {
         const byBrand = await getAdAccountPayoutMonthsByBrand();
@@ -216,10 +221,32 @@ export async function POST(req: NextRequest) {
         for (const [key, arr] of byBrand) {
           if (key === norm || brandsMatch(norm, key)) months.push(...arr);
         }
+        // Feed the engine the SAME billing controls the directory uses (billing
+        // day, last-billed override, pause, extend, lead). Passing `billing: null`
+        // here made the anchor fall back to the account's UTC `createdAt` day,
+        // which — for an account whose billing day differs (e.g. created at 8pm
+        // PT so createdAt rolls to the next UTC day) — disagreed with the
+        // directory's recomputed `nextRebillAt`, so the `invoice_sent` chip
+        // wouldn't light and the stamped cycle looked a day off.
+        const billing: ClientBilling = {
+          userId: account.userId ?? "",
+          cadence: "monthly",
+          billingDay: account.billingDay,
+          paused: account.billingPaused,
+          pauseReason: null,
+          extendUntil: account.extendUntil,
+          lastRebilledOverride: account.lastBilledOverride,
+          mrrMonthOverride: null,
+          leadDays: account.leadDays,
+          settingsNotes: null,
+          createdAt: account.createdAt,
+          updatedAt: account.updatedAt,
+        };
         const schedule = computeRebillSchedule({
           anchorDate: datePart(account.createdAt),
-          billing: null,
+          billing,
           payoutMonths: months,
+          today: businessToday(),
         });
         if (schedule.nextRebillAt) cycleAnchor = schedule.nextRebillAt;
       } catch {

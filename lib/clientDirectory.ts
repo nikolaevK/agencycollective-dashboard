@@ -23,6 +23,7 @@ import {
   type ClientBilling,
   type RebillSchedule,
 } from "./clientBilling";
+import { businessToday } from "./businessTime";
 import {
   getLatestActiveInvoice,
   getLatestActiveInvoicesByUser,
@@ -250,6 +251,10 @@ function buildRow(
 export async function buildClientDirectory(
   today?: Date
 ): Promise<ClientDirectoryRow[]> {
+  // Billing-cycle math runs in the business timezone (see businessTime.ts), not
+  // the UTC server clock — keeps "due"/"overdue"/anchor dates on the agency's
+  // calendar day and consistent with what the send routes stamp.
+  const t = today ?? businessToday();
   const [users, allAccounts, histories, billingMap, invoiceMap, rebillByBrand] =
     await Promise.all([
       readUsers(),
@@ -294,7 +299,7 @@ export async function buildClientDirectory(
         billingMap.get(user.id) ?? null,
         invoiceByUser.get(user.id) ?? null,
         rebillByBrand,
-        today
+        t
       ).row
   );
 }
@@ -316,6 +321,10 @@ export async function getClientDetail(
 ): Promise<ClientDetail | null> {
   const user = await findUser(userId);
   if (!user) return null;
+
+  // See buildClientDirectory: pin "today" to the business day so the single-
+  // client detail (which the send route reads for cycle_anchor) agrees with it.
+  const t = today ?? businessToday();
 
   const [accounts, histories, billing, rawInvoice, rebillByBrand] = await Promise.all([
     readAccountsForUser(userId),
@@ -340,7 +349,7 @@ export async function getClientDetail(
     billing,
     invoice,
     rebillByBrand,
-    today
+    t
   );
   return { row, history: matched };
 }

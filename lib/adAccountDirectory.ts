@@ -16,6 +16,7 @@ import {
   type AdAccountInvoice,
 } from "./adAccountInvoices";
 import { listAdAccounts, type AdAccount, type AdAccountStatus } from "./adAccounts";
+import { businessToday } from "./businessTime";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +94,10 @@ function adAccountMonthsForBrand(
 export async function buildAdAccountDirectory(
   today?: Date
 ): Promise<AdAccountDirectory> {
+  // Day-granular billing math runs in the business timezone, not the UTC server
+  // clock — otherwise statuses/dates flip a day early every evening (PT) and the
+  // recomputed `nextRebillAt` won't match a just-sent invoice's `cycle_anchor`.
+  const t = today ?? businessToday();
   const [accounts, users, adAccountMonthsMap, sentByAccount] = await Promise.all([
     listAdAccounts(),
     readUsers(),
@@ -156,7 +161,7 @@ export async function buildAdAccountDirectory(
         // Every Ad-Account-flagged payout month is a confirmed payment, so the
         // account shows `paid` until the next bill once one lands.
         paidMonths: payoutMonths,
-        today,
+        today: t,
         activeSentInvoice: sentForSchedule,
       });
 

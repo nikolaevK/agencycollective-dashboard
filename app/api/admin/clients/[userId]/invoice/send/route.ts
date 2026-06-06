@@ -10,6 +10,7 @@ import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService"
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import { normalizeBrandName } from "@/lib/payouts";
 import { createRebillInvoice } from "@/lib/clientRebillInvoices";
+import { businessTodayYmd } from "@/lib/businessTime";
 
 interface RouteContext {
   params: { userId: string };
@@ -207,7 +208,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     // moment; if absent (unscheduled client), fall back to today so a "Sent
     // Invoices" entry still surfaces.
     const cycleAnchor =
-      detail.row.schedule.nextRebillAt ?? now.toISOString().slice(0, 10);
+      detail.row.schedule.nextRebillAt ?? businessTodayYmd();
     const rawAmount = Number(formData.get("amountCents"));
     const amountCents =
       Number.isFinite(rawAmount) && rawAmount >= 0
