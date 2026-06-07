@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-05-31.ad-accounts.r2";
+const SCHEMA_VERSION = "2026-06-06.media-buyers.r2";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -111,6 +111,43 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     `);
   } catch (err) {
     console.error("[migrate] Failed to create meta_cache table:", err);
+  }
+
+  // Media Buyers folder metadata (color, persistence). Created here — not in
+  // the SCHEMA_VERSION body — because the Media Buyers directory queries it on
+  // every load, so a stuck version stamp (or a dev server that migrated before
+  // this table existed) must still self-heal. Non-fatal: listFoldersWithColors
+  // degrades to document-derived folders if it's missing (see lib/mediaFolders.ts).
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS media_folders (
+        name             TEXT PRIMARY KEY,
+        color            TEXT NOT NULL DEFAULT 'gray',
+        important        INTEGER NOT NULL DEFAULT 0,
+        created_by       TEXT,
+        created_by_name  TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+  } catch (err) {
+    console.error("[migrate] Failed to create media_folders table:", err);
+  }
+
+  // Per-user acknowledgement ("I read this file") read receipts. Hot-path:
+  // the directory load joins it for ack counts, so it must self-heal too.
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS media_document_reads (
+        document_id  TEXT NOT NULL,
+        admin_id     TEXT NOT NULL,
+        admin_name   TEXT,
+        read_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (document_id, admin_id)
+      )
+    `);
+  } catch (err) {
+    console.error("[migrate] Failed to create media_document_reads table:", err);
   }
 
   const adds: { table: string; column: string; defn: string }[] = [
@@ -150,6 +187,13 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // importable-deals build (de-dupe) and written by insertPayout, so it must
     // self-heal here rather than only in the gated body.
     { table: "payouts",                column: "source_deal_id",       defn: "TEXT" },
+    // Media Buyers "important" flags — read on every directory load.
+    // media_documents' CREATE is gated by the version body, so "no such table"
+    // here is benign on a fresh DB (handled below).
+    { table: "media_documents",        column: "important",            defn: "INTEGER NOT NULL DEFAULT 0" },
+    { table: "media_folders",          column: "important",            defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Free-form filter tags on a document, stored as a JSON string array.
+    { table: "media_documents",        column: "tags",                 defn: "TEXT NOT NULL DEFAULT '[]'" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -173,7 +217,8 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
           table === "users" ||
           table === "client_billing" ||
           table === "ad_accounts" ||
-          table === "payouts") &&
+          table === "payouts" ||
+          table === "media_documents") &&
         /no such table/i.test(msg)
       ) {
         continue;
@@ -282,6 +327,8 @@ export async function migrate(): Promise<void> {
       perm_invoice   INTEGER NOT NULL DEFAULT 0,
       perm_users     INTEGER NOT NULL DEFAULT 0,
       perm_closers   INTEGER NOT NULL DEFAULT 0,
+      perm_media     INTEGER NOT NULL DEFAULT 0,
+      perm_media_manage INTEGER NOT NULL DEFAULT 0,
       perm_admin     INTEGER NOT NULL DEFAULT 0
     )
   `);
@@ -332,6 +379,8 @@ export async function migrate(): Promise<void> {
         perm_invoice   INTEGER NOT NULL DEFAULT 0,
         perm_users     INTEGER NOT NULL DEFAULT 0,
         perm_closers   INTEGER NOT NULL DEFAULT 0,
+        perm_media     INTEGER NOT NULL DEFAULT 0,
+        perm_media_manage INTEGER NOT NULL DEFAULT 0,
         perm_admin     INTEGER NOT NULL DEFAULT 0
       )
     `);
@@ -367,13 +416,30 @@ export async function migrate(): Promise<void> {
     console.log("[migrate] Added perm_invoice column to admins");
   }
 
+  // ── Add perm_media / perm_media_manage columns to existing admins ───
+  // Media Buyers section: `media` = Media Buyer access, `media_manage` =
+  // Head of Paid Media (delete docs + oversight). Additive, default off.
+  try {
+    await db.execute(`SELECT perm_media FROM admins LIMIT 0`);
+  } catch {
+    await db.execute(`ALTER TABLE admins ADD COLUMN perm_media INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migrate] Added perm_media column to admins");
+  }
+  try {
+    await db.execute(`SELECT perm_media_manage FROM admins LIMIT 0`);
+  } catch {
+    await db.execute(`ALTER TABLE admins ADD COLUMN perm_media_manage INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migrate] Added perm_media_manage column to admins");
+  }
+
   // ── Set permissions for seed super admin (idempotent) ──────────────
   await db.execute(`
     UPDATE admins
     SET display_name = 'Agency Collective',
         role = 'super_admin',
         perm_dashboard = 1, perm_analyst = 1, perm_studio = 1, perm_jsoneditor = 1,
-        perm_adcopy = 1, perm_invoice = 1, perm_users = 1, perm_closers = 1, perm_admin = 1
+        perm_adcopy = 1, perm_invoice = 1, perm_users = 1, perm_closers = 1,
+        perm_media = 1, perm_media_manage = 1, perm_admin = 1
     WHERE id = 'agencycollective' AND display_name IS NULL
   `);
 
@@ -854,6 +920,44 @@ export async function migrate(): Promise<void> {
   } catch {
     // column already exists
   }
+
+  // ── Media Buyers document directory ──────────────────────────────
+  // PDF uploads + AI-generated markdown docs for the paid-media team,
+  // stored as BLOBs (Vercel FS is read-only). mime_type distinguishes
+  // application/pdf uploads from text/markdown AI output. See
+  // lib/mediaDocuments.ts.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS media_documents (
+      id                TEXT PRIMARY KEY,
+      folder            TEXT NOT NULL DEFAULT 'general',
+      doc_type          TEXT NOT NULL DEFAULT 'other',
+      platform          TEXT,
+      file_name         TEXT NOT NULL,
+      mime_type         TEXT NOT NULL DEFAULT 'application/pdf',
+      file_size         INTEGER NOT NULL DEFAULT 0,
+      important         INTEGER NOT NULL DEFAULT 0,
+      tags              TEXT NOT NULL DEFAULT '[]',
+      uploaded_by       TEXT,
+      uploaded_by_name  TEXT,
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      file_data         BLOB
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_media_docs_folder ON media_documents(folder)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_media_docs_folder:", err);
+  }
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_media_docs_type ON media_documents(doc_type)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_media_docs_type:", err);
+  }
+  // NOTE: media_folders is created in ensureCriticalColumns (hot-path table,
+  // must self-heal), not here.
 
   // ── Add client_email to deals (if not present) ──────────────────
   try {

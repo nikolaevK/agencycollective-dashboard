@@ -33,6 +33,8 @@ function rowToAdmin(row: Row): AdminRecord {
       invoice: Number(row.perm_invoice) === 1,
       users: Number(row.perm_users) === 1,
       closers: Number(row.perm_closers) === 1,
+      media: Number(row.perm_media) === 1,
+      media_manage: Number(row.perm_media_manage) === 1,
       admin: Number(row.perm_admin) === 1,
     },
   };
@@ -85,8 +87,9 @@ export async function insertAdmin(
       id, username, password_hash, is_super,
       display_name, email, avatar_path, role,
       perm_dashboard, perm_analyst, perm_studio, perm_jsoneditor,
-      perm_adcopy, perm_invoice, perm_users, perm_closers, perm_admin
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      perm_adcopy, perm_invoice, perm_users, perm_closers,
+      perm_media, perm_media_manage, perm_admin
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       admin.id,
       admin.username,
@@ -104,6 +107,8 @@ export async function insertAdmin(
       perms.invoice ? 1 : 0,
       perms.users ? 1 : 0,
       perms.closers ? 1 : 0,
+      perms.media ? 1 : 0,
+      perms.media_manage ? 1 : 0,
       perms.admin ? 1 : 0,
     ],
   });
@@ -155,6 +160,8 @@ export async function updateAdmin(
     if (p.invoice !== undefined) { fields.push("perm_invoice = ?"); args.push(p.invoice ? 1 : 0); }
     if (p.users !== undefined) { fields.push("perm_users = ?"); args.push(p.users ? 1 : 0); }
     if (p.closers !== undefined) { fields.push("perm_closers = ?"); args.push(p.closers ? 1 : 0); }
+    if (p.media !== undefined) { fields.push("perm_media = ?"); args.push(p.media ? 1 : 0); }
+    if (p.media_manage !== undefined) { fields.push("perm_media_manage = ?"); args.push(p.media_manage ? 1 : 0); }
     if (p.admin !== undefined) { fields.push("perm_admin = ?"); args.push(p.admin ? 1 : 0); }
   }
 

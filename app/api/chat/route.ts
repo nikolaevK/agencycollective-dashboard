@@ -30,7 +30,7 @@ import {
 } from "@/lib/chatContext";
 import type { DateRangeInput } from "@/types/api";
 import type { CampaignRow } from "@/types/dashboard";
-import { ALLOWED_MODELS, type ChatModelId } from "@/lib/chatModels";
+import { ALLOWED_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
 import type { GenerateReportInput, ApiContentBlock } from "@/types/chat";
 
 const anthropic = new Anthropic({
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
     const model: ChatModelId =
       typeof modelRaw === "string" && ALLOWED_MODELS.includes(modelRaw as ChatModelId)
         ? (modelRaw as ChatModelId)
-        : "claude-sonnet-4-6";
+        : DEFAULT_MODEL;
 
     // ── Validate dateRange ───────────────────────────────────────────────────
     const dateRangeInput = (dateRangeRaw && typeof dateRangeRaw === "object") ? dateRangeRaw as Record<string, unknown> : {};

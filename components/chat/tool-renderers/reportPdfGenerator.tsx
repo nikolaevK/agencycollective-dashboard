@@ -315,10 +315,15 @@ function ReportPdfDocument({ report }: { report: ReportResult }) {
   );
 }
 
-// ─── Export function ──────────────────────────────────────────────────────────
+// ─── Export functions ─────────────────────────────────────────────────────────
+
+/** Render a report into a branded PDF Blob (for download or upload). */
+export async function buildReportPdfBlob(report: ReportResult): Promise<Blob> {
+  return pdf(<ReportPdfDocument report={report} />).toBlob();
+}
 
 export async function generateReportPdf(report: ReportResult): Promise<void> {
-  const blob = await pdf(<ReportPdfDocument report={report} />).toBlob();
+  const blob = await buildReportPdfBlob(report);
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");

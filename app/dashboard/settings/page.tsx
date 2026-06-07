@@ -20,6 +20,10 @@ import {
   KeyRound,
   Globe,
   RefreshCw,
+  Megaphone,
+  Star,
+  CheckCircle2,
+  FolderTree,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 
@@ -1894,6 +1898,114 @@ export default function AdminDocumentationPage() {
                 <Pill>86400</Pill> — the 24h Meta cache). The in-memory L1
                 layer has no env override; its TTLs are hard-coded per
                 resource in <Pill>lib/cache.ts</Pill>.
+              </Bullet>
+            </ul>
+          </SubSection>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
+        {/* Media Buyers                                            */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={Megaphone}
+          title="Media Buyers"
+          subtitle="/dashboard/media-buyers"
+        >
+          <p>
+            A shared workspace for the paid-media team: a document directory
+            for SOPs, briefs, audits, media plans and reports; an AI
+            assistant that drafts and corrects them; and an activity log that
+            records who did what — including who has read each important
+            file. Gated by the <Pill>media</Pill> permission; manager-only
+            actions require <Pill>media_manage</Pill>.
+          </p>
+
+          <SubSection title="Two roles">
+            <ul className="space-y-2">
+              <Bullet>
+                <span className="font-semibold text-foreground">Media Buyer</span>{" "}
+                (<Pill>media</Pill>) — browses, uploads, views, downloads,
+                renames and moves documents; creates and colors folders;
+                acknowledges files; and uses the AI assistant.
+              </Bullet>
+              <Bullet>
+                <span className="font-semibold text-foreground">Head of Paid Media</span>{" "}
+                (<Pill>media_manage</Pill>) — everything a buyer can do, plus
+                deletes documents, marks items important, views read receipts,
+                and clears activity. Super admins do all of the above.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Document directory">
+            <ul className="space-y-2">
+              <Bullet>
+                A two-pane browser — a folder rail beside a files pane, in grid
+                or list view. <span className="font-semibold text-foreground">Drag&nbsp;&amp;&nbsp;drop</span>{" "}
+                PDFs (≤&nbsp;10&nbsp;MB, validated) to upload into the selected
+                folder; the AI assistant can save documents here too.
+              </Bullet>
+              <Bullet>
+                Per file: <span className="font-semibold text-foreground">view</span>{" "}
+                (new tab), <span className="font-semibold text-foreground">download</span>,
+                inline <span className="font-semibold text-foreground">rename</span>, and{" "}
+                <span className="font-semibold text-foreground">move</span> — drag
+                onto a folder, or use the Move dialog (which can create a new
+                folder on the spot). <span className="font-semibold text-foreground">Delete</span>{" "}
+                is Head-of-Paid-Media only.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Folders & colors">
+            <ul className="space-y-2">
+              <Bullet>
+                Create folders from the rail&apos;s <Pill>+</Pill> or inline
+                while moving a file; give each one of eight{" "}
+                <FolderTree className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                colors in its settings.
+              </Bullet>
+              <Bullet>
+                Renaming a folder bulk-moves its files and carries over color
+                and importance. Folders delete only once empty.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Important flags & acknowledgements">
+            <ul className="space-y-2">
+              <Bullet>
+                <Star className="inline h-3.5 w-3.5 text-amber-500 align-text-bottom" />{" "}
+                The Head of Paid Media flags key files and folders as{" "}
+                <span className="font-semibold text-amber-600 dark:text-amber-500">important</span>;
+                an &ldquo;Important&rdquo; filter shows only those, and important
+                files get an amber border and a prominent prompt.
+              </Bullet>
+              <Bullet>
+                <CheckCircle2 className="inline h-3.5 w-3.5 text-emerald-500 align-text-bottom" />{" "}
+                Any media buyer <span className="font-semibold text-foreground">acknowledges</span>{" "}
+                a file (&ldquo;Mark as read&rdquo;), recording them as a reader.
+                Managers see a per-file reader count and a{" "}
+                <span className="font-semibold text-foreground">read-receipts</span>{" "}
+                dialog of who read it and when; reads also appear in the activity log.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="AI assistant & activity">
+            <ul className="space-y-2">
+              <Bullet>
+                A Claude-powered assistant tailored to media-buyer ops — drafts
+                SOPs, briefs, audits, media plans and reports, and corrects
+                pasted documents. Generated docs save into the directory in one
+                click.
+              </Bullet>
+              <Bullet>
+                The <span className="font-semibold text-foreground">activity log</span>{" "}
+                records every action. Super admins and the Head of Paid Media can{" "}
+                <span className="font-semibold text-foreground">clear</span> entries
+                older than 7, 30 or 90 days, or all of them, after a
+                confirmation — each clear is itself logged.
               </Bullet>
             </ul>
           </SubSection>

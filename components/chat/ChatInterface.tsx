@@ -22,7 +22,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useAccounts } from "@/hooks/useAccounts";
 import { ChatMessage } from "./ChatMessage";
 import { ContextSelector } from "./ContextSelector";
-import { CHAT_MODELS, type ChatModelId } from "@/lib/chatModels";
+import { CHAT_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
 import { parseSSEStream } from "@/lib/chatStreamParser";
 import type { AccountSummary } from "@/types/dashboard";
 import type {
@@ -107,7 +107,7 @@ function ModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const current = CHAT_MODELS.find((m) => m.id === model)!;
+  const current = CHAT_MODELS.find((m) => m.id === model) ?? CHAT_MODELS[0];
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
@@ -118,6 +118,16 @@ function ModelPicker({
     if (open) document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
+
+  // With a single model, a dropdown is pointless — show a static badge.
+  if (CHAT_MODELS.length <= 1) {
+    return (
+      <span className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+        <current.icon className="h-3 w-3" />
+        {current.label}
+      </span>
+    );
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -367,7 +377,7 @@ function messagesToApi(msgs: ChatMessageType[]): Array<{ role: "user" | "assista
 export function ChatInterface() {
   const { dateRange } = useDateRange();
   const { data: allAccounts } = useAccounts(dateRange);
-  const [model, setModel] = useState<ChatModelId>("claude-sonnet-4-6");
+  const [model, setModel] = useState<ChatModelId>(DEFAULT_MODEL);
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);

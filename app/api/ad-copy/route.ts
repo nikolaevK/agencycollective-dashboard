@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getAdminSession } from "@/lib/adminSession";
-import { ALLOWED_MODELS, type ChatModelId } from "@/lib/chatModels";
+import { ALLOWED_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
     const model: ChatModelId =
       typeof modelRaw === "string" && ALLOWED_MODELS.includes(modelRaw as ChatModelId)
         ? (modelRaw as ChatModelId)
-        : "claude-sonnet-4-6";
+        : DEFAULT_MODEL;
 
     // ── Validate industry ──────────────────────────────────────────────────
     let industry = "peptides";

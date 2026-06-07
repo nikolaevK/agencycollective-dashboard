@@ -1,4 +1,4 @@
-export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'jsoneditor' | 'adcopy' | 'invoice' | 'users' | 'closers' | 'admin';
+export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'jsoneditor' | 'adcopy' | 'invoice' | 'users' | 'closers' | 'media' | 'media_manage' | 'admin';
 
 export interface AdminPermissions {
   dashboard: boolean;
@@ -9,6 +9,8 @@ export interface AdminPermissions {
   invoice: boolean;
   users: boolean;
   closers: boolean;
+  media: boolean;
+  media_manage: boolean;
   admin: boolean;
 }
 
@@ -27,6 +29,8 @@ export const PERMISSION_MODULES: {
   { key: 'invoice', label: 'Invoice', description: 'Create and download invoices', icon: 'FileText' },
   { key: 'users', label: 'Users', description: 'Manage end-user access', icon: 'Users' },
   { key: 'closers', label: 'Closers', description: 'Sales pipeline control', icon: 'Handshake' },
+  { key: 'media', label: 'Media Buyers', description: 'Paid-media docs & assistant', icon: 'Megaphone' },
+  { key: 'media_manage', label: 'Head of Paid Media', description: 'Manage media team & delete docs', icon: 'ClipboardCheck', elevated: true },
   { key: 'admin', label: 'Admin Management', description: 'Full system authority', icon: 'ShieldCheck', elevated: true },
 ];
 
@@ -42,6 +46,8 @@ export function allPermissionsTrue(): AdminPermissions {
     invoice: true,
     users: true,
     closers: true,
+    media: true,
+    media_manage: true,
     admin: true,
   };
 }
@@ -56,6 +62,8 @@ export function allPermissionsFalse(): AdminPermissions {
     invoice: false,
     users: false,
     closers: false,
+    media: false,
+    media_manage: false,
     admin: false,
   };
 }

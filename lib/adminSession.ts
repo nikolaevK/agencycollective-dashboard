@@ -57,7 +57,7 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
       displayName: data.displayName ?? null,
       avatarPath: data.avatarPath ?? null,
       isSuper: data.isSuper ?? false,
-      permissions: data.permissions ?? {
+      permissions: {
         dashboard: false,
         analyst: false,
         studio: false,
@@ -66,7 +66,10 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
         invoice: false,
         users: false,
         closers: false,
+        media: false,
+        media_manage: false,
         admin: false,
+        ...(data.permissions ?? {}),
       },
     };
   } catch {

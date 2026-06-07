@@ -24,7 +24,7 @@ import { useCampaignCreatives } from "@/hooks/useCampaignCreatives";
 import { AdCopySelector } from "./AdCopySelector";
 import { CreativeGrid } from "./CreativeGrid";
 import { AdPreview } from "./AdPreview";
-import { CHAT_MODELS, type ChatModelId } from "@/lib/chatModels";
+import { CHAT_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
 import type { CampaignCreative, UploadedImage, CopyVariation } from "@/types/dashboard";
 import { CreateDraftModal } from "./CreateDraftModal";
 
@@ -212,7 +212,7 @@ export function AdCopyGenerator() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Config
-  const [model, setModel] = useState<ChatModelId>("claude-sonnet-4-6");
+  const [model, setModel] = useState<ChatModelId>(DEFAULT_MODEL);
   const [industry, setIndustry] = useState<IndustryId>("peptides");
   const [customIndustry, setCustomIndustry] = useState("");
 

@@ -64,7 +64,7 @@ function decodePayload(token: string): Record<string, unknown> | null {
 }
 
 /** Map route patterns to required permission keys. */
-type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "admin";
+type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin";
 
 const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p === "/dashboard/chat", perm: "analyst" },
@@ -74,6 +74,7 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/dashboard/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
+  { match: (p) => p.startsWith("/dashboard/media-buyers"), perm: "media" },
   { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
   { match: (p) => p.startsWith("/dashboard/projection"), perm: "dashboard" },
   // Dashboard overview, accounts, alerts, settings need 'dashboard'
@@ -99,6 +100,8 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/admin/docuseal-templates"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/invoice-services"), perm: "invoice" },
   { match: (p) => p.startsWith("/api/admin/payouts"), perm: "closers" },
+  { match: (p) => p.startsWith("/api/admin/media-buyers"), perm: "media" },
+  { match: (p) => p.startsWith("/api/media-chat"), perm: "media" },
   { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/projection"), perm: "dashboard" },
@@ -111,6 +114,18 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/settings"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/push"), perm: "dashboard" },
 ];
+
+/**
+ * Resolve an effective permission. A Head of Paid Media (`media_manage`)
+ * implies media-buyer access (`media`) — the route handlers/actions already
+ * accept either, so the middleware gate must match or a manager-only admin
+ * gets locked out of the whole Media Buyers surface.
+ */
+function hasPerm(perms: Record<string, boolean>, key: PermKey): boolean {
+  if (perms[key]) return true;
+  if (key === "media" && perms["media_manage"]) return true;
+  return false;
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -149,7 +164,7 @@ export async function middleware(request: NextRequest) {
       if (!isSuper) {
         const perms = (data.permissions ?? {}) as Record<string, boolean>;
         for (const route of ROUTE_PERMISSIONS) {
-          if (route.match(pathname) && !perms[route.perm]) {
+          if (route.match(pathname) && !hasPerm(perms, route.perm)) {
             return NextResponse.redirect(new URL("/dashboard/unauthorized", request.url));
           }
         }
@@ -167,7 +182,7 @@ export async function middleware(request: NextRequest) {
         if (data && !Boolean(data.isSuper)) {
           const perms = (data.permissions ?? {}) as Record<string, boolean>;
           for (const route of API_PERMISSIONS) {
-            if (route.match(pathname) && !perms[route.perm]) {
+            if (route.match(pathname) && !hasPerm(perms, route.perm)) {
               return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
           }
@@ -263,6 +278,8 @@ export const config = {
     "/api/admin/docuseal-templates/:path*",
     "/api/admin/invoice-services/:path*",
     "/api/admin/payouts/:path*",
+    "/api/admin/media-buyers/:path*",
+    "/api/media-chat/:path*",
     "/api/admin/agency-config/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
