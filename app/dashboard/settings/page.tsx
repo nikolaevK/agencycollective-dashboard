@@ -24,6 +24,8 @@ import {
   Star,
   CheckCircle2,
   FolderTree,
+  ClipboardList,
+  Printer,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 
@@ -2009,6 +2011,137 @@ export default function AdminDocumentationPage() {
               </Bullet>
             </ul>
           </SubSection>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
+        {/* SOP Builder                                             */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={ClipboardList}
+          title="SOP Builder"
+          subtitle="/dashboard/sops"
+        >
+          <p>
+            Create, organize, and export Standard Operating Procedures for any
+            department — Sales, Media Buyers, onboarding, finance, and more. SOPs
+            are structured <span className="font-medium text-foreground">block documents</span>{" "}
+            (not flat files), edited on a live canvas and exported to PDF that
+            matches the preview. Available to{" "}
+            <span className="font-semibold text-foreground">every admin</span> —
+            there&apos;s no extra permission key; a valid admin session
+            (<Pill>a_sess</Pill>) is all that&apos;s required.
+          </p>
+
+          <Tabs
+            items={[
+              { name: "Library", what: "Folder/tag directory of all SOPs, with create, import, drag-to-move, and PDF export." },
+              { name: "AI Assistant", what: "Ask Claude to draft a brand-new SOP from a prompt; it opens in the builder, fully editable." },
+            ]}
+          />
+
+          <SubSection title="Library — folders, colors & tags">
+            <ul className="space-y-2">
+              <Bullet>
+                A two-pane directory (folder rail + cards/list) modeled on the
+                Media Buyers page. Create folders for each department from the
+                rail&apos;s <Pill>+</Pill> and give each one of eight{" "}
+                <FolderTree className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                colors; rename or delete them (empty folders only) from the
+                folder settings.
+              </Bullet>
+              <Bullet>
+                <span className="font-semibold text-foreground">Drag a SOP onto a folder</span>{" "}
+                to move it (or use the Move dialog, which can create a new folder
+                on the spot). Filter by <span className="font-semibold text-foreground">folder</span>,{" "}
+                <span className="font-semibold text-foreground">status</span> (Draft / Published),
+                or <span className="font-semibold text-foreground">tag</span> — tags are editable per SOP and clickable to filter.
+              </Bullet>
+              <Bullet>
+                Per card: <span className="font-semibold text-foreground">Open</span> (builder),{" "}
+                <Printer className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <span className="font-semibold text-foreground">Export to PDF</span>,{" "}
+                <span className="font-semibold text-foreground">Move</span>,{" "}
+                <span className="font-semibold text-foreground">Edit tags</span>, and{" "}
+                <span className="font-semibold text-foreground">Delete</span> (two-click confirm).
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Builder — block editor & live canvas">
+            <ul className="space-y-2">
+              <Bullet>
+                Build an SOP from ordered <span className="font-semibold text-foreground">sections</span>,
+                each holding <span className="font-semibold text-foreground">blocks</span>:
+                text, callout, <span className="font-semibold text-foreground">steps</span>{" "}
+                (numbered procedures), checklist, cards, columns, label/value rows, and stat.
+              </Bullet>
+              <Bullet>
+                <span className="font-semibold text-foreground">Drag to reorder</span>{" "}
+                sections and blocks (keyboard-accessible too). A split view shows
+                a <span className="font-semibold text-foreground">live canvas</span>{" "}
+                preview — toggle Desktop / Mobile — that exactly matches the
+                exported PDF.
+              </Bullet>
+              <Bullet>
+                Don&apos;t know Markdown? Every text box has a{" "}
+                <span className="font-semibold text-foreground">formatting toolbar</span>{" "}
+                (bold, italic, heading, bulleted / numbered lists, link, quote)
+                that wraps your selection — or type Markdown directly.
+              </Bullet>
+              <Bullet>
+                Saving is concurrency-safe: if someone else changed the SOP since
+                you opened it, you get a conflict banner to reload or overwrite.
+                Mark a SOP <span className="font-semibold text-foreground">Draft</span> or{" "}
+                <span className="font-semibold text-foreground">Published</span>.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Import — turn any document into a SOP (no AI)">
+            <ul className="space-y-2">
+              <Bullet>
+                Upload a <span className="font-semibold text-foreground">PDF</span>,{" "}
+                <span className="font-semibold text-foreground">Word (.docx)</span>,{" "}
+                <span className="font-semibold text-foreground">Markdown</span>,{" "}
+                <span className="font-semibold text-foreground">HTML</span>, or text file
+                (≤&nbsp;10&nbsp;MB) — Notion exports work. It&apos;s converted{" "}
+                <span className="font-semibold text-foreground">deterministically into our block model</span>{" "}
+                and opened in the builder to refine.
+              </Bullet>
+              <Bullet>
+                Headings become sections, numbered lists become step blocks,
+                checklists and quotes/callouts are preserved. Markdown / HTML /
+                Word keep their structure; PDFs come in as editable text you then
+                structure.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="AI assistant & PDF export">
+            <ul className="space-y-2">
+              <Bullet>
+                <Sparkles className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                The <span className="font-semibold text-foreground">AI Assistant</span> tab uses
+                Claude to draft a new SOP from a description (e.g. &ldquo;an SOP for
+                booking discovery calls&rdquo;) directly in our block format, then opens
+                it in the builder. AI is used{" "}
+                <span className="font-semibold text-foreground">only here</span> — uploads never call a model.
+              </Bullet>
+              <Bullet>
+                <Printer className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <span className="font-semibold text-foreground">Export to PDF</span>{" "}
+                opens a print view of the SOP (styled exactly like the canvas) and
+                uses the browser&apos;s native &ldquo;Save as PDF&rdquo;, so the output always
+                matches what you see.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <Note>
+            SOPs are admin-only for now. Surfacing read-only SOPs to department
+            members (e.g. inside the closer/setter portal) is a planned, additive
+            follow-up.
+          </Note>
         </Section>
 
         {/* ------------------------------------------------------ */}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -17,7 +17,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; superOnly?: boolean }[] = [
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; superOnly?: boolean; alwaysShow?: boolean }[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true, perm: "dashboard" },
   { href: "/dashboard/alerts", label: "Alerts", icon: Bell, perm: "dashboard" },
   { href: "/dashboard/chat", label: "AI Analyst", icon: Sparkles, perm: "analyst" },
@@ -28,6 +28,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
   { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
   { href: "/dashboard/media-buyers", label: "Media Buyers", icon: Megaphone, perm: "media" },
+  { href: "/dashboard/sops", label: "SOPs", icon: ClipboardList, perm: "dashboard", alwaysShow: true },
   { href: "/dashboard/projection", label: "Revenue Projection", icon: TrendingUp, perm: "dashboard" },
   { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
   { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
@@ -63,9 +64,11 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
 
   // Filter nav items by permissions (superOnly items only visible to super admins)
   const visibleItems = navItems.filter(
-    (item) => item.superOnly
-      ? admin.isSuper
-      : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage))
+    (item) => item.alwaysShow
+      ? true
+      : item.superOnly
+        ? admin.isSuper
+        : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage))
   );
 
   async function handleLogout() {

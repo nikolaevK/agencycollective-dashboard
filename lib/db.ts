@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-06-06.media-buyers.r2";
+const SCHEMA_VERSION = "2026-06-07.sop-builder.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -1627,6 +1627,43 @@ export async function migrate(): Promise<void> {
       pdf_uploaded_at TEXT,
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_by      TEXT
+    )
+  `);
+
+  // ── SOP Builder (Standard Operating Procedures) ──────────────────
+  // Admin-authored SOPs for Sales / Media Buyer / other departments.
+  // Unlike the singleton welcome_kit, this is MANY documents. `doc` is the
+  // block model (see lib/sop.ts), kept as JSON — each SOP is edited as a
+  // whole. PDF export is rendered on demand (browser print), not stored.
+  // Strictly additive.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sops (
+      id              TEXT PRIMARY KEY,
+      title           TEXT NOT NULL,
+      description     TEXT,
+      folder          TEXT NOT NULL DEFAULT 'General',
+      tags            TEXT NOT NULL DEFAULT '[]',
+      doc             TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'draft',
+      created_by      TEXT,
+      updated_by      TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_sops_folder ON sops(folder)`);
+  } catch (err) {
+    console.warn("[migrate] Could not create idx_sops_folder:", err);
+  }
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sop_folders (
+      name       TEXT PRIMARY KEY,
+      color      TEXT,
+      icon       TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
 
