@@ -23,7 +23,16 @@ import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAle
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
-import { WelcomeKitBuilder } from "@/components/users/WelcomeKitBuilder";
+import dynamic from "next/dynamic";
+// Lazy-loaded: the builder pulls in react-markdown (via WelcomeKitRenderer)
+// that only the rarely-opened Welcome Kit tab needs.
+const WelcomeKitBuilder = dynamic(
+  () =>
+    import("@/components/users/WelcomeKitBuilder").then(
+      (m) => m.WelcomeKitBuilder
+    ),
+  { ssr: false }
+);
 import { MaintenanceToggle } from "@/components/users/MaintenanceToggle";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "@/components/users/types";

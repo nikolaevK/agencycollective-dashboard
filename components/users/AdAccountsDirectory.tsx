@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import {
   Plus,
   Send,
@@ -20,10 +21,13 @@ import {
 import { cn } from "@/lib/utils";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { AdAccountFormModal } from "./AdAccountFormModal";
-import {
-  AdAccountInvoiceDrawer,
-  type AdAccountInvoiceTarget,
-} from "./AdAccountInvoiceDrawer";
+import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
+// Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
+// invoice drawer, keeping the Ad Accounts tab's initial bundle light.
+const AdAccountInvoiceDrawer = dynamic(
+  () => import("./AdAccountInvoiceDrawer").then((m) => m.AdAccountInvoiceDrawer),
+  { ssr: false }
+);
 import {
   AdAccountSentInvoicesPanel,
   useAdAccountSentInvoices,

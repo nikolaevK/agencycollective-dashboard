@@ -2,14 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { Plus, Send, Pencil, Trash2, Megaphone, ReceiptText, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { AdAccountFormModal } from "./AdAccountFormModal";
-import {
-  AdAccountInvoiceDrawer,
-  type AdAccountInvoiceTarget,
-} from "./AdAccountInvoiceDrawer";
+import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
+// Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
+// invoice drawer, keeping the per-client page's initial bundle light.
+const AdAccountInvoiceDrawer = dynamic(
+  () => import("./AdAccountInvoiceDrawer").then((m) => m.AdAccountInvoiceDrawer),
+  { ssr: false }
+);
 import { AdAccountInvoicesDrawer } from "./AdAccountInvoicesDrawer";
 import { AdAccountsGuide } from "./AdAccountsGuide";
 import { formatMoney, formatDate } from "./format";

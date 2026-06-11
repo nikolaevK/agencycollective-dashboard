@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { format } from "date-fns";
 import Link from "next/link";
 import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase, UserRound } from "lucide-react";
@@ -13,9 +14,24 @@ import { useQueryClient } from "@tanstack/react-query";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
-import { DealInvoiceDrawer } from "@/components/closers/DealInvoiceDrawer";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
-import { DealContractDrawer } from "@/components/closers/DealContractDrawer";
+// Lazy-loaded: the review drawers only mount when an admin opens a specific
+// deal, and DealInvoiceDrawer pulls in @react-pdf/renderer — keeping them out
+// of the initial bundle for every page that renders this table.
+const DealInvoiceDrawer = dynamic(
+  () =>
+    import("@/components/closers/DealInvoiceDrawer").then(
+      (m) => m.DealInvoiceDrawer
+    ),
+  { ssr: false }
+);
+const DealContractDrawer = dynamic(
+  () =>
+    import("@/components/closers/DealContractDrawer").then(
+      (m) => m.DealContractDrawer
+    ),
+  { ssr: false }
+);
 
 interface DealWithInvoice extends DealPublic {
   invoiceStatus?: string | null;
