@@ -159,39 +159,52 @@ function rowToUser(row: Row): UserRecord {
   };
 }
 
-export async function readUsers(): Promise<UserRecord[]> {
+// Metadata-only projection for user reads. `users` rows carry the client
+// logo BLOB (logo_data — served by its own endpoint), and SELECT * shipped
+// every logo over the wire on every directory build / portal lookup. The
+// column list deliberately omits logo_data/logo_type and has no created_at
+// (the live table has none — rowToUser falls back). Forced onto the covering
+// index from ensureCriticalColumns so reads never touch the BLOB-laden rows
+// at all (Turso disallows ANALYZE, so the planner won't pick it unaided);
+// falls back to the legacy SELECT * if the index doesn't exist yet.
+const USER_META_COLUMNS = `id, slug, account_id, display_name, logo_path,
+  password_hash, email, status, mrr, category, analyst_enabled, joined_at,
+  payout_brand, design_board_enabled, design_board_url`;
+
+async function selectUserRows(suffix: string, args: string[]): Promise<Row[]> {
   const db = getDb();
-  const result = await db.execute(
-    "SELECT * FROM users ORDER BY display_name"
-  );
-  return result.rows.map(rowToUser);
+  try {
+    const result = await db.execute({
+      sql: `SELECT ${USER_META_COLUMNS} FROM users INDEXED BY idx_users_directory_cover ${suffix}`,
+      args,
+    });
+    return [...result.rows];
+  } catch {
+    const result = await db.execute({ sql: `SELECT * FROM users ${suffix}`, args });
+    return [...result.rows];
+  }
+}
+
+export async function readUsers(): Promise<UserRecord[]> {
+  const rows = await selectUserRows("ORDER BY display_name", []);
+  return rows.map(rowToUser);
 }
 
 export async function findUser(id: string): Promise<UserRecord | null> {
-  const db = getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE id = ?",
-    args: [id],
-  });
-  return result.rows[0] ? rowToUser(result.rows[0]) : null;
+  const rows = await selectUserRows("WHERE id = ?", [id]);
+  return rows[0] ? rowToUser(rows[0]) : null;
 }
 
 export async function findUserBySlug(slug: string): Promise<UserRecord | null> {
-  const db = getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE slug = ?",
-    args: [slug],
-  });
-  return result.rows[0] ? rowToUser(result.rows[0]) : null;
+  const rows = await selectUserRows("WHERE slug = ?", [slug]);
+  return rows[0] ? rowToUser(rows[0]) : null;
 }
 
 export async function findUserByEmail(email: string): Promise<UserRecord | null> {
-  const db = getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE email = ? COLLATE NOCASE",
-    args: [email.trim().toLowerCase()],
-  });
-  return result.rows[0] ? rowToUser(result.rows[0]) : null;
+  const rows = await selectUserRows("WHERE email = ? COLLATE NOCASE", [
+    email.trim().toLowerCase(),
+  ]);
+  return rows[0] ? rowToUser(rows[0]) : null;
 }
 
 export async function insertUser(user: UserRecord): Promise<void> {

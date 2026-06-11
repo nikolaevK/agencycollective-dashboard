@@ -155,10 +155,23 @@ export async function getDealContractStatuses(
   await ensureMigrated();
   const db = getDb();
   const placeholders = capped.map(() => "?").join(",");
-  const result = await db.execute({
-    sql: `SELECT deal_id, status, signing_url FROM deal_contracts WHERE deal_id IN (${placeholders})`,
-    args: capped,
-  });
+  // Covering-index lookup — same rationale as getDealInvoiceStatuses (see
+  // lib/dealInvoices.ts): answer from the index without touching rows that
+  // carry large TEXT/BLOB columns. Fallback covers a fresh DB where the
+  // index hasn't been created yet.
+  const cols = "deal_id, status, signing_url";
+  let result;
+  try {
+    result = await db.execute({
+      sql: `SELECT ${cols} FROM deal_contracts INDEXED BY idx_deal_contracts_deal_cover WHERE deal_id IN (${placeholders})`,
+      args: capped,
+    });
+  } catch {
+    result = await db.execute({
+      sql: `SELECT ${cols} FROM deal_contracts WHERE deal_id IN (${placeholders})`,
+      args: capped,
+    });
+  }
   const map: Record<string, { status: DealContractStatus; signingUrl: string | null }> = {};
   for (const row of result.rows) {
     map[String(row.deal_id)] = {

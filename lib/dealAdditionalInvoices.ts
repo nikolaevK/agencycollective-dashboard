@@ -23,7 +23,12 @@ function rowToRecord(row: Row): DealAdditionalInvoiceRecord {
     invoiceData: (() => { try { return JSON.parse(String(row.invoice_data)) as InvoiceData; } catch { return {} as InvoiceData; } })(),
     status: String(row.status) as "draft" | "sent",
     sortOrder: Number(row.sort_order ?? 0),
-    hasPdf: row.pdf_data != null && row.pdf_data !== "",
+    // List reads project a SQL `has_pdf` flag instead of the BLOB itself;
+    // single-row reads (SELECT *) still derive it from pdf_data presence.
+    hasPdf:
+      row.has_pdf != null
+        ? Number(row.has_pdf) === 1
+        : row.pdf_data != null && row.pdf_data !== "",
     createdBy: row.created_by != null ? String(row.created_by) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
@@ -33,8 +38,14 @@ function rowToRecord(row: Row): DealAdditionalInvoiceRecord {
 export async function findAdditionalInvoicesByDealId(dealId: string): Promise<DealAdditionalInvoiceRecord[]> {
   await ensureMigrated();
   const db = getDb();
+  // Project everything EXCEPT pdf_data — the old SELECT * shipped each
+  // additional invoice's full PDF over the wire just so rowToRecord could
+  // check its presence. LENGTH() reads only the record header, not the BLOB.
   const result = await db.execute({
-    sql: "SELECT * FROM deal_additional_invoices WHERE deal_id = ? ORDER BY sort_order ASC, created_at ASC",
+    sql: `SELECT id, deal_id, invoice_number, invoice_data, status, sort_order,
+                 created_by, created_at, updated_at,
+                 (pdf_data IS NOT NULL AND LENGTH(pdf_data) > 0) AS has_pdf
+          FROM deal_additional_invoices WHERE deal_id = ? ORDER BY sort_order ASC, created_at ASC`,
     args: [dealId],
   });
   return result.rows.map(rowToRecord);

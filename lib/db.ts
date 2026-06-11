@@ -2,8 +2,20 @@ import { createClient, type Client } from "@libsql/client";
 
 // Singleton client — one connection per Node.js process
 let _client: Client | null = null;
-let _migrated = false;
-let _migratePromise: Promise<void> | null = null;
+
+// Migration state lives on globalThis, NOT module scope: Next dev re-evaluates
+// this module on every server-bundle recompile, and module-scoped flags would
+// reset and re-run the full migrate() round-trip sequence after every code
+// edit. Keyed by SCHEMA_VERSION so bumping the version re-arms it without a
+// server restart. Production is unaffected (fresh process = fresh globalThis).
+interface MigrateState {
+  version: string;
+  done: boolean;
+  promise: Promise<void> | null;
+}
+const globalWithMigrate = globalThis as typeof globalThis & {
+  __acMigrateState?: MigrateState;
+};
 
 export function getDb(): Client {
   if (_client) return _client;
@@ -30,13 +42,22 @@ export function getDb(): Client {
  * Safe to call from any server-side code — deduplicates concurrent calls.
  */
 export async function ensureMigrated(): Promise<void> {
-  if (_migrated) return;
-  if (!_migratePromise) {
-    _migratePromise = migrate()
-      .then(() => { _migrated = true; })
-      .catch((err) => { _migratePromise = null; throw err; });
+  let state = globalWithMigrate.__acMigrateState;
+  if (!state || state.version !== SCHEMA_VERSION) {
+    state = globalWithMigrate.__acMigrateState = {
+      version: SCHEMA_VERSION,
+      done: false,
+      promise: null,
+    };
   }
-  await _migratePromise;
+  if (state.done) return;
+  if (!state.promise) {
+    const s = state;
+    s.promise = migrate()
+      .then(() => { s.done = true; })
+      .catch((err) => { s.promise = null; throw err; });
+  }
+  await state.promise;
 }
 
 // ── Migration ──────────────────────────────────────────────────────────
@@ -94,61 +115,43 @@ const SCHEMA_VERSION = "2026-06-10.client-roster.r1";
  * table. No data is rewritten, no table is dropped, no column is altered.
  */
 async function ensureCriticalColumns(db: Client): Promise<void> {
-  // Persistent Meta Graph API response cache (default 24h TTL). Created here —
-  // not in the SCHEMA_VERSION body — so a stuck version stamp can never skip it.
-  // It shields Meta from repeated polling that can trigger automation bans
-  // (see lib/meta/persistentCache.ts). Not fatal if it fails: the cache helpers
-  // degrade to "no cache" (fetch from Meta) when the table is missing, so we
-  // log and continue rather than taking down all data fetching.
-  try {
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS meta_cache (
-        cache_key TEXT PRIMARY KEY,
-        payload TEXT NOT NULL,
-        fetched_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL
-      )
-    `);
-  } catch (err) {
-    console.error("[migrate] Failed to create meta_cache table:", err);
-  }
-
-  // Media Buyers folder metadata (color, persistence). Created here — not in
-  // the SCHEMA_VERSION body — because the Media Buyers directory queries it on
-  // every load, so a stuck version stamp (or a dev server that migrated before
-  // this table existed) must still self-heal. Non-fatal: listFoldersWithColors
-  // degrades to document-derived folders if it's missing (see lib/mediaFolders.ts).
-  try {
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS media_folders (
-        name             TEXT PRIMARY KEY,
-        color            TEXT NOT NULL DEFAULT 'gray',
-        important        INTEGER NOT NULL DEFAULT 0,
-        created_by       TEXT,
-        created_by_name  TEXT,
-        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-  } catch (err) {
-    console.error("[migrate] Failed to create media_folders table:", err);
-  }
-
-  // Per-user acknowledgement ("I read this file") read receipts. Hot-path:
-  // the directory load joins it for ack counts, so it must self-heal too.
-  try {
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS media_document_reads (
-        document_id  TEXT NOT NULL,
-        admin_id     TEXT NOT NULL,
-        admin_name   TEXT,
-        read_at      TEXT NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY (document_id, admin_id)
-      )
-    `);
-  } catch (err) {
-    console.error("[migrate] Failed to create media_document_reads table:", err);
-  }
+  // Hot-path DDL that must exist even when a stuck SCHEMA_VERSION stamp skips
+  // the gated body. Everything here is applied in TWO batched round-trips
+  // (one read probe + one write) — it used to be ~30 sequential Turso calls,
+  // which dominated every cold start (and, in dev, every recompile).
+  //
+  // The tables, created in the write batch at the end:
+  // - meta_cache — persistent Meta Graph API response cache (default 24h
+  //   TTL). Shields Meta from repeated polling that can trigger automation
+  //   bans (see lib/meta/persistentCache.ts). Non-fatal if creation fails:
+  //   the cache helpers degrade to "no cache" (fetch from Meta).
+  // - media_folders / media_document_reads — Media Buyers folder metadata and
+  //   read receipts, queried on every directory load, so they must self-heal
+  //   too. Non-fatal: the directory degrades to document-derived folders.
+  const CRITICAL_TABLE_DDL = [
+    `CREATE TABLE IF NOT EXISTS meta_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS media_folders (
+      name             TEXT PRIMARY KEY,
+      color            TEXT NOT NULL DEFAULT 'gray',
+      important        INTEGER NOT NULL DEFAULT 0,
+      created_by       TEXT,
+      created_by_name  TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS media_document_reads (
+      document_id  TEXT NOT NULL,
+      admin_id     TEXT NOT NULL,
+      admin_name   TEXT,
+      read_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (document_id, admin_id)
+    )`,
+  ];
 
   const adds: { table: string; column: string; defn: string }[] = [
     { table: "appointments",           column: "setter_tier",        defn: "TEXT" },
@@ -201,35 +204,36 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "client_profile",         column: "manual_mrr_cents",     defn: "INTEGER" },
     { table: "client_profile",         column: "manual_ltv_cents",     defn: "INTEGER" },
   ];
-  for (const { table, column, defn } of adds) {
-    try {
-      await db.execute(`SELECT ${column} FROM ${table} LIMIT 0`);
-      continue; // column exists, nothing to do
-    } catch {
-      // column missing — fall through to ALTER
+  // ── Probe: every table's columns in ONE read round-trip ────────────────
+  // PRAGMA table_info on a missing table returns zero rows (not an error),
+  // so one batch replaces the previous per-column `SELECT col LIMIT 0`
+  // probes — ~25 sequential Turso calls collapsed into one.
+  const probeTables = [...new Set(adds.map((a) => a.table))];
+  // Not in `adds`; gate index creates below.
+  probeTables.push("event_attendance", "deal_invoices", "deal_contracts", "sops");
+  const probed = await db.batch(
+    probeTables.map((t) => `PRAGMA table_info(${t})`),
+    "read"
+  );
+  const colsByTable = new Map<string, Set<string>>();
+  probeTables.forEach((table, i) => {
+    const rows = probed[i]?.rows ?? [];
+    if (rows.length > 0) {
+      colsByTable.set(table, new Set(rows.map((r) => String(r.name))));
     }
+  });
+
+  // ── ALTERs: only genuinely missing columns (steady state: none) ────────
+  // A missing TABLE is skipped outright — its CREATE in the gated body (or
+  // the write batch below) includes these columns inline on the same run.
+  for (const { table, column, defn } of adds) {
+    const cols = colsByTable.get(table);
+    if (!cols || cols.has(column)) continue;
     try {
       await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${defn}`);
       console.log(`[migrate] Added ${column} column to ${table}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // ghl_appointment_links may not exist yet on a brand-new DB (its
-      // CREATE TABLE is gated by the SCHEMA_VERSION body below). Treat
-      // "no such table" as benign — the body will create it with the
-      // column inline on the same run.
-      if (
-        (table === "ghl_appointment_links" ||
-          table === "welcome_kit" ||
-          table === "users" ||
-          table === "client_billing" ||
-          table === "client_profile" ||
-          table === "ad_accounts" ||
-          table === "payouts" ||
-          table === "media_documents") &&
-        /no such table/i.test(msg)
-      ) {
-        continue;
-      }
       // Two concurrent Vercel cold starts can both observe the column as
       // missing and both race the ALTER. The second one fails with
       // "duplicate column name" — that's exactly the success outcome we
@@ -245,35 +249,102 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     }
   }
 
-  // Backfill the multi-sub-account stamp on any pre-existing rows. Safe to
-  // re-run: matches zero rows once every row has an id. Wrapped in a
-  // "no such table" check for fresh-DB cold starts where the table hasn't
-  // been created yet.
-  try {
-    await db.execute(
+  // ── Idempotent remainder in ONE write round-trip ───────────────────────
+  // Statements that target a gated-body table are included only when the
+  // probe saw it (and their column dependencies are guaranteed by the ALTER
+  // loop above), so on a healthy DB nothing here can fail. The batch is
+  // transactional: an unexpected failure rolls everything back, gets logged
+  // (non-fatal, as each statement was before), and retries next cold start.
+  const writes: string[] = [...CRITICAL_TABLE_DDL];
+  if (colsByTable.has("ghl_appointment_links")) {
+    // Backfill the multi-sub-account stamp on any pre-existing rows. Safe
+    // to re-run: matches zero rows once every row has an id.
+    writes.push(
       `UPDATE ghl_appointment_links SET ghl_sub_account_id = 'peptide' WHERE ghl_sub_account_id IS NULL`
     );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/no such table/i.test(msg)) {
-      console.error("[migrate] ghl_appointment_links backfill failed:", err);
-    }
   }
-
-  // One payout per imported deal — DB-level backstop for the app-level de-dupe
-  // in /api/admin/payouts/from-deal (guards the read-then-insert race). Partial
-  // index so the many NULL source_deal_id manual rows are unaffected. Benign
-  // "no such table" on a fresh DB (the gated body creates payouts after this).
-  try {
-    await db.execute(
+  if (colsByTable.has("payouts")) {
+    // One payout per imported deal — DB-level backstop for the app-level
+    // de-dupe in /api/admin/payouts/from-deal (guards the read-then-insert
+    // race). Partial index so the many NULL source_deal_id manual rows are
+    // unaffected.
+    writes.push(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_payouts_source_deal
        ON payouts(source_deal_id) WHERE source_deal_id IS NOT NULL`
     );
+  }
+  // Hot-path indexes, here (not the gated body) so existing deploys pick
+  // them up without a SCHEMA_VERSION bump:
+  //  - event_attendance: latest-mark-per-event window queries on every
+  //    calendar load (admin map + closer/setter team view)
+  //  - deals: status-filtered, recency-ordered lists (payout import picker)
+  if (colsByTable.has("event_attendance")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_event_attendance_event_updated
+       ON event_attendance(google_event_id, updated_at DESC)`
+    );
+  }
+  if (colsByTable.has("deals")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_deals_status_created
+       ON deals(status, created_at DESC)`
+    );
+  }
+  // COVERING indexes for the deal-queue status lookups
+  // (getDealInvoiceStatuses / getDealContractStatuses). These tables carry
+  // ~0.5 MB of TEXT/BLOB per row (invoice_data JSON + pdf_data), and `status`
+  // is stored AFTER invoice_data in the record — so a plain deal_id index
+  // still walks each row's overflow-page chain to project it (observed: 60s+
+  // for an 81-row IN(...) lookup on a cold Turso page cache). A covering
+  // index answers the query without ever touching the row.
+  if (colsByTable.has("deal_invoices")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_deal_invoices_deal_cover
+       ON deal_invoices(deal_id, status, invoice_number)`
+    );
+  }
+  if (colsByTable.has("deal_contracts")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_deal_contracts_deal_cover
+       ON deal_contracts(deal_id, status, signing_url)`
+    );
+  }
+  // COVERING indexes for the other in-row PDF/image stores — same trap as
+  // the deal-queue fix above: metadata columns stored AFTER a BLOB force an
+  // overflow-chain walk per row, so list queries degrade linearly with total
+  // stored bytes. Their queries opt in via INDEXED BY.
+  //  - media_documents: important/tags were ALTER-added after file_data, so
+  //    EVERY directory listing walked every PDF.
+  //  - sops: the list projects status/updated_at/created_at, all stored
+  //    after both the doc JSON and pdf_data.
+  //  - users: SELECT * shipped logo_data on every read; the index serves all
+  //    metadata reads without touching rows. Gated on design_board_url since
+  //    that column comes from the gated body, not `adds`.
+  if (colsByTable.get("media_documents")?.has("tags")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_media_docs_meta_cover
+       ON media_documents(id, folder, doc_type, platform, file_name, mime_type,
+         file_size, important, tags, uploaded_by, uploaded_by_name, updated_at, created_at)`
+    );
+  }
+  if (colsByTable.has("sops")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_sops_list_cover
+       ON sops(updated_at DESC, id, title, description, folder, tags, status, created_at)`
+    );
+  }
+  if (colsByTable.get("users")?.has("design_board_url")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_users_directory_cover
+       ON users(id, slug, account_id, display_name, logo_path, password_hash,
+         email, status, mrr, category, analyst_enabled, joined_at, payout_brand,
+         design_board_enabled, design_board_url)`
+    );
+  }
+  try {
+    await db.batch(writes, "write");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/no such table/i.test(msg)) {
-      console.error("[migrate] payouts source_deal_id index failed:", err);
-    }
+    console.error("[migrate] critical DDL batch failed (retries next start):", err);
   }
 }
 

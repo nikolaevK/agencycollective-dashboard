@@ -185,10 +185,27 @@ export async function getDealInvoiceStatuses(
   await ensureMigrated();
   const db = getDb();
   const placeholders = capped.map(() => "?").join(",");
-  const result = await db.execute({
-    sql: `SELECT deal_id, status, invoice_number FROM deal_invoices WHERE deal_id IN (${placeholders})`,
-    args: capped,
-  });
+  // Force the covering index (created in ensureCriticalColumns). Rows here
+  // carry ~0.5 MB of invoice_data/pdf_data and `status` is stored AFTER
+  // invoice_data, so the planner's natural pick — the UNIQUE deal_id
+  // autoindex — walks each matched row's overflow-page chain to project it
+  // (observed 60–110s for ~80 deals on a cold Turso page cache). Turso
+  // disallows ANALYZE, so without stats the planner never prefers the
+  // covering index on its own. Fall back to the natural plan only if the
+  // index doesn't exist yet (fresh DB before its second migrate pass).
+  const cols = "deal_id, status, invoice_number";
+  let result;
+  try {
+    result = await db.execute({
+      sql: `SELECT ${cols} FROM deal_invoices INDEXED BY idx_deal_invoices_deal_cover WHERE deal_id IN (${placeholders})`,
+      args: capped,
+    });
+  } catch {
+    result = await db.execute({
+      sql: `SELECT ${cols} FROM deal_invoices WHERE deal_id IN (${placeholders})`,
+      args: capped,
+    });
+  }
   const map: Record<string, { status: string; invoiceNumber: string }> = {};
   for (const row of result.rows) {
     map[String(row.deal_id)] = {

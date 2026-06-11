@@ -337,21 +337,37 @@ function rowToListItem(row: Record<string, unknown>): SopListItem {
   };
 }
 
+// List/tag reads are forced onto the covering index (ensureCriticalColumns):
+// LIST_COLUMNS projects status/updated_at/created_at, which are stored AFTER
+// both the doc JSON and the pdf_data BLOB — reading them from the row walks
+// every SOP's full payload, so list cost would grow with stored PDF bytes.
+// Turso disallows ANALYZE, so the planner never picks the covering index
+// unaided; fall back to the natural plan if it doesn't exist yet (fresh DB).
+async function selectListRows(sql: string, fallbackSql: string, args: string[]) {
+  const db = getDb();
+  try {
+    return [...(await db.execute({ sql, args })).rows];
+  } catch {
+    return [...(await db.execute({ sql: fallbackSql, args })).rows];
+  }
+}
+
 /** List SOPs (metadata only), optionally filtered by folder and/or tag. */
 export async function listSops(opts?: { folder?: string; tag?: string }): Promise<SopListItem[]> {
   await ensureMigrated();
-  const db = getDb();
   const where: string[] = [];
   const args: string[] = [];
   if (opts?.folder) {
     where.push("folder = ?");
     args.push(opts.folder);
   }
-  const res = await db.execute({
-    sql: `SELECT ${LIST_COLUMNS} FROM sops${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY updated_at DESC`,
-    args,
-  });
-  let items = res.rows.map(rowToListItem);
+  const suffix = `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY updated_at DESC`;
+  const rows = await selectListRows(
+    `SELECT ${LIST_COLUMNS} FROM sops INDEXED BY idx_sops_list_cover${suffix}`,
+    `SELECT ${LIST_COLUMNS} FROM sops${suffix}`,
+    args
+  );
+  let items = rows.map(rowToListItem);
   // Tag filter applied in-memory (tags are a JSON column).
   if (opts?.tag) {
     const t = opts.tag.toLowerCase();
@@ -363,10 +379,13 @@ export async function listSops(opts?: { folder?: string; tag?: string }): Promis
 /** Every distinct tag in use (for filter chips), sorted. */
 export async function listAllTags(): Promise<string[]> {
   await ensureMigrated();
-  const db = getDb();
-  const res = await db.execute("SELECT tags FROM sops");
+  const rows = await selectListRows(
+    "SELECT tags FROM sops INDEXED BY idx_sops_list_cover",
+    "SELECT tags FROM sops",
+    []
+  );
   const set = new Set<string>();
-  for (const row of res.rows) parseTags(row.tags).forEach((t) => set.add(t));
+  for (const row of rows) parseTags(row.tags).forEach((t) => set.add(t));
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 

@@ -147,15 +147,37 @@ export async function insertDocument(
   });
 }
 
+// Metadata reads are forced onto the covering index (ensureCriticalColumns):
+// important/tags were ALTER-added AFTER the file_data BLOB, so reading them
+// from the row walks each document's full PDF overflow chain — listing cost
+// would grow linearly with total stored bytes. Turso disallows ANALYZE, so
+// the planner never picks the covering index unaided; fall back to the
+// natural plan if the index doesn't exist yet (fresh DB first run).
+async function selectMetaRows(
+  suffix: string,
+  args: string[]
+): Promise<Row[]> {
+  const db = getDb();
+  try {
+    const result = await db.execute({
+      sql: `SELECT ${META_COLUMNS} FROM media_documents INDEXED BY idx_media_docs_meta_cover ${suffix}`,
+      args,
+    });
+    return [...result.rows];
+  } catch {
+    const result = await db.execute({
+      sql: `SELECT ${META_COLUMNS} FROM media_documents ${suffix}`,
+      args,
+    });
+    return [...result.rows];
+  }
+}
+
 export async function findDocument(id: string): Promise<MediaDocument | null> {
   await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT ${META_COLUMNS} FROM media_documents WHERE id = ?`,
-    args: [id],
-  });
-  if (result.rows.length === 0) return null;
-  return rowToDocument(result.rows[0]);
+  const rows = await selectMetaRows("WHERE id = ?", [id]);
+  if (rows.length === 0) return null;
+  return rowToDocument(rows[0]);
 }
 
 export async function findDocumentWithData(
@@ -237,7 +259,6 @@ export async function listDocuments(filters?: {
   platform?: MediaPlatform;
 }): Promise<MediaDocument[]> {
   await ensureMigrated();
-  const db = getDb();
 
   const where: string[] = [];
   const args: string[] = [];
@@ -246,11 +267,8 @@ export async function listDocuments(filters?: {
   if (filters?.platform) { where.push("platform = ?"); args.push(filters.platform); }
 
   const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
-  const result = await db.execute({
-    sql: `SELECT ${META_COLUMNS} FROM media_documents ${whereClause} ORDER BY updated_at DESC`,
-    args,
-  });
-  return result.rows.map(rowToDocument);
+  const rows = await selectMetaRows(`${whereClause} ORDER BY updated_at DESC`, args);
+  return rows.map(rowToDocument);
 }
 
 export async function listFolders(): Promise<string[]> {
