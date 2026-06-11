@@ -2,10 +2,21 @@
 
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Check, Copy, Plus } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { ClientDirectory } from "@/components/users/ClientDirectory";
 import { ClientSummaryCards } from "@/components/users/ClientSummaryCards";
+import { TeamFilterCards } from "@/components/users/TeamFilterCards";
+import { RosterDashboard } from "@/components/users/RosterDashboard";
+import {
+  effectiveMrrCents,
+  effectiveLtvCents,
+  SERVICE_LABELS,
+  STAGE_LABELS,
+  HEALTH_LABELS,
+  PLATFORM_LABELS,
+  MANUAL_BILLING_LABELS,
+} from "@/components/users/rosterPresentation";
 import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
 import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
@@ -36,10 +47,32 @@ function applyFilters(clients: ClientPublic[], f: ClientFilterState): ClientPubl
     if (f.category && c.category !== f.category) return false;
     if (f.rebill !== "all" && c.schedule.status !== f.rebill) return false;
 
+    // Roster filters
+    if (f.book !== "all" && c.profile.book !== f.book) return false;
+    if (f.stages.length > 0 && !f.stages.some((v) => c.profile.stages.includes(v)))
+      return false;
+    if (f.health.length > 0 && !f.health.some((v) => c.profile.health.includes(v)))
+      return false;
+    if (
+      f.services.length > 0 &&
+      !f.services.some((v) => c.profile.services.includes(v))
+    )
+      return false;
+    if (
+      f.platforms.length > 0 &&
+      !f.platforms.some((v) => c.profile.adPlatforms.includes(v))
+    )
+      return false;
+    if (
+      f.team &&
+      !c.team.some((m) => m.adminId === f.team!.adminId && m.role === f.team!.role)
+    )
+      return false;
+
     if (q) {
       const hay = `${c.displayName} ${c.email ?? ""} ${c.category ?? ""} ${
         c.payoutBrand ?? ""
-      }`.toLowerCase();
+      } ${c.profile.website ?? ""} ${c.profile.rosterNotes ?? ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
 
@@ -58,6 +91,52 @@ function applyFilters(clients: ClientPublic[], f: ClientFilterState): ClientPubl
   });
 }
 
+function csvField(value: string | number | null | undefined): string {
+  const s = value == null ? "" : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Full roster (both books, every column) as CSV — mirrors the prototype's Copy CSV. */
+function buildRosterCsv(clients: ClientPublic[]): string {
+  const header = [
+    "Client", "Book", "Status", "Website", "Stages", "Health", "Ad Platforms",
+    "Ads Running", "Services", "Lead", "Media Buyer", "Monthly MRR", "Perf Fee",
+    "Rev Threshold", "LTV", "Billing Status", "Next Re-bill", "Last Re-bill",
+    "Date Joined", "Notes",
+  ];
+  const lines = clients.map((c) => {
+    const p = c.profile;
+    const isPepads = p.book === "pepads";
+    return [
+      c.displayName,
+      isPepads ? "PepAds" : "Agency Collective",
+      c.status,
+      p.website ?? "",
+      p.stages.map((v) => STAGE_LABELS[v] ?? v).join("; "),
+      p.health.map((v) => HEALTH_LABELS[v] ?? v).join("; "),
+      p.adPlatforms.map((v) => PLATFORM_LABELS[v] ?? v).join("; "),
+      p.adsRunning ? "running" : "paused",
+      p.services.map((v) => SERVICE_LABELS[v] ?? v).join("; "),
+      c.team.filter((m) => m.role === "lead").map((m) => m.name).join("; "),
+      c.team.filter((m) => m.role === "media_buyer").map((m) => m.name).join("; "),
+      (effectiveMrrCents(c) / 100).toFixed(2),
+      p.perfFee ?? c.derivedPerfFee ?? "",
+      p.revThreshold ?? "",
+      (effectiveLtvCents(c) / 100).toFixed(2),
+      isPepads
+        ? p.manualBilling.map((v) => MANUAL_BILLING_LABELS[v] ?? v).join("; ")
+        : c.schedule.status,
+      isPepads ? p.manualNextRebill ?? "" : c.schedule.nextRebillAt ?? "",
+      c.schedule.lastRebilledAt ?? "",
+      c.joinedAt ?? "",
+      p.rosterNotes ?? "",
+    ]
+      .map(csvField)
+      .join(",");
+  });
+  return [header.map(csvField).join(","), ...lines].join("\n");
+}
+
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabId>("clients");
@@ -65,6 +144,7 @@ export default function UsersPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [sentInvoicesOpen, setSentInvoicesOpen] = useState(false);
+  const [csvCopied, setCsvCopied] = useState(false);
 
   const { data: unreadSupport = 0 } = useQuery<number>({
     queryKey: ["admin-support-unread"],
@@ -96,8 +176,10 @@ export default function UsersPage() {
   // Monthly MRR reflects ACTIVE clients only (same definition as the "Active"
   // card below) — paused/onboarding/inactive/archived clients don't count
   // toward recurring revenue even though their row still shows its own MRR.
+  // PepAds clients contribute their manual MRR (their book has no payout-
+  // derived recurring revenue).
   const totalMrr = clients.reduce(
-    (s, c) => s + (c.status === "active" ? c.payoutMrr : 0),
+    (s, c) => s + (c.status === "active" ? effectiveMrrCents(c) : 0),
     0
   );
   const activeClients = clients.filter((c) => c.status === "active").length;
@@ -106,6 +188,16 @@ export default function UsersPage() {
     queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
     queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
+  }
+
+  async function handleCopyCsv() {
+    try {
+      await navigator.clipboard.writeText(buildRosterCsv(clients));
+      setCsvCopied(true);
+      setTimeout(() => setCsvCopied(false), 2000);
+    } catch {
+      alert("Could not copy to clipboard.");
+    }
   }
 
   return (
@@ -140,13 +232,28 @@ export default function UsersPage() {
             </div>
             <MaintenanceToggle />
             {tab === "clients" && (
-              <button
-                onClick={() => setShowAdd(true)}
-                className="hidden md:flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
-              >
-                <Plus className="h-4 w-4" />
-                Add Client
-              </button>
+              <>
+                <button
+                  onClick={handleCopyCsv}
+                  disabled={clients.length === 0}
+                  className="hidden md:flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                  title="Copy the full roster (all columns, both books) as CSV"
+                >
+                  {csvCopied ? (
+                    <Check className="h-4 w-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                  {csvCopied ? "Copied" : "Copy CSV"}
+                </button>
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="hidden md:flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Client
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -171,6 +278,18 @@ export default function UsersPage() {
               onOpenChange={setSentInvoicesOpen}
             />
 
+            <RosterDashboard
+              clients={clients}
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+
+            <TeamFilterCards
+              clients={clients}
+              selected={filters.team}
+              onSelect={(team) => setFilters((f) => ({ ...f, team }))}
+            />
+
             <ClientFilters value={filters} onChange={setFilters} />
 
             {isLoading ? (
@@ -182,7 +301,11 @@ export default function UsersPage() {
                 </div>
               </div>
             ) : (
-              <ClientDirectory clients={filtered} onRefresh={handleRefresh} />
+              <ClientDirectory
+                clients={filtered}
+                onRefresh={handleRefresh}
+                resetKey={JSON.stringify(filters)}
+              />
             )}
           </>
         )}

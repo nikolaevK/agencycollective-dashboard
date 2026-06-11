@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, getEffectivePermissions } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import { buildClientDirectory } from "@/lib/clientDirectory";
+import { effectiveMrrCents } from "@/lib/clientProfile";
 
 /**
  * Live baseline for the Revenue Projection tool, sourced from the same
@@ -34,7 +35,10 @@ export async function GET() {
   const active = rows.filter((r) => r.status === "active");
 
   const activeClientCount = active.length;
-  const totalMrrCents = active.reduce((sum, r) => sum + (r.payoutMrr || 0), 0);
+  // effectiveMrrCents = payoutMrr for agency-book clients, manual MRR for
+  // PepAds — keeps this baseline consistent with the directory's Monthly MRR
+  // summary card (both books count toward recurring revenue).
+  const totalMrrCents = active.reduce((sum, r) => sum + effectiveMrrCents(r), 0);
   const averageMrrCents =
     activeClientCount > 0 ? Math.round(totalMrrCents / activeClientCount) : 0;
 

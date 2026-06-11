@@ -80,7 +80,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-06-07.sop-builder.r1";
+const SCHEMA_VERSION = "2026-06-10.client-roster.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -194,6 +194,12 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "media_folders",          column: "important",            defn: "INTEGER NOT NULL DEFAULT 0" },
     // Free-form filter tags on a document, stored as a JSON string array.
     { table: "media_documents",        column: "tags",                 defn: "TEXT NOT NULL DEFAULT '[]'" },
+    // PepAds-book manual MRR / LTV (cents) — read on every directory build for
+    // pepads rows (computed payout MRR / totalRevenue don't apply to the manual
+    // book). client_profile's CREATE TABLE is gated by the version body, so
+    // "no such table" here is benign on a fresh DB (created with the columns).
+    { table: "client_profile",         column: "manual_mrr_cents",     defn: "INTEGER" },
+    { table: "client_profile",         column: "manual_ltv_cents",     defn: "INTEGER" },
   ];
   for (const { table, column, defn } of adds) {
     try {
@@ -216,6 +222,7 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
           table === "welcome_kit" ||
           table === "users" ||
           table === "client_billing" ||
+          table === "client_profile" ||
           table === "ad_accounts" ||
           table === "payouts" ||
           table === "media_documents") &&
@@ -1604,6 +1611,67 @@ export async function migrate(): Promise<void> {
     );
     await db.execute(
       `CREATE INDEX IF NOT EXISTS idx_client_rebill_invoices_status_sent ON client_rebill_invoices(status, sent_at)`
+    );
+  } catch {
+    // indexes may already exist
+  }
+
+  // ── Client roster profile (Client Directory roster columns) ─────────────
+  // One row per client, created lazily on first edit — absence means defaults
+  // (book 'agency', ads running, no chips), mirroring client_billing. The
+  // JSON-array columns are TEXT parsed defensively (see lib/clientProfile.ts).
+  // book: 'agency' (default — billing statuses computed by the re-bill engine
+  // as before) | 'pepads' (separate book; billing status + next re-bill are
+  // maintained MANUALLY via manual_billing / manual_next_rebill and the client
+  // is excluded from computed re-bill alerts). FK CASCADE declared but
+  // deleteUser() also cleans explicitly (libSQL cascade not guaranteed).
+  // Strictly additive.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_profile (
+      user_id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      book               TEXT NOT NULL DEFAULT 'agency',
+      website            TEXT,
+      is_top             INTEGER NOT NULL DEFAULT 0,
+      ads_running        INTEGER NOT NULL DEFAULT 1,
+      ad_platforms       TEXT,
+      stages             TEXT,
+      health             TEXT,
+      services           TEXT,
+      perf_fee           TEXT,
+      rev_threshold      TEXT,
+      manual_billing     TEXT,
+      manual_next_rebill TEXT,
+      manual_mrr_cents   INTEGER,
+      manual_ltv_cents   INTEGER,
+      roster_notes       TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Client team assignments (roster Lead / Media Buyer columns) ─────────
+  // Links a client (users row) to people from the admins table. role is
+  // 'media_buyer' | 'lead'. Multi-assign allowed; replace-set writes go
+  // through db.batch (atomic). Cleaned explicitly on user AND admin delete
+  // (libSQL cascade not guaranteed); the reader also LEFT JOINs admins and
+  // drops orphans. Strictly additive.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS client_team (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      admin_id    TEXT NOT NULL,
+      role        TEXT NOT NULL,
+      assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      assigned_by TEXT,
+      UNIQUE(user_id, admin_id, role)
+    )
+  `);
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_client_team_user ON client_team(user_id)`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_client_team_admin ON client_team(admin_id)`
     );
   } catch {
     // indexes may already exist

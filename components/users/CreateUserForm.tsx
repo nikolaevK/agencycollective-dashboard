@@ -4,6 +4,7 @@ import { useState, useRef, useTransition } from "react";
 import { UserPlus, Upload, X } from "lucide-react";
 import { createUserAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
+import { BOOK_OPTIONS, type ClientBook } from "@/lib/clientProfile";
 
 interface CreateUserFormProps {
   onCreated: () => void;
@@ -14,6 +15,7 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [book, setBook] = useState<ClientBook>("agency");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -23,18 +25,43 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
 
     const form = e.currentTarget;
     const formData = new FormData(form);
+    const website = String(formData.get("website") ?? "").trim();
 
     startTransition(async () => {
       const result = await createUserAction(formData);
       if (result.error) {
         setError(result.error);
-      } else {
-        setSuccess(true);
-        form.reset();
-        setLogoPreview(null);
-        onCreated();
-        setTimeout(() => setSuccess(false), 3000);
+        return;
       }
+
+      // Roster fields live in client_profile — seed them right after create.
+      // The client exists either way; a failed seed must be SURFACED (not
+      // swallowed), or "PepAds + website" silently lands as a default-agency
+      // client and the admin only finds out much later.
+      if (result.id && (book !== "agency" || website)) {
+        const changes: Record<string, unknown> = {};
+        if (book !== "agency") changes.book = book;
+        if (website) changes.website = website;
+        try {
+          const res = await fetch(`/api/admin/clients/${result.id}/profile`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(changes),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch {
+          setError(
+            "Client created, but the book/website could not be saved — set them on the client's directory row."
+          );
+        }
+      }
+
+      setSuccess(true);
+      form.reset();
+      setLogoPreview(null);
+      setBook("agency");
+      onCreated();
+      setTimeout(() => setSuccess(false), 3000);
     });
   }
 
@@ -91,6 +118,41 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
+        </div>
+
+        {/* Book */}
+        <div>
+          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+            Book
+          </label>
+          <select
+            value={book}
+            onChange={(e) => setBook(e.target.value as ClientBook)}
+            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
+          >
+            {BOOK_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {book === "pepads" && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              PepAds clients are billed manually — billing status &amp; next re-bill are
+              set by hand on the directory row; no automatic re-bill alerts.
+            </p>
+          )}
+        </div>
+
+        {/* Website */}
+        <div>
+          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+            Website (optional)
+          </label>
+          <input
+            name="website"
+            type="text"
+            placeholder="clientsite.com"
+            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
+          />
         </div>
 
         {/* Logo */}

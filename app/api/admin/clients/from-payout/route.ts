@@ -13,7 +13,9 @@ import {
   findUserByEmail,
   readUsers,
 } from "@/lib/users";
-import { normalizeBrandName } from "@/lib/payouts";
+import { normalizeBrandName, findLatestSourceDealIdForBrand } from "@/lib/payouts";
+import { findDeal } from "@/lib/deals";
+import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
 
 async function requireAdminSession() {
   const session = getAdminSession();
@@ -126,7 +128,27 @@ export async function POST(request: Request) {
       payoutBrand: brandName,
     });
 
-    return NextResponse.json({ data: { id, slug } }, { status: 201 });
+    // If this brand's payouts trace back to an imported deal, seed the new
+    // client's roster profile (website + services) from that deal. Best-effort
+    // and non-blocking — the client is already created.
+    const warnings: string[] = [];
+    try {
+      const sourceDealId = await findLatestSourceDealIdForBrand(brandNorm);
+      if (sourceDealId) {
+        const deal = await findDeal(sourceDealId);
+        if (deal) {
+          const fill = await autofillClientProfileFromDeal(deal, {
+            resolvedUserId: id,
+          });
+          warnings.push(...fill.warnings);
+        }
+      }
+    } catch (err) {
+      console.error("[from-payout] profile auto-fill failed (non-fatal):", err);
+      warnings.push("Client profile auto-fill failed.");
+    }
+
+    return NextResponse.json({ data: { id, slug }, warnings }, { status: 201 });
   } catch (err) {
     console.error("[from-payout] create failed:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

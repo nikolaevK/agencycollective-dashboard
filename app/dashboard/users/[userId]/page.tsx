@@ -7,10 +7,12 @@ import {
   Mail,
   Calendar,
   DollarSign,
+  Globe,
   Pencil,
   Link2,
   Eye,
   ExternalLink,
+  Star,
   TrendingUp,
   ShoppingCart,
   Banknote,
@@ -40,6 +42,13 @@ import { ClientDocumentsTab } from "@/components/users/ClientDocumentsTab";
 import { ClientNotesTab } from "@/components/users/ClientNotesTab";
 import { ClientSettingsTab } from "@/components/users/ClientSettingsTab";
 import { formatDate as formatDay } from "@/components/users/format";
+import {
+  CHIP_BASE,
+  MANUAL_BILLING_CHIP_CLS,
+  MANUAL_BILLING_LABELS,
+  PEPADS_BADGE_CLS,
+} from "@/components/users/rosterPresentation";
+import { useClientProfileMutations } from "@/hooks/useClientProfileMutations";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -297,6 +306,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [showMrrDetail, setShowMrrDetail] = useState(false);
+  const { patchProfile } = useClientProfileMutations();
   const [tab, setTab] = useState<DetailTab>("overview");
 
   const { dateRange } = useDateRange();
@@ -380,8 +390,56 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-2xl font-black text-foreground">{client.displayName}</h1>
+                  <button
+                    type="button"
+                    disabled={patchProfile.isPending}
+                    onClick={() =>
+                      // Through the shared mutations hook: per-client write
+                      // queue (no race with inline directory edits) + the
+                      // ["admin-users"] cache invalidation the directory needs.
+                      patchProfile.mutate(
+                        {
+                          userId: client.id,
+                          changes: { isTop: !client.profile.isTop },
+                        },
+                        { onSettled: () => refetch() }
+                      )
+                    }
+                    title={
+                      client.profile.isTop
+                        ? "Unpin from Top Clients"
+                        : "Mark as top client"
+                    }
+                    aria-label="Toggle top client"
+                  >
+                    <Star
+                      className={cn(
+                        "h-5 w-5 transition-colors",
+                        client.profile.isTop
+                          ? "text-amber-500 fill-amber-500"
+                          : "text-muted-foreground/40 hover:text-amber-500"
+                      )}
+                    />
+                  </button>
                   <StatusBadge status={client.status} />
-                  <RebillStatusChip status={client.schedule.status} paid={client.schedule.paid} />
+                  {client.profile.book === "pepads" ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={PEPADS_BADGE_CLS}>PepAds</span>
+                      {client.profile.manualBilling.length > 0 ? (
+                        client.profile.manualBilling.map((v) => (
+                          <span key={v} className={cn(CHIP_BASE, MANUAL_BILLING_CHIP_CLS[v])}>
+                            {MANUAL_BILLING_LABELS[v] ?? v}
+                          </span>
+                        ))
+                      ) : (
+                        <span className={cn(CHIP_BASE, "bg-muted text-muted-foreground")}>
+                          Manual billing
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <RebillStatusChip status={client.schedule.status} paid={client.schedule.paid} />
+                  )}
                   {!client.email && (
                     <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded text-[10px] font-bold uppercase">
                       No email
@@ -410,6 +468,21 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
                       <Mail className="h-3.5 w-3.5" />
                       {client.email}
                     </span>
+                  )}
+                  {client.profile.website && (
+                    <a
+                      href={
+                        /^https?:\/\//i.test(client.profile.website)
+                          ? client.profile.website
+                          : `https://${client.profile.website}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-primary hover:underline"
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      {client.profile.website}
+                    </a>
                   )}
                   {client.category && (
                     <span className="px-2 py-0.5 bg-muted/50 rounded-full text-xs font-medium">
@@ -573,6 +646,7 @@ export default function ClientProfilePage({ params }: ClientProfilePageProps) {
             clientName={client.displayName}
             clientEmail={client.email}
             onChanged={() => refetch()}
+            isPepads={client.profile.book === "pepads"}
           />
         )}
         {tab === "adAccounts" && (

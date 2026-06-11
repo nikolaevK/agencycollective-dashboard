@@ -237,6 +237,32 @@ export async function getImportedDealIds(): Promise<Set<string>> {
   return ids;
 }
 
+/**
+ * Most recent deal-sourced payout for a brand (normalized exact match) — used
+ * to trace a payout brand back to its originating deal so the Client Directory
+ * can auto-fill website/services. Brand normalization lives in JS (like the
+ * rest of this module), so we scan deal-sourced rows and filter here.
+ */
+export async function findLatestSourceDealIdForBrand(
+  normalizedBrand: string
+): Promise<string | null> {
+  if (!normalizedBrand) return null;
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute(
+    `SELECT brand_name, source_deal_id FROM payouts
+     WHERE source_deal_id IS NOT NULL
+     ORDER BY created_at DESC`
+  );
+  for (const row of result.rows) {
+    if (row.source_deal_id == null) continue;
+    if (normalizeBrandName(String(row.brand_name ?? "")) === normalizedBrand) {
+      return String(row.source_deal_id);
+    }
+  }
+  return null;
+}
+
 export async function updatePayout(
   id: string,
   changes: Partial<Omit<PayoutRecord, "id">>

@@ -394,7 +394,7 @@ export async function deleteUser(id: string): Promise<boolean> {
   // Explicit cleanup of Client Directory child rows. libSQL FK cascade is not
   // guaranteed to fire (see CLAUDE.md), so we don't rely on it for these
   // additive tables. Best-effort + tolerant of a not-yet-migrated DB.
-  for (const table of ["client_notes", "client_billing"]) {
+  for (const table of ["client_notes", "client_billing", "client_profile", "client_team"]) {
     try {
       await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [id] });
     } catch (err) {

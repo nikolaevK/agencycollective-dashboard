@@ -6,6 +6,8 @@ import { CATEGORIES } from "./types";
 import { DateRangeDropdown, type DateRangeValue } from "./DateRangeDropdown";
 import type { UserStatus } from "@/lib/users";
 import type { RebillStatus } from "@/lib/clientBilling";
+import type { ClientBook } from "@/lib/clientProfile";
+import type { TeamFilterSelection } from "./TeamFilterCards";
 
 export type RebillFilter = "all" | RebillStatus;
 
@@ -18,6 +20,13 @@ export interface ClientFilterState {
   mrrMax: string;
   joined: DateRangeValue;
   lastRebill: DateRangeValue;
+  // Roster filters (toggled from the RosterDashboard pills + person cards)
+  book: "all" | ClientBook;
+  stages: string[]; // any-match
+  health: string[];
+  services: string[];
+  platforms: string[];
+  team: TeamFilterSelection | null; // person filter cards
 }
 
 export const DEFAULT_FILTERS: ClientFilterState = {
@@ -29,6 +38,12 @@ export const DEFAULT_FILTERS: ClientFilterState = {
   mrrMax: "",
   joined: { from: "", to: "" },
   lastRebill: { from: "", to: "" },
+  book: "all",
+  stages: [],
+  health: [],
+  services: [],
+  platforms: [],
+  team: null,
 };
 
 export function filtersActive(f: ClientFilterState): boolean {
@@ -40,7 +55,13 @@ export function filtersActive(f: ClientFilterState): boolean {
     f.mrrMin !== "" ||
     f.mrrMax !== "" ||
     Boolean(f.joined.from || f.joined.to) ||
-    Boolean(f.lastRebill.from || f.lastRebill.to)
+    Boolean(f.lastRebill.from || f.lastRebill.to) ||
+    f.book !== "all" ||
+    f.stages.length > 0 ||
+    f.health.length > 0 ||
+    f.services.length > 0 ||
+    f.platforms.length > 0 ||
+    f.team !== null
   );
 }
 
@@ -85,6 +106,17 @@ export function ClientFilters({
           <option value="onboarding">Onboarding</option>
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
+        </select>
+
+        {/* Book */}
+        <select
+          value={value.book}
+          onChange={(e) => set("book", e.target.value as ClientFilterState["book"])}
+          className={SELECT_CLS}
+        >
+          <option value="all">All books</option>
+          <option value="agency">Agency Collective</option>
+          <option value="pepads">PepAds</option>
         </select>
 
         {/* Re-bill status */}

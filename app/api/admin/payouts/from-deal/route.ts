@@ -24,6 +24,7 @@ import {
 import { fetchSignedContractPdf } from "@/lib/docuseal/signedDocument";
 import { insertDocument, MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocuments";
 import type { PayoutDocument } from "@/lib/payoutDocuments";
+import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
 import { logAuditEvent } from "@/lib/auditLog";
 
 const MAX_TEXT = 500;
@@ -311,6 +312,20 @@ export async function POST(request: Request) {
         console.error("[payouts/from-deal] invoice attach failed:", err);
         warnings.push(`Invoice ${src.invoiceNumber} could not be attached.`);
       }
+    }
+
+    // Auto-fill the matched Client Directory client's roster profile
+    // (website + services) from the deal — only fields that are still empty;
+    // manual edits are never overwritten. Brand matching uses the imported
+    // payout's brandName (the admin-entered one the directory will see), not
+    // the deal's. Non-blocking: the payout is already inserted, so failures
+    // surface as warnings (same contract as doc attach).
+    try {
+      const fill = await autofillClientProfileFromDeal({ ...deal, brandName });
+      warnings.push(...fill.warnings);
+    } catch (err) {
+      console.error("[payouts/from-deal] profile auto-fill failed:", err);
+      warnings.push("Client profile auto-fill failed.");
     }
 
     logAuditEvent({

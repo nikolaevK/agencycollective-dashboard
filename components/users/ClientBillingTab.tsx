@@ -72,12 +72,15 @@ export function ClientBillingTab({
   clientName,
   clientEmail,
   onChanged,
+  isPepads,
 }: {
   userId: string;
   clientName: string;
   /** Pre-fills the Register-existing modal's recipient field; null = no email on file. */
   clientEmail: string | null;
   onChanged?: () => void;
+  /** PepAds book — computed schedule shown for reference only (statuses are manual). */
+  isPepads?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -261,6 +264,17 @@ export function ClientBillingTab({
               Mark unpaid
             </button>
           </div>
+        </div>
+      )}
+
+      {/* PepAds: schedule below is informational only */}
+      {isPepads && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            This client is on the PepAds book — billing status is maintained manually
+            (see Settings or the directory row). The computed schedule below is shown
+            for reference only and raises no alerts.
+          </p>
         </div>
       )}
 

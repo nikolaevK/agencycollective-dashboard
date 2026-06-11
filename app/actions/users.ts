@@ -61,7 +61,9 @@ function logoServeUrl(userId: string): string {
 // Create user
 // ---------------------------------------------------------------------------
 
-export async function createUserAction(formData: FormData): Promise<{ error?: string }> {
+export async function createUserAction(
+  formData: FormData
+): Promise<{ error?: string; id?: string }> {
   const admin = getAdminSession();
   if (!admin) return { error: "Unauthorized" };
 
@@ -129,7 +131,8 @@ export async function createUserAction(formData: FormData): Promise<{ error?: st
   }
 
   revalidatePath("/dashboard/users");
-  return {};
+  // Returned additively so the form can follow up (e.g. roster profile PATCH).
+  return { id };
 }
 
 // ---------------------------------------------------------------------------

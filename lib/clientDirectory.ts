@@ -30,6 +30,17 @@ import {
   reconcileInvoiceForUser,
   type RebillInvoice,
 } from "./clientRebillInvoices";
+import {
+  getAllClientProfiles,
+  getClientProfile,
+  getAllClientTeams,
+  getClientTeam,
+  defaultClientProfile,
+  deriveAdSpendFeeLabel,
+  type ClientProfile,
+  type ClientTeamMember,
+} from "./clientProfile";
+import { listAdAccounts, listAdAccountsForUser, type AdAccount } from "./adAccounts";
 
 // ---------------------------------------------------------------------------
 // Aggregated row — superset of the legacy ClientPublic shape. Every field the
@@ -69,6 +80,14 @@ export interface ClientDirectoryRow {
    * Invoices panel. Null when no invoice is awaiting payment.
    */
   activeSentInvoice: RebillInvoice | null;
+  // Roster (client_profile / client_team) — additive. `profile` always set
+  // (defaults applied when no row exists). For book='pepads' the computed
+  // `schedule` above stays intact internally but the UI renders the manual
+  // billing chips/date instead, and the alerts route excludes the client.
+  profile: ClientProfile;
+  team: ClientTeamMember[];
+  /** Ad-spend fee derived from linked active ad_accounts ("2.5%" / "2–5%"); manual profile.perfFee wins at display time. */
+  derivedPerfFee: string | null;
 }
 
 /** Normalize a stored timestamp/date to yyyy-mm-dd, best-effort. */
@@ -121,6 +140,9 @@ function buildRow(
    */
   activeSentInvoice: RebillInvoice | null,
   rebillByBrand: RebillMonthsByBrand,
+  profile: ClientProfile,
+  team: ClientTeamMember[],
+  adAccounts: AdAccount[],
   today?: Date
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
   const matched = matchHistories(user, histories);
@@ -239,6 +261,9 @@ function buildRow(
       activeSentInvoice && activeSentInvoice.status === "sent"
         ? activeSentInvoice
         : null,
+    profile,
+    team,
+    derivedPerfFee: deriveAdSpendFeeLabel(adAccounts),
   };
   return { row, matched };
 }
@@ -255,21 +280,41 @@ export async function buildClientDirectory(
   // the UTC server clock — keeps "due"/"overdue"/anchor dates on the agency's
   // calendar day and consistent with what the send routes stamp.
   const t = today ?? businessToday();
-  const [users, allAccounts, histories, billingMap, invoiceMap, rebillByBrand] =
-    await Promise.all([
-      readUsers(),
-      readAllClientAccounts(),
-      getAllBrandHistories(),
-      getAllClientBilling(),
-      getLatestActiveInvoicesByUser(),
-      getRebillPayoutMonthsByBrand(),
-    ]);
+  const [
+    users,
+    allAccounts,
+    histories,
+    billingMap,
+    invoiceMap,
+    rebillByBrand,
+    profileMap,
+    teamMap,
+    allAdAccounts,
+  ] = await Promise.all([
+    readUsers(),
+    readAllClientAccounts(),
+    getAllBrandHistories(),
+    getAllClientBilling(),
+    getLatestActiveInvoicesByUser(),
+    getRebillPayoutMonthsByBrand(),
+    getAllClientProfiles(),
+    getAllClientTeams(),
+    listAdAccounts(),
+  ]);
 
   const accountsByUser = new Map<string, ClientAccount[]>();
   for (const account of allAccounts) {
     const list = accountsByUser.get(account.userId) ?? [];
     list.push(account);
     accountsByUser.set(account.userId, list);
+  }
+
+  const adAccountsByUser = new Map<string, AdAccount[]>();
+  for (const acct of allAdAccounts) {
+    if (!acct.userId) continue;
+    const list = adAccountsByUser.get(acct.userId) ?? [];
+    list.push(acct);
+    adAccountsByUser.set(acct.userId, list);
   }
 
   // Pre-compute each matched-user's payout months and reconcile their active
@@ -299,6 +344,9 @@ export async function buildClientDirectory(
         billingMap.get(user.id) ?? null,
         invoiceByUser.get(user.id) ?? null,
         rebillByBrand,
+        profileMap.get(user.id) ?? defaultClientProfile(user.id),
+        teamMap.get(user.id) ?? [],
+        adAccountsByUser.get(user.id) ?? [],
         t
       ).row
   );
@@ -326,13 +374,17 @@ export async function getClientDetail(
   // client detail (which the send route reads for cycle_anchor) agrees with it.
   const t = today ?? businessToday();
 
-  const [accounts, histories, billing, rawInvoice, rebillByBrand] = await Promise.all([
-    readAccountsForUser(userId),
-    getAllBrandHistories(),
-    getClientBilling(userId),
-    getLatestActiveInvoice(userId),
-    getRebillPayoutMonthsByBrand(),
-  ]);
+  const [accounts, histories, billing, rawInvoice, rebillByBrand, profile, team, adAccounts] =
+    await Promise.all([
+      readAccountsForUser(userId),
+      getAllBrandHistories(),
+      getClientBilling(userId),
+      getLatestActiveInvoice(userId),
+      getRebillPayoutMonthsByBrand(),
+      getClientProfile(userId),
+      getClientTeam(userId),
+      listAdAccountsForUser(userId),
+    ]);
 
   // Reconcile this user's invoice against their payouts before building the
   // row so a freshly-recognised payment promotes status before render.
@@ -349,6 +401,9 @@ export async function getClientDetail(
     billing,
     invoice,
     rebillByBrand,
+    profile ?? defaultClientProfile(userId),
+    team,
+    adAccounts,
     t
   );
   return { row, history: matched };

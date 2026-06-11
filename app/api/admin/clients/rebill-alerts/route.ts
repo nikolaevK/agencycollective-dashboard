@@ -36,8 +36,16 @@ export async function GET() {
     listDueReminders(),
   ]);
 
+  // PepAds-book clients are excluded: their billing status is maintained
+  // manually (profile.manualBilling / manualNextRebill), so the computed
+  // schedule must not raise alerts for them.
   const rebills = rows
-    .filter((r) => r.status === "active" && isRebillAlertStatus(r.schedule.status))
+    .filter(
+      (r) =>
+        r.status === "active" &&
+        r.profile.book !== "pepads" &&
+        isRebillAlertStatus(r.schedule.status)
+    )
     .map((r) => ({
       id: r.id,
       slug: r.slug,

@@ -2,6 +2,7 @@ import type { UserStatus } from "@/lib/users";
 import type { ClientAccount } from "@/lib/clientAccounts";
 import type { ClientBilling, RebillSchedule } from "@/lib/clientBilling";
 import type { RebillInvoice } from "@/lib/clientRebillInvoices";
+import type { ClientProfile, ClientTeamMember } from "@/lib/clientProfile";
 
 export interface ClientPublic {
   id: string;
@@ -31,6 +32,13 @@ export interface ClientPublic {
   /** Active sent re-bill invoice awaiting payment, if any. Drives the
    *  `invoice_sent` schedule status and the Sent Invoices panel. */
   activeSentInvoice: RebillInvoice | null;
+  // Roster additions (client_profile / client_team). `profile` is always set;
+  // for book='pepads' the UI shows profile.manualBilling/manualNextRebill
+  // instead of the computed schedule.
+  profile: ClientProfile;
+  team: ClientTeamMember[];
+  /** Derived ad-spend fee from linked ad_accounts; profile.perfFee wins. */
+  derivedPerfFee: string | null;
 }
 
 /** A brand in the Payout DB not yet linked to a client (add-client picker). */

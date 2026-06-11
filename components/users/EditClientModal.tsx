@@ -6,6 +6,11 @@ import { updateUserAction, removeUserLogoAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import type { ClientPublic } from "./types";
 import type { UserStatus } from "@/lib/users";
+import { BOOK_OPTIONS, type ClientBook } from "@/lib/clientProfile";
+import {
+  useClientProfileMutations,
+  type ClientProfilePatch,
+} from "@/hooks/useClientProfileMutations";
 
 interface EditClientModalProps {
   client: ClientPublic;
@@ -28,7 +33,13 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
   const [analystEnabled, setAnalystEnabled] = useState<boolean>(client.analystEnabled ?? true);
   const [designBoardEnabled, setDesignBoardEnabled] = useState<boolean>(client.designBoardEnabled ?? true);
   const [designBoardUrl, setDesignBoardUrl] = useState(client.designBoardUrl ?? "");
+  // Roster profile fields (saved via the profile PATCH, not updateUserAction)
+  const [website, setWebsite] = useState(client.profile?.website ?? "");
+  const [book, setBook] = useState<ClientBook>(client.profile?.book ?? "agency");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Through the shared hook so the write joins the per-client queue (an inline
+  // website edit on the directory row must not race this modal's PATCH).
+  const { patchProfile } = useClientProfileMutations();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,10 +74,29 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
       const result = await updateUserAction(formData);
       if (result.error) {
         setError(result.error);
-      } else {
-        onUpdated();
-        onClose();
+        return;
       }
+
+      // Roster fields live in client_profile — send only what changed so a
+      // concurrent inline edit of an untouched field isn't clobbered.
+      const profileChanges: ClientProfilePatch = {};
+      if ((client.profile?.website ?? "") !== website.trim()) {
+        profileChanges.website = website.trim() || null;
+      }
+      if ((client.profile?.book ?? "agency") !== book) {
+        profileChanges.book = book;
+      }
+      if (Object.keys(profileChanges).length > 0) {
+        try {
+          await patchProfile.mutateAsync({ userId: client.id, changes: profileChanges });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to save roster fields");
+          return;
+        }
+      }
+
+      onUpdated();
+      onClose();
     });
   }
 
@@ -142,6 +172,40 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
               <option value="inactive">Inactive</option>
               <option value="archived">Archived</option>
             </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+              Book
+            </label>
+            <select
+              value={book}
+              onChange={(e) => setBook(e.target.value as ClientBook)}
+              className={`${INPUT_CLS} appearance-none cursor-pointer`}
+            >
+              {BOOK_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            {book === "pepads" && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                PepAds clients are billed manually — the computed re-bill schedule and its
+                alerts don&apos;t apply; set billing status &amp; next re-bill on the row.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+              Website
+            </label>
+            <input
+              type="text"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="clientsite.com"
+              className={INPUT_CLS}
+            />
           </div>
 
           {/* AI Analyst access toggle */}

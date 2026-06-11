@@ -177,6 +177,20 @@ export async function updateAdmin(
 export async function deleteAdmin(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
+
+  // Drop the admin's client-roster team assignments. libSQL FK cascade is not
+  // guaranteed (and client_team has no FK to admins anyway), so clean
+  // explicitly. Best-effort + tolerant of a not-yet-migrated DB; the team
+  // reader also drops rows whose admin no longer exists.
+  try {
+    await db.execute({ sql: "DELETE FROM client_team WHERE admin_id = ?", args: [id] });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteAdmin] cleanup of client_team failed (non-fatal):", err);
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM admins WHERE id = ? AND is_super = 0",
     args: [id],
