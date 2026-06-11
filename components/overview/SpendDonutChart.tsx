@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -27,6 +28,22 @@ interface SpendDonutChartProps {
 }
 
 export function SpendDonutChart({ accounts, isLoading }: SpendDonutChartProps) {
+  // Memoized so Recharts keeps a stable data identity across unrelated parent
+  // re-renders (a fresh array each render forces a full SVG re-render).
+  const data = useMemo(
+    () =>
+      (accounts ?? [])
+        .filter((a) => a.insights.spend > 0)
+        .sort((a, b) => b.insights.spend - a.insights.spend)
+        .slice(0, 8)
+        .map((a) => ({
+          name: a.name.length > 22 ? a.name.slice(0, 22) + "…" : a.name,
+          value: a.insights.spend,
+          currency: a.currency,
+        })),
+    [accounts]
+  );
+
   if (isLoading) {
     return (
       <div className="flex flex-col lg:flex-row items-center justify-around gap-8">
@@ -53,16 +70,6 @@ export function SpendDonutChart({ accounts, isLoading }: SpendDonutChartProps) {
       </div>
     );
   }
-
-  const data = accounts
-    .filter((a) => a.insights.spend > 0)
-    .sort((a, b) => b.insights.spend - a.insights.spend)
-    .slice(0, 8)
-    .map((a) => ({
-      name: a.name.length > 22 ? a.name.slice(0, 22) + "\u2026" : a.name,
-      value: a.insights.spend,
-      currency: a.currency,
-    }));
 
   if (data.length === 0) {
     return (

@@ -47,13 +47,19 @@ async function fetchAlerts(): Promise<RebillAlertsData> {
   return json.data as RebillAlertsData;
 }
 
-/** Shared hook — same query key dedupes the page badge + the panel fetch. */
+/**
+ * Shared hook — same query key dedupes the page badge + the panel fetch.
+ * 10-minute cadence: the endpoint rebuilds the full client directory per
+ * call and the schedule engine is day-granular, so minute-level polling
+ * buys nothing. Every billing mutation invalidates this key explicitly,
+ * so admin actions still refresh the badge immediately.
+ */
 export function useRebillAlerts() {
   return useQuery({
     queryKey: ["admin-rebill-alerts"],
     queryFn: fetchAlerts,
-    staleTime: 120_000,
-    refetchInterval: 120_000,
+    staleTime: 600_000,
+    refetchInterval: 600_000,
     refetchIntervalInBackground: false,
   });
 }

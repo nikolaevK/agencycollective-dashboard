@@ -96,6 +96,30 @@ export async function findLinkByGhlAppointmentId(
   return result.rows[0] ? rowToLink(result.rows[0] as Record<string, unknown>) : null;
 }
 
+/**
+ * Batch variant of `findLinkByGhlAppointmentId` — one IN(...) query for a
+ * whole discovery pass instead of one SELECT per candidate link. Keyed by
+ * ghl_appointment_id (UNIQUE column, at most one row each).
+ */
+export async function listLinksByGhlAppointmentIds(
+  ghlAppointmentIds: string[]
+): Promise<Record<string, GhlAppointmentLink>> {
+  if (ghlAppointmentIds.length === 0) return {};
+  await ensureMigrated();
+  const db = getDb();
+  const placeholders = ghlAppointmentIds.map(() => "?").join(",");
+  const result = await db.execute({
+    sql: `SELECT * FROM ghl_appointment_links WHERE ghl_appointment_id IN (${placeholders})`,
+    args: ghlAppointmentIds,
+  });
+  const map: Record<string, GhlAppointmentLink> = {};
+  for (const row of result.rows) {
+    const link = rowToLink(row as Record<string, unknown>);
+    map[link.ghlAppointmentId] = link;
+  }
+  return map;
+}
+
 export async function listLinksByGoogleEventIds(
   googleEventIds: string[]
 ): Promise<Record<string, GhlAppointmentLink>> {

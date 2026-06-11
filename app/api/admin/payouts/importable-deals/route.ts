@@ -45,21 +45,22 @@ export async function GET() {
   if (!admin)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const allClosed = (await readDeals()).filter((d) => d.status === "closed");
-  if (allClosed.length === 0) return NextResponse.json({ data: [] });
-
-  // The batch enrichment helpers cap at 500 IDs. readDeals() is ordered by
-  // created_at DESC, so explicitly take the 500 most-recent closed deals (the
-  // "recently closed" target) and log if older ones are dropped — no silent
-  // truncation. Closed+signed volume is well under this today.
+  // The batch enrichment helpers cap at 500 IDs. Filter + cap in SQL
+  // (status filter, created_at DESC order) so the scan stops growing with
+  // deal history; fetch CAP+1 so over-cap truncation is still detected and
+  // logged — no silent truncation. Closed+signed volume is well under this
+  // today.
   const CAP = 500;
-  if (allClosed.length > CAP) {
+  const closed = await readDeals({ status: "closed", limit: CAP + 1 });
+  if (closed.length === 0) return NextResponse.json({ data: [] });
+
+  if (closed.length > CAP) {
     console.warn(
-      `[importable-deals] ${allClosed.length} closed deals exceed the ${CAP} cap; ` +
+      `[importable-deals] more than ${CAP} closed deals; ` +
         `older closed deals are not offered for import.`
     );
   }
-  const deals = allClosed.slice(0, CAP);
+  const deals = closed.slice(0, CAP);
 
   const dealIds = deals.map((d) => d.id);
   const [contractStatuses, invoicePdfDealIds, importedIds, closers] =

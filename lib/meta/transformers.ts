@@ -102,19 +102,31 @@ export function aggregateInsights(metrics: InsightMetrics[]): InsightMetrics {
     };
   }
 
-  const totalSpend = metrics.reduce((s, m) => s + m.spend, 0);
-  const totalImpressions = metrics.reduce((s, m) => s + m.impressions, 0);
-  const totalReach = metrics.reduce((s, m) => s + m.reach, 0);
-  const totalClicks = metrics.reduce((s, m) => s + m.clicks, 0);
-  const totalConversions = metrics.reduce((s, m) => s + m.conversions, 0);
-  const totalConversionValue = metrics.reduce((s, m) => s + m.conversionValue, 0);
-  const totalInstagramProfileVisits = metrics.reduce((s, m) => s + m.instagramProfileVisits, 0);
-  const totalLeads = metrics.reduce((s, m) => s + m.leads, 0);
-  const totalLeadValue = metrics.reduce((s, m) => s + m.leadValue, 0);
-  // Frequency is per-person, so weighted average by impressions
-  const weightedFrequency = totalImpressions > 0
-    ? metrics.reduce((s, m) => s + m.frequency * m.impressions, 0) / totalImpressions
-    : 0;
+  let totalSpend = 0;
+  let totalImpressions = 0;
+  let totalReach = 0;
+  let totalClicks = 0;
+  let totalConversions = 0;
+  let totalConversionValue = 0;
+  let totalInstagramProfileVisits = 0;
+  let totalLeads = 0;
+  let totalLeadValue = 0;
+  let weightedFrequencySum = 0;
+  for (const m of metrics) {
+    totalSpend += m.spend;
+    totalImpressions += m.impressions;
+    totalReach += m.reach;
+    totalClicks += m.clicks;
+    totalConversions += m.conversions;
+    totalConversionValue += m.conversionValue;
+    totalInstagramProfileVisits += m.instagramProfileVisits;
+    totalLeads += m.leads;
+    totalLeadValue += m.leadValue;
+    // Frequency is per-person, so weighted average by impressions
+    weightedFrequencySum += m.frequency * m.impressions;
+  }
+  const weightedFrequency =
+    totalImpressions > 0 ? weightedFrequencySum / totalImpressions : 0;
 
   return {
     spend: totalSpend,

@@ -99,7 +99,9 @@ export default function AdminDealsPage() {
       return json.data;
     },
     staleTime: 30_000,
-    refetchInterval: 30_000,
+    // 120s matches the closer/setter dashboards. Window-focus refetch (30s
+    // staleTime) keeps the page fresh when the admin actually looks at it.
+    refetchInterval: 120_000,
   });
 
   // Deals fetch — driven by the per-month dropdown.
@@ -117,7 +119,7 @@ export default function AdminDealsPage() {
       return json.data ?? [];
     },
     staleTime: 30_000,
-    refetchInterval: 30_000,
+    refetchInterval: 120_000,
   });
 
   // Search filters the LIST only (not metrics).

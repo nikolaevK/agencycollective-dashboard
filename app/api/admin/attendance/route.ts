@@ -16,10 +16,9 @@ export async function GET() {
 
   const records = await getAllAttendance();
   // Build a map: eventId -> { showStatus, closerId }. Records arrive
-  // ORDER BY updated_at DESC, so the first row we see for each event is
-  // the newest. Skip subsequent rows or the overwrite loop ends up keeping
-  // the OLDEST mark — which caused admin + closer portals to disagree on
-  // multi-closer events.
+  // already deduped to the newest mark per event (SQL window function),
+  // so this is a straight map-build; the `in` guard is a belt-and-braces
+  // hold-over from when dedupe happened here (oldest-mark overwrite bug).
   const data: Record<string, { showStatus: string; closerId: string }> = {};
   for (const r of records) {
     if (r.googleEventId in data) continue;

@@ -64,13 +64,24 @@ export async function getAttendanceByCloser(
 }
 
 /**
- * Get all attendance records (for admin views).
+ * Latest attendance record per event (for admin views). Multi-closer events
+ * keep only the newest mark — deduped in SQL so the wire payload stays one
+ * row per event instead of every historical mark.
  */
 export async function getAllAttendance(): Promise<EventAttendance[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute(
-    "SELECT google_event_id, closer_id, show_status, created_at, updated_at FROM event_attendance ORDER BY updated_at DESC"
+    `SELECT google_event_id, closer_id, show_status, created_at, updated_at
+       FROM (
+         SELECT google_event_id, closer_id, show_status, created_at, updated_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY google_event_id ORDER BY updated_at DESC
+                ) AS rn
+         FROM event_attendance
+       )
+      WHERE rn = 1
+      ORDER BY updated_at DESC`
   );
   return result.rows.map((row) => ({
     googleEventId: String(row.google_event_id),
@@ -134,17 +145,22 @@ export async function getCloserShowRate(
 export async function getLatestAttendanceByEvent(): Promise<Record<string, AttendanceStatus>> {
   await ensureMigrated();
   const db = getDb();
+  // Newest row per event wins — deduped in SQL (same window pattern as the
+  // follow-up CTEs below) so only one row per event crosses the wire.
   const result = await db.execute(
-    `SELECT google_event_id, show_status, updated_at
-       FROM event_attendance
-       ORDER BY updated_at DESC`
+    `SELECT google_event_id, show_status
+       FROM (
+         SELECT google_event_id, show_status,
+                ROW_NUMBER() OVER (
+                  PARTITION BY google_event_id ORDER BY updated_at DESC
+                ) AS rn
+         FROM event_attendance
+       )
+      WHERE rn = 1`
   );
   const out: Record<string, AttendanceStatus> = {};
   for (const row of result.rows) {
-    const id = String(row.google_event_id);
-    // Newest row for each event wins; skip subsequent rows.
-    if (id in out) continue;
-    out[id] = String(row.show_status) as AttendanceStatus;
+    out[String(row.google_event_id)] = String(row.show_status) as AttendanceStatus;
   }
   return out;
 }

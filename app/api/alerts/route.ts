@@ -52,24 +52,26 @@ export async function GET(request: Request) {
       fetchAllAccountInsightsBatch(accountIds, prevDateRange),
     ]);
 
-    // Fetch campaigns for all accounts (limited to active ones)
-    const campaignsByAccount = await Promise.allSettled(
-      accounts.map((account) =>
-        fetchCampaigns(account.id, dateRange).then((campaigns) => ({
-          accountId: account.id,
-          campaigns,
-        }))
-      )
-    );
-
-    const prevCampaignsByAccount = await Promise.allSettled(
-      accounts.map((account) =>
-        fetchCampaigns(account.id, prevDateRange).then((campaigns) => ({
-          accountId: account.id,
-          campaigns,
-        }))
-      )
-    );
+    // Fetch campaigns for all accounts (limited to active ones). Current and
+    // previous period are independent — run both ranges in parallel.
+    const [campaignsByAccount, prevCampaignsByAccount] = await Promise.all([
+      Promise.allSettled(
+        accounts.map((account) =>
+          fetchCampaigns(account.id, dateRange).then((campaigns) => ({
+            accountId: account.id,
+            campaigns,
+          }))
+        )
+      ),
+      Promise.allSettled(
+        accounts.map((account) =>
+          fetchCampaigns(account.id, prevDateRange).then((campaigns) => ({
+            accountId: account.id,
+            campaigns,
+          }))
+        )
+      ),
+    ]);
 
     // Build campaign previous insights map
     const prevCampaignInsights = new Map<string, ReturnType<typeof transformInsight>>();

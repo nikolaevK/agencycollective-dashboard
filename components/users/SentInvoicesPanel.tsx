@@ -45,8 +45,8 @@ export function useSentInvoices() {
   return useQuery({
     queryKey: ["admin-sent-invoices"],
     queryFn: fetchSentInvoices,
-    staleTime: 120_000,
-    refetchInterval: 120_000,
+    staleTime: 600_000,
+    refetchInterval: 600_000,
     refetchIntervalInBackground: false,
   });
 }

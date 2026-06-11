@@ -10,8 +10,8 @@ import { getAdminSession } from "@/lib/adminSession";
 import { getCloserSession } from "@/lib/closerSession";
 import { getLatestAttendanceByEvent } from "@/lib/eventAttendance";
 import {
-  findLinkByGhlAppointmentId,
   listAllLinks,
+  listLinksByGhlAppointmentIds,
   listLinksByGoogleEventIds,
   reassignLinkToNewGoogleEventId,
   updateLinkSyncState,
@@ -166,6 +166,12 @@ async function buildResponse(
           .map((e) => e.id)
           .filter((id): id is string => typeof id === "string" && id.length > 0)
       );
+      // One batch read for every candidate's existing binding (was one
+      // SELECT per candidate). Same data the per-item lookups saw: all the
+      // old per-item reads ran concurrently before any upsert too.
+      const existingByGhlId = await listLinksByGhlAppointmentIds(
+        toCreate.map((c) => c.ghlId)
+      );
       const created = await Promise.all(
         toCreate.map(async (c) => {
           try {
@@ -173,7 +179,7 @@ async function buildResponse(
             // different Google event id (rescheduled-in-place case). If
             // the old binding's Google event isn't in the current visible
             // set, treat as a reschedule and move the link to the new id.
-            const existing = await findLinkByGhlAppointmentId(c.ghlId);
+            const existing = existingByGhlId[c.ghlId] ?? null;
             if (
               existing &&
               existing.googleEventId !== c.eventId &&

@@ -5,10 +5,16 @@ import { refreshAccessToken } from "./oauth";
 // ── Token encryption at rest ──────────────────────────────────────────
 // Encrypts OAuth tokens using AES-256-GCM with a key derived from SESSION_SECRET.
 
+// scrypt is deliberately slow (~100ms of blocking CPU) and its inputs never
+// change within a process — derive once, reuse for every encrypt/decrypt.
+let cachedEncryptionKey: Buffer | null = null;
+
 function getEncryptionKey(): Buffer {
+  if (cachedEncryptionKey) return cachedEncryptionKey;
   const secret = process.env.SESSION_SECRET;
   if (!secret) throw new Error("SESSION_SECRET is required for token encryption");
-  return crypto.scryptSync(secret, "google-token-salt", 32);
+  cachedEncryptionKey = crypto.scryptSync(secret, "google-token-salt", 32);
+  return cachedEncryptionKey;
 }
 
 function encrypt(plaintext: string): string {

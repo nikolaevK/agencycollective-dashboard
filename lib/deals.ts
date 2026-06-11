@@ -111,7 +111,7 @@ function rowToDeal(row: Row): DealRecord {
  * admin surfaces use the window for progressive loading.
  */
 export async function readDeals(
-  options: { since?: string; until?: string } = {}
+  options: { since?: string; until?: string; status?: DealStatus; limit?: number } = {}
 ): Promise<DealRecord[]> {
   await ensureMigrated();
   const db = getDb();
@@ -125,9 +125,17 @@ export async function readDeals(
     clauses.push("COALESCE(closing_date, SUBSTR(created_at, 1, 10)) <= ?");
     args.push(options.until);
   }
+  if (options.status) {
+    clauses.push("status = ?");
+    args.push(options.status);
+  }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const limit =
+    options.limit && Number.isInteger(options.limit) && options.limit > 0
+      ? ` LIMIT ${options.limit}`
+      : "";
   const result = await db.execute({
-    sql: `SELECT * FROM deals ${where} ORDER BY created_at DESC`,
+    sql: `SELECT * FROM deals ${where} ORDER BY created_at DESC${limit}`,
     args,
   });
   return result.rows.map(rowToDeal);

@@ -130,7 +130,13 @@ function matchHistories(
 function buildRow(
   user: UserRecord,
   accounts: ClientAccount[],
-  histories: BrandHistory[],
+  /**
+   * This user's matched payout brand timelines — `matchHistories(user, ...)`,
+   * computed once by the caller. Fuzzy matching costs O(all brands) per call,
+   * so the caller shares one result between invoice reconciliation and row
+   * assembly instead of re-matching here.
+   */
+  matched: BrandHistory[],
   billing: ClientBilling | null,
   /**
    * Already-reconciled invoice for this user. Callers must run
@@ -145,8 +151,6 @@ function buildRow(
   adAccounts: AdAccount[],
   today?: Date
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
-  const matched = matchHistories(user, histories);
-
   // Recurring MRR. Default = the latest payout month's amount_due (summed
   // across matched brands). A per-client override (billing.mrrMonthOverride,
   // "yyyy-mm") pins MRR to a chosen month so a one-off "additional service"
@@ -317,6 +321,12 @@ export async function buildClientDirectory(
     adAccountsByUser.set(acct.userId, list);
   }
 
+  // Fuzzy brand matching costs O(all brands) per user — match each user once
+  // here and share the result between invoice reconciliation and row assembly.
+  const matchedByUser = new Map(
+    users.map((user) => [user.id, matchHistories(user, histories)] as const)
+  );
+
   // Pre-compute each matched-user's payout months and reconcile their active
   // invoice (sent → paid if the cycle's payout has landed) in parallel before
   // we build the rows. Reconciliation is best-effort: a write failure leaves
@@ -325,7 +335,7 @@ export async function buildClientDirectory(
     users.map(async (user) => {
       const invoice = invoiceMap.get(user.id) ?? null;
       if (!invoice) return [user.id, null] as const;
-      const matched = matchHistories(user, histories);
+      const matched = matchedByUser.get(user.id) ?? [];
       const payoutMonths = matched.flatMap((h) =>
         h.months.map((m) => ({ year: m.year, month: m.month }))
       );
@@ -340,7 +350,7 @@ export async function buildClientDirectory(
       buildRow(
         user,
         accountsByUser.get(user.id) ?? [],
-        histories,
+        matchedByUser.get(user.id) ?? [],
         billingMap.get(user.id) ?? null,
         invoiceByUser.get(user.id) ?? null,
         rebillByBrand,
@@ -397,7 +407,7 @@ export async function getClientDetail(
   const { row, matched } = buildRow(
     user,
     accounts,
-    histories,
+    matchedHistories,
     billing,
     invoice,
     rebillByBrand,
