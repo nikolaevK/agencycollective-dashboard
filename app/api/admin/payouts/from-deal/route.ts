@@ -53,10 +53,10 @@ async function requireAdmin() {
 }
 
 /**
- * Create a payout entry from a closed + DocuSeal-signed deal AND attach the
- * signed scope (from DocuSeal) + the deal invoice PDF as payout documents —
- * mirroring a manual entry + manual uploads. Missing docs are skipped with a
- * warning rather than blocking the import.
+ * Create a payout entry from a closed deal that is DocuSeal-signed OR marked
+ * paid AND attach any signed scope (from DocuSeal) + the deal invoice PDF as
+ * payout documents — mirroring a manual entry + manual uploads. Missing docs
+ * are skipped with a warning rather than blocking the import.
  */
 export async function POST(request: Request) {
   const auth = await requireAdmin();
@@ -79,7 +79,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Re-validate eligibility server-side: closed deal + signed contract.
+    // Re-validate eligibility server-side: closed deal that is either signed
+    // or marked paid.
     const deal = await findDeal(dealId);
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
@@ -91,9 +92,10 @@ export async function POST(request: Request) {
       );
     }
     const contract = await findDealContractByDealId(dealId);
-    if (!contract || contract.status !== "signed") {
+    const contractSigned = contract?.status === "signed";
+    if (!contractSigned && deal.paidStatus !== "paid") {
       return NextResponse.json(
-        { error: "Deal contract is not signed" },
+        { error: "Deal contract is not signed and the deal is not marked paid" },
         { status: 400 }
       );
     }
@@ -252,13 +254,17 @@ export async function POST(request: Request) {
       return true;
     };
 
-    // Signed scopes: primary (already validated signed) + signed additionals,
-    // bounded so a deal with an unusual number of contracts can't fan out.
+    // Signed scopes: primary (only if signed) + signed additionals, bounded so
+    // a deal with an unusual number of contracts can't fan out. An unsigned but
+    // paid deal may have no signed scope to attach.
     const additionalContracts = await findAdditionalContractsByDealId(dealId);
     const signedAdditional = additionalContracts.filter((c) => c.status === "signed");
-    const signedContracts = [contract, ...signedAdditional].slice(0, MAX_ATTACHED_DOCS);
-    if (1 + signedAdditional.length > MAX_ATTACHED_DOCS) {
+    const signedPrimary = contractSigned && contract ? [contract] : [];
+    const signedContracts = [...signedPrimary, ...signedAdditional].slice(0, MAX_ATTACHED_DOCS);
+    if (signedPrimary.length + signedAdditional.length > MAX_ATTACHED_DOCS) {
       warnings.push(`Only the first ${MAX_ATTACHED_DOCS} signed scopes were attached.`);
+    } else if (signedContracts.length === 0) {
+      warnings.push("No signed scope was found on this deal.");
     }
     let scopeCount = 0;
     for (const c of signedContracts) {

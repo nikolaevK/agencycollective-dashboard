@@ -30,6 +30,7 @@ export interface ImportableDeal {
   industry: string | null;
   notes: string | null;
   clientEmail: string | null;
+  isSigned: boolean;
   paidStatus: "paid" | "unpaid";
   hasInvoice: boolean;
   alreadyImported: boolean;
@@ -37,7 +38,8 @@ export interface ImportableDeal {
 
 /**
  * List deals eligible to import into the Payout Tracker: status === 'closed'
- * AND a DocuSeal contract that is 'signed'. Enriched with closer name, invoice
+ * AND either a DocuSeal contract that is 'signed' OR the deal is marked paid.
+ * Enriched with closer name, whether the primary contract is signed, invoice
  * availability, and whether the deal was already imported (one payout per deal).
  */
 export async function GET() {
@@ -74,7 +76,10 @@ export async function GET() {
   const closerName = new Map(closers.map((c) => [c.id, c.displayName]));
 
   const data: ImportableDeal[] = deals
-    .filter((d) => contractStatuses[d.id]?.status === "signed")
+    .filter(
+      (d) =>
+        contractStatuses[d.id]?.status === "signed" || d.paidStatus === "paid"
+    )
     .map((d) => ({
       dealId: d.id,
       clientName: d.clientName,
@@ -86,6 +91,7 @@ export async function GET() {
       industry: d.industry,
       notes: d.notes,
       clientEmail: d.clientEmail,
+      isSigned: contractStatuses[d.id]?.status === "signed",
       paidStatus: d.paidStatus,
       hasInvoice: invoicePdfDealIds.has(d.id),
       alreadyImported: importedIds.has(d.id),

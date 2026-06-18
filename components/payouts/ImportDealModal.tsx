@@ -16,6 +16,7 @@ export interface ImportableDeal {
   industry: string | null;
   notes: string | null;
   clientEmail: string | null;
+  isSigned: boolean;
   paidStatus: "paid" | "unpaid";
   hasInvoice: boolean;
   alreadyImported: boolean;
@@ -101,8 +102,8 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
               Import from Deal
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Closed deals with a signed contract. The signed scope & invoice
-              attach automatically.
+              Closed deals that are signed or marked paid. Any signed scope &
+              invoice attach automatically.
             </p>
           </div>
           <button
@@ -141,7 +142,7 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
           )}
           {!isLoading && !isError && filtered.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No closed + signed deals available to import.
+              No closed deals available to import.
             </p>
           )}
           {filtered.map((deal) => {
@@ -182,7 +183,7 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Badge ok label="Scope" Icon={FileCheck2} />
+                  <Badge ok={deal.isSigned} label="Scope" Icon={FileCheck2} />
                   <Badge ok={deal.hasInvoice} label="Invoice" Icon={FileText} />
                   {disabled && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">

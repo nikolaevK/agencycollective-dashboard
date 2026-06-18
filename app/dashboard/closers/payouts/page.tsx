@@ -406,7 +406,7 @@ export default function PayoutsPage() {
       dateJoined,
       amountDue: dollars,
       amountPaid: deal.paidStatus === "paid" ? dollars : "",
-      isSigned: true,
+      isSigned: deal.isSigned,
       isPaid: deal.paidStatus === "paid",
       paymentNotes: deal.notes ?? "",
       salesRep: deal.closerName ?? "",
