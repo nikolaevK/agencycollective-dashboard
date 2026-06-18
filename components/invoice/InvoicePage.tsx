@@ -26,6 +26,8 @@ import {
 import { loadPaymentInfoFromConfig } from "@/lib/invoice/paymentUtils";
 import { InvoiceServiceManager } from "./InvoiceServiceManager";
 import { InvoiceAgencySettings } from "./InvoiceAgencySettings";
+import { InvoiceAgencyProfiles } from "./InvoiceAgencyProfiles";
+import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import { InvoiceSenderForm } from "./InvoiceSenderForm";
 import { InvoiceReceiverForm } from "./InvoiceReceiverForm";
 import { InvoiceDetailsForm } from "./InvoiceDetailsForm";
@@ -56,52 +58,59 @@ export function InvoicePage() {
     staleTime: 60_000,
   });
 
-  // Load draft from localStorage on mount, apply agency sender + payment template from DB
+  // Build a fresh invoice pre-filled from the saved agency settings — the agency
+  // sender, default logo, theme colour and (local) payment template. Shared by
+  // initial load and "Reset Invoice" so both start from the same defaults.
+  // Falls back to blank INITIAL_INVOICE_DATA values until agencyConfig loads.
+  const buildDefaultInvoice = useCallback((): InvoiceData => {
+    let sender = INITIAL_INVOICE_DATA.sender;
+    if (agencyConfig) {
+      try {
+        const s = JSON.parse(agencyConfig.sender ?? "{}");
+        sender = { name: s.name ?? "", address: s.address ?? "", city: s.city ?? "", zipCode: s.zipCode ?? "", country: s.country ?? "", email: s.email ?? "", phone: s.phone ?? "", customInputs: [] };
+      } catch { /* use fallback */ }
+    }
+    return {
+      ...INITIAL_INVOICE_DATA,
+      sender,
+      receiver: { ...INITIAL_INVOICE_DATA.receiver },
+      details: {
+        ...INITIAL_INVOICE_DATA.details,
+        items: [createEmptyItem()],
+        invoiceDate: new Date().toISOString().slice(0, 10),
+        invoiceLogo: agencyConfig?.default_logo ?? "",
+        themeColor: agencyConfig?.default_theme_color ?? "#475569",
+        paymentInfo: loadPaymentInfoFromConfig(agencyConfig, "local"),
+        noteToCustomer: "",
+      },
+    };
+  }, [agencyConfig]);
+
+  // On mount (once agency settings load), restore the saved draft if present —
+  // otherwise start from the agency defaults.
   useEffect(() => {
     if (!agencyConfig) return;
-
-    let sender = INITIAL_INVOICE_DATA.sender;
-    try {
-      const s = JSON.parse(agencyConfig.sender ?? "{}");
-      sender = { name: s.name ?? "", address: s.address ?? "", city: s.city ?? "", zipCode: s.zipCode ?? "", country: s.country ?? "", email: s.email ?? "", phone: s.phone ?? "", customInputs: [] };
-    } catch { /* use fallback */ }
-
-    const defaultLogo = agencyConfig.default_logo ?? "";
-    const defaultTheme = agencyConfig.default_theme_color ?? "#475569";
-
-    // Build prefilled payment info from agency config (structured or parsed from free-text)
-    const defaultPaymentInfo = loadPaymentInfoFromConfig(agencyConfig, "local");
-
+    const base = buildDefaultInvoice();
     const draft = loadDraft();
     if (draft) {
       setData({
-        ...INITIAL_INVOICE_DATA,
+        ...base,
         ...draft,
-        sender,
+        sender: base.sender,
         details: {
-          ...INITIAL_INVOICE_DATA.details,
+          ...base.details,
           ...draft.details,
-          invoiceLogo: draft.details?.invoiceLogo || defaultLogo,
-          themeColor: draft.details?.themeColor || defaultTheme,
-          paymentInfo: draft.details?.paymentInfo ?? defaultPaymentInfo,
+          invoiceLogo: draft.details?.invoiceLogo || base.details.invoiceLogo,
+          themeColor: draft.details?.themeColor || base.details.themeColor,
+          paymentInfo: draft.details?.paymentInfo ?? base.details.paymentInfo,
           noteToCustomer: "",
         },
       });
     } else {
-      setData((prev) => ({
-        ...prev,
-        sender,
-        details: {
-          ...prev.details,
-          invoiceLogo: defaultLogo,
-          themeColor: defaultTheme,
-          paymentInfo: prev.details.paymentInfo ?? defaultPaymentInfo,
-          noteToCustomer: "",
-        },
-      }));
+      setData(base);
     }
     setLoaded(true);
-  }, [agencyConfig]);
+  }, [agencyConfig, buildDefaultInvoice]);
 
   // Debounced auto-save
   useEffect(() => {
@@ -225,10 +234,36 @@ export function InvoicePage() {
     setData((prev) => ({ ...prev, details: { ...prev.details, totalInWords } }));
   }, []);
 
+  // Apply a saved agency profile (logo, sender, theme, payment) onto the draft.
+  // Respects the currently-selected payment type so the right template loads.
+  const applyProfile = useCallback((profile: AgencyProfileRecord) => {
+    setData((prev) => {
+      const type = prev.details.paymentInfo?.paymentType ?? "local";
+      const template = type === "international" ? profile.paymentInternational : profile.paymentLocal;
+      // Only adopt the profile's payment block if it actually has details —
+      // otherwise applying a profile with no payment template would surface an
+      // empty "Payment Information" section. Keep the current block if blank.
+      const hasPaymentContent = Object.entries(template).some(
+        ([k, v]) => k !== "paymentType" && typeof v === "string" && v.trim() !== ""
+      );
+      return {
+        ...prev,
+        sender: { ...profile.sender, customInputs: prev.sender.customInputs },
+        details: {
+          ...prev.details,
+          invoiceLogo: profile.logo || prev.details.invoiceLogo,
+          themeColor: profile.themeColor || prev.details.themeColor,
+          paymentInfo: hasPaymentContent ? { ...template, paymentType: type } : prev.details.paymentInfo,
+        },
+      };
+    });
+  }, []);
+
   const handleNewInvoice = () => {
     if (confirmReset) {
       if (resetTimer.current) clearTimeout(resetTimer.current);
-      setData({ ...INITIAL_INVOICE_DATA, sender: data.sender, details: { ...INITIAL_INVOICE_DATA.details, items: [createEmptyItem()] } });
+      // Reset to the default agency settings, everything pre-filled.
+      setData(buildDefaultInvoice());
       clearDraft();
       setConfirmReset(false);
     } else {
@@ -350,6 +385,7 @@ export function InvoicePage() {
             {/* Service Manager */}
             <InvoiceServiceManager />
             <InvoiceAgencySettings />
+            <InvoiceAgencyProfiles onApply={applyProfile} />
 
             {/* Live Preview */}
             <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">

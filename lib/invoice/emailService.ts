@@ -1,5 +1,67 @@
 import nodemailer from "nodemailer";
 
+export type EmailAccountId = "primary" | "secondary";
+
+/** A selectable "from" account exposed to the UI — credentials are NEVER included. */
+export interface EmailAccount {
+  id: EmailAccountId;
+  label: string;
+  email: string;
+}
+
+interface ResolvedSmtpAccount {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+  label: string;
+}
+
+/**
+ * Resolve one SMTP account from env. "primary" is the original
+ * SMTP_HOST/PORT/USER/PASS. "secondary" is the optional second mailbox
+ * (SMTP_*_2); its host/port fall back to the primary's, so a second mailbox on
+ * the same server only needs SMTP_USER_2 + SMTP_PASS_2. Returns null when the
+ * account isn't fully configured (missing host/user/pass, or an invalid port).
+ */
+function resolveSmtpAccount(id: EmailAccountId): ResolvedSmtpAccount | null {
+  const secondary = id === "secondary";
+  const host = secondary ? process.env.SMTP_HOST_2 || process.env.SMTP_HOST : process.env.SMTP_HOST;
+  const user = secondary ? process.env.SMTP_USER_2 : process.env.SMTP_USER;
+  const pass = secondary ? process.env.SMTP_PASS_2 : process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+
+  const portRaw = secondary
+    ? process.env.SMTP_PORT_2 || process.env.SMTP_PORT || "587"
+    : process.env.SMTP_PORT || "587";
+  const port = parseInt(portRaw, 10);
+  if (isNaN(port) || port < 1 || port > 65535) {
+    console.error(`[invoice-email] Invalid SMTP port for "${id}" account`);
+    return null;
+  }
+
+  const from = (secondary ? process.env.SMTP_FROM_2 : process.env.SMTP_FROM) || user;
+  const label = (secondary ? process.env.SMTP_LABEL_2 : process.env.SMTP_LABEL) || from;
+  return { host, port, user, pass, from, label };
+}
+
+/** Every fully-configured from-account, for the "Send from" picker. */
+export function listEmailAccounts(): EmailAccount[] {
+  const ids: EmailAccountId[] = ["primary", "secondary"];
+  const accounts: EmailAccount[] = [];
+  for (const id of ids) {
+    const acct = resolveSmtpAccount(id);
+    if (acct) accounts.push({ id, label: acct.label, email: acct.from });
+  }
+  return accounts;
+}
+
+/** True when the given from-account is fully configured. */
+export function isAccountConfigured(id: EmailAccountId): boolean {
+  return resolveSmtpAccount(id) !== null;
+}
+
 export function isEmailConfigured(): boolean {
   return !!(
     process.env.SMTP_HOST &&
@@ -13,6 +75,8 @@ export async function sendInvoiceEmail(
   pdfBuffer: Buffer,
   invoiceNumber: string,
   options?: {
+    /** Which configured SMTP account to send from. Defaults to "primary". */
+    accountId?: EmailAccountId;
     includesContract?: boolean;
     cc?: string | string[];
     additionalPdfs?: Array<{ buffer: Buffer; invoiceNumber: string }>;
@@ -35,27 +99,22 @@ export async function sendInvoiceEmail(
     }>;
   }
 ): Promise<boolean> {
-  if (!isEmailConfigured()) {
-    console.warn("[invoice-email] SMTP not configured — skipping send");
+  const account = resolveSmtpAccount(options?.accountId ?? "primary");
+  if (!account) {
+    console.warn(`[invoice-email] SMTP account "${options?.accountId ?? "primary"}" not configured — skipping send`);
     return false;
   }
 
   // Sanitize invoice number for email headers (prevent header injection)
   const safeNumber = invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100) || "Draft";
 
-  const port = parseInt(process.env.SMTP_PORT || "587", 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
-    console.error("[invoice-email] Invalid SMTP_PORT");
-    return false;
-  }
-
   const transport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: port === 465,
+    host: account.host,
+    port: account.port,
+    secure: account.port === 465,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: account.user,
+      pass: account.pass,
     },
   });
 
@@ -166,7 +225,7 @@ export async function sendInvoiceEmail(
 
   try {
     await transport.sendMail({
-      from: process.env.SMTP_USER,
+      from: account.from,
       to: recipientEmail,
       ...(options?.cc && (Array.isArray(options.cc) ? options.cc.length > 0 : options.cc.length > 0)
         ? { cc: options.cc }

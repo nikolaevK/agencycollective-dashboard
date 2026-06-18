@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { pdf } from "@react-pdf/renderer";
 import {
   Download,
@@ -17,6 +18,7 @@ import {
   FilePlus,
 } from "lucide-react";
 import type { InvoiceData } from "@/types/invoice";
+import type { EmailAccount } from "@/lib/invoice/emailService";
 import {
   invoiceDataSchema,
   saveInvoice,
@@ -39,6 +41,22 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
   const [emailOpen, setEmailOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [fromAccount, setFromAccount] = useState("");
+
+  // Configured "send from" accounts (id/label/email only — no credentials).
+  const { data: emailAccounts = [] } = useQuery<EmailAccount[]>({
+    queryKey: ["invoice-email-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/invoice/email-accounts");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  // Falls back to the first configured account, then "primary" as a last resort.
+  const selectedAccount = fromAccount || emailAccounts[0]?.id || "primary";
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<"success" | "error" | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -127,6 +145,7 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
         })
       );
       formData.append("invoiceNumber", data.details.invoiceNumber || "draft");
+      formData.append("accountId", selectedAccount);
 
       const res = await fetch("/api/invoice/send", { method: "POST", body: formData });
       setSendResult(res.ok ? "success" : "error");
@@ -293,6 +312,22 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
               <X className="h-4 w-4" />
             </button>
           </div>
+          {emailAccounts.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Send from</label>
+              <select
+                value={selectedAccount}
+                onChange={(e) => setFromAccount(e.target.value)}
+                className="flex h-9 w-full appearance-none rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+              >
+                {emailAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label && a.label !== a.email ? `${a.label} (${a.email})` : a.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <input
             type="email"
             value={email}

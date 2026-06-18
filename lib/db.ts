@@ -101,7 +101,7 @@ async function adminsHasNewColumns(db: Client): Promise<boolean> {
  * guard we burn 1–2s of cold-start time and N×30 Turso calls across
  * concurrent cold starts.
  */
-const SCHEMA_VERSION = "2026-06-10.client-roster.r1";
+const SCHEMA_VERSION = "2026-06-17.invoice-agency-profiles.r1";
 
 /**
  * Critical column-add ALTERs that MUST exist for runtime queries to work.
@@ -1180,6 +1180,29 @@ export async function migrate(): Promise<void> {
       await db.execute({ sql: `INSERT INTO agency_config (id, config_key, config_value) VALUES (?, ?, ?)`, args: [crypto.randomUUID(), "default_theme_color", "#475569"] });
     }
   }
+
+  // ── Invoice agency profiles table ───────────────────────────────
+  // Saved, reusable "bill from" agency identities for the standalone Invoice
+  // Generator (/dashboard/invoice) ONLY. Each row bundles a logo, sender block,
+  // theme colour and local/international payment templates that an admin can
+  // apply to a draft in one click. Deliberately SEPARATE from the singular
+  // `agency_config` (which deal / client-rebill / ad-account invoices share) so
+  // this feature never touches those flows. sender + payment blocks are stored
+  // as JSON TEXT, consistent with how `agency_config` persists them.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS invoice_agency_profiles (
+      id                    TEXT PRIMARY KEY,
+      name                  TEXT NOT NULL,
+      sender                TEXT NOT NULL DEFAULT '{}',
+      logo                  TEXT NOT NULL DEFAULT '',
+      theme_color           TEXT NOT NULL DEFAULT '#2563eb',
+      payment_local         TEXT NOT NULL DEFAULT '{}',
+      payment_international  TEXT NOT NULL DEFAULT '{}',
+      sort_order            INTEGER NOT NULL DEFAULT 0,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 
   // ── Contract templates table (DocuSeal integration) ─────────────
   await db.execute(`

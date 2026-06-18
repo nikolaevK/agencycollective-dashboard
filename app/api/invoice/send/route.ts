@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { sendInvoiceEmail, isAccountConfigured, type EmailAccountId } from "@/lib/invoice/emailService";
 
 export const dynamic = "force-dynamic";
 
@@ -12,23 +12,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isEmailConfigured()) {
-    return NextResponse.json(
-      { error: "Email is not configured on the server" },
-      { status: 503 }
-    );
-  }
-
   try {
     const formData = await req.formData();
     const email = formData.get("email") as string;
     const pdfFile = formData.get("pdf") as File;
     const invoiceNumber = (formData.get("invoiceNumber") as string) || "draft";
+    // Default to the primary account; only "secondary" is the other valid value.
+    const accountId: EmailAccountId = formData.get("accountId") === "secondary" ? "secondary" : "primary";
 
     if (!email || !pdfFile) {
       return NextResponse.json(
         { error: "Email and PDF are required" },
         { status: 400 }
+      );
+    }
+
+    if (!isAccountConfigured(accountId)) {
+      return NextResponse.json(
+        { error: "Selected email account is not configured on the server" },
+        { status: 503 }
       );
     }
 
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
-    const sent = await sendInvoiceEmail(email, pdfBuffer, safeInvoiceNumber);
+    const sent = await sendInvoiceEmail(email, pdfBuffer, safeInvoiceNumber, { accountId });
 
     if (sent) {
       return NextResponse.json({ success: true });
