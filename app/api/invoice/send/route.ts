@@ -59,7 +59,11 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
-    const sent = await sendInvoiceEmail(email, pdfBuffer, safeInvoiceNumber, { accountId });
+    const sent = await sendInvoiceEmail(email, pdfBuffer, safeInvoiceNumber, {
+      accountId,
+      // The secondary account is the PepAds billing mailbox → PepAds email wording.
+      variant: accountId === "secondary" ? "pepads" : undefined,
+    });
 
     if (sent) {
       return NextResponse.json({ success: true });

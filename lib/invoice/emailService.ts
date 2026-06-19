@@ -82,8 +82,10 @@ export async function sendInvoiceEmail(
     additionalPdfs?: Array<{ buffer: Buffer; invoiceNumber: string }>;
     /** "onboarding" (default) = new-client email with scope/contract/onboarding
      *  language; "rebill" = recurring monthly client invoice (no scope/contract);
-     *  "adaccount" = recurring ad-account invoice (retainer + ad-spend fee). */
-    variant?: "onboarding" | "rebill" | "adaccount";
+     *  "adaccount" = recurring ad-account invoice (retainer + ad-spend fee);
+     *  "pepads" = PepAds billing email (sent from the secondary account, PepAds
+     *  subject + body + sign-off, no Agency Collective footer). */
+    variant?: "onboarding" | "rebill" | "adaccount" | "pepads";
     /**
      * Free-form files to include in the email alongside the invoice PDF —
      * receipts, contract addendums, supporting docs. Distinct from
@@ -127,9 +129,12 @@ export async function sendInvoiceEmail(
   // Ad-account invoices get an "Ad Account Invoice" subject; everything else
   // (onboarding / client re-bill) keeps the plain "Invoice" subject.
   const subjectNoun = options?.variant === "adaccount" ? "Ad Account Invoice" : "Invoice";
+  // PepAds invoices (secondary account) carry PepAds branding; everything else
+  // is Agency Collective.
+  const brandName = options?.variant === "pepads" ? "PepAds" : "Agency Collective";
   const subject = hasMultiple
-    ? `${subjectNoun}s ${allNumbers.map((n) => `#${n}`).join(", ")} — Agency Collective`
-    : `${subjectNoun} #${safeNumber} — Agency Collective`;
+    ? `${subjectNoun}s ${allNumbers.map((n) => `#${n}`).join(", ")} — ${brandName}`
+    : `${subjectNoun} #${safeNumber} — ${brandName}`;
 
   const invoiceLabel = hasMultiple ? "Invoices" : "Invoice";
 
@@ -190,12 +195,40 @@ export async function sendInvoiceEmail(
           <p style="line-height: 1.7; margin: 0 0 16px;">We appreciate your business!</p>
           <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
 
+  const pepadsBody = `
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Your latest PepAds invoice is now available and ready for payment. A copy of the invoice is attached for your records.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            If you have any questions regarding the invoice, billing period, or services provided, please don't hesitate to reach out.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Thank you for your partnership and trust in PepAds. We appreciate the opportunity to support your growth and look forward to the month ahead.
+          </p>
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>PepAds Billing Team</strong><br><a href="mailto:billing@pepads.com" style="color: #2563eb; text-decoration: none;">billing@pepads.com</a></p>`;
+
   const bodyHtml =
     variant === "rebill"
       ? rebillBody
       : variant === "adaccount"
       ? adAccountBody
+      : variant === "pepads"
+      ? pepadsBody
       : onboardingBody;
+
+  // PepAds emails are self-contained (their own sign-off + contact), so they
+  // omit the Agency Collective footer; every other variant keeps it.
+  const footerHtml =
+    variant === "pepads"
+      ? ""
+      : `
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
+            <strong style="color: #333;">Agency Collective</strong><br>
+            White-Glove Advertising for Niche Verticals<br>
+            <a href="mailto:team@agencycollective.ai" style="color: #2563eb; text-decoration: none;">team@agencycollective.ai</a><br>
+            <a href="https://www.agencycollective.ai" style="color: #2563eb; text-decoration: none;">https://www.agencycollective.ai</a><br>
+            Los Angeles, CA
+          </div>`;
 
   // Sanitise free-form attachment filenames: strip control chars + path
   // separators (no relative-path nodemailer surprises), cap at 200 chars, and
@@ -234,13 +267,7 @@ export async function sendInvoiceEmail(
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #333;">
           ${bodyHtml}
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
-            <strong style="color: #333;">Agency Collective</strong><br>
-            White-Glove Advertising for Niche Verticals<br>
-            <a href="mailto:team@agencycollective.ai" style="color: #2563eb; text-decoration: none;">team@agencycollective.ai</a><br>
-            <a href="https://www.agencycollective.ai" style="color: #2563eb; text-decoration: none;">https://www.agencycollective.ai</a><br>
-            Los Angeles, CA
-          </div>
+          ${footerHtml}
         </div>
       `,
       attachments,
