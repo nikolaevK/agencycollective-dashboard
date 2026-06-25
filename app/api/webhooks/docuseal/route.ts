@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { findDealContractBySubmissionId, updateDealContract } from "@/lib/dealContracts";
+import type { DealContractStatus } from "@/lib/dealContracts";
+import { findAdditionalContractBySubmissionId, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
 import { findDeal, updateDeal } from "@/lib/deals";
 
 /** Health check — visit /api/webhooks/docuseal in a browser to verify the route is reachable. */
@@ -66,11 +68,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const contract = await findDealContractBySubmissionId(submissionId);
+    // Resolve the submission to a primary contract OR an additional contract /
+    // scope. A resend repoints the stored docuseal_submission_id on whichever
+    // row was sent, so the live submission id is the lookup key in both tables.
+    // (Previously only deal_contracts was searched, so additional contracts /
+    // scopes never advanced past "Awaiting Signature" when opened/signed.)
+    const primaryContract = await findDealContractBySubmissionId(submissionId);
+    const additionalContract = primaryContract
+      ? null
+      : await findAdditionalContractBySubmissionId(submissionId);
+    const contract = primaryContract ?? additionalContract;
     if (!contract) {
       console.warn(`[docuseal-webhook] No contract for submission ${submissionId} (event: ${eventType})`);
       return NextResponse.json({ ok: true });
     }
+    const isPrimary = primaryContract !== null;
+    // Route status writes to the correct table. The deal-lifecycle transition
+    // (pending_signature → closed) stays tied to the PRIMARY contract only —
+    // an additional/scope outcome must not move the deal's status.
+    const applyStatus = (changes: {
+      status?: DealContractStatus;
+      signedAt?: string | null;
+      documentUrls?: string[] | null;
+    }) =>
+      isPrimary
+        ? updateDealContract(contract.id, changes)
+        : updateAdditionalContract(contract.id, changes);
 
     if (eventType === "form.completed") {
       // Idempotent — skip if already signed
@@ -83,17 +106,19 @@ export async function POST(req: NextRequest) {
         ?.map((d) => d.url)
         .filter((u): u is string => !!u) ?? null;
 
-      await updateDealContract(contract.id, {
+      await applyStatus({
         status: "signed",
         signedAt: new Date().toISOString(),
         documentUrls: documentUrls && documentUrls.length > 0 ? documentUrls : null,
       });
 
-      const deal = await findDeal(contract.dealId);
-      if (deal && deal.status === "pending_signature") {
-        await updateDeal(contract.dealId, { status: "closed" });
+      if (isPrimary) {
+        const deal = await findDeal(contract.dealId);
+        if (deal && deal.status === "pending_signature") {
+          await updateDeal(contract.dealId, { status: "closed" });
+        }
       }
-      console.log(`[docuseal-webhook] Contract ${contract.id} signed`);
+      console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} signed`);
     }
 
     if (eventType === "form.declined") {
@@ -101,13 +126,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      await updateDealContract(contract.id, { status: "declined" });
+      await applyStatus({ status: "declined" });
 
-      const deal = await findDeal(contract.dealId);
-      if (deal?.status === "pending_signature") {
-        await updateDeal(contract.dealId, { status: "closed" });
+      if (isPrimary) {
+        const deal = await findDeal(contract.dealId);
+        if (deal?.status === "pending_signature") {
+          await updateDeal(contract.dealId, { status: "closed" });
+        }
       }
-      console.log(`[docuseal-webhook] Contract ${contract.id} declined`);
+      console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} declined`);
     }
 
     if (eventType === "submission.expired") {
@@ -115,19 +142,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      await updateDealContract(contract.id, { status: "expired" });
+      await applyStatus({ status: "expired" });
 
-      const deal = await findDeal(contract.dealId);
-      if (deal?.status === "pending_signature") {
-        await updateDeal(contract.dealId, { status: "closed" });
+      if (isPrimary) {
+        const deal = await findDeal(contract.dealId);
+        if (deal?.status === "pending_signature") {
+          await updateDeal(contract.dealId, { status: "closed" });
+        }
       }
-      console.log(`[docuseal-webhook] Contract ${contract.id} expired`);
+      console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} expired`);
     }
 
     if (eventType === "form.started" || eventType === "form.viewed") {
       if (contract.status === "sent" || contract.status === "pending") {
-        await updateDealContract(contract.id, { status: "viewed" });
-        console.log(`[docuseal-webhook] Contract ${contract.id} viewed`);
+        await applyStatus({ status: "viewed" });
+        console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} viewed`);
       }
     }
 

@@ -40,6 +40,95 @@ function formatDate(iso: string): string {
 const ACCENT = "#2563eb";
 const LIGHT_BG = "#EBF4FF";
 
+// Description column sizing, used to estimate how tall a block will render so we
+// never keep-together (wrap=false) a block that can't fit on a page — which
+// react-pdf would CLIP (silent data loss). The estimate counts VISUAL lines
+// (after wrapping in the narrow 35% column), not raw "\n" lines: a few long
+// sentences can wrap into many visual lines.
+//  - DESC_CHARS_PER_LINE: conservative (low) chars-per-line so we OVER-estimate
+//    height — the safe direction (route a borderline block to split, not clip).
+//    The 35% column is ~180pt wide; Helvetica 8pt averages ~42 chars/line.
+//  - BLOCK_MAX_VISUAL_LINES: max visual lines kept together. ~74 lines fit a
+//    full A4 page at 8pt/1.4; 55 leaves margin so a kept-together block always
+//    fits a fresh page and react-pdf relocates it whole instead of clipping.
+const DESC_CHARS_PER_LINE = 34;
+const BLOCK_MAX_VISUAL_LINES = 55;
+
+function visualLineCount(line: string): number {
+  return Math.max(1, Math.ceil(line.length / DESC_CHARS_PER_LINE));
+}
+
+/**
+ * Group a line-item description into blocks separated by blank lines. Each block
+ * is the consecutive non-empty lines between blanks (a service heading + its
+ * bullet points). Rendering each block as its own unit lets a long, multi-page
+ * description break BETWEEN services instead of clipping or splitting a list.
+ */
+function splitDescriptionBlocks(description: string): string[][] {
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  for (const raw of (description || "").split("\n")) {
+    if (raw.trim() === "") {
+      if (current.length > 0) {
+        blocks.push(current);
+        current = [];
+      }
+    } else {
+      current.push(raw);
+    }
+  }
+  if (current.length > 0) blocks.push(current);
+  return blocks;
+}
+
+/**
+ * Split one block into chunks that each fit on a page (by estimated visual
+ * lines), so every rendered block-row is small enough that react-pdf relocates
+ * it whole rather than clipping it. A single line longer than the budget becomes
+ * its own (oversized) chunk — flagged `wrap` so it splits losslessly.
+ */
+function chunkBlock(block: string[]): { lines: string[]; wrap: boolean }[] {
+  if (block.length === 0) return [{ lines: [], wrap: false }];
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let count = 0;
+  for (const line of block) {
+    const n = visualLineCount(line);
+    if (current.length > 0 && count + n > BLOCK_MAX_VISUAL_LINES) {
+      chunks.push(current);
+      current = [];
+      count = 0;
+    }
+    current.push(line);
+    count += n;
+  }
+  if (current.length > 0) chunks.push(current);
+  // A chunk only exceeds the budget when it's a single very long line that
+  // can't be chunked further — let that one wrap (split) so it isn't clipped.
+  return chunks.map((lines) => ({
+    lines,
+    wrap: lines.reduce((s, l) => s + visualLineCount(l), 0) > BLOCK_MAX_VISUAL_LINES,
+  }));
+}
+
+/**
+ * Flatten an item's description into the list of block-rows to render: blocks
+ * split on blank lines, each block chunked to page height. `gapTop` marks the
+ * first row of each original block (except the very first) so spacing appears
+ * between services but not between chunks of one service.
+ */
+function buildItemRows(description: string): { lines: string[]; wrap: boolean; gapTop: boolean }[] {
+  const blocks = splitDescriptionBlocks(description);
+  const blockList = blocks.length > 0 ? blocks : [[]];
+  const rows: { lines: string[]; wrap: boolean; gapTop: boolean }[] = [];
+  blockList.forEach((block, blockIdx) => {
+    chunkBlock(block).forEach((chunk, chunkIdx) => {
+      rows.push({ ...chunk, gapTop: blockIdx > 0 && chunkIdx === 0 });
+    });
+  });
+  return rows;
+}
+
 const s = StyleSheet.create({
   page: { padding: 0, fontFamily: "Helvetica", fontSize: 9, color: "#1a1a1a" },
   // Header
@@ -67,12 +156,20 @@ const s = StyleSheet.create({
   tableSection: { padding: "0 40 10 40" },
   tableHeader: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#ccc", paddingBottom: 6, marginBottom: 4 },
   tableHeaderText: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#555", textTransform: "uppercase" },
-  tableRow: { flexDirection: "row", paddingVertical: 5, borderBottomWidth: 0.5, borderBottomColor: "#eee" },
   colNum: { width: "5%" },
   colProduct: { width: "30%" },
   colDesc: { width: "35%" },
   colRate: { width: "15%", textAlign: "right" },
   colAmount: { width: "15%", textAlign: "right" },
+  // An item is a group of block-rows (one per description block). The group
+  // carries the bottom border + vertical padding and wraps BETWEEN block-rows
+  // across a page. Each block-row is a full 5-column flex row: the empty leading
+  // cells on continuation blocks preserve the description's column offset when a
+  // block lands on a later page (a single flex row drops the text to the left
+  // margin instead). The #, name, rate & amount render only on the first
+  // block-row, where the name is a flex child so the row grows to fit a long name.
+  itemGroup: { paddingVertical: 5, borderBottomWidth: 0.5, borderBottomColor: "#eee" },
+  blockRow: { flexDirection: "row", alignItems: "flex-start" },
   cellText: { fontSize: 9, color: "#333" },
   cellBold: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#1a1a1a" },
   cellDesc: { fontSize: 8, color: "#666", lineHeight: 1.4 },
@@ -196,18 +293,30 @@ export function InvoicePdfDocument({ data }: Props) {
             <Text style={{ ...s.tableHeaderText, ...s.colAmount }}>Amount</Text>
           </View>
           {details.items.map((item, idx) => (
-            <View key={item.id} style={s.tableRow}>
-              <Text style={{ ...s.cellText, ...s.colNum }}>{idx + 1}.</Text>
-              <Text style={{ ...s.cellBold, ...s.colProduct }}>{item.name}</Text>
-              <View style={s.colDesc}>
-                {item.description.split("\n").map((line, li) => (
-                  <Text key={li} style={{ ...s.cellDesc, ...(line === "" ? { marginTop: 6 } : {}) }}>
-                    {line || " "}
-                  </Text>
-                ))}
-              </View>
-              <Text style={{ ...s.cellText, ...s.colRate }}>{fmt(item.unitPrice, details.currency)}</Text>
-              <Text style={{ ...s.cellBold, ...s.colAmount }}>{fmt(item.quantity * item.unitPrice, details.currency)}</Text>
+            <View key={item.id} style={s.itemGroup}>
+              {buildItemRows(item.description).map((row, ri) => (
+                // Each row is a block (or page-sized chunk of one) kept together
+                // so a page break lands BETWEEN rows, never mid-list. A row only
+                // wraps when it's a single line taller than a page, so it splits
+                // instead of being clipped — no data loss either way. The
+                // #/name/rate/amount render on the first row only; empty leading
+                // cells on later rows preserve the description's column offset.
+                <View
+                  key={ri}
+                  style={{ ...s.blockRow, ...(row.gapTop ? { marginTop: 8 } : {}) }}
+                  wrap={row.wrap}
+                >
+                  <Text style={{ ...s.cellText, ...s.colNum }}>{ri === 0 ? `${idx + 1}.` : ""}</Text>
+                  <Text style={{ ...s.cellBold, ...s.colProduct }}>{ri === 0 ? item.name : ""}</Text>
+                  <View style={s.colDesc}>
+                    {row.lines.map((line, li) => (
+                      <Text key={li} style={s.cellDesc}>{line}</Text>
+                    ))}
+                  </View>
+                  <Text style={{ ...s.cellText, ...s.colRate }}>{ri === 0 ? fmt(item.unitPrice, details.currency) : ""}</Text>
+                  <Text style={{ ...s.cellBold, ...s.colAmount }}>{ri === 0 ? fmt(item.quantity * item.unitPrice, details.currency) : ""}</Text>
+                </View>
+              ))}
             </View>
           ))}
         </View>
@@ -253,7 +362,9 @@ export function InvoicePdfDocument({ data }: Props) {
 
         {/* ── Payment Information (expanded) ── */}
         {details.paymentInfo && (
-          <View style={s.noteSection}>
+          // Keep the whole payment block on one page — it's short and bounded,
+          // so wrap={false} moves it to the next page rather than splitting it.
+          <View style={s.noteSection} wrap={false}>
             <Text style={{ ...s.noteSectionTitle, color: themeColor }}>Payment Information</Text>
             {details.paymentInfo.paymentType === "local" && details.paymentInfo.zelleContact ? (
               <View style={{ marginBottom: 4 }}>

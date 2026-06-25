@@ -67,6 +67,9 @@ export function InvoiceServiceManager() {
               <div key={svc.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-background p-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">{svc.name}</p>
+                  {svc.internalLabel && (
+                    <p className="text-xs font-medium text-primary truncate">{svc.internalLabel}</p>
+                  )}
                   <p className="text-xs text-muted-foreground line-clamp-1">{svc.description.split("\n")[0]}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-sm font-semibold text-foreground">
@@ -132,10 +135,11 @@ function ServiceForm({
   onCancel,
 }: {
   initial?: InvoiceServiceRecord;
-  onSave: (data: { name: string; description: string; rate: number; dealServiceKey: string | null }) => Promise<void>;
+  onSave: (data: { name: string; description: string; internalLabel: string | null; rate: number; dealServiceKey: string | null }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
+  const [internalLabel, setInternalLabel] = useState(initial?.internalLabel ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [rate, setRate] = useState(initial ? String(initial.rate / 100) : "");
   const [dealServiceKey, setDealServiceKey] = useState(initial?.dealServiceKey ?? "");
@@ -148,6 +152,7 @@ function ServiceForm({
     await onSave({
       name: name.trim(),
       description,
+      internalLabel: internalLabel.trim() || null,
       rate: Math.round((parseFloat(rate) || 0) * 100),
       dealServiceKey: dealServiceKey.trim() || null,
     });
@@ -156,14 +161,29 @@ function ServiceForm({
 
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Service name"
-        className={cn(INPUT_CLS, "text-sm font-medium")}
-        required
-      />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-0.5 block text-[10px] text-muted-foreground">Header (shown on invoice)</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Service name"
+            className={cn(INPUT_CLS, "text-sm font-medium")}
+            required
+          />
+        </div>
+        <div>
+          <label className="mb-0.5 block text-[10px] text-muted-foreground">Internal label (not on invoice)</label>
+          <input
+            type="text"
+            value={internalLabel}
+            onChange={(e) => setInternalLabel(e.target.value)}
+            placeholder="e.g. (Ads + Creatives + Email)"
+            className={cn(INPUT_CLS, "text-sm")}
+          />
+        </div>
+      </div>
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}

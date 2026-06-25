@@ -203,6 +203,12 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // "no such table" here is benign on a fresh DB (created with the columns).
     { table: "client_profile",         column: "manual_mrr_cents",     defn: "INTEGER" },
     { table: "client_profile",         column: "manual_ltv_cents",     defn: "INTEGER" },
+    // Internal-only label to disambiguate preset services that share an
+    // invoice header (e.g. "(Ads + Creatives + Email)"). Written by
+    // insert/updateInvoiceService, so it must self-heal here. invoice_services'
+    // CREATE TABLE is gated by the version body, so "no such table" here is
+    // benign on a fresh DB (created with the column inline).
+    { table: "invoice_services",       column: "internal_label",       defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -1055,6 +1061,7 @@ export async function migrate(): Promise<void> {
       id              TEXT PRIMARY KEY,
       name            TEXT NOT NULL,
       description     TEXT NOT NULL DEFAULT '',
+      internal_label  TEXT,
       rate            INTEGER NOT NULL DEFAULT 0,
       deal_service_key TEXT,
       sort_order      INTEGER NOT NULL DEFAULT 0,

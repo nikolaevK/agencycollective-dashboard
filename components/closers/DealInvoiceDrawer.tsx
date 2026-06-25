@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil, XCircle } from "lucide-react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil, XCircle, RefreshCw, RotateCw } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -1307,7 +1307,7 @@ function ContractSection({
   label = "Contract",
 }: {
   dealId: string | null;
-  contract: { id?: string; status: string; contractTemplateId?: string | null; signedAt?: string | null; signingUrl?: string | null; documentUrls?: string[] | null; docusealTemplateOverrideId?: number | null } | null;
+  contract: { id?: string; status: string; contractTemplateId?: string | null; signedAt?: string | null; signingUrl?: string | null; documentUrls?: string[] | null; docusealTemplateOverrideId?: number | null; docusealSubmissionId?: number | null } | null;
   hasPendingContract: boolean;
   showPreview: boolean;
   onTogglePreview: () => void;
@@ -1320,6 +1320,10 @@ function ContractSection({
   label?: string;
 }) {
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  // Selected template while the "Replace contract" picker is open (defaults to
+  // the current template so an unchanged selection still regenerates fresh).
+  const [replaceTemplateId, setReplaceTemplateId] = useState("");
 
   // Fetch contract templates (our local mapping table)
   const { data: contractTemplates = [] } = useQuery<ContractTemplateOption[]>({
@@ -1421,6 +1425,89 @@ function ContractSection({
     }
   }
 
+  // Replace an already-sent (not signed) contract with a fresh one. Server-side
+  // this archives the old DocuSeal submission and resets the row to "pending"
+  // with the chosen template, so it sends fresh with the next invoice send.
+  async function handleReplaceContract(templateId: string) {
+    if (!dealId) return;
+    if (!confirm("Replace this contract? The current signing link will be invalidated and the contract will reset to send fresh with the next invoice.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = additionalContractId
+        ? await fetch("/api/admin/deal-contracts/additional", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: additionalContractId, contractTemplateId: templateId || null, replace: true }),
+          })
+        : await fetch("/api/admin/deal-contracts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dealId, contractTemplateId: templateId || null, replace: true }),
+          });
+      if (res.ok) {
+        let warning: string | undefined;
+        try {
+          const json = await res.json();
+          warning = typeof json?.warning === "string" ? json.warning : undefined;
+        } catch {
+          /* no body */
+        }
+        if (additionalContractId) {
+          queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        }
+        setChangingTemplate(false);
+        setDocusealIdOverride(null);
+        if (warning) alert(warning);
+      } else {
+        // Surface the actionable failures (e.g. a signed-race "Cannot replace a
+        // signed contract", or "template not found") instead of silently
+        // stopping the spinner with the picker still open.
+        let message = "Failed to replace the contract. Please try again.";
+        try {
+          const json = await res.json();
+          if (typeof json?.error === "string") message = json.error;
+        } catch {
+          /* no body */
+        }
+        alert(message);
+      }
+    } catch {
+      alert("Failed to replace the contract. Please check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Re-pull the live status from DocuSeal for this contract (primary or
+  // additional). Reconciles rows whose webhook event was missed/dropped — e.g.
+  // an already-signed contract still showing "Awaiting Signature".
+  async function handleSyncStatus() {
+    if (!dealId || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/admin/deal-contracts/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(additionalContractId ? { additionalContractId } : { dealId }),
+      });
+      if (res.ok) {
+        if (additionalContractId) {
+          queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   // Already sent/signed contract — show status + allow editing for resend (except signed)
   if (contract && !hasPendingContract) {
     const canEdit = contract.status === "sent" || contract.status === "viewed" || contract.status === "expired" || contract.status === "declined";
@@ -1445,6 +1532,16 @@ function ContractSection({
                contract.status === "expired" ? "Expired" :
                contract.status === "declined" ? "Declined" : contract.status}
             </span>
+            {contract.docusealSubmissionId && (
+              <button
+                onClick={handleSyncStatus}
+                disabled={syncing}
+                className="p-1 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                title="Refresh status from DocuSeal"
+              >
+                <RotateCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
+              </button>
+            )}
             {onDelete && (
               <button
                 onClick={onDelete}
@@ -1494,6 +1591,58 @@ function ContractSection({
               />
             )}
           </>
+        )}
+        {/* Replace the sent contract with a fresh one (different or same
+            template). Archives the old signing link and resets to "pending"
+            so it sends fresh with the next invoice. Not for signed contracts. */}
+        {canEdit && (
+          changingTemplate ? (
+            <div className="space-y-2 rounded-lg border border-border/50 bg-muted/30 p-2.5">
+              <label className="text-xs font-medium text-foreground">Replace with template</label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                value={replaceTemplateId}
+                onChange={(e) => setReplaceTemplateId(e.target.value)}
+                disabled={saving}
+              >
+                <option value="">No contract</option>
+                {contractTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-muted-foreground">
+                Archives the current signing link and resets the contract to send fresh with the next invoice.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleReplaceContract(replaceTemplateId)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white ac-gradient disabled:opacity-60"
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Replace
+                </button>
+                <button
+                  onClick={() => setChangingTemplate(false)}
+                  disabled={saving}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setReplaceTemplateId(contract.contractTemplateId || "");
+                setChangingTemplate(true);
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Replace contract
+            </button>
+          )
         )}
       </div>
     );

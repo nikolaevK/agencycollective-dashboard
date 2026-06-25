@@ -75,10 +75,11 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { id, contractTemplateId, docusealTemplateOverrideId } = body as {
+    const { id, contractTemplateId, docusealTemplateOverrideId, replace } = body as {
       id?: string;
       contractTemplateId?: string | null;
       docusealTemplateOverrideId?: number | null;
+      replace?: boolean;
     };
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
@@ -87,6 +88,51 @@ export async function PATCH(req: NextRequest) {
 
     const isOverrideUpdate = docusealTemplateOverrideId !== undefined;
     const isTemplateUpdate = contractTemplateId !== undefined;
+
+    if (replace === true) {
+      // Mirror the primary-contract replace: archive the old DocuSeal submission
+      // and reset this additional contract / scope to "pending" with the chosen
+      // template so it sends fresh with the next invoice.
+      if (contract.status === "signed") {
+        return NextResponse.json({ error: "Cannot replace a signed contract" }, { status: 400 });
+      }
+      let newTemplateId = contract.contractTemplateId;
+      if (contractTemplateId !== undefined) {
+        if (contractTemplateId) {
+          const template = await findContractTemplate(contractTemplateId);
+          if (!template) {
+            return NextResponse.json({ error: "Contract template not found" }, { status: 404 });
+          }
+        }
+        newTemplateId = contractTemplateId || null;
+      }
+      // Best-effort archive — surface a warning if the old link couldn't be
+      // killed (see the primary route for the full rationale).
+      let archiveWarning: string | undefined;
+      if (contract.docusealSubmissionId) {
+        try {
+          await docusealArchiveSubmission(contract.docusealSubmissionId);
+        } catch (err) {
+          const isNotFound = err instanceof DocuSealApiError && err.statusCode === 404;
+          if (!isNotFound) {
+            console.error("[deal-contracts/additional PATCH replace] archive failed:", err instanceof Error ? err.message : err);
+            archiveWarning = "Contract was replaced, but the previous DocuSeal signing link could not be archived and may still be active — void it in DocuSeal if needed.";
+          }
+        }
+      }
+      await updateAdditionalContract(id, {
+        contractTemplateId: newTemplateId,
+        docusealSubmissionId: null,
+        docusealSubmitterId: null,
+        docusealTemplateOverrideId: null,
+        signingUrl: null,
+        documentUrls: null,
+        signedAt: null,
+        sentAt: null,
+        status: "pending",
+      });
+      return NextResponse.json({ success: true, warning: archiveWarning });
+    }
 
     if (isOverrideUpdate) {
       if (contract.status === "signed") {

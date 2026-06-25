@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, description, rate, dealServiceKey, sortOrder } = body;
+    const { name, description, internalLabel, rate, dealServiceKey, sortOrder } = body;
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
       id,
       name: name.trim(),
       description: typeof description === "string" ? description : "",
+      internalLabel: typeof internalLabel === "string" && internalLabel.trim() ? internalLabel.trim() : null,
       rate: typeof rate === "number" ? Math.round(rate) : 0,
       dealServiceKey: typeof dealServiceKey === "string" && dealServiceKey.trim() ? dealServiceKey.trim() : null,
       sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
@@ -53,6 +54,7 @@ export async function PATCH(req: NextRequest) {
     const sanitized: Record<string, string | number | null> = {};
     if (changes.name !== undefined) sanitized.name = String(changes.name).trim();
     if (changes.description !== undefined) sanitized.description = String(changes.description);
+    if (changes.internalLabel !== undefined) sanitized.internalLabel = changes.internalLabel ? String(changes.internalLabel).trim() : null;
     if (changes.rate !== undefined) sanitized.rate = Math.round(Number(changes.rate) || 0);
     if (changes.dealServiceKey !== undefined) sanitized.dealServiceKey = changes.dealServiceKey ? String(changes.dealServiceKey).trim() : null;
     if (changes.sortOrder !== undefined) sanitized.sortOrder = Number(changes.sortOrder) || 0;

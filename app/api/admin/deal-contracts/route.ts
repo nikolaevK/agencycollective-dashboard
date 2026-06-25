@@ -9,6 +9,7 @@ import { generateContractFromDeal } from "@/lib/dealContractGenerator";
 import { insertDealContract, updateDealContract } from "@/lib/dealContracts";
 import { updateDeal } from "@/lib/deals";
 import { parseServiceCategory } from "@/lib/serviceCategory";
+import { docusealArchiveSubmission, DocuSealApiError } from "@/lib/docuseal/client";
 import crypto from "crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,10 +34,11 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { dealId, contractTemplateId, docusealTemplateOverrideId } = body as {
+    const { dealId, contractTemplateId, docusealTemplateOverrideId, replace } = body as {
       dealId?: string;
       contractTemplateId?: string | null;
       docusealTemplateOverrideId?: number | null;
+      replace?: boolean;
     };
     if (!dealId || !UUID_RE.test(dealId)) {
       return NextResponse.json({ error: "Invalid dealId" }, { status: 400 });
@@ -46,6 +48,58 @@ export async function PATCH(req: NextRequest) {
     const isTemplateUpdate = contractTemplateId !== undefined;
 
     const contract = await findDealContractByDealId(dealId);
+
+    if (replace === true) {
+      // Replace a sent (not-yet-signed) contract with a fresh one: archive the
+      // old DocuSeal submission so its signing link dies, then reset the row to
+      // "pending" with the chosen template so it sends fresh with the next
+      // invoice (the normal pending → send flow). Clears the per-contract
+      // override + any stale signed-doc pointers.
+      if (!contract) {
+        return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+      }
+      if (contract.status === "signed") {
+        return NextResponse.json({ error: "Cannot replace a signed contract" }, { status: 400 });
+      }
+      let newTemplateId = contract.contractTemplateId;
+      if (contractTemplateId !== undefined) {
+        if (contractTemplateId) {
+          const template = await findContractTemplate(contractTemplateId);
+          if (!template) {
+            return NextResponse.json({ error: "Contract template not found" }, { status: 404 });
+          }
+        }
+        newTemplateId = contractTemplateId || null;
+      }
+      // Best-effort archive: a failed archive (other than already-gone) must not
+      // block the replace — but surface it as a warning, because the old signing
+      // link may still be live and a signature on it would be dropped (the row no
+      // longer points at that submission). Admin should verify/void it in DocuSeal.
+      let archiveWarning: string | undefined;
+      if (contract.docusealSubmissionId) {
+        try {
+          await docusealArchiveSubmission(contract.docusealSubmissionId);
+        } catch (err) {
+          const isNotFound = err instanceof DocuSealApiError && err.statusCode === 404;
+          if (!isNotFound) {
+            console.error("[deal-contracts PATCH replace] archive failed:", err instanceof Error ? err.message : err);
+            archiveWarning = "Contract was replaced, but the previous DocuSeal signing link could not be archived and may still be active — void it in DocuSeal if needed.";
+          }
+        }
+      }
+      await updateDealContract(contract.id, {
+        contractTemplateId: newTemplateId,
+        docusealSubmissionId: null,
+        docusealSubmitterId: null,
+        docusealTemplateOverrideId: null,
+        signingUrl: null,
+        documentUrls: null,
+        signedAt: null,
+        sentAt: null,
+        status: "pending",
+      });
+      return NextResponse.json({ success: true, warning: archiveWarning });
+    }
 
     if (isOverrideUpdate) {
       // Per-contract Docuseal clone pointer — allowed even after send (for resend edits),

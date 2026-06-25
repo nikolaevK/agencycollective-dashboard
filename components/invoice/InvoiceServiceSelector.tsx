@@ -88,8 +88,11 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
                 className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors border-b border-border/50 last:border-0"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {service.name}
+                  <p
+                    className="text-sm font-medium text-foreground truncate"
+                    title={service.internalLabel || service.name}
+                  >
+                    {service.internalLabel || service.name}
                   </p>
                   <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
                     {service.description.split("\n")[0]}

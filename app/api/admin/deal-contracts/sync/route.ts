@@ -2,30 +2,55 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { findDealContractByDealId, updateDealContract } from "@/lib/dealContracts";
+import { findDealContractByDealId, updateDealContract, type DealContractStatus } from "@/lib/dealContracts";
+import { findAdditionalContract, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
 import { updateDeal, findDeal } from "@/lib/deals";
 import { docusealFetch } from "@/lib/docuseal/client";
 import { DocuSealSubmissionSchema } from "@/lib/docuseal/schemas";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Manually re-sync a contract's status from DocuSeal.
  * Fetches GET /submissions/:id and updates local state.
+ *
+ * Targets the PRIMARY contract (by `dealId`) OR a specific ADDITIONAL contract /
+ * scope (by `additionalContractId`). Needed because webhook events are one-time
+ * pushes: a contract signed while its events were being dropped (e.g. additional
+ * contracts before the two-table webhook fix) stays stale until actively re-pulled.
  */
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
   try {
-    const { dealId } = await req.json();
-    if (!dealId || !UUID_RE.test(dealId)) {
-      return NextResponse.json({ error: "Invalid dealId" }, { status: 400 });
+    const { dealId, additionalContractId } = (await req.json()) as {
+      dealId?: string;
+      additionalContractId?: string;
+    };
+
+    // Resolve the target row: an additional contract (by id) takes precedence,
+    // otherwise the deal's primary contract.
+    let contract: { id: string; dealId: string; status: DealContractStatus; signedAt: string | null; docusealSubmissionId: number | null } | null;
+    let isPrimary: boolean;
+    if (additionalContractId) {
+      if (!UUID_RE.test(additionalContractId)) {
+        return NextResponse.json({ error: "Invalid additionalContractId" }, { status: 400 });
+      }
+      contract = await findAdditionalContract(additionalContractId);
+      isPrimary = false;
+    } else if (dealId) {
+      if (!UUID_RE.test(dealId)) {
+        return NextResponse.json({ error: "Invalid dealId" }, { status: 400 });
+      }
+      contract = await findDealContractByDealId(dealId);
+      isPrimary = true;
+    } else {
+      return NextResponse.json({ error: "dealId or additionalContractId required" }, { status: 400 });
     }
 
-    const contract = await findDealContractByDealId(dealId);
     if (!contract) {
-      return NextResponse.json({ error: "No contract found for this deal" }, { status: 404 });
+      return NextResponse.json({ error: "No contract found" }, { status: 404 });
     }
 
     if (!contract.docusealSubmissionId) {
@@ -55,7 +80,7 @@ export async function POST(req: NextRequest) {
     const submitters = submission.submitters ?? [];
     const firstSubmitter = submitters[0];
 
-    let newStatus = contract.status;
+    let newStatus: DealContractStatus = contract.status;
     let signedAt = contract.signedAt;
     let documentUrls: string[] | null = null;
 
@@ -83,21 +108,26 @@ export async function POST(req: NextRequest) {
       console.warn(`[deal-contracts sync] Unmapped DocuSeal status: submission=${submission.status}, submitter=${firstSubmitter?.status}`);
     }
 
-    // Update contract
-    const changes: Parameters<typeof updateDealContract>[1] = {};
+    // Apply changes to the correct table.
+    const changes: { status?: DealContractStatus; signedAt?: string | null; documentUrls?: string[] | null } = {};
     if (newStatus !== contract.status) changes.status = newStatus;
     if (signedAt !== contract.signedAt) changes.signedAt = signedAt;
     if (documentUrls && documentUrls.length > 0) changes.documentUrls = documentUrls;
 
     if (Object.keys(changes).length > 0) {
-      await updateDealContract(contract.id, changes);
+      if (isPrimary) {
+        await updateDealContract(contract.id, changes);
+      } else {
+        await updateAdditionalContract(contract.id, changes);
+      }
     }
 
-    // Update deal status if contract was signed/declined/expired — only revert pending_signature
-    if (newStatus !== contract.status && (newStatus === "signed" || newStatus === "declined" || newStatus === "expired")) {
-      const deal = await findDeal(dealId);
+    // Deal-lifecycle transition stays tied to the PRIMARY contract only — an
+    // additional/scope outcome must not move the deal's status (mirrors the webhook).
+    if (isPrimary && newStatus !== contract.status && (newStatus === "signed" || newStatus === "declined" || newStatus === "expired")) {
+      const deal = await findDeal(contract.dealId);
       if (deal?.status === "pending_signature") {
-        await updateDeal(dealId, { status: "closed" });
+        await updateDeal(contract.dealId, { status: "closed" });
       }
     }
 
