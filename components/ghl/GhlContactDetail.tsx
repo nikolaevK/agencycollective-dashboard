@@ -344,7 +344,7 @@ function NoteComposer({ contactId }: { contactId: string }) {
         placeholder="Add a note… (⌘/Ctrl + Enter to save)"
         rows={3}
         disabled={create.isPending}
-        className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       />
       <div className="mt-2 flex items-center justify-end gap-3">
         {create.isError && (

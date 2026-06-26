@@ -89,7 +89,7 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <button

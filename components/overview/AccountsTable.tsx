@@ -200,7 +200,7 @@ export function AccountsTable({ accounts, isLoading, dateRange }: AccountsTableP
       {/* Header row: title + filter + view all */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
         <h4 className="text-xl font-bold text-foreground">Top Performing Accounts</h4>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-col md:flex-row md:items-center gap-3 w-full md:w-auto">
           {/* Filter search */}
           <div className="relative w-full md:w-64">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />

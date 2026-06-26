@@ -220,8 +220,8 @@ export default function UsersPage() {
               Cross-referenced with the Payout DB — MRR, join dates, billing schedule.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex bg-muted rounded-lg p-1 self-start">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex bg-muted rounded-lg p-1 self-start max-w-full overflow-x-auto">
               <TabButton active={tab === "clients"} onClick={() => setTab("clients")}>
                 Directory
               </TabButton>
@@ -330,7 +330,7 @@ export default function UsersPage() {
       {tab === "clients" && (
         <button
           onClick={() => setShowAdd(true)}
-          className="md:hidden fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl shadow-primary/30 ac-gradient active:scale-95 transition-transform"
+          className="md:hidden fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl shadow-primary/30 ac-gradient active:scale-95 transition-transform"
           aria-label="Add client"
         >
           <Plus className="h-6 w-6" />

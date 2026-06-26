@@ -592,7 +592,7 @@ export function ChatInterface() {
         )}
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 md:px-8 py-6 space-y-6 pb-44 md:pb-6">
+        <div className="flex-1 overflow-y-auto px-6 md:px-8 py-6 space-y-6 pb-[calc(11rem+env(safe-area-inset-bottom))] md:pb-6">
           {messages.length === 0 ? (
             <EmptyState onPrompt={sendMessage} selectedAccounts={selectedAccounts} />
           ) : (
@@ -626,7 +626,7 @@ export function ChatInterface() {
         </div>
 
         {/* Input area — fixed on mobile, static on desktop */}
-        <div className="fixed bottom-[88px] left-0 right-0 bg-background/90 backdrop-blur-md px-6 py-4 md:relative md:bottom-auto md:bg-transparent md:backdrop-blur-none md:border-t md:border-border md:px-8 md:py-4 z-30">
+        <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] left-0 right-0 bg-background/90 backdrop-blur-md px-6 py-4 md:relative md:bottom-auto md:bg-transparent md:backdrop-blur-none md:border-t md:border-border md:px-8 md:py-4 z-30">
           <div className="max-w-3xl mx-auto">
             <div className={cn(
               "relative flex items-center focus-within:ring-2 focus-within:ring-primary/20 transition-all",

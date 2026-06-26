@@ -313,7 +313,7 @@ export default function AdminCalendarPage() {
                 chips reachable from any scroll position. */}
             <div
               ref={navRef}
-              className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40"
+              className="sticky top-0 z-20 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40"
             >
               <div className="flex items-center justify-between">
                 <button

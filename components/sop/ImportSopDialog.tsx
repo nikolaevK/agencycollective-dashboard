@@ -61,7 +61,7 @@ export function ImportSopDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/50" onClick={busy ? undefined : onClose} aria-hidden />
       <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-3">

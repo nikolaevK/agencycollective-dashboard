@@ -386,7 +386,7 @@ export function MrrDetailModal({
   return (
     <>
       {/* Mobile: full-screen */}
-      <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+      <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <button
             onClick={onClose}
@@ -410,7 +410,7 @@ export function MrrDetailModal({
       </div>
 
       {/* Desktop: centered dialog */}
-      <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center">
+      <div className="hidden md:flex fixed inset-0 z-[60] items-center justify-center">
         <div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
           onClick={onClose}

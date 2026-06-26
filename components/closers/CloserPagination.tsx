@@ -68,7 +68,7 @@ export function CloserPagination({
         <button
           onClick={() => setPage(page - 1)}
           disabled={page <= 1}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -78,7 +78,7 @@ export function CloserPagination({
           p === "ellipsis" ? (
             <span
               key={`ellipsis-${i}`}
-              className="flex h-8 w-8 items-center justify-center text-sm text-muted-foreground"
+              className="flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
             >
               ...
             </span>
@@ -87,7 +87,7 @@ export function CloserPagination({
               key={p}
               onClick={() => setPage(p)}
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors",
+                "flex h-9 w-9 items-center justify-center rounded-lg text-sm font-medium transition-colors",
                 page === p
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent"
@@ -102,7 +102,7 @@ export function CloserPagination({
         <button
           onClick={() => setPage(page + 1)}
           disabled={page >= totalPages}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <ChevronRight className="h-4 w-4" />
         </button>

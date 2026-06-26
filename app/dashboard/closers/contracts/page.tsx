@@ -363,7 +363,7 @@ function TemplateFormModal({
     "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
@@ -491,7 +491,7 @@ function TemplateFieldPreview({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-[60] flex justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto">
         <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
@@ -625,7 +625,7 @@ function UploadTemplateModal({
     "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
@@ -777,7 +777,7 @@ function TemplateBuilderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
         <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">

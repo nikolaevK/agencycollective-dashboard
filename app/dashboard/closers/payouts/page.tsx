@@ -159,7 +159,7 @@ function DateJoinedPicker({
                         value={customFrom}
                         onChange={(e) => onCustomFrom(e.target.value)}
                         max={customTo || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-xs"
+                        className="w-full rounded border bg-background px-2 py-1 text-base sm:text-xs"
                       />
                     </div>
                     <div className="flex-1">
@@ -171,7 +171,7 @@ function DateJoinedPicker({
                         value={customTo}
                         onChange={(e) => onCustomTo(e.target.value)}
                         min={customFrom || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-xs"
+                        className="w-full rounded border bg-background px-2 py-1 text-base sm:text-xs"
                       />
                     </div>
                   </div>
@@ -556,9 +556,19 @@ export default function PayoutsPage() {
         />
       </div>
 
-      {/* Mobile FAB */}
+      {/* Mobile FABs */}
+      <button
+        onClick={handleImportClick}
+        aria-label="Import from deal"
+        title="Import from Deal"
+        className="md:hidden fixed bottom-[9.25rem] right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-lg hover:bg-accent transition-colors"
+      >
+        <FileDown className="h-5 w-5" />
+      </button>
       <button
         onClick={handleAdd}
+        aria-label="Add payout"
+        title="Add Payout"
         className="md:hidden fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg hover:opacity-90 transition-opacity"
       >
         <Plus className="h-6 w-6" />

@@ -496,9 +496,9 @@ export function AdCopyGenerator() {
   const hasCampaign = Boolean(selectedCampaignId);
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full flex-col md:flex-row">
       {/* ────────────────── LEFT: Selector Panel ────────────────── */}
-      <aside className="w-64 shrink-0 border-r border-border overflow-hidden flex flex-col">
+      <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto md:overflow-hidden flex flex-col max-h-[40vh] md:max-h-full">
         <AdCopySelector
           dateRange={dateRange}
           selectedAccountId={selectedAccountId}

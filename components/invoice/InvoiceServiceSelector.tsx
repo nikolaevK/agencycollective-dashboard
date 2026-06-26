@@ -77,7 +77,7 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
           />
           <div
             className={cn(
-              "absolute top-full z-50 mt-2 w-80 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg",
+              "absolute top-full z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg",
               align === "right" ? "right-0" : "left-0"
             )}
           >

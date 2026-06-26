@@ -150,7 +150,7 @@ export function AdAccountPaymentSettingsModal({ onClose }: { onClose: () => void
   const active = forms?.[activeType] ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto" onClick={onClose}>
       <div
         className="relative mt-10 mb-10 w-full max-w-xl rounded-2xl bg-card shadow-xl border border-border/50"
         onClick={(e) => e.stopPropagation()}

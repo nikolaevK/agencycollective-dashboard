@@ -39,7 +39,7 @@ function AlertsContent() {
     <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Bell className="h-6 w-6" />
@@ -95,7 +95,7 @@ function AlertsContent() {
 
         {/* Alert feed */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0">
             <CardTitle className="text-base">
               All Alerts
               {alerts && severityFilter !== "all" && (

@@ -329,7 +329,7 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
   const currency = data?.details.currency ?? "USD";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={onClose}>
       <div
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-card shadow-xl border-l border-border/50"
         onClick={(e) => e.stopPropagation()}

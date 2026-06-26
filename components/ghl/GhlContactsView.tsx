@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Loader2, Users } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Loader2, Users } from "lucide-react";
 import {
   useGhlContactById,
   useGhlContacts,
@@ -195,6 +195,26 @@ function GhlContactsViewInner({
 
   const selectedContact = selectedFromList ?? directQuery.data ?? null;
 
+  // Shared between the desktop side-pane and the mobile full-screen modal.
+  const detailBody = selectedContact ? (
+    <GhlContactDetail
+      contact={selectedContact}
+      users={usersQuery.data ?? EMPTY_USERS}
+      pipelines={pipelinesQuery.data ?? EMPTY_PIPELINES}
+      workflows={workflowsQuery.data ?? EMPTY_WORKFLOWS}
+    />
+  ) : selectedId && directQuery.isLoading ? (
+    <LoadingContact />
+  ) : selectedId && directQuery.isError ? (
+    <NotFoundContact
+      contactId={selectedId}
+      error={directQuery.error}
+      onClear={() => setSelectedId(null)}
+    />
+  ) : (
+    <EmptyState />
+  );
+
   return (
     <div
       className={
@@ -202,7 +222,7 @@ function GhlContactsViewInner({
         "h-[calc(100vh-15rem)] md:flex-row"
       }
     >
-      <div className="md:w-80 lg:w-96 shrink-0 border-b border-border/60 md:border-b-0 md:border-r md:h-full h-[55vh] min-w-0">
+      <div className="md:w-80 lg:w-96 shrink-0 border-b border-border/60 md:border-b-0 md:border-r md:h-full h-full min-w-0">
         <GhlContactList
           query={query}
           setQuery={setQuery}
@@ -242,25 +262,28 @@ function GhlContactsViewInner({
           onSelect={setSelectedId}
         />
       </div>
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {selectedContact ? (
-          <GhlContactDetail
-            contact={selectedContact}
-            users={usersQuery.data ?? EMPTY_USERS}
-            pipelines={pipelinesQuery.data ?? EMPTY_PIPELINES}
-            workflows={workflowsQuery.data ?? EMPTY_WORKFLOWS}
-          />
-        ) : selectedId && directQuery.isLoading ? (
-          <LoadingContact />
-        ) : selectedId && directQuery.isError ? (
-          <NotFoundContact
-            contactId={selectedId}
-            error={directQuery.error}
-            onClear={() => setSelectedId(null)}
-          />
-        ) : (
-          <EmptyState />
+      {/* Detail: a side-pane on desktop, a full-screen scrollable modal on
+          mobile (the inline mobile pane was too short to be usable). Rendered
+          once so the heavy detail tree never mounts twice. As a fixed child it
+          escapes the parent's overflow-hidden — the parent sets no transform,
+          so the viewport stays its containing block. */}
+      <div
+        className={cn(
+          "min-w-0 bg-card md:static md:z-auto md:flex md:flex-1 md:flex-col md:overflow-hidden",
+          selectedId ? "fixed inset-0 z-[60] flex flex-col" : "hidden md:flex"
         )}
+      >
+        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5 shrink-0 md:hidden">
+          <button
+            type="button"
+            onClick={() => setSelectedId(null)}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Contacts
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden">{detailBody}</div>
       </div>
     </div>
   );

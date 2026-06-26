@@ -97,7 +97,7 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 flex flex-col"
         onClick={(e) => e.stopPropagation()}

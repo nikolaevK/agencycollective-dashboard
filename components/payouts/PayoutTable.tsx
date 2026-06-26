@@ -365,7 +365,7 @@ function SalesRepDropdown({
                   if (e.key === "Escape") { setAdding(false); setNewName(""); }
                 }}
                 placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-xs rounded border border-input bg-background text-foreground"
+                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
                 disabled={saving}
               />
               <button
@@ -573,7 +573,7 @@ function VerticalDropdown({
                   if (e.key === "Escape") { setAdding(false); setNewName(""); }
                 }}
                 placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-xs rounded border border-input bg-background text-foreground"
+                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
                 disabled={saving}
               />
               <button
@@ -812,7 +812,7 @@ function ReferralDropdown({
                   if (e.key === "Escape") { setAdding(false); setNewName(""); }
                 }}
                 placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-xs rounded border border-input bg-background text-foreground"
+                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
                 disabled={saving}
               />
               <button
@@ -849,7 +849,7 @@ function ReferralDropdown({
                     if (e.key === "Enter") handleSavePct();
                     if (e.key === "Escape") setEditPct(false);
                   }}
-                  className="w-16 px-2 py-1 text-xs rounded border border-input bg-background text-foreground"
+                  className="w-16 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
                   autoFocus
                 />
                 <span className="text-xs text-muted-foreground">%</span>
@@ -1105,7 +1105,7 @@ function DeleteConfirm({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onCancel}
@@ -1152,7 +1152,7 @@ function DetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}

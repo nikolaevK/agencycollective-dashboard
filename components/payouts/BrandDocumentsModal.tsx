@@ -173,7 +173,7 @@ function UploadArea({
           <select
             value={tagMonth}
             onChange={(e) => setTagMonth(Number(e.target.value))}
-            className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            className="h-9 sm:h-7 rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground"
           >
             <option value={0}>—</option>
             {MONTH_NAMES.map((m, i) => (
@@ -187,7 +187,7 @@ function UploadArea({
             placeholder="Year"
             min={2000}
             max={2100}
-            className="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            className="h-9 sm:h-7 w-20 rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground"
           />
         </div>
       )}
@@ -292,7 +292,7 @@ export function BrandDocumentsModal({
   const invoiceCount = docs.filter((d) => d.docType === "invoice").length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}

@@ -141,7 +141,7 @@ function ActionsDropdown({
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
         className="fixed z-[61] w-48 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100"
-        style={{ top: pos.top, left: pos.left }}
+        style={{ top: pos.top, left: Math.max(8, pos.left) }}
       >
         <Link
           href={`/dashboard/closers/${closer.id}`}
@@ -334,7 +334,7 @@ export function CloserTable({ closers, onEdit }: CloserTableProps) {
 
       {/* Confirm Delete Dialog */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setConfirmDeleteId(null)}

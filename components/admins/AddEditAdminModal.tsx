@@ -85,7 +85,7 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
     "flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
   return (
-    <div className="fixed inset-0 z-50 hidden md:flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] hidden md:flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl">
         {/* Header */}

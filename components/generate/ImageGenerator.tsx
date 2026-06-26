@@ -461,9 +461,9 @@ export function ImageGenerator() {
   const canSubmit = !!input.trim() && !isLoading;
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full flex-col md:flex-row">
       {/* ── Left panel ──────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 border-r border-border flex flex-col overflow-y-auto">
+      <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col overflow-y-auto max-h-[40vh] md:max-h-full">
         {/* Mode toggle */}
         <div className="p-4 border-b border-border">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Mode</p>

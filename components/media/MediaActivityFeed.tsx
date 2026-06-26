@@ -216,7 +216,7 @@ export function MediaActivityFeed({ isManager }: { isManager: boolean }) {
 
       {/* Confirm clear */}
       {pending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !clearing && setPending(null)} />
           <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl">
             <div className="mb-2 flex items-start justify-between gap-2">

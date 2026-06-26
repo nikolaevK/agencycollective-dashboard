@@ -534,7 +534,7 @@ export function JsonImageEditor() {
 
       {/* ── Error banner ─────────────────────────────────────────────────── */}
       {error && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 backdrop-blur-sm px-4 py-2.5 text-sm text-destructive shadow-lg max-w-lg">
+        <div className="fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 backdrop-blur-sm px-4 py-2.5 text-sm text-destructive shadow-lg max-w-[calc(100vw-2rem)] sm:max-w-lg">
           <span className="flex-1">{error}</span>
           <button
             onClick={() => setError(null)}

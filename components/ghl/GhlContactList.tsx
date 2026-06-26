@@ -213,7 +213,7 @@ export function GhlContactList(props: Props) {
                 type="button"
                 onClick={() => props.toggleStatus(s.key)}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors",
                   on
                     ? "border-foreground/40 bg-foreground/10 text-foreground"
                     : "border-border bg-background text-muted-foreground hover:text-foreground"
@@ -287,7 +287,7 @@ export function GhlContactList(props: Props) {
             value={props.fromDate}
             onChange={(e) => props.setFromDate(e.target.value)}
             aria-label="From date"
-            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <span className="text-xs text-muted-foreground">→</span>
           <input
@@ -295,7 +295,7 @@ export function GhlContactList(props: Props) {
             value={props.toDate}
             onChange={(e) => props.setToDate(e.target.value)}
             aria-label="To date"
-            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           {(props.fromDate || props.toDate) && (
             <button
@@ -515,7 +515,7 @@ function FlatPickerButton({
           <ChevronDown className="h-3 w-3" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0">
+      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-72 p-0">
         <div className="border-b p-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -524,7 +524,7 @@ function FlatPickerButton({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={`Filter ${label.toLowerCase()}…`}
-              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-base sm:text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
         </div>
@@ -605,7 +605,7 @@ function PipelinePickerButton({
           <ChevronDown className="h-3 w-3" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
+      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-80 p-0">
         <div className="max-h-80 overflow-y-auto py-1">
           {pipelines.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">

@@ -164,7 +164,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
   const headingTitle = event?.title ?? deals[0]?.clientName ?? appointments[0]?.clientName ?? fallbackTitle;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-3xl mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4 rounded-t-2xl">

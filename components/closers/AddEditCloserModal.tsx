@@ -82,7 +82,7 @@ export function AddEditCloserModal({ closer, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 hidden md:flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] hidden md:flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"

@@ -104,7 +104,7 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     "w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md animate-in fade-in-0 zoom-in-95"
         onClick={(e) => e.stopPropagation()}

@@ -244,7 +244,7 @@ function ForecastView({
         </div>
       </div>
 
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
         {forecast.limitedData && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 px-4 py-3">
             <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -257,7 +257,7 @@ function ForecastView({
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
             <p className="text-xs text-muted-foreground mb-1">
               Projected New
@@ -288,30 +288,32 @@ function ForecastView({
             <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
               Historical Breakdown
             </p>
-            <div className="rounded-lg border border-border/50 overflow-hidden">
-              <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground bg-muted/30 border-b border-border/50">
-                <span>Month</span>
-                <span className="text-right">New</span>
-                <span className="text-right">New Rev</span>
-                <span className="text-right">Rebill</span>
-                <span className="text-right">Rebill Rev</span>
-              </div>
-              {forecast.historicalData.map((d) => (
-                <div
-                  key={`${d.year}-${d.month}`}
-                  className="grid grid-cols-5 gap-2 px-3 py-2 text-xs text-foreground border-b border-border/30 last:border-0"
-                >
-                  <span>{monthLabel(d.month, d.year)}</span>
-                  <span className="text-right">{d.newCount}</span>
-                  <span className="text-right">
-                    {formatCents(d.newRevenue)}
-                  </span>
-                  <span className="text-right">{d.rebillCount}</span>
-                  <span className="text-right">
-                    {formatCents(d.rebillRevenue)}
-                  </span>
+            <div className="rounded-lg border border-border/50 overflow-x-auto">
+              <div className="min-w-[440px]">
+                <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground bg-muted/30 border-b border-border/50">
+                  <span>Month</span>
+                  <span className="text-right">New</span>
+                  <span className="text-right">New Rev</span>
+                  <span className="text-right">Rebill</span>
+                  <span className="text-right">Rebill Rev</span>
                 </div>
-              ))}
+                {forecast.historicalData.map((d) => (
+                  <div
+                    key={`${d.year}-${d.month}`}
+                    className="grid grid-cols-5 gap-2 px-3 py-2 text-xs text-foreground border-b border-border/30 last:border-0"
+                  >
+                    <span>{monthLabel(d.month, d.year)}</span>
+                    <span className="text-right">{d.newCount}</span>
+                    <span className="text-right">
+                      {formatCents(d.newRevenue)}
+                    </span>
+                    <span className="text-right">{d.rebillCount}</span>
+                    <span className="text-right">
+                      {formatCents(d.rebillRevenue)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -343,7 +345,7 @@ export function RebillDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}

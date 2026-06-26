@@ -45,7 +45,7 @@ interface Props {
 }
 
 const INPUT_CLS =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
+  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
 function loadPaymentTemplate(config: Record<string, string>, type: PaymentType): PaymentInfo {
   return loadPaymentInfoFromConfig(config, type) ?? emptyPaymentInfo(type);
@@ -972,7 +972,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
               </div>
 
               {/* Invoice Date & Due Date */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Invoice Date</label>
                   <input
@@ -1046,7 +1046,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                      <textarea value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="Description" rows={2} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow resize-y" />
+                      <textarea value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="Description" rows={2} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-base sm:text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow resize-y" />
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="mb-0.5 block text-[10px] text-muted-foreground">Qty</label>

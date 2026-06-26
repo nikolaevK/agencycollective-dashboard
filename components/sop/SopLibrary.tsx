@@ -189,7 +189,7 @@ function FolderSettingsModal({ folder, count, onClose, onRename, onRecolor, onDe
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
@@ -326,7 +326,7 @@ function SopTile({ sop, view, folders, onOpen, onMove, onDelete, onSaveTags, onT
   );
 
   const moveModal = moveOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" {...noDrag}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" {...noDrag}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setMoveOpen(false)} />
       <div className="relative w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-2xl">
         <div className="mb-3 flex items-start justify-between gap-2">
@@ -357,7 +357,7 @@ function SopTile({ sop, view, folders, onOpen, onMove, onDelete, onSaveTags, onT
   );
 
   const tagModal = tagsOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" {...noDrag}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" {...noDrag}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setTagsOpen(false)} />
       <div className="relative w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-2xl">
         <div className="mb-3 flex items-start justify-between gap-2">
