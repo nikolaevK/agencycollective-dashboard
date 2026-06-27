@@ -69,7 +69,8 @@ export const MANUAL_BILLING_OPTIONS = [
 
 const STAGE_VALUES = new Set<string>(STAGE_OPTIONS.map((o) => o.value));
 const HEALTH_VALUES = new Set<string>(HEALTH_OPTIONS.map((o) => o.value));
-const AD_PLATFORM_VALUES = new Set<string>(AD_PLATFORM_OPTIONS.map((o) => o.value));
+// Ad-platform values are NOT gated to a static set — the vocabulary is
+// admin-extensible (see sanitizeOpenStringArray + lib/adPlatformOptions.ts).
 const MANUAL_BILLING_VALUES = new Set<string>(MANUAL_BILLING_OPTIONS.map((o) => o.value));
 const SERVICE_VALUES = new Set<string>(SERVICE_OPTIONS.map((o) => o.value));
 
@@ -211,6 +212,25 @@ function sanitizeEnumArray(values: unknown, allowed: Set<string>): string[] {
 }
 
 /**
+ * Open-vocabulary chip array (ad platforms). Unlike the fixed enums, the
+ * platform vocabulary is admin-extensible (ad_platform_options), so values
+ * can't be gated against a static set — that would silently drop a freshly
+ * added custom option, and re-validating against the LIVE set would drop a
+ * still-tagged value whose option was later removed. Instead: trim, drop
+ * empties, cap length/count, dedupe. The picker only ever emits known slugs.
+ */
+function sanitizeOpenStringArray(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const out: string[] = [];
+  for (const v of values) {
+    const s = String(v).trim().slice(0, MAX_TEXT_LEN);
+    if (s && !out.includes(s)) out.push(s);
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
+/**
  * Services accept the 5 enum values directly, but also tolerate free-form
  * service NAMES (mapped via mapDealServiceToRoster) — so a stale client
  * bundle or an external caller sending "Meta Ads Management" still saves
@@ -281,7 +301,7 @@ export function sanitizeProfileInput(body: Record<string, unknown>): {
   if (body.isTop !== undefined) input.isTop = Boolean(body.isTop);
   if (body.adsRunning !== undefined) input.adsRunning = Boolean(body.adsRunning);
   if (body.adPlatforms !== undefined)
-    input.adPlatforms = sanitizeEnumArray(body.adPlatforms, AD_PLATFORM_VALUES);
+    input.adPlatforms = sanitizeOpenStringArray(body.adPlatforms);
   if (body.stages !== undefined) input.stages = sanitizeEnumArray(body.stages, STAGE_VALUES);
   if (body.health !== undefined) input.health = sanitizeEnumArray(body.health, HEALTH_VALUES);
   if (body.services !== undefined) input.services = sanitizeServiceValues(body.services);

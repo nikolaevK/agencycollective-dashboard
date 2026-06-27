@@ -1,7 +1,6 @@
 import {
   STAGE_OPTIONS,
   HEALTH_OPTIONS,
-  AD_PLATFORM_OPTIONS,
   MANUAL_BILLING_OPTIONS,
   SERVICE_OPTIONS,
 } from "@/lib/clientProfile";
@@ -68,7 +67,7 @@ function toLabelMap(
 
 export const STAGE_LABELS = toLabelMap(STAGE_OPTIONS);
 export const HEALTH_LABELS = toLabelMap(HEALTH_OPTIONS);
-export const PLATFORM_LABELS = toLabelMap(AD_PLATFORM_OPTIONS);
+// Ad-platform labels are dynamic (built-in + custom) — see useAdPlatformOptions.
 export const MANUAL_BILLING_LABELS = toLabelMap(MANUAL_BILLING_OPTIONS);
 export const SERVICE_LABELS = toLabelMap(SERVICE_OPTIONS);
 

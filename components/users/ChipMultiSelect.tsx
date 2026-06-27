@@ -43,6 +43,7 @@ export function ChipMultiSelect({
   disabled,
   addLabel = "Add",
   compact,
+  onCreateOption,
 }: {
   value: string[];
   options: ReadonlyArray<ChipOption>;
@@ -53,10 +54,18 @@ export function ChipMultiSelect({
   addLabel?: string;
   /** Tighter spacing for mobile cards. */
   compact?: boolean;
+  /**
+   * When provided, the popover shows an inline "create new option" field.
+   * Returns the new option's stable value (auto-selected for this row) or null
+   * on failure. The option is persisted globally, so it appears for every row.
+   */
+  onCreateOption?: (label: string) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useMirroredSelection(value, JSON.stringify(value));
+  const [draft, setDraft] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
   const clsOf = (v: string) => colorOf?.(v) ?? FALLBACK_CHIP_CLS;
@@ -68,6 +77,23 @@ export function ChipMultiSelect({
 
   function toggle(v: string) {
     emit(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+  }
+
+  async function createOption() {
+    const label = draft.trim();
+    if (!label || !onCreateOption || creating) return;
+    setCreating(true);
+    try {
+      const newValue = await onCreateOption(label);
+      if (newValue) {
+        setDraft("");
+        if (!selected.includes(newValue)) emit([...selected, newValue]);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not add option");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -135,6 +161,34 @@ export function ChipMultiSelect({
               </button>
             );
           })}
+          {onCreateOption && (
+            <div className="mt-1 border-t border-border px-2 pt-2 pb-1">
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createOption();
+                    }
+                  }}
+                  placeholder="New option…"
+                  maxLength={40}
+                  disabled={creating}
+                  className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-primary disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={createOption}
+                  disabled={creating || !draft.trim()}
+                  className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          )}
         </ChipPopover>
       )}
     </div>

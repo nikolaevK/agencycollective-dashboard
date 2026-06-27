@@ -14,9 +14,9 @@ import {
   SERVICE_LABELS,
   STAGE_LABELS,
   HEALTH_LABELS,
-  PLATFORM_LABELS,
   MANUAL_BILLING_LABELS,
 } from "@/components/users/rosterPresentation";
+import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
 import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
 import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
@@ -106,7 +106,10 @@ function csvField(value: string | number | null | undefined): string {
 }
 
 /** Full roster (both books, every column) as CSV — mirrors the prototype's Copy CSV. */
-function buildRosterCsv(clients: ClientPublic[]): string {
+function buildRosterCsv(
+  clients: ClientPublic[],
+  platformLabels: Record<string, string>
+): string {
   const header = [
     "Client", "Book", "Status", "Website", "Stages", "Health", "Ad Platforms",
     "Ads Running", "Services", "Lead", "Media Buyer", "Monthly MRR", "Perf Fee",
@@ -123,7 +126,7 @@ function buildRosterCsv(clients: ClientPublic[]): string {
       p.website ?? "",
       p.stages.map((v) => STAGE_LABELS[v] ?? v).join("; "),
       p.health.map((v) => HEALTH_LABELS[v] ?? v).join("; "),
-      p.adPlatforms.map((v) => PLATFORM_LABELS[v] ?? v).join("; "),
+      p.adPlatforms.map((v) => platformLabels[v] ?? v).join("; "),
       p.adsRunning ? "running" : "paused",
       p.services.map((v) => SERVICE_LABELS[v] ?? v).join("; "),
       c.team.filter((m) => m.role === "lead").map((m) => m.name).join("; "),
@@ -154,6 +157,7 @@ export default function UsersPage() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [sentInvoicesOpen, setSentInvoicesOpen] = useState(false);
   const [csvCopied, setCsvCopied] = useState(false);
+  const { platformLabels } = useAdPlatformOptions();
 
   const { data: unreadSupport = 0 } = useQuery<number>({
     queryKey: ["admin-support-unread"],
@@ -201,7 +205,7 @@ export default function UsersPage() {
 
   async function handleCopyCsv() {
     try {
-      await navigator.clipboard.writeText(buildRosterCsv(clients));
+      await navigator.clipboard.writeText(buildRosterCsv(clients, platformLabels));
       setCsvCopied(true);
       setTimeout(() => setCsvCopied(false), 2000);
     } catch {

@@ -29,10 +29,10 @@ import {
   useClientProfileMutations,
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
+import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
 import {
   STAGE_OPTIONS,
   HEALTH_OPTIONS,
-  AD_PLATFORM_OPTIONS,
   MANUAL_BILLING_OPTIONS,
   BOOK_OPTIONS,
   SERVICE_OPTIONS,
@@ -72,6 +72,8 @@ export function ClientSettingsTab({
   const [rosterSaved, setRosterSaved] = useState(false);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const { patchProfile, putTeam } = useClientProfileMutations();
+  const { options: platformOptions, addOption: addPlatformOption } =
+    useAdPlatformOptions();
   const [manualMrr, setManualMrr] = useState(
     profile.manualMrrCents != null ? (profile.manualMrrCents / 100).toString() : ""
   );
@@ -340,9 +342,10 @@ export function ClientSettingsTab({
           <RosterField label="Ad platforms">
             <ChipMultiSelect
               value={profile.adPlatforms}
-              options={AD_PLATFORM_OPTIONS}
+              options={platformOptions}
               colorOf={(v) => PLATFORM_CHIP_CLS[v]}
               onChange={(adPlatforms) => patchNow({ adPlatforms })}
+              onCreateOption={addPlatformOption}
             />
           </RosterField>
           <RosterField label="Services">

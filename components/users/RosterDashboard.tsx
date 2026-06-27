@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "./types";
 import type { ClientFilterState } from "./ClientFilters";
+import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
+import { AdPlatformOptionsModal } from "./AdPlatformOptionsModal";
 import {
   STAGE_OPTIONS,
   HEALTH_OPTIONS,
   SERVICE_OPTIONS,
-  AD_PLATFORM_OPTIONS,
   type TeamRole,
 } from "@/lib/clientProfile";
 
@@ -77,7 +79,6 @@ function toPills(options: ReadonlyArray<{ value: string; label: string }>) {
 const STAGE_PILLS = toPills(STAGE_OPTIONS);
 const HEALTH_PILLS = toPills(HEALTH_OPTIONS);
 const SERVICE_PILLS = toPills(SERVICE_OPTIONS);
-const PLATFORM_PILLS = toPills(AD_PLATFORM_OPTIONS);
 
 export function RosterDashboard({
   clients,
@@ -88,6 +89,11 @@ export function RosterDashboard({
   filters: ClientFilterState;
   onFiltersChange: (next: ClientFilterState) => void;
 }) {
+  const { options: platformOptions } = useAdPlatformOptions();
+  const [manageOpen, setManageOpen] = useState(false);
+  // Built-in + admin-managed custom platforms (custom get the fallback color).
+  const platformPills = useMemo(() => toPills(platformOptions), [platformOptions]);
+
   const stats = useMemo(() => {
     const count = (key: "stages" | "health" | "services" | "adPlatforms") => {
       const m = new Map<string, number>();
@@ -188,8 +194,22 @@ export function RosterDashboard({
         </Group>
       )}
 
-      <Group label="Ad Accounts" dot="bg-orange-500">
-        {PLATFORM_PILLS.map((p) => (
+      <Group
+        label="Ad Accounts"
+        dot="bg-orange-500"
+        action={
+          <button
+            type="button"
+            onClick={() => setManageOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            title="Manage ad platform options"
+          >
+            <Settings2 className="h-3 w-3" />
+            Manage
+          </button>
+        }
+      >
+        {platformPills.map((p) => (
           <Pill
             key={p.value}
             label={p.label}
@@ -239,6 +259,8 @@ export function RosterDashboard({
           />
         ))}
       </Group>
+
+      {manageOpen && <AdPlatformOptionsModal onClose={() => setManageOpen(false)} />}
     </div>
   );
 }
@@ -247,10 +269,12 @@ function Group({
   label,
   dot,
   children,
+  action,
 }: {
   label: string;
   dot: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card px-4 py-3">
@@ -259,6 +283,7 @@ function Group({
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
+        {action && <span className="ml-auto">{action}</span>}
       </div>
       <div className="flex items-end gap-4 flex-wrap">{children}</div>
     </div>

@@ -31,10 +31,10 @@ import {
   useClientProfileMutations,
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
+import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
 import {
   STAGE_OPTIONS,
   HEALTH_OPTIONS,
-  AD_PLATFORM_OPTIONS,
   MANUAL_BILLING_OPTIONS,
   SERVICE_OPTIONS,
   type ClientTeamMember,
@@ -66,6 +66,8 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   const [mrrClientId, setMrrClientId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { patchProfile, putTeam } = useClientProfileMutations();
+  const { options: platformOptions, addOption: addPlatformOption } =
+    useAdPlatformOptions();
 
   // Reset to page 1 when the FILTERS change, so applying a filter doesn't
   // strand the user on a now-out-of-range page. (Keyed on the filters, not the
@@ -272,9 +274,10 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             />
             <ChipMultiSelect
               value={profile.adPlatforms}
-              options={AD_PLATFORM_OPTIONS}
+              options={platformOptions}
               colorOf={(v) => PLATFORM_CHIP_CLS[v]}
               onChange={(adPlatforms) => patch(client, { adPlatforms })}
+              onCreateOption={addPlatformOption}
               addLabel="Add platform"
               compact
             />

@@ -151,6 +151,16 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       read_at      TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (document_id, admin_id)
     )`,
+    // Admin-managed extra "Ad Platforms" roster chips, on top of the in-code
+    // built-ins (Orange Trail / Concept / Personal). Created here (not the
+    // gated body) so it self-heals WITHOUT a SCHEMA_VERSION bump — the existing
+    // migration body never re-runs. A brand-new empty table: touches no
+    // existing rows. Reads degrade to [] if it's somehow absent.
+    `CREATE TABLE IF NOT EXISTS ad_platform_options (
+      value      TEXT PRIMARY KEY,
+      label      TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [
