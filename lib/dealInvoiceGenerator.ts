@@ -84,10 +84,16 @@ function mapServicesToItems(
     return [createCustomItem("Professional Services", "", dealValueDollars)];
   }
 
-  // Build lookups: name → preset, dealServiceKey → preset
+  // Build lookups: internalLabel → preset, name → preset, dealServiceKey → preset.
+  // Deals store the internal label (the picker's display value) since presets can
+  // share an invoice header name; name matching remains for legacy deals.
+  const labelToPreset = new Map<string, InvoiceServiceRecord>();
   const nameToPreset = new Map<string, InvoiceServiceRecord>();
   const keyToPreset = new Map<string, InvoiceServiceRecord>();
   for (const ps of presetServices) {
+    if (ps.internalLabel) {
+      labelToPreset.set(ps.internalLabel.toLowerCase(), ps);
+    }
     nameToPreset.set(ps.name.toLowerCase(), ps);
     if (ps.dealServiceKey) {
       keyToPreset.set(ps.dealServiceKey.toLowerCase(), ps);
@@ -99,6 +105,7 @@ function mapServicesToItems(
 
   for (const svc of dealServices) {
     const preset =
+      labelToPreset.get(svc.toLowerCase()) ??
       nameToPreset.get(svc.toLowerCase()) ??
       keyToPreset.get(svc.toLowerCase()) ??
       null;

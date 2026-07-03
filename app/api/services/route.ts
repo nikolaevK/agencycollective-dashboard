@@ -7,6 +7,6 @@ import { readInvoiceServices } from "@/lib/invoiceServices";
 export async function GET() {
   const services = await readInvoiceServices();
   return NextResponse.json({
-    data: services.map((s) => ({ id: s.id, name: s.name, rate: s.rate })),
+    data: services.map((s) => ({ id: s.id, name: s.name, internalLabel: s.internalLabel, rate: s.rate })),
   });
 }

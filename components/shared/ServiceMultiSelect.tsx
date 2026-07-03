@@ -18,17 +18,25 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Fetch preset services from DB
-  const { data: services = [] } = useQuery<Array<{ name: string; rate: number }>>({
+  const { data: services = [] } = useQuery<Array<{ id: string; name: string; internalLabel: string | null; rate: number }>>({
     queryKey: ["service-names-for-deals"],
     queryFn: async () => {
       const res = await fetch("/api/services");
       if (!res.ok) return [];
       const json = await res.json();
-      return (json.data ?? []).map((s: { name: string; rate: number }) => ({ name: s.name, rate: s.rate }));
+      return (json.data ?? []).map((s: { id: string; name: string; internalLabel?: string | null; rate: number }) => ({
+        id: s.id,
+        name: s.name,
+        internalLabel: s.internalLabel ?? null,
+        rate: s.rate,
+      }));
     },
     staleTime: 60_000,
   });
-  const serviceNames = services.map((s) => s.name);
+  // Deals store the INTERNAL label (falling back to name) — invoice headers
+  // are shared across presets, so the label is the only distinguishing
+  // identity. dealInvoiceGenerator resolves labels back to presets.
+  const serviceNames = Array.from(new Set(services.map((s) => s.internalLabel || s.name)));
 
   useEffect(() => {
     if (!open) return;
@@ -104,12 +112,13 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
 
           {/* Individual items */}
           {services.map((svc) => {
-            const checked = value.includes(svc.name);
+            const label = svc.internalLabel || svc.name;
+            const checked = value.includes(label);
             return (
               <button
                 type="button"
-                key={svc.name}
-                onClick={() => toggleItem(svc.name)}
+                key={svc.id}
+                onClick={() => toggleItem(label)}
                 className="flex w-full items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent transition-colors"
               >
                 <div className={cn(
@@ -120,7 +129,7 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
                 )}>
                   {checked && <Check className="h-3 w-3 text-primary-foreground" />}
                 </div>
-                <span className="text-sm text-foreground flex-1 text-left">{svc.name}</span>
+                <span className="text-sm text-foreground flex-1 text-left">{label}</span>
                 {svc.rate > 0 && (
                   <span className="text-xs text-muted-foreground shrink-0">${(svc.rate / 100).toLocaleString()}</span>
                 )}
