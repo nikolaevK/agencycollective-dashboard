@@ -3,12 +3,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getCalendarEvents } from "@/lib/google/calendar";
 
 export async function GET(request: NextRequest) {
   const adminSession = getAdminSession();
-  const closerSession = getCloserSession();
+  const closerSession = await getActiveCloserSession();
 
   if (!adminSession && !closerSession) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

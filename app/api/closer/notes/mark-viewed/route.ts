@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { markNotesViewed } from "@/lib/notes";
 
 /**
@@ -10,7 +10,7 @@ import { markNotesViewed } from "@/lib/notes";
  * on the page. Idempotent; repeated calls just bump the timestamp.
  */
 export async function POST() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

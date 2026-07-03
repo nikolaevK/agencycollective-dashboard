@@ -4,7 +4,7 @@ export const maxDuration = 30;
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getContactById } from "@/lib/ghl/contacts";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
 import { parseSubAccountId } from "@/lib/ghl/subAccounts";
@@ -13,7 +13,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { contactId: string } }
 ) {
-  if (!getAdminSession() && !getCloserSession()) {
+  if (!getAdminSession() && !(await getActiveCloserSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

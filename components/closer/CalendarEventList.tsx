@@ -253,6 +253,14 @@ export function CalendarEventList({
   // Each card reads its row from `ghlData` instead of firing its own
   // request — 50 cards = 1 GHL roundtrip.
   const ghlInputs = useMemo(() => buildGhlCrossReferenceInputs(events), [events]);
+
+  // O(1) per-event lookup — the render loop below runs per visible event and
+  // linkedDeals is the closer's whole linked-deal list.
+  const dealByEventId = useMemo(() => {
+    const m = new Map<string, LinkedDealInfo>();
+    for (const d of linkedDeals ?? []) m.set(d.googleEventId, d);
+    return m;
+  }, [linkedDeals]);
   const { data: ghlData } = useGhlCrossReference(ghlInputs);
 
   // Scroll to "today" only when the week being shown actually changes —
@@ -309,7 +317,7 @@ export function CalendarEventList({
           <div className="space-y-2">
             {dayEvents.map((event) => {
               const isLinked = linkedEventIds?.has(event.id);
-              const dealInfo = linkedDeals?.find((d) => d.googleEventId === event.id);
+              const dealInfo = dealByEventId.get(event.id);
               const eventAttendance = attendance?.[event.id] as "showed" | "no_show" | undefined;
               const setterClaim = appointments?.[event.id];
               const syncEntry = ghlSync?.[event.id];

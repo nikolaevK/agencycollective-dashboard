@@ -142,22 +142,33 @@ export async function getCloserShowRate(
  * calendar surfaces so setters and closers see every mark, not only their
  * own. Admin already has a similar endpoint; this is the shared read path.
  */
-export async function getLatestAttendanceByEvent(): Promise<Record<string, AttendanceStatus>> {
+export async function getLatestAttendanceByEvent(
+  /** When provided, restrict to these events (the caller's visible window).
+   *  Undefined keeps the legacy all-events behavior; [] returns {}. Without
+   *  the filter every poll re-scans and re-ships all-time attendance. */
+  eventIds?: string[]
+): Promise<Record<string, AttendanceStatus>> {
   await ensureMigrated();
   const db = getDb();
+  if (eventIds !== undefined && eventIds.length === 0) return {};
+  const idFilter =
+    eventIds !== undefined
+      ? ` WHERE google_event_id IN (${eventIds.map(() => "?").join(", ")})`
+      : "";
   // Newest row per event wins — deduped in SQL (same window pattern as the
   // follow-up CTEs below) so only one row per event crosses the wire.
-  const result = await db.execute(
-    `SELECT google_event_id, show_status
+  const result = await db.execute({
+    sql: `SELECT google_event_id, show_status
        FROM (
          SELECT google_event_id, show_status,
                 ROW_NUMBER() OVER (
                   PARTITION BY google_event_id ORDER BY updated_at DESC
                 ) AS rn
-         FROM event_attendance
+         FROM event_attendance${idFilter}
        )
-      WHERE rn = 1`
-  );
+      WHERE rn = 1`,
+    args: eventIds ?? [],
+  });
   const out: Record<string, AttendanceStatus> = {};
   for (const row of result.rows) {
     out[String(row.google_event_id)] = String(row.show_status) as AttendanceStatus;
@@ -225,18 +236,30 @@ export async function getAttendanceFollowUpsForCloser(
 ): Promise<NoShowFollowUp[]> {
   await ensureMigrated();
   const db = getDb();
+  // The closer's marked events (already LIMITed) drive everything: the
+  // appointment/deal dedup windows only run over THOSE events, not the whole
+  // appointments/deals tables — this query is polled every 120s per closer.
   const result = await db.execute({
-    sql: `WITH latest_appt AS (
+    sql: `WITH relevant AS (
+            SELECT google_event_id, closer_id, updated_at
+              FROM event_attendance
+             WHERE show_status = ? AND closer_id = ?
+          ORDER BY updated_at DESC
+             LIMIT ?
+          ),
+          latest_appt AS (
             SELECT id, google_event_id, setter_id, client_name, client_email,
                    scheduled_at, notes, pre_call_status, post_call_status, setter_tier, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
+             WHERE google_event_id IN (SELECT google_event_id FROM relevant)
           ),
           latest_deal AS (
             SELECT id, google_event_id, client_name, client_email, closing_date,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM deals
              WHERE google_event_id IS NOT NULL
+               AND google_event_id IN (SELECT google_event_id FROM relevant)
           )
           SELECT
              ea.google_event_id,
@@ -255,14 +278,12 @@ export async function getAttendanceFollowUpsForCloser(
              d.client_name AS deal_client_name,
              d.client_email AS deal_client_email,
              d.closing_date AS deal_closing_date
-            FROM event_attendance ea
+            FROM relevant ea
        LEFT JOIN closers mc ON mc.id = ea.closer_id
        LEFT JOIN latest_appt ap ON ap.google_event_id = ea.google_event_id AND ap.rn = 1
        LEFT JOIN closers sc ON sc.id = ap.setter_id
        LEFT JOIN latest_deal d ON d.google_event_id = ea.google_event_id AND d.rn = 1
-           WHERE ea.show_status = ? AND ea.closer_id = ?
-        ORDER BY ea.updated_at DESC
-           LIMIT ?`,
+        ORDER BY ea.updated_at DESC`,
     args: [status, closerId, limit],
   });
   return result.rows.map((row) => ({
@@ -322,6 +343,9 @@ export async function getNoShowFollowUpsTeamWide(
 ): Promise<NoShowFollowUp[]> {
   await ensureMigrated();
   const db = getDb();
+  // The LIMITed no-show set drives the appointment/deal dedup windows so
+  // they only run over those events, not whole tables (polled every 120s
+  // by every setter dashboard).
   const result = await db.execute({
     sql: `WITH latest_attendance AS (
             SELECT google_event_id, closer_id, updated_at,
@@ -329,17 +353,26 @@ export async function getNoShowFollowUpsTeamWide(
               FROM event_attendance
              WHERE show_status = 'no_show'
           ),
+          relevant AS (
+            SELECT google_event_id, closer_id, updated_at
+              FROM latest_attendance
+             WHERE rn = 1
+          ORDER BY updated_at DESC
+             LIMIT ?
+          ),
           latest_appt AS (
             SELECT id, google_event_id, setter_id, client_name, client_email,
                    scheduled_at, notes, pre_call_status, post_call_status, setter_tier, updated_at,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM appointments
+             WHERE google_event_id IN (SELECT google_event_id FROM relevant)
           ),
           latest_deal AS (
             SELECT id, google_event_id, client_name, client_email, closing_date,
                    ROW_NUMBER() OVER (PARTITION BY google_event_id ORDER BY updated_at DESC) AS rn
               FROM deals
              WHERE google_event_id IS NOT NULL
+               AND google_event_id IN (SELECT google_event_id FROM relevant)
           )
           SELECT
              la.google_event_id,
@@ -358,14 +391,12 @@ export async function getNoShowFollowUpsTeamWide(
              d.client_name AS deal_client_name,
              d.client_email AS deal_client_email,
              d.closing_date AS deal_closing_date
-            FROM latest_attendance la
+            FROM relevant la
        LEFT JOIN closers mc ON mc.id = la.closer_id
        LEFT JOIN latest_appt ap ON ap.google_event_id = la.google_event_id AND ap.rn = 1
        LEFT JOIN closers sc ON sc.id = ap.setter_id
        LEFT JOIN latest_deal d ON d.google_event_id = la.google_event_id AND d.rn = 1
-           WHERE la.rn = 1
-        ORDER BY la.updated_at DESC
-           LIMIT ?`,
+        ORDER BY la.updated_at DESC`,
     args: [limit],
   });
   return result.rows.map((row) => ({
@@ -420,8 +451,10 @@ export async function getNoShowFollowUpsTeamWide(
  *
  * Window: oldest markedAt minus a 30-day buffer (events end BEFORE they're
  * marked; without buffer Google's events.list excludes them and rows render
- * bare), capped at 2 years back, rounded to UTC day boundaries so concurrent
- * dashboard loads share the same `getCalendarEvents` cache key.
+ * bare), capped at 90 days back (a single ancient unresolved no-show must
+ * not widen every polled fetch to years of events — older rows just stay
+ * un-enriched), rounded to UTC day boundaries so concurrent dashboard loads
+ * share the same `getCalendarEvents` cache key.
  *
  * Joins by google_event_id; rows whose Google event isn't in range stay
  * un-enriched. Input order is preserved so callers can split a combined
@@ -437,7 +470,7 @@ export async function enrichNoShowsFromCalendar(
 
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
-  const twoYearsAgoMs = now - 2 * 365 * dayMs;
+  const windowCapMs = now - 90 * dayMs;
   const oldestMarkedMs = Math.min(
     ...noShows.map((n) => {
       const t = Date.parse(n.markedAt);
@@ -448,8 +481,8 @@ export async function enrichNoShowsFromCalendar(
   // later). Google's events.list timeMin is exclusive on event end time, so
   // anchoring timeMin at oldestMarked silently drops the event from the
   // fetch and the card renders with no client name/time/email — looks empty.
-  // Subtract a 30-day buffer to cover late marks; cap at 2 years.
-  const candidateMinMs = Math.max(oldestMarkedMs - 30 * dayMs, twoYearsAgoMs);
+  // Subtract a 30-day buffer to cover late marks; cap at 90 days.
+  const candidateMinMs = Math.max(oldestMarkedMs - 30 * dayMs, windowCapMs);
   // Round to UTC day boundaries so concurrent dashboard loads share one
   // cache key — without this, ms-precision timeMin/timeMax made the 2-min
   // Google cache useless across requests.

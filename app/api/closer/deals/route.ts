@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getCloserOnlyFromSession } from "@/lib/closerGuards";
 import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
@@ -13,10 +13,12 @@ import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } fr
 import { getDealContractStatuses } from "@/lib/dealContracts";
 
 export async function GET() {
-  const session = getCloserSession();
-  if (!session) {
+  // Closer-only: setters share the c_sess cookie but have no deals surface.
+  const closer = await getCloserOnlyFromSession();
+  if (!closer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const session = { closerId: closer.id };
 
   const deals = await readDealsByCloser(session.closerId);
 
@@ -37,10 +39,11 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const session = getCloserSession();
-  if (!session) {
+  const closer = await getCloserOnlyFromSession();
+  if (!closer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const session = { closerId: closer.id };
 
   try {
     const body = await request.json();
@@ -72,7 +75,15 @@ export async function PATCH(request: Request) {
     }
     if (body.serviceCategory !== undefined) changes.serviceCategory = body.serviceCategory ? String(body.serviceCategory).trim() : null;
     if (body.industry !== undefined) changes.industry = body.industry ? String(body.industry).trim() : null;
-    if (body.closingDate !== undefined) changes.closingDate = body.closingDate ? String(body.closingDate).trim() : null;
+    if (body.closingDate !== undefined) {
+      const cd = body.closingDate ? String(body.closingDate).trim() : null;
+      // Stored dates feed string-comparison window filters — reject anything
+      // that isn't a real YYYY-MM-DD so stats bucketing can't be skewed.
+      if (cd && (!/^\d{4}-\d{2}-\d{2}$/.test(cd) || Number.isNaN(Date.parse(cd)))) {
+        return NextResponse.json({ error: "Invalid closing date" }, { status: 400 });
+      }
+      changes.closingDate = cd;
+    }
     if (body.status !== undefined) {
       const s = String(body.status).trim();
       const validStatuses = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
@@ -89,21 +100,33 @@ export async function PATCH(request: Request) {
     if (body.additionalCcEmails !== undefined) changes.additionalCcEmails = sanitizeCcEmails(body.additionalCcEmails);
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
-    if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {
-      changes.showStatus = "showed";
-      await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
-      await bestEffortPushAttendanceToGhl({
-        googleEventId: deal.googleEventId,
-        dashboardStatus: "showed",
-      });
-      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
-      await bestEffortSyncShowedDidntClose({
-        googleEventId: deal.googleEventId,
-        leadName: deal.clientName,
-      });
-    }
+    const autoShow = changes.status === "closed" && !!deal.googleEventId && !changes.showStatus;
+    if (autoShow) changes.showStatus = "showed";
 
     await updateDeal(id, changes);
+
+    // Side effects AFTER the deal write, best-effort and parallel: a failed
+    // attendance/GHL round-trip must not 500 an update that already landed
+    // (the resulting retry is what used to duplicate work), and the two GHL
+    // syncs are independent of each other.
+    if (autoShow && deal.googleEventId) {
+      try {
+        await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
+      } catch (err) {
+        console.error("[closer/deals PATCH] attendance write failed:", err);
+      }
+      await Promise.allSettled([
+        bestEffortPushAttendanceToGhl({
+          googleEventId: deal.googleEventId,
+          dashboardStatus: "showed",
+        }),
+        // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
+        bestEffortSyncShowedDidntClose({
+          googleEventId: deal.googleEventId,
+          leadName: deal.clientName,
+        }),
+      ]);
+    }
 
     // Sync email to linked invoice when clientEmail changes
     if (changes.clientEmail !== undefined) {
@@ -127,10 +150,11 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = getCloserSession();
-  if (!session) {
+  const closer = await getCloserOnlyFromSession();
+  if (!closer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const session = { closerId: closer.id };
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

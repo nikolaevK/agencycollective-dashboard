@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { readClosers } from "@/lib/closers";
 import {
   createNote,
@@ -17,7 +17,7 @@ import {
 } from "@/lib/notes";
 
 export async function GET() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -39,7 +39,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -160,6 +160,16 @@ export async function PATCH(request: Request) {
     if (body.setterId !== undefined) {
       changes.setterId = body.setterId ? String(body.setterId).trim() : null;
     }
+    // Any admin edit to setter attribution pins the deal: setter-side saves
+    // (reassignDealsForEvent) must not revert it. Only stamped when the edit
+    // actually diverges from the stored values, so an admin re-saving the
+    // unchanged form doesn't needlessly freeze auto-attribution.
+    if (
+      (changes.setterTier !== undefined && changes.setterTier !== deal.setterTier) ||
+      (changes.setterId !== undefined && changes.setterId !== deal.setterId)
+    ) {
+      changes.setterOverride = true;
+    }
 
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { readClosers } from "@/lib/closers";
 
 /**
@@ -11,7 +11,7 @@ import { readClosers } from "@/lib/closers";
  * a list to select.
  */
 export async function GET() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

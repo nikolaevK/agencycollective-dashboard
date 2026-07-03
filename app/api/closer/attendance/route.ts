@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import {
   setEventAttendance,
   getAttendanceByCloser,
@@ -18,7 +18,7 @@ import {
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 
 export async function GET() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -44,7 +44,7 @@ interface AttendancePatchBody {
 }
 
 export async function PATCH(request: Request) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -129,7 +129,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -3,14 +3,14 @@ export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { buildCrossReference, type CrossReferenceEvent } from "@/lib/ghl/crossReference";
 import { GhlApiError, GhlNotConfiguredError, describeError } from "@/lib/ghl/client";
 
 const MAX_EVENTS = 200;
 
 export async function POST(req: Request) {
-  if (!getAdminSession() && !getCloserSession()) {
+  if (!getAdminSession() && !(await getActiveCloserSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

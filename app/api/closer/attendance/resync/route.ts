@@ -5,7 +5,7 @@ export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import {
   syncEventAttendanceToGhl,
   syncEventAttendanceFromGhl,
@@ -55,7 +55,7 @@ interface ResyncBody {
  */
 export async function POST(request: Request) {
   const adminSession = getAdminSession();
-  const closerSession = getCloserSession();
+  const closerSession = await getActiveCloserSession();
   if (!adminSession && !closerSession) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   };
 
   if (direction === "push") {
-    const teamLatest = await getLatestAttendanceByEvent();
+    const teamLatest = await getLatestAttendanceByEvent([eventId]);
     const dashboardStatus =
       (teamLatest[eventId] as "showed" | "no_show" | undefined) ?? null;
     const result = await syncEventAttendanceToGhl({ evt, dashboardStatus });

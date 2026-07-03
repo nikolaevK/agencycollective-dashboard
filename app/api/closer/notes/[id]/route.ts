@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { readClosers } from "@/lib/closers";
 import {
   deleteNote,
@@ -32,7 +32,7 @@ async function loadOwnedNote(id: string, ownerId: string) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -113,7 +113,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

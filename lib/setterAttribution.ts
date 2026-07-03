@@ -43,11 +43,10 @@ export async function resolveSetterForEvent(
  * Idempotent: runs one UPDATE per deal even if values don't change. Safe to
  * call without knowing whether a matching deal exists.
  *
- * Skips deals that already carry an admin-set tier override — those have
- * been manually pinned and shouldn't be reverted by setter-side activity.
- * (Admin override is identified by setter_tier on a deal whose appointment
- * has a *different* tier; any time an admin diverges from the setter's
- * claim, that deal becomes "manual".)
+ * Skips deals that already carry an admin-set override — those have been
+ * manually pinned and shouldn't be reverted by setter-side activity.
+ * (Admin override is the explicit `setter_override` flag, stamped whenever
+ * an admin edits a deal's setter_id/setter_tier.)
  */
 export async function reassignDealsForEvent(
   googleEventId: string
@@ -62,6 +61,7 @@ export async function reassignDealsForEvent(
     sql: `UPDATE deals
              SET setter_id = ?, setter_tier = ?, updated_at = datetime('now')
            WHERE google_event_id = ?
+             AND COALESCE(setter_override, 0) = 0
              AND (
                COALESCE(setter_id, '') != COALESCE(?, '')
                OR COALESCE(setter_tier, '') != COALESCE(?, '')

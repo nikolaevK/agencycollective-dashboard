@@ -7,7 +7,7 @@ export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getLatestAttendanceByEvent } from "@/lib/eventAttendance";
 import {
   listAllLinks,
@@ -56,19 +56,20 @@ function mapGhlToDashboard(s: string | null): "showed" | "no_show" | null {
 async function buildResponse(
   visibleEvents: DiscoveryEvent[] | null
 ): Promise<ResponseShape> {
-  const data = await getLatestAttendanceByEvent();
+  // Narrow BOTH the attendance map and the link query to just the events the
+  // caller is rendering when we have that list (all-time attendance grows
+  // forever and this route is polled every 120s per open tab). Falls back to
+  // the unfiltered behavior for the legacy GET path where coords aren't sent.
+  const visibleIds = visibleEvents
+    ? visibleEvents.map((e) => e.id).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : null;
+
+  const data = await getLatestAttendanceByEvent(visibleIds ?? undefined);
   const sync: Record<string, SyncEntry> = {};
 
   if (!isAnyGhlConfigured()) {
     return { data, sync };
   }
-
-  // Narrow the link query to just the events the caller is rendering when
-  // we have that list. Falls back to listing every link row for the legacy
-  // GET path (setter dashboard) where coords aren't sent.
-  const visibleIds = visibleEvents
-    ? visibleEvents.map((e) => e.id).filter((id): id is string => typeof id === "string" && id.length > 0)
-    : null;
 
   const configuredSubs = getConfiguredSubAccountIds();
   const [existingLinks, ...apptResults] = await Promise.all([
@@ -266,8 +267,11 @@ async function buildResponse(
   return { data, sync };
 }
 
-function authorize(): boolean {
-  return getAdminSession() !== null || getCloserSession() !== null;
+async function authorize(): Promise<boolean> {
+  if (getAdminSession() !== null) return true;
+  // DB-verified: a deactivated closer/setter row must not keep reading
+  // team-wide attendance until their cookie expires.
+  return (await getActiveCloserSession()) !== null;
 }
 
 /**
@@ -284,7 +288,7 @@ function authorize(): boolean {
  *      appears on the first load.
  */
 export async function GET() {
-  if (!authorize()) {
+  if (!(await authorize())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await buildResponse(null);
@@ -292,7 +296,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!authorize()) {
+  if (!(await authorize())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   let parsed: { events?: DiscoveryEvent[] };

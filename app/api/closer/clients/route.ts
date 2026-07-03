@@ -1,11 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getDb, ensureMigrated } from "@/lib/db";
 
 export async function GET(request: Request) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

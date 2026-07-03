@@ -2,13 +2,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { isCalendarConnected } from "@/lib/google/tokenStorage";
 
 export async function GET() {
   // Allow both admin and closer sessions
   const adminSession = getAdminSession();
-  const closerSession = getCloserSession();
+  const closerSession = await getActiveCloserSession();
 
   if (!adminSession && !closerSession) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
-import { findCloser } from "@/lib/closers";
+import { getActiveCloserFromSession } from "@/lib/closerGuards";
 import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
 import {
@@ -14,15 +13,12 @@ import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 
 export async function GET(request: Request) {
-  const session = getCloserSession();
-  if (!session) {
+  // One DB-verified lookup covers auth (active row) and the closer record.
+  const closer = await getActiveCloserFromSession();
+  if (!closer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const closer = await findCloser(session.closerId);
-  if (!closer) {
-    return NextResponse.json({ error: "Closer not found" }, { status: 404 });
-  }
+  const session = { closerId: closer.id };
 
   // Optional time-frame window — same shape used by the admin queue.
   // Validated against YYYY-MM-DD so client can't smuggle SQL through.

@@ -35,6 +35,7 @@ export function LinkEventDealModal({ event, onClose }: Props) {
         {/* Form */}
         <div className="p-6">
           <UnifiedDealForm
+            key={event.id}
             mode="create"
             context="calendar-link"
             calendarEvent={{ id: event.id, title: event.title, date: eventDate }}

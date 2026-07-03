@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { findNote, isShareRecipient, setShareArchived } from "@/lib/notes";
 
 interface Params {
@@ -17,7 +17,7 @@ interface Params {
  *   409 if the caller *is* the owner.
  */
 export async function POST(request: Request, { params }: Params) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

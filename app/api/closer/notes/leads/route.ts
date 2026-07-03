@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
-import { findCloser } from "@/lib/closers";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getDb, ensureMigrated } from "@/lib/db";
 import { getCalendarEvents } from "@/lib/google/calendar";
 
@@ -25,17 +24,13 @@ export interface NoteLead {
  * to keep the endpoint simple. Bounded at 300 items.
  */
 export async function GET() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   await ensureMigrated();
   const db = getDb();
-  const closer = await findCloser(session.closerId);
-  if (!closer) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
 
   const leads: NoteLead[] = [];
   const seenEventIds = new Set<string>();
@@ -54,32 +49,10 @@ export async function GET() {
     leads.push(lead);
   };
 
-  const isSetter = closer.role === "setter";
+  const isSetter = session.role === "setter";
 
-  // 1. User's own claimed appointments (setters)
-  if (isSetter) {
-    const appts = await db.execute({
-      sql: `SELECT google_event_id, client_name, client_email, scheduled_at
-              FROM appointments
-             WHERE setter_id = ?
-             ORDER BY updated_at DESC
-             LIMIT 500`,
-      args: [session.closerId],
-    });
-    for (const row of appts.rows) {
-      const clientName = row.client_name != null ? String(row.client_name) : "Appointment";
-      pushLead({
-        label: clientName,
-        subLabel: row.scheduled_at != null ? String(row.scheduled_at) : null,
-        googleEventId: String(row.google_event_id),
-        dealId: null,
-        clientEmail: row.client_email != null ? String(row.client_email) : null,
-        kind: "appointment",
-      });
-    }
-  }
-
-  // 2. Deals owned by this user (closer_id) or credited (setter_id)
+  // Independent queries — run them concurrently instead of stacking four
+  // sequential Turso round-trips; push order below stays deterministic.
   const dealsSql = isSetter
     ? `SELECT id, client_name, client_email, deal_value, google_event_id, closing_date, status
          FROM deals WHERE setter_id = ? OR closer_id = ?
@@ -88,32 +61,7 @@ export async function GET() {
          FROM deals WHERE closer_id = ?
          ORDER BY created_at DESC LIMIT 500`;
   const dealsArgs = isSetter ? [session.closerId, session.closerId] : [session.closerId];
-  const dealsRes = await db.execute({ sql: dealsSql, args: dealsArgs });
-  for (const row of dealsRes.rows) {
-    const clientName = String(row.client_name ?? "Deal");
-    const dealValueCents = Number(row.deal_value ?? 0);
-    const dollars = dealValueCents / 100;
-    const status = String(row.status ?? "");
-    const subParts = [
-      status ? status.replace(/_/g, " ") : null,
-      dealValueCents > 0 ? `$${dollars.toLocaleString()}` : null,
-      row.closing_date != null ? String(row.closing_date) : null,
-    ].filter(Boolean);
-    pushLead({
-      label: clientName,
-      subLabel: subParts.length ? subParts.join(" · ") : null,
-      googleEventId: row.google_event_id != null ? String(row.google_event_id) : null,
-      dealId: String(row.id),
-      clientEmail: row.client_email != null ? String(row.client_email) : null,
-      kind: "deal",
-    });
-  }
-
-  // 3+4. Attendance-marked events. Setters see team-wide; closers see only
-  // the events they marked. Same SQL shape for both statuses; only the
-  // WHERE clause and the placeholder/kind change. Pushed in order
-  // showed → no_show so a setter following up sees the no-show context
-  // last (most actionable) but neither hides the other from the picker.
+  // Setters see team-wide attendance; closers only the events they marked.
   // Status is parameterized (not interpolated) per CLAUDE.md's no-string-
   // concatenation rule, even though TS narrows it to two literals.
   const attendanceSql = isSetter
@@ -140,9 +88,65 @@ export async function GET() {
          ORDER BY ea.updated_at DESC
          LIMIT 500`;
 
-  for (const status of ["showed", "no_show"] as const) {
-    const args = isSetter ? [status] : [status, session.closerId];
-    const res = await db.execute({ sql: attendanceSql, args });
+  const [appts, dealsRes, showedRes, noShowRes] = await Promise.all([
+    isSetter
+      ? db.execute({
+          sql: `SELECT google_event_id, client_name, client_email, scheduled_at
+                  FROM appointments
+                 WHERE setter_id = ?
+                 ORDER BY updated_at DESC
+                 LIMIT 500`,
+          args: [session.closerId],
+        })
+      : Promise.resolve(null),
+    db.execute({ sql: dealsSql, args: dealsArgs }),
+    db.execute({ sql: attendanceSql, args: isSetter ? ["showed"] : ["showed", session.closerId] }),
+    db.execute({ sql: attendanceSql, args: isSetter ? ["no_show"] : ["no_show", session.closerId] }),
+  ]);
+
+  // 1. User's own claimed appointments (setters)
+  if (appts) {
+    for (const row of appts.rows) {
+      const clientName = row.client_name != null ? String(row.client_name) : "Appointment";
+      pushLead({
+        label: clientName,
+        subLabel: row.scheduled_at != null ? String(row.scheduled_at) : null,
+        googleEventId: String(row.google_event_id),
+        dealId: null,
+        clientEmail: row.client_email != null ? String(row.client_email) : null,
+        kind: "appointment",
+      });
+    }
+  }
+
+  // 2. Deals owned by this user (closer_id) or credited (setter_id)
+  for (const row of dealsRes.rows) {
+    const clientName = String(row.client_name ?? "Deal");
+    const dealValueCents = Number(row.deal_value ?? 0);
+    const dollars = dealValueCents / 100;
+    const status = String(row.status ?? "");
+    const subParts = [
+      status ? status.replace(/_/g, " ") : null,
+      dealValueCents > 0 ? `$${dollars.toLocaleString()}` : null,
+      row.closing_date != null ? String(row.closing_date) : null,
+    ].filter(Boolean);
+    pushLead({
+      label: clientName,
+      subLabel: subParts.length ? subParts.join(" · ") : null,
+      googleEventId: row.google_event_id != null ? String(row.google_event_id) : null,
+      dealId: String(row.id),
+      clientEmail: row.client_email != null ? String(row.client_email) : null,
+      kind: "deal",
+    });
+  }
+
+  // 3+4. Attendance-marked events, pushed in order showed → no_show so a
+  // setter following up sees the no-show context last (most actionable) but
+  // neither hides the other from the picker.
+  for (const { status, res } of [
+    { status: "showed" as const, res: showedRes },
+    { status: "no_show" as const, res: noShowRes },
+  ]) {
     const placeholder = status === "showed" ? "Showed" : "No-show";
     for (const row of res.rows) {
       pushLead({
@@ -179,11 +183,15 @@ export async function GET() {
   );
   if (needsEnrichment.length > 0) {
     try {
-      // Two-year window matches the no-show enrichment; Google calls are
-      // cached (TTL.GOOGLE_EVENTS) so repeat loads reuse the response.
-      const now = Date.now();
-      const timeMin = new Date(now - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
-      const timeMax = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+      // 90-day window matches the no-show enrichment cap (older leads keep
+      // their placeholder labels rather than widening every fetch to years
+      // of events). Rounded to UTC day boundaries so concurrent loads share
+      // one getCalendarEvents cache key (ms-precision bounds would make the
+      // 2-min Google cache useless across requests).
+      const dayMs = 24 * 60 * 60 * 1000;
+      const todayMs = Math.floor(Date.now() / dayMs) * dayMs;
+      const timeMin = new Date(todayMs - 90 * dayMs).toISOString();
+      const timeMax = new Date(todayMs + dayMs).toISOString();
       const events = await getCalendarEvents(timeMin, timeMax);
       const byId = new Map(events.map((e) => [e.id, e]));
       for (const lead of bounded) {

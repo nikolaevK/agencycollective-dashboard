@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { findDealContractByDealId } from "@/lib/dealContracts";
 import { findDeal } from "@/lib/deals";
 
 export async function GET(req: NextRequest) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const dealId = req.nextUrl.searchParams.get("dealId");

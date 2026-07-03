@@ -469,6 +469,7 @@ export default function CloserCalendarPage() {
                 </div>
                 <div className="p-6">
                   <UnifiedDealForm
+                    key={deal.id}
                     mode="edit"
                     context="closer"
                     initialData={deal}

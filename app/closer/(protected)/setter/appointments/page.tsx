@@ -63,14 +63,29 @@ export default function SetterAppointmentsPage() {
   });
 
   // Team-wide attendance (read-only for setters — closers write to it).
+  // POST the visible week's events (like the closer calendar) so the server
+  // narrows attendance + GHL-link work to those events instead of the legacy
+  // GET path that enumerates every link row and all-time attendance.
   const { data: attendance = {} } = useQuery<Record<string, string>>({
-    queryKey: ["team-attendance"],
+    queryKey: ["team-attendance", weekStart.toISOString()],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/attendance");
+      const res = await fetch("/api/calendar/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          events: events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            start: e.start,
+            end: e.end,
+          })),
+        }),
+      });
       if (!res.ok) return {};
       const json = await res.json();
       return json.data ?? {};
     },
+    enabled: events.length > 0,
     staleTime: 30_000,
   });
 

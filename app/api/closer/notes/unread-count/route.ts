@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { getUnreadSharedNotesCount } from "@/lib/notes";
 
 /**
@@ -10,7 +10,7 @@ import { getUnreadSharedNotesCount } from "@/lib/notes";
  * archived shares never count.
  */
 export async function GET() {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

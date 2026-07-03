@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import crypto from "crypto";
-import { getCloserSession } from "@/lib/closerSession";
-import { findDeal, insertDeal, updateDeal, deleteDeal, sanitizeCcEmails } from "@/lib/deals";
+import { getCloserOnlyFromSession } from "@/lib/closerGuards";
+import { findDeal, insertDeal, updateDeal, deleteDeal, findDealByCloserAndEvent, sanitizeCcEmails } from "@/lib/deals";
 import { ensureMigrated } from "@/lib/db";
 import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
@@ -19,8 +19,23 @@ import { sendPushToAllAdmins } from "@/lib/pushNotifications";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Stored dates feed string-comparison window filters — only accept a real
+ *  YYYY-MM-DD (or empty). */
+function isValidDateOrEmpty(value: string | null): boolean {
+  return !value || (YMD_RE.test(value) && !Number.isNaN(Date.parse(value)));
+}
+
+/** Server actions are directly invocable, so the closers-only page gate is
+ *  not enough — a setter session (shared c_sess) must not create/mutate
+ *  closer-attributed deals, and a deactivated row must be rejected. */
+async function requireCloserForDeals(): Promise<{ closerId: string } | null> {
+  const closer = await getCloserOnlyFromSession();
+  return closer ? { closerId: closer.id } : null;
+}
+
 export async function createDealAction(formData: FormData): Promise<{ error?: string }> {
-  const session = getCloserSession();
+  const session = await requireCloserForDeals();
   if (!session) return { error: "Unauthorized" };
 
   await ensureMigrated();
@@ -44,10 +59,26 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
   }
 
   const dealValueDollars = parseFloat(dealValueStr) || 0;
+  if (!Number.isFinite(dealValueDollars) || dealValueDollars < 0 || dealValueDollars > 10_000_000) {
+    return { error: "Invalid deal value" };
+  }
   if (status !== "not_closed" && dealValueDollars <= 0) {
     return { error: "Deal value must be greater than 0" };
   }
   const dealValue = Math.round(dealValueDollars * 100);
+
+  if (!isValidDateOrEmpty(closingDate)) {
+    return { error: "Invalid closing date" };
+  }
+
+  // One deal per (closer, event): a double-submit or a retry after a failed
+  // post-insert side effect otherwise duplicates the deal and its invoice.
+  if (googleEventId) {
+    const existing = await findDealByCloserAndEvent(session.closerId, googleEventId);
+    if (existing) {
+      return { error: "You already have a deal linked to this event." };
+    }
+  }
 
   const id = crypto.randomUUID();
 
@@ -87,32 +118,42 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     website,
     paidStatus: "unpaid",
     additionalCcEmails,
+    setterOverride: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
 
-  // Auto-set attendance when deal is closed and linked to calendar event
+  // Auto-set attendance when deal is closed and linked to calendar event.
+  // Best-effort and parallel: the deal is already inserted, so a failed
+  // attendance/GHL round-trip must not fail the action (the resulting user
+  // retry is what used to create duplicate deals).
   if (status === "closed" && googleEventId) {
-    await setEventAttendance(googleEventId, session.closerId, "showed");
+    try {
+      await setEventAttendance(googleEventId, session.closerId, "showed");
+    } catch (err) {
+      console.error("[createDealAction] attendance write failed:", err);
+    }
     // Push to GHL if this event is linked. No coords on hand here, so
     // first-sight resolution can't run — drift detection on the next
     // calendar read covers that case.
-    await bestEffortPushAttendanceToGhl({
-      googleEventId,
-      dashboardStatus: "showed",
-    });
-    // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
-    await bestEffortSyncShowedDidntClose({
-      googleEventId,
-      leadName: clientName,
-    });
+    await Promise.allSettled([
+      bestEffortPushAttendanceToGhl({
+        googleEventId,
+        dashboardStatus: "showed",
+      }),
+      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage).
+      bestEffortSyncShowedDidntClose({
+        googleEventId,
+        leadName: clientName,
+      }),
+    ]);
   }
 
   // Auto-generate invoice for closed deals
   if (status === "closed" && dealValue > 0) {
     try {
       const invoiceNumber = await generateInvoiceNumber();
-      const deal = { id, closerId: session.closerId, setterId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, setterTier, noRetainer: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const deal = { id, closerId: session.closerId, setterId, clientName, clientUserId, clientEmail, dealValue, serviceCategory, industry, closingDate, status, showStatus: null as "showed" | "no_show" | null, notes, googleEventId, paymentType, brandName, website, paidStatus: "unpaid" as const, additionalCcEmails, setterTier, noRetainer: false, setterOverride: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const invoiceData = await generateInvoiceFromDeal(deal, clientEmail, invoiceNumber);
       await insertDealInvoice({
         id: crypto.randomUUID(),
@@ -171,7 +212,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
 }
 
 export async function updateDealAction(formData: FormData): Promise<{ error?: string }> {
-  const session = getCloserSession();
+  const session = await requireCloserForDeals();
   if (!session) return { error: "Unauthorized" };
 
   await ensureMigrated();
@@ -199,6 +240,9 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
   const dealValueStr = formData.get("dealValue") as string | null;
   if (dealValueStr !== null) {
     const dealValueDollars = parseFloat(dealValueStr) || 0;
+    if (!Number.isFinite(dealValueDollars) || dealValueDollars < 0 || dealValueDollars > 10_000_000) {
+      return { error: "Invalid deal value" };
+    }
     changes.dealValue = Math.round(dealValueDollars * 100);
   }
 
@@ -214,7 +258,11 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
 
   const closingDate = formData.get("closingDate") as string | null;
   if (closingDate !== null) {
-    changes.closingDate = closingDate.trim() || null;
+    const cd = closingDate.trim() || null;
+    if (!isValidDateOrEmpty(cd)) {
+      return { error: "Invalid closing date" };
+    }
+    changes.closingDate = cd;
   }
 
   const status = formData.get("status") as string | null;
@@ -238,7 +286,7 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
 }
 
 export async function deleteDealAction(id: string): Promise<{ error?: string }> {
-  const session = getCloserSession();
+  const session = await requireCloserForDeals();
   if (!session) return { error: "Unauthorized" };
 
   await ensureMigrated();

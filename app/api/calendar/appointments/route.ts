@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { findCloser } from "@/lib/closers";
 import { getAppointmentsIndex } from "@/lib/appointments";
 
@@ -14,7 +14,7 @@ import { getAppointmentsIndex } from "@/lib/appointments";
  */
 export async function GET() {
   const adminSession = getAdminSession();
-  const closerSession = getCloserSession();
+  const closerSession = await getActiveCloserSession();
 
   if (!adminSession && !closerSession) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -168,6 +168,11 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "appointments",           column: "setter_tier_at",     defn: "TEXT" },
     { table: "deals",                  column: "setter_tier",        defn: "TEXT" },
     { table: "deals",                  column: "no_retainer",        defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Admin pinned setter attribution (§3.4 dispute overrides). When 1,
+    // reassignDealsForEvent skips the deal so setter-side saves can't
+    // revert the admin's setter_id/setter_tier. Read on every attribution
+    // pass, so it must self-heal here.
+    { table: "deals",                  column: "setter_override",    defn: "INTEGER NOT NULL DEFAULT 0" },
     // Multi-sub-account GHL — runtime push/pull breaks without this.
     // Must self-heal because the SCHEMA_VERSION probe below was already
     // stamped on existing deploys when this column didn't exist yet.
@@ -304,6 +309,16 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     writes.push(
       `CREATE INDEX IF NOT EXISTS idx_deals_status_created
        ON deals(status, created_at DESC)`
+    );
+  }
+  //  - deals.google_event_id: attribution UPDATEs (reassignDealsForEvent on
+  //    every setter claim/tier save + deal link), setter Tier-C anti-stacking
+  //    NOT EXISTS (per appointment row), and the calendar/lead joins were all
+  //    full-table scans without it. Partial: most manual deals have NULL.
+  if (colsByTable.get("deals")?.has("google_event_id")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_deals_google_event
+       ON deals(google_event_id) WHERE google_event_id IS NOT NULL`
     );
   }
   // COVERING indexes for the deal-queue status lookups

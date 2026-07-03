@@ -406,6 +406,7 @@ export function CloserRecentDeals({ deals }: Props) {
           </div>
           <div className="p-6">
             <UnifiedDealForm
+              key={editDeal.id}
               mode="edit"
               context="closer"
               initialData={editDeal}

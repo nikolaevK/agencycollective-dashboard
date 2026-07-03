@@ -68,7 +68,11 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
           notes,
           preCallStatus,
           postCallStatus,
-          setterTier,
+          // Only send the tier when it actually changed. The route re-runs
+          // deal attribution whenever setterTier is present in the body, so
+          // including the unchanged value on a notes-only save would re-run
+          // it on every edit. (undefined keys are dropped by JSON.stringify.)
+          ...(setterTier !== appointment.setterTier ? { setterTier } : {}),
         }),
       });
       if (!res.ok) {

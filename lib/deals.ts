@@ -32,6 +32,9 @@ export interface DealRecord {
   setterTier: SetterTier | null;
   /** Admin-set flag (§3.8): caps total commission at $500 for this deal. */
   noRetainer: boolean;
+  /** Admin pinned setter attribution (§3.4). When true,
+   *  reassignDealsForEvent leaves setter_id/setter_tier untouched. */
+  setterOverride: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,6 +102,7 @@ function rowToDeal(row: Row): DealRecord {
     additionalCcEmails: parseCcEmails(row.additional_cc_emails),
     setterTier: isSetterTier(tierRaw) ? tierRaw : null,
     noRetainer: Number(row.no_retainer ?? 0) === 1,
+    setterOverride: Number(row.setter_override ?? 0) === 1,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -141,14 +145,34 @@ export async function readDeals(
   return result.rows.map(rowToDeal);
 }
 
-export async function readDealsByCloser(closerId: string): Promise<DealRecord[]> {
+/**
+ * Bounded so the polled closer dashboard/deals list doesn't re-download an
+ * ever-growing full history every refetch. 500 covers the visible tables;
+ * lifetime numbers come from getCloserDealStats aggregates, not this list.
+ */
+export async function readDealsByCloser(closerId: string, limit = 500): Promise<DealRecord[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
-    sql: "SELECT * FROM deals WHERE closer_id = ? ORDER BY created_at DESC",
+    sql: `SELECT * FROM deals WHERE closer_id = ? ORDER BY created_at DESC LIMIT ${Math.max(1, Math.floor(limit))}`,
     args: [closerId],
   });
   return result.rows.map(rowToDeal);
+}
+
+/** Duplicate guard for event-linked deal creation (served by
+ *  idx_deals_google_event). */
+export async function findDealByCloserAndEvent(
+  closerId: string,
+  googleEventId: string
+): Promise<DealRecord | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM deals WHERE google_event_id = ? AND closer_id = ? LIMIT 1",
+    args: [googleEventId, closerId],
+  });
+  return result.rows[0] ? rowToDeal(result.rows[0]) : null;
 }
 
 export async function findDeal(id: string): Promise<DealRecord | null> {
@@ -275,6 +299,10 @@ export async function updateDeal(
   if (changes.noRetainer !== undefined) {
     fields.push("no_retainer = ?");
     args.push(changes.noRetainer ? 1 : 0);
+  }
+  if (changes.setterOverride !== undefined) {
+    fields.push("setter_override = ?");
+    args.push(changes.setterOverride ? 1 : 0);
   }
 
   if (fields.length === 0) return;

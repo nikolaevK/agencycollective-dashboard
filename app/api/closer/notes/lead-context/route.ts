@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getCloserSession } from "@/lib/closerSession";
+import { getActiveCloserSession } from "@/lib/closerGuards";
 import { ensureMigrated, getDb } from "@/lib/db";
 import { getCalendarEvents } from "@/lib/google/calendar";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
@@ -20,7 +20,7 @@ import { findLinkByGoogleEventId } from "@/lib/ghlAppointmentLinks";
  * should also see the rest of the lead's history.
  */
 export async function GET(request: Request) {
-  const session = getCloserSession();
+  const session = await getActiveCloserSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
