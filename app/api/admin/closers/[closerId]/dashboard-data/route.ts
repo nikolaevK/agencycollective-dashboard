@@ -4,7 +4,13 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { findCloser, readClosers } from "@/lib/closers";
-import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
+import {
+  readDealsByCloser,
+  getCloserDealStats,
+  getCloserChartDeals,
+  getCloserMonthToDate,
+  previousWindowBounds,
+} from "@/lib/deals";
 import {
   enrichNoShowsFromCalendar,
   getAttendanceFollowUpsForCloser,
@@ -89,14 +95,19 @@ export async function GET(
   }
 
   // Closer (default for any non-setter role).
-  const [deals, stats, lifetimeShow, windowResult, rawNoShows, rawShowed] = await Promise.all([
-    readDealsByCloser(target.id),
-    getCloserDealStats(target.id, { since, until }),
-    getCloserShowRate(target.id),
-    since && until ? getCloserShowRate(target.id, { since, until }) : null,
-    getAttendanceFollowUpsForCloser(target.id, "no_show"),
-    getAttendanceFollowUpsForCloser(target.id, "showed"),
-  ]);
+  const prevBounds = since && until ? previousWindowBounds(since, until) : null;
+  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed] =
+    await Promise.all([
+      readDealsByCloser(target.id),
+      getCloserDealStats(target.id, { since, until }),
+      getCloserMonthToDate(target.id),
+      getCloserChartDeals(target.id),
+      getCloserShowRate(target.id),
+      since && until ? getCloserShowRate(target.id, { since, until }) : null,
+      prevBounds ? getCloserShowRate(target.id, prevBounds) : null,
+      getAttendanceFollowUpsForCloser(target.id, "no_show"),
+      getAttendanceFollowUpsForCloser(target.id, "showed"),
+    ]);
   const windowShow = windowResult ?? lifetimeShow;
   // Splice in attendance-sourced show metrics so the admin sees the same
   // numbers the closer sees in their own dashboard.
@@ -106,6 +117,11 @@ export async function GET(
   stats.window.showCount = windowShow.showCount;
   stats.window.noShowCount = windowShow.noShowCount;
   stats.window.showRate = windowShow.showRate;
+  if (stats.previous && previousShowResult) {
+    stats.previous.showCount = previousShowResult.showCount;
+    stats.previous.noShowCount = previousShowResult.noShowCount;
+    stats.previous.showRate = previousShowResult.showRate;
+  }
 
   const enriched = await enrichNoShowsFromCalendar([...rawNoShows, ...rawShowed]);
   const noShowFollowUps = enriched.slice(0, rawNoShows.length);
@@ -131,6 +147,8 @@ export async function GET(
           commissionRate: target.commissionRate,
         },
         stats,
+        monthToDate,
+        chartDeals,
         timeFrame,
         recentDeals: deals.map((d) => ({
           ...d,

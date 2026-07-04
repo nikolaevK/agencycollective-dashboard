@@ -6,11 +6,23 @@
  * already understands.
  */
 
-export type TimeFrameKey = "week" | "month" | "quarter" | "year" | "all" | "custom";
+export type TimeFrameKey =
+  | "today"
+  | "week"
+  | "month"
+  | "prevMonth"
+  | "last30"
+  | "quarter"
+  | "year"
+  | "all"
+  | "custom";
 
 export const TIME_FRAME_LABELS: Record<TimeFrameKey, string> = {
+  today: "Today",
   week: "This week",
   month: "This month",
+  prevMonth: "Last month",
+  last30: "Last 30 days",
   quarter: "This quarter",
   year: "This year",
   all: "All time",
@@ -18,8 +30,11 @@ export const TIME_FRAME_LABELS: Record<TimeFrameKey, string> = {
 };
 
 export const TIME_FRAME_OPTIONS: { value: Exclude<TimeFrameKey, "custom">; label: string }[] = [
+  { value: "today", label: "Today" },
   { value: "week", label: "This week" },
   { value: "month", label: "This month" },
+  { value: "prevMonth", label: "Last month" },
+  { value: "last30", label: "Last 30 days" },
   { value: "quarter", label: "This quarter" },
   { value: "year", label: "This year" },
   { value: "all", label: "All time" },
@@ -50,6 +65,7 @@ export function buildTimeFrame(
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let start = today;
+  let end = today;
 
   if (key === "week") {
     // Monday = start of week (matches the rest of the project, which uses
@@ -59,6 +75,11 @@ export function buildTimeFrame(
     start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offsetToMonday);
   } else if (key === "month") {
     start = new Date(today.getFullYear(), today.getMonth(), 1);
+  } else if (key === "prevMonth") {
+    start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    end = new Date(today.getFullYear(), today.getMonth(), 0); // last day of prev month
+  } else if (key === "last30") {
+    start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
   } else if (key === "quarter") {
     const q = Math.floor(today.getMonth() / 3);
     start = new Date(today.getFullYear(), q * 3, 1);
@@ -66,7 +87,7 @@ export function buildTimeFrame(
     start = new Date(today.getFullYear(), 0, 1);
   }
 
-  return { key, since: ymd(start), until: ymd(today) };
+  return { key, since: ymd(start), until: ymd(end) };
 }
 
 /** Custom range — caller supplies bounds. Returns the canonical TimeFrame. */

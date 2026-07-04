@@ -12,20 +12,27 @@ export interface EventAttendance {
 
 /**
  * Upsert show/no-show for a calendar event.
+ *
+ * `eventDateYmd` (business-timezone yyyy-mm-dd of the event's start) anchors
+ * windowed show-rate math to the day the call actually happened. Optional —
+ * callers without event coordinates (deal-linked auto-marks) leave it null
+ * and the queries fall back to created_at. COALESCE keeps an existing value
+ * when a later write can't supply one.
  */
 export async function setEventAttendance(
   googleEventId: string,
   closerId: string,
-  showStatus: AttendanceStatus
+  showStatus: AttendanceStatus,
+  eventDateYmd: string | null = null
 ): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO event_attendance (google_event_id, closer_id, show_status)
-          VALUES (?, ?, ?)
+    sql: `INSERT INTO event_attendance (google_event_id, closer_id, show_status, event_date)
+          VALUES (?, ?, ?, ?)
           ON CONFLICT(google_event_id, closer_id)
-          DO UPDATE SET show_status = ?, updated_at = datetime('now')`,
-    args: [googleEventId, closerId, showStatus, showStatus],
+          DO UPDATE SET show_status = ?, event_date = COALESCE(?, event_date), updated_at = datetime('now')`,
+    args: [googleEventId, closerId, showStatus, eventDateYmd, showStatus, eventDateYmd],
   });
 }
 
@@ -96,8 +103,12 @@ export async function getAllAttendance(): Promise<EventAttendance[]> {
  * Get show rate stats for a closer. Source is `event_attendance` (every
  * event the closer marked, with or without a linked deal) — that's the
  * closer's mental model of "how often does my prospect show up". Optional
- * window filters by `event_attendance.updated_at` so callers can match a
- * dashboard time-frame.
+ * window filters by the event's actual day (`event_date`, stamped from the
+ * calendar event's start when the mark is made), falling back to the day the
+ * mark was first written (`created_at`) for legacy/backfilled rows. NOT
+ * `updated_at`: toggling an old mark, or a GHL status re-sync bumping
+ * updated_at, would silently move the event into the current window and out
+ * of the one it was reported in.
  */
 export async function getCloserShowRate(
   closerId: string,
@@ -112,11 +123,11 @@ export async function getCloserShowRate(
   const conditions: string[] = ["closer_id = ?"];
   const values: string[] = [closerId];
   if (opts.since) {
-    conditions.push("substr(updated_at,1,10) >= ?");
+    conditions.push("substr(COALESCE(event_date, created_at),1,10) >= ?");
     values.push(opts.since);
   }
   if (opts.until) {
-    conditions.push("substr(updated_at,1,10) <= ?");
+    conditions.push("substr(COALESCE(event_date, created_at),1,10) <= ?");
     values.push(opts.until);
   }
   const result = await db.execute({
@@ -528,7 +539,8 @@ export async function enrichNoShowsFromCalendar(
 /**
  * Get team-wide show rate stats with per-closer breakdown. Same source +
  * window semantics as getCloserShowRate (event_attendance, filtered by
- * updated_at), so admin and closer surfaces report the same numbers.
+ * event_date falling back to created_at), so admin and closer surfaces
+ * report the same numbers.
  */
 export async function getTeamShowRate(
   opts: { since?: string; until?: string } = {}
@@ -549,11 +561,11 @@ export async function getTeamShowRate(
   const conditions: string[] = [];
   const values: string[] = [];
   if (opts.since) {
-    conditions.push("substr(updated_at,1,10) >= ?");
+    conditions.push("substr(COALESCE(event_date, created_at),1,10) >= ?");
     values.push(opts.since);
   }
   if (opts.until) {
-    conditions.push("substr(updated_at,1,10) <= ?");
+    conditions.push("substr(COALESCE(event_date, created_at),1,10) <= ?");
     values.push(opts.until);
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

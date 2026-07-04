@@ -11,11 +11,14 @@ import { RecentDealsTable } from "@/components/closers/RecentDealsTable";
 import { CloserStatusBadge } from "@/components/closers/CloserStatusBadge";
 import { CloserRoleBadge } from "@/components/closers/CloserRoleBadge";
 import type { CloserPublic, DealPublic } from "@/components/closers/types";
-import type { CloserDealStats } from "@/lib/deals";
+import type { ChartDeal, CloserDealStats } from "@/lib/deals";
 
 interface CloserDetailData {
   closer: CloserPublic;
   deals: DealPublic[];
+  /** Uncapped 12-month chart feed; optional so a cached pre-upgrade payload
+   *  still renders (chart falls back to the capped deals list). */
+  chartDeals?: ChartDeal[];
   stats: CloserDealStats;
 }
 
@@ -119,7 +122,7 @@ export default function CloserDetailPage() {
         {data && (
           <>
             <CloserDetailMetrics stats={data.stats} />
-            <CloserPerformanceChart deals={data.deals} />
+            <CloserPerformanceChart deals={data.chartDeals ?? data.deals} />
             <RecentDealsTable deals={data.deals} />
           </>
         )}

@@ -1,6 +1,7 @@
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
 import { isSetterTier, type SetterTier } from "./appointments";
+import { businessTodayYmd } from "./businessTime";
 
 export type DealStatus = "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
 
@@ -201,7 +202,9 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.dealValue,
       deal.serviceCategory,
       deal.industry,
-      deal.closingDate,
+      // Same backfill as updateDeal: a deal born closed must carry a closing
+      // date or month-scoped revenue misses it.
+      deal.closingDate ?? (deal.status === "closed" ? businessTodayYmd() : null),
       deal.status,
       deal.showStatus,
       deal.notes,
@@ -255,6 +258,14 @@ export async function updateDeal(
   if (changes.status !== undefined) {
     fields.push("status = ?");
     args.push(changes.status);
+    // A deal flipped to closed without an explicit closing date would bucket
+    // by its created_at day (possibly a prior month), so month-scoped revenue
+    // and the quota bar would miss it. Backfill the business-timezone today;
+    // an explicitly provided closingDate (handled above) always wins.
+    if (changes.status === "closed" && changes.closingDate === undefined) {
+      fields.push("closing_date = COALESCE(closing_date, ?)");
+      args.push(businessTodayYmd());
+    }
   }
   if (changes.notes !== undefined) {
     fields.push("notes = ?");
@@ -376,6 +387,9 @@ export interface CloserDealStats {
   lifetime: DealMetricBucket;
   /** Time-frame-scoped bucket. Equals lifetime when no since/until passed. */
   window: DealMetricBucket;
+  /** Same-length period immediately before the window — for Δ-vs-previous
+   *  chips. Null when no window is set (lifetime has no "previous"). */
+  previous: DealMetricBucket | null;
 }
 
 export async function getCloserDealStats(
@@ -389,12 +403,134 @@ export async function getCloserDealStats(
 ): Promise<CloserDealStats> {
   await ensureMigrated();
   const db = getDb();
-  const lifetime = await aggregateBucket(db, { closerId });
-  const window =
-    opts.since && opts.until
-      ? await aggregateBucket(db, { closerId, since: opts.since, until: opts.until })
-      : lifetime;
-  return { lifetime, window };
+  if (!(opts.since && opts.until)) {
+    const lifetime = await aggregateBucket(db, { closerId });
+    return { lifetime, window: lifetime, previous: null };
+  }
+  // All three buckets are independent scans — one parallel wave, not three
+  // serial Turso round-trips (this endpoint is polled every 120s per closer).
+  const prev = previousWindowBounds(opts.since, opts.until);
+  const [lifetime, window, previous] = await Promise.all([
+    aggregateBucket(db, { closerId }),
+    aggregateBucket(db, { closerId, since: opts.since, until: opts.until }),
+    prev ? aggregateBucket(db, { closerId, since: prev.since, until: prev.until }) : null,
+  ]);
+  return { lifetime, window, previous };
+}
+
+/**
+ * The comparison window immediately before [since, until].
+ *
+ * Whole-calendar-month windows (since = 1st, until = last day of a month —
+ * the "Last month" preset, or any full quarter/year range) compare against
+ * the same number of whole months immediately before, so June's baseline is
+ * all of May — not a same-length window that drops May 1.
+ *
+ * Everything else (today / week / month-to-date / last-30 / custom) shifts
+ * back by its own span. Pure UTC string math so server and client agree.
+ * Returns null on unparseable bounds.
+ */
+export function previousWindowBounds(
+  since: string,
+  until: string
+): { since: string; until: string } | null {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const sinceMs = Date.parse(`${since}T00:00:00Z`);
+  const untilMs = Date.parse(`${until}T00:00:00Z`);
+  if (Number.isNaN(sinceMs) || Number.isNaN(untilMs) || untilMs < sinceMs) return null;
+
+  const sinceD = new Date(sinceMs);
+  const untilD = new Date(untilMs);
+  const isMonthStart = sinceD.getUTCDate() === 1;
+  // `until` is a month end iff the next day is the 1st.
+  const isMonthEnd = new Date(untilMs + dayMs).getUTCDate() === 1;
+  if (isMonthStart && isMonthEnd) {
+    const monthsSpan =
+      untilD.getUTCFullYear() * 12 +
+      untilD.getUTCMonth() -
+      (sinceD.getUTCFullYear() * 12 + sinceD.getUTCMonth()) +
+      1;
+    const prevStart = new Date(
+      Date.UTC(sinceD.getUTCFullYear(), sinceD.getUTCMonth() - monthsSpan, 1)
+    );
+    return {
+      since: prevStart.toISOString().slice(0, 10),
+      until: new Date(sinceMs - dayMs).toISOString().slice(0, 10),
+    };
+  }
+
+  const spanDays = Math.round((untilMs - sinceMs) / dayMs) + 1;
+  const prevUntilMs = sinceMs - dayMs;
+  const prevSinceMs = prevUntilMs - (spanDays - 1) * dayMs;
+  return {
+    since: new Date(prevSinceMs).toISOString().slice(0, 10),
+    until: new Date(prevUntilMs).toISOString().slice(0, 10),
+  };
+}
+
+/**
+ * The single close-rate definition: closed / (closed + pending + in-flight),
+ * one decimal. Every surface (team card, overview delta, leaderboard) must
+ * call this — hand-copied variants drifted in rounding before.
+ */
+export function computeCloseRate(
+  closedCount: number,
+  pendingCount: number,
+  inFlightCount: number
+): number {
+  const total = closedCount + pendingCount + inFlightCount;
+  return total > 0 ? Math.round((closedCount / total) * 1000) / 10 : 0;
+}
+
+/**
+ * Current-calendar-month bucket for one closer, in the BUSINESS timezone
+ * (lib/businessTime.ts) — the server's UTC clock would flip the quota bar to
+ * a new month a day early every evening PT, disagreeing with the "This
+ * month" cards computed from the browser's local date. Powers the quota
+ * progress bar, which must track the calendar month regardless of the
+ * dashboard's selected time frame.
+ */
+export async function getCloserMonthToDate(closerId: string): Promise<DealMetricBucket> {
+  await ensureMigrated();
+  const db = getDb();
+  const today = businessTodayYmd();
+  const since = `${today.slice(0, 7)}-01`;
+  return aggregateBucket(db, { closerId, since, until: today });
+}
+
+/** Minimal deal shape for the Performance Trends chart. */
+export interface ChartDeal {
+  dealValue: number;
+  status: string;
+  paidStatus: string;
+  createdAt: string;
+}
+
+/**
+ * Complete chart feed for the closer's Performance Trends graph: every
+ * closed/pending deal added in the trailing ~12 months, four small columns.
+ * Exists because `readDealsByCloser` caps at the 500 newest rows — enough
+ * for the deals table, but a high-volume closer's 12-month chart would
+ * silently undercount its oldest buckets from that list.
+ */
+export async function getCloserChartDeals(closerId: string): Promise<ChartDeal[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT deal_value, status, paid_status, created_at
+          FROM deals
+          WHERE closer_id = ?
+            AND status IN ('closed', 'pending_signature')
+            AND created_at >= datetime('now', '-370 days')
+          ORDER BY created_at ASC`,
+    args: [closerId],
+  });
+  return result.rows.map((row) => ({
+    dealValue: Number(row.deal_value ?? 0),
+    status: String(row.status),
+    paidStatus: String(row.paid_status ?? "unpaid"),
+    createdAt: String(row.created_at),
+  }));
 }
 
 async function aggregateBucket(
@@ -459,6 +595,8 @@ export interface TeamStats {
   lifetime: DealMetricBucket;
   /** Time-frame bucket — equals lifetime when no since/until passed. */
   window: DealMetricBucket;
+  /** Same-length period before the window (Δ chips). Null when no window. */
+  previous: DealMetricBucket | null;
   /** Per-closer breakdown for the leaderboard, scoped to the time frame. */
   closerBreakdowns: Array<{
     closerId: string;
@@ -470,6 +608,9 @@ export interface TeamStats {
     outstandingRevenue: number;
     closedCount: number;
     totalCount: number; // closed + pending
+    /** rescheduled / follow_up / not_closed — the close-rate denominator's
+     *  in-flight share, so the leaderboard rate matches the team card. */
+    inFlightCount: number;
     showCount: number;
     noShowCount: number;
     showRate: number;
@@ -482,11 +623,20 @@ export async function getTeamStats(
   await ensureMigrated();
   const db = getDb();
 
-  const lifetime = await aggregateBucket(db, {});
-  const window =
+  // The three bucket scans are independent — one parallel wave, not three
+  // serial Turso round-trips.
+  const prevBounds =
+    opts.since && opts.until ? previousWindowBounds(opts.since, opts.until) : null;
+  const [lifetime, windowResult, previous] = await Promise.all([
+    aggregateBucket(db, {}),
     opts.since && opts.until
-      ? await aggregateBucket(db, { since: opts.since, until: opts.until })
-      : lifetime;
+      ? aggregateBucket(db, { since: opts.since, until: opts.until })
+      : null,
+    prevBounds
+      ? aggregateBucket(db, { since: prevBounds.since, until: prevBounds.until })
+      : null,
+  ]);
+  const window = windowResult ?? lifetime;
 
   // Per-closer breakdown scoped to the same window. closing_date is the
   // bucketing field so the leaderboard reflects the period the admin selected.
@@ -516,6 +666,7 @@ export async function getTeamStats(
             COALESCE(SUM(CASE WHEN d.status = 'closed' AND IFNULL(d.paid_status, 'unpaid') = 'unpaid' THEN d.deal_value ELSE 0 END), 0) AS outstanding_revenue,
             COALESCE(SUM(CASE WHEN d.status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
             COALESCE(SUM(CASE WHEN d.status IN ('closed', 'pending_signature') THEN 1 ELSE 0 END), 0) AS total_count,
+            COALESCE(SUM(CASE WHEN d.status IN ('rescheduled', 'follow_up', 'not_closed') THEN 1 ELSE 0 END), 0) AS in_flight_count,
             COALESCE(SUM(CASE WHEN d.show_status = 'showed' THEN 1 ELSE 0 END), 0) AS show_count,
             COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
           FROM closers c
@@ -529,6 +680,7 @@ export async function getTeamStats(
   return {
     lifetime,
     window,
+    previous,
     closerBreakdowns: breakdowns.rows.map((row) => {
       const sc = Number(row.show_count ?? 0);
       const nsc = Number(row.no_show_count ?? 0);
@@ -543,10 +695,75 @@ export async function getTeamStats(
         outstandingRevenue: Number(row.outstanding_revenue ?? 0),
         closedCount: Number(row.closed_count ?? 0),
         totalCount: Number(row.total_count ?? 0),
+        inFlightCount: Number(row.in_flight_count ?? 0),
         showCount: sc,
         noShowCount: nsc,
         showRate: tracked > 0 ? Math.round((sc / tracked) * 1000) / 10 : 0,
       };
     }),
   };
+}
+
+export interface TeamMonthlyTrendPoint {
+  /** YYYY-MM bucket keyed by each deal's effective date (closing_date,
+   *  falling back to created_at day — same basis as aggregateBucket). */
+  month: string;
+  closedRevenue: number;
+  paidRevenue: number;
+  closedCount: number;
+}
+
+/**
+ * Team-wide monthly revenue series for the trend chart. Fixed last-N-months
+ * regardless of the dashboard's selected window — the trend gives context,
+ * the cards give the window. Months with no deals are filled with zeros so
+ * the chart doesn't silently skip quiet months.
+ */
+export async function getTeamMonthlyTrend(months = 12): Promise<TeamMonthlyTrendPoint[]> {
+  await ensureMigrated();
+  const db = getDb();
+  // Current month in the BUSINESS timezone — the UTC clock would start a new
+  // (empty) trailing month a day early every evening PT.
+  const [cy, cm] = businessTodayYmd().split("-").map(Number);
+  const startIndex = cy * 12 + (cm - 1) - (months - 1);
+  const start = new Date(Date.UTC(Math.floor(startIndex / 12), startIndex % 12, 1));
+  const sinceMonth = start.toISOString().slice(0, 7);
+
+  const result = await db.execute({
+    sql: `SELECT
+            substr(COALESCE(closing_date, substr(created_at,1,10)), 1, 7) AS month,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS closed_revenue,
+            COALESCE(SUM(CASE WHEN status IN ('closed', 'pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS paid_revenue,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count
+          FROM deals
+          WHERE substr(COALESCE(closing_date, substr(created_at,1,10)), 1, 7) >= ?
+          GROUP BY month
+          ORDER BY month ASC`,
+    args: [sinceMonth],
+  });
+
+  const byMonth = new Map(
+    result.rows.map((row) => [
+      String(row.month),
+      {
+        closedRevenue: Number(row.closed_revenue ?? 0),
+        paidRevenue: Number(row.paid_revenue ?? 0),
+        closedCount: Number(row.closed_count ?? 0),
+      },
+    ])
+  );
+
+  const series: TeamMonthlyTrendPoint[] = [];
+  for (let i = 0; i < months; i++) {
+    const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
+    const key = d.toISOString().slice(0, 7);
+    const hit = byMonth.get(key);
+    series.push({
+      month: key,
+      closedRevenue: hit?.closedRevenue ?? 0,
+      paidRevenue: hit?.paidRevenue ?? 0,
+      closedCount: hit?.closedCount ?? 0,
+    });
+  }
+  return series;
 }

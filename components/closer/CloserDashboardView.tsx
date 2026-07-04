@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { CloserBentoGrid } from "@/components/closer/CloserBentoGrid";
+import { CloserPerformanceChart } from "@/components/closers/CloserPerformanceChart";
 import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
 import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
-import type { CloserDealStats } from "@/lib/deals";
+import type { ChartDeal, CloserDealStats, DealMetricBucket } from "@/lib/deals";
 import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
 
 export interface CloserDashboardData {
@@ -19,6 +20,13 @@ export interface CloserDashboardData {
     commissionRate: number;
   };
   stats: CloserDealStats;
+  /** Current-calendar-month bucket for the quota progress bar. Optional so
+   *  a cached pre-upgrade payload still renders. */
+  monthToDate?: DealMetricBucket;
+  /** Complete 12-month feed for the Performance Trends chart — recentDeals
+   *  is capped at 500 rows and would undercount older buckets. Optional for
+   *  the same cached-payload reason (chart falls back to recentDeals). */
+  chartDeals?: ChartDeal[];
   timeFrame: { since: string | null; until: string | null };
   recentDeals: Array<{
     id: string;
@@ -29,6 +37,7 @@ export interface CloserDashboardData {
     serviceCategory: string | null;
     closingDate: string | null;
     status: string;
+    paidStatus: string;
     notes: string | null;
     createdAt: string;
     updatedAt: string;
@@ -75,13 +84,21 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       <CloserBentoGrid
         lifetime={data.stats.lifetime}
         window={data.stats.window}
+        previous={data.stats.previous}
+        monthToDate={data.monthToDate}
         windowLabel={windowLabel(timeFrame)}
         isLifetimeWindow={isLifetimeWindow}
         quota={data.closer.quota}
+        readOnly={readOnly}
       />
 
+      {/* Closed vs paid revenue over time — same chart as the admin drill-down. */}
+      <div className="mb-6">
+        <CloserPerformanceChart deals={data.chartDeals ?? data.recentDeals} />
+      </div>
+
       {/* Recent deals */}
-      <CloserRecentDeals deals={data.recentDeals as never[]} />
+      <CloserRecentDeals deals={data.recentDeals as never[]} readOnly={readOnly} />
 
       {/* No-show follow-ups (scoped to this closer's own marks) */}
       <section className="mt-8">

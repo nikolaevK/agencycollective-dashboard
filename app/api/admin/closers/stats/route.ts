@@ -3,8 +3,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
-import { getTeamStats } from "@/lib/deals";
-import { readClosers } from "@/lib/closers";
+import {
+  getTeamStats,
+  getTeamMonthlyTrend,
+  previousWindowBounds,
+  computeCloseRate,
+} from "@/lib/deals";
 import { getTeamShowRate } from "@/lib/eventAttendance";
 
 function unauthorized() {
@@ -23,16 +27,19 @@ export async function GET(request: Request) {
   const untilRaw = searchParams.get("until");
   const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
+  const prevBounds = since && until ? previousWindowBounds(since, until) : null;
 
-  const [stats, lifetimeShow, windowResult, closers] = await Promise.all([
-    getTeamStats({ since, until }),
-    // Show metrics from event_attendance (every mark, with or without a
-    // linked deal) — overrides the bucket's deal-sourced show fields.
-    getTeamShowRate(),
-    // Skip the duplicate fetch when no window is set; window === lifetime.
-    since && until ? getTeamShowRate({ since, until }) : null,
-    readClosers(),
-  ]);
+  const [stats, lifetimeShow, windowResult, previousShowResult, monthlyTrend] =
+    await Promise.all([
+      getTeamStats({ since, until }),
+      // Show metrics from event_attendance (every mark, with or without a
+      // linked deal) — overrides the bucket's deal-sourced show fields.
+      getTeamShowRate(),
+      // Skip the duplicate fetch when no window is set; window === lifetime.
+      since && until ? getTeamShowRate({ since, until }) : null,
+      prevBounds ? getTeamShowRate(prevBounds) : null,
+      getTeamMonthlyTrend(),
+    ]);
   const windowShow = windowResult ?? lifetimeShow;
 
   // Splice attendance-sourced show metrics into the buckets and the
@@ -43,6 +50,11 @@ export async function GET(request: Request) {
   stats.window.showCount = windowShow.showCount;
   stats.window.noShowCount = windowShow.noShowCount;
   stats.window.showRate = windowShow.showRate;
+  if (stats.previous && previousShowResult) {
+    stats.previous.showCount = previousShowResult.showCount;
+    stats.previous.noShowCount = previousShowResult.noShowCount;
+    stats.previous.showRate = previousShowResult.showRate;
+  }
 
   const showByCloser = new Map(windowShow.closerBreakdowns.map((b) => [b.closerId, b]));
   for (const cb of stats.closerBreakdowns) {
@@ -58,13 +70,6 @@ export async function GET(request: Request) {
     }
   }
 
-  const activeCount = closers.filter((c) => c.status === "active").length;
-  const totalClosers = closers.length;
-  const avgCommission =
-    closers.length > 0
-      ? closers.reduce((sum, c) => sum + c.commissionRate, 0) / closers.length
-      : 0;
-
   // Top performer: the breakdown is already sorted DESC by closed revenue.
   // Skip the slot when even the leader has $0 — the card would otherwise
   // crown someone with no activity, which reads as a bug.
@@ -77,21 +82,18 @@ export async function GET(request: Request) {
   // closed" definition — without surfacing individual in-flight deals to
   // the admin, which is the user-mandated visibility rule.
   const w = stats.window;
-  const totalOpportunities = w.closedCount + w.pendingCount + w.inFlightCount;
-  const closeRate =
-    totalOpportunities > 0 ? (w.closedCount / totalOpportunities) * 100 : 0;
+  const closeRate = computeCloseRate(w.closedCount, w.pendingCount, w.inFlightCount);
 
   return NextResponse.json({
     data: {
       lifetime: stats.lifetime,
       window: stats.window,
+      previous: stats.previous,
       timeFrame: { since: since ?? null, until: until ?? null },
-      closeRate: Math.round(closeRate * 10) / 10,
+      closeRate,
       topPerformer,
       closerBreakdowns: stats.closerBreakdowns,
-      totalClosers,
-      activeCount,
-      avgCommission: Math.round(avgCommission),
+      monthlyTrend,
     },
   });
 }

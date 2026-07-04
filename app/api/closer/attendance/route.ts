@@ -16,6 +16,7 @@ import {
   type SyncResult,
 } from "@/lib/attendanceSync";
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
+import { businessTodayYmd } from "@/lib/businessTime";
 
 export async function GET() {
   const session = await getActiveCloserSession();
@@ -69,9 +70,15 @@ export async function PATCH(request: Request) {
     );
   }
 
+  // Business-timezone day the event happened — anchors windowed show rates
+  // to the call date instead of the marking date. Null when the client
+  // didn't send coordinates (queries fall back to created_at).
+  const startMs = body.eventStart ? Date.parse(body.eventStart) : NaN;
+  const eventDate = Number.isNaN(startMs) ? null : businessTodayYmd(new Date(startMs));
+
   // Step 1: write dashboard side. Succeeds even if GHL is unreachable.
   try {
-    await setEventAttendance(eventId, session.closerId, showStatus);
+    await setEventAttendance(eventId, session.closerId, showStatus, eventDate);
   } catch (err) {
     console.error("[closer/attendance PATCH] dashboard write failed:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

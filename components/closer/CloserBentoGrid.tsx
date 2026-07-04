@@ -13,12 +13,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
+import { TrendDelta } from "@/components/shared/TrendDelta";
 import { InlineQuotaEditor } from "./InlineQuotaEditor";
 import type { DealMetricBucket } from "@/lib/deals";
 
 interface Props {
   lifetime: DealMetricBucket;
   window: DealMetricBucket;
+  /** Same-length period before the window — powers the Δ chips. */
+  previous?: DealMetricBucket | null;
+  /** Current-calendar-month bucket — powers the quota progress bar
+   *  independent of the selected time frame. */
+  monthToDate?: DealMetricBucket;
   /** Human label for the active window — "This month", "All time", custom range, etc. */
   windowLabel: string;
   /** True when the window IS lifetime (e.g. "All time" selected). Hides the
@@ -26,6 +32,9 @@ interface Props {
   isLifetimeWindow: boolean;
   /** Closer's monthly target in cents (editable inline). */
   quota?: number;
+  /** Admin "view as" mode — the quota editor mutates the CLOSER's session
+   *  endpoint, so it must render read-only for admins. */
+  readOnly?: boolean;
 }
 
 /**
@@ -37,7 +46,23 @@ interface Props {
  * Window section hides itself when `isLifetimeWindow` is true so the closer
  * doesn't see the same numbers stacked twice.
  */
-export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindow, quota }: Props) {
+export function CloserBentoGrid({
+  lifetime,
+  window,
+  previous,
+  monthToDate,
+  windowLabel,
+  isLifetimeWindow,
+  quota,
+  readOnly,
+}: Props) {
+  const quotaCents = quota ?? 0;
+  const monthClosed = monthToDate?.closedRevenue ?? null;
+  const quotaPct =
+    quotaCents > 0 && monthClosed != null
+      ? Math.min(100, Math.round((monthClosed / quotaCents) * 100))
+      : null;
+
   return (
     <div className="space-y-6 mb-6">
       <Section
@@ -85,8 +110,39 @@ export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindo
             iconColor: "text-pink-600 dark:text-pink-400",
             custom: (
               <>
-                <InlineQuotaEditor currentQuota={quota ?? 0} />
-                <p className="text-xs text-muted-foreground mt-1">Editable goal</p>
+                {readOnly ? (
+                  <p className="text-xl sm:text-2xl font-bold text-foreground">
+                    {formatCents(quotaCents)}
+                  </p>
+                ) : (
+                  <InlineQuotaEditor currentQuota={quotaCents} />
+                )}
+                {quotaPct != null && monthClosed != null ? (
+                  <>
+                    <div
+                      className="mt-2 h-1.5 w-full rounded-full bg-muted/60 dark:bg-white/5"
+                      role="progressbar"
+                      aria-valuenow={quotaPct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className={cn(
+                          "h-1.5 rounded-full transition-all",
+                          quotaPct >= 100 ? "bg-emerald-500" : "bg-pink-500/70"
+                        )}
+                        style={{ width: `${Math.max(quotaPct, 2)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatCents(monthClosed)} closed this month · {quotaPct}%
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {readOnly ? "Monthly goal" : "Editable goal"}
+                  </p>
+                )}
               </>
             ),
           },
@@ -106,6 +162,12 @@ export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindo
               iconColor: "text-violet-600 dark:text-violet-400",
               value: formatCents(window.closedRevenue),
               sub: `${window.closedCount} deal${window.closedCount === 1 ? "" : "s"} closed`,
+              delta: (
+                <TrendDelta
+                  current={window.closedRevenue}
+                  previous={previous?.closedRevenue}
+                />
+              ),
             },
             {
               key: "win-paid",
@@ -115,6 +177,9 @@ export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindo
               iconColor: "text-emerald-600 dark:text-emerald-400",
               value: formatCents(window.paidRevenue),
               sub: "Cash collected",
+              delta: (
+                <TrendDelta current={window.paidRevenue} previous={previous?.paidRevenue} />
+              ),
             },
             {
               key: "win-outstanding",
@@ -124,6 +189,13 @@ export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindo
               iconColor: "text-amber-600 dark:text-amber-400",
               value: formatCents(window.outstandingRevenue),
               sub: "Closed but unpaid",
+              delta: (
+                <TrendDelta
+                  current={window.outstandingRevenue}
+                  previous={previous?.outstandingRevenue}
+                  lowerIsBetter
+                />
+              ),
             },
             {
               key: "win-pending",
@@ -154,6 +226,9 @@ export function CloserBentoGrid({ lifetime, window, windowLabel, isLifetimeWindo
                 window.showCount + window.noShowCount > 0
                   ? `${window.showCount} showed · ${window.noShowCount} no-show`
                   : "No data this window",
+              delta: previous ? (
+                <TrendDelta current={window.showRate} previous={previous.showRate} mode="pp" />
+              ) : undefined,
             },
           ]}
         />
@@ -170,6 +245,7 @@ interface CardDef {
   iconColor: string;
   value?: string;
   sub?: string;
+  delta?: React.ReactNode;
   custom?: React.ReactNode;
 }
 
@@ -204,7 +280,10 @@ function Section({
               </div>
               {card.custom ?? (
                 <>
-                  <p className="text-xl sm:text-2xl font-bold text-foreground">{card.value}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-xl sm:text-2xl font-bold text-foreground">{card.value}</p>
+                    {card.delta}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
                 </>
               )}

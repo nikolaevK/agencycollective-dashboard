@@ -95,3 +95,11 @@ export function formatCents(cents: number): string {
 export function formatBasisPoints(bp: number): string {
   return `${(bp / 100).toFixed(1)}%`;
 }
+
+// Shared revenue-chart series colors (TeamTrendChart + CloserPerformanceChart
+// must stay identical so closed/paid read the same across both charts). The
+// pair passes the palette checks — lightness band, chroma, CVD separation,
+// 3:1 surface contrast — in light AND dark mode; don't swap for lighter
+// tailwind steps without re-validating.
+export const CHART_CLOSED_COLOR = "#7c3aed"; // violet-600
+export const CHART_PAID_COLOR = "#059669"; // emerald-600

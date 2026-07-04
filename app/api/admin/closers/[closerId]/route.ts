@@ -4,7 +4,12 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { findCloser } from "@/lib/closers";
-import { readDealsByCloser, getCloserDealStats, type DealStatus } from "@/lib/deals";
+import {
+  readDealsByCloser,
+  getCloserDealStats,
+  getCloserChartDeals,
+  type DealStatus,
+} from "@/lib/deals";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,11 +29,14 @@ export async function GET(
     return NextResponse.json({ error: "Closer not found" }, { status: 404 });
   }
 
-  const [allDeals, stats] = await Promise.all([
+  const [allDeals, stats, chartDeals] = await Promise.all([
     readDealsByCloser(params.closerId),
     // Lifetime-only on this drill-down. The admin "view as user" page handles
     // time-frame slicing; here we surface the closer's career numbers.
     getCloserDealStats(params.closerId),
+    // Complete 12-month feed for the Performance Trends chart — the deals
+    // list is capped/filtered and would undercount older chart buckets.
+    getCloserChartDeals(params.closerId),
   ]);
 
   // Same hidden-statuses rule as /api/admin/deals: in-flight deals belong
@@ -48,6 +56,7 @@ export async function GET(
     data: {
       closer: { ...safeCloser, hasPassword: _ !== null },
       deals,
+      chartDeals,
       stats,
     },
   });

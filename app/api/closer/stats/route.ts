@@ -2,7 +2,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getActiveCloserFromSession } from "@/lib/closerGuards";
-import { readDealsByCloser, getCloserDealStats } from "@/lib/deals";
+import {
+  readDealsByCloser,
+  getCloserDealStats,
+  getCloserChartDeals,
+  getCloserMonthToDate,
+  previousWindowBounds,
+} from "@/lib/deals";
 import { readClosers } from "@/lib/closers";
 import {
   enrichNoShowsFromCalendar,
@@ -29,19 +35,29 @@ export async function GET(request: Request) {
   const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
-  const [deals, stats, lifetimeShow, windowResult, rawNoShows, rawShowed] = await Promise.all([
-    readDealsByCloser(session.closerId),
-    getCloserDealStats(session.closerId, { since, until }),
-    // Show metrics come from event_attendance (every event the closer
-    // marked, with or without a linked deal) — overrides the bucket's
-    // deal-sourced show fields, which would under-count no-shows the
-    // closer marked but never wrote a deal for.
-    getCloserShowRate(session.closerId),
-    // Skip the duplicate fetch when no window is set; window === lifetime.
-    since && until ? getCloserShowRate(session.closerId, { since, until }) : null,
-    getAttendanceFollowUpsForCloser(session.closerId, "no_show"),
-    getAttendanceFollowUpsForCloser(session.closerId, "showed"),
-  ]);
+  const prevBounds = since && until ? previousWindowBounds(since, until) : null;
+
+  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed] =
+    await Promise.all([
+      readDealsByCloser(session.closerId),
+      getCloserDealStats(session.closerId, { since, until }),
+      // Calendar-month bucket for the quota progress bar — independent of
+      // the selected time frame.
+      getCloserMonthToDate(session.closerId),
+      // Complete 12-month feed for the Performance Trends chart —
+      // readDealsByCloser's 500-row cap would undercount older buckets.
+      getCloserChartDeals(session.closerId),
+      // Show metrics come from event_attendance (every event the closer
+      // marked, with or without a linked deal) — overrides the bucket's
+      // deal-sourced show fields, which would under-count no-shows the
+      // closer marked but never wrote a deal for.
+      getCloserShowRate(session.closerId),
+      // Skip the duplicate fetch when no window is set; window === lifetime.
+      since && until ? getCloserShowRate(session.closerId, { since, until }) : null,
+      prevBounds ? getCloserShowRate(session.closerId, prevBounds) : null,
+      getAttendanceFollowUpsForCloser(session.closerId, "no_show"),
+      getAttendanceFollowUpsForCloser(session.closerId, "showed"),
+    ]);
   const windowShow = windowResult ?? lifetimeShow;
   // Splice the attendance-sourced show metrics into the bucket so
   // dashboard cards display the closer's true show rate.
@@ -51,6 +67,11 @@ export async function GET(request: Request) {
   stats.window.showCount = windowShow.showCount;
   stats.window.noShowCount = windowShow.noShowCount;
   stats.window.showRate = windowShow.showRate;
+  if (stats.previous && previousShowResult) {
+    stats.previous.showCount = previousShowResult.showCount;
+    stats.previous.noShowCount = previousShowResult.noShowCount;
+    stats.previous.showRate = previousShowResult.showRate;
+  }
 
   const enriched = await enrichNoShowsFromCalendar([...rawNoShows, ...rawShowed]);
   const noShowFollowUps = enriched.slice(0, rawNoShows.length);
@@ -74,6 +95,8 @@ export async function GET(request: Request) {
         commissionRate: closer.commissionRate,
       },
       stats,
+      monthToDate,
+      chartDeals,
       timeFrame: { since: since ?? null, until: until ?? null },
       recentDeals: deals.map((d) => ({
         ...d,

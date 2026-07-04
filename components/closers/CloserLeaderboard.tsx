@@ -1,16 +1,23 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
+import { computeCloseRate } from "@/lib/deals";
 
 interface CloserBreakdown {
   closerId: string;
   displayName: string;
   avatarPath: string | null;
   revenue: number;
+  paidRevenue: number;
   closedCount: number;
   totalCount: number;
+  /** In-flight (rescheduled/follow_up/not_closed) — part of the close-rate
+   *  denominator so this rate matches the team Close Rate card. Optional so
+   *  a stale cached payload without the field doesn't NaN the column. */
+  inFlightCount?: number;
   commissionRate: number;
   showCount: number;
   noShowCount: number;
@@ -19,6 +26,26 @@ interface CloserBreakdown {
 
 interface CloserLeaderboardProps {
   closerBreakdowns: CloserBreakdown[];
+}
+
+type SortKey = "revenue" | "paidRevenue" | "closeRate" | "showRate";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "revenue", label: "Revenue" },
+  { value: "paidRevenue", label: "Paid revenue" },
+  { value: "closeRate", label: "Close rate" },
+  { value: "showRate", label: "Show rate" },
+];
+
+/** The shared close-rate definition (lib/deals.ts) — same formula AND same
+ *  rounding as the team Close Rate card, so the two never disagree.
+ *  totalCount = closed + pending, so pending = totalCount − closed. */
+function closeRateOf(c: CloserBreakdown): number {
+  return computeCloseRate(
+    c.closedCount,
+    c.totalCount - c.closedCount,
+    c.inFlightCount ?? 0
+  );
 }
 
 function getInitialsColor(name: string): string {
@@ -68,17 +95,50 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) {
-  const sorted = [...closerBreakdowns]
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 10);
+  const [sortKey, setSortKey] = useState<SortKey>("revenue");
 
-  const maxRevenue = sorted[0]?.revenue ?? 1;
+  const sorted = useMemo(() => {
+    const metric = (c: CloserBreakdown): number => {
+      if (sortKey === "paidRevenue") return c.paidRevenue;
+      if (sortKey === "closeRate") return closeRateOf(c);
+      if (sortKey === "showRate") return c.showRate;
+      return c.revenue;
+    };
+    return [...closerBreakdowns].sort((a, b) => metric(b) - metric(a)).slice(0, 10);
+  }, [closerBreakdowns, sortKey]);
+
+  // The bar always visualizes revenue share, whatever the ranking metric —
+  // switching its meaning per sort would make rows incomparable at a glance.
+  const maxRevenue = Math.max(...sorted.map((c) => c.revenue), 1);
+
+  // The money column shows the metric the list is ranked by when that metric
+  // is a dollar figure — sorting by an invisible number reads as mis-sorted.
+  // Close/show-rate sorts already have their own visible columns.
+  const paidSort = sortKey === "paidRevenue";
+  const moneyLabel = paidSort ? "Paid Revenue" : "Revenue";
+  const moneyValue = (c: CloserBreakdown) => (paidSort ? c.paidRevenue : c.revenue);
 
   return (
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
-      <div className="flex items-center gap-2 mb-5">
-        <Trophy className="h-5 w-5 text-amber-500" />
-        <h3 className="text-base font-semibold text-foreground">Top Closers</h3>
+      <div className="flex items-center justify-between gap-2 mb-5">
+        <div className="flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-amber-500" />
+          <h3 className="text-base font-semibold text-foreground">Top Closers</h3>
+        </div>
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          Sort by
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className="h-7 rounded-md border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {sorted.length === 0 ? (
@@ -99,7 +159,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                     Closer
                   </th>
                   <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-28">
-                    Revenue
+                    {moneyLabel}
                   </th>
                   <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-24">
                     Close Rate
@@ -115,10 +175,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
               <tbody>
                 {sorted.map((closer, index) => {
                   const rank = index + 1;
-                  const closeRate =
-                    closer.totalCount > 0
-                      ? Math.round((closer.closedCount / closer.totalCount) * 100)
-                      : 0;
+                  const closeRate = closeRateOf(closer);
                   const barWidth =
                     maxRevenue > 0
                       ? Math.max((closer.revenue / maxRevenue) * 100, 4)
@@ -148,7 +205,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                         </div>
                       </td>
                       <td className="py-3 pr-4 text-right font-semibold text-foreground tabular-nums">
-                        {formatCents(closer.revenue)}
+                        {formatCents(moneyValue(closer))}
                       </td>
                       <td className="py-3 pr-4 text-right text-muted-foreground tabular-nums">
                         {closeRate}%
@@ -175,10 +232,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
           <div className="sm:hidden space-y-3">
             {sorted.map((closer, index) => {
               const rank = index + 1;
-              const closeRate =
-                closer.totalCount > 0
-                  ? Math.round((closer.closedCount / closer.totalCount) * 100)
-                  : 0;
+              const closeRate = closeRateOf(closer);
               const barWidth =
                 maxRevenue > 0
                   ? Math.max((closer.revenue / maxRevenue) * 100, 4)
@@ -207,7 +261,10 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                   </div>
                   <div className="flex items-center justify-between mt-3">
                     <span className="text-sm font-semibold text-foreground tabular-nums">
-                      {formatCents(closer.revenue)}
+                      {formatCents(moneyValue(closer))}
+                      {paidSort && (
+                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">paid</span>
+                      )}
                     </span>
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {closeRate}% close &middot; {closer.showRate}% show

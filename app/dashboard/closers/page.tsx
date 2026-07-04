@@ -7,6 +7,7 @@ import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { CloserOverviewMetrics } from "@/components/closers/CloserOverviewMetrics";
 import { CloserLeaderboard } from "@/components/closers/CloserLeaderboard";
 import { TeamOutputChart } from "@/components/closers/TeamOutputChart";
+import { TeamTrendChart } from "@/components/closers/TeamTrendChart";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import {
   appendTimeFrameParams,
@@ -61,6 +62,9 @@ export default function ClosersPage() {
               windowLabel={windowLabel(timeFrame)}
               isLifetimeWindow={timeFrame.key === "all"}
             />
+            {Array.isArray(data.monthlyTrend) && data.monthlyTrend.length > 0 && (
+              <TeamTrendChart data={data.monthlyTrend} />
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <CloserLeaderboard closerBreakdowns={data.closerBreakdowns} />
               <TeamOutputChart closerBreakdowns={data.closerBreakdowns} />

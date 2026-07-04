@@ -38,6 +38,7 @@ import {
 } from "./ghlAppointmentLinks";
 import { type AttendanceStatus } from "./eventAttendance";
 import { getDb, ensureMigrated } from "./db";
+import { businessTodayYmd } from "./businessTime";
 
 /**
  * Convenience wrapper for code paths that wrote an attendance row as a
@@ -401,7 +402,14 @@ export async function syncEventAttendanceFromGhl(input: {
   // attendance row. A teammate's stale opposite mark could otherwise
   // outweigh the resolved closer's pulled value when team-wide latest is
   // computed downstream.
-  await replaceAttendanceForEvent(input.evt.googleEventId, attribution, targetDashboard);
+  const startMs = input.evt.startTime ? Date.parse(input.evt.startTime) : NaN;
+  const eventDate = Number.isNaN(startMs) ? null : businessTodayYmd(new Date(startMs));
+  await replaceAttendanceForEvent(
+    input.evt.googleEventId,
+    attribution,
+    targetDashboard,
+    eventDate
+  );
   await updateLinkSyncState({
     googleEventId: input.evt.googleEventId,
     syncState: "synced",
@@ -432,7 +440,8 @@ async function clearAllAttendanceForEvent(googleEventId: string): Promise<void> 
 async function replaceAttendanceForEvent(
   googleEventId: string,
   closerId: string,
-  showStatus: AttendanceStatus
+  showStatus: AttendanceStatus,
+  eventDateYmd: string | null = null
 ): Promise<void> {
   await ensureMigrated();
   const db = getDb();
@@ -443,9 +452,9 @@ async function replaceAttendanceForEvent(
         args: [googleEventId],
       },
       {
-        sql: `INSERT INTO event_attendance (google_event_id, closer_id, show_status)
-              VALUES (?, ?, ?)`,
-        args: [googleEventId, closerId, showStatus],
+        sql: `INSERT INTO event_attendance (google_event_id, closer_id, show_status, event_date)
+              VALUES (?, ?, ?, ?)`,
+        args: [googleEventId, closerId, showStatus, eventDateYmd],
       },
     ],
     "write"

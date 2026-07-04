@@ -224,6 +224,12 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // CREATE TABLE is gated by the version body, so "no such table" here is
     // benign on a fresh DB (created with the column inline).
     { table: "invoice_services",       column: "internal_label",       defn: "TEXT" },
+    // Business-timezone calendar day the marked event actually happened
+    // (yyyy-mm-dd). Windowed show-rate queries bucket by this (falling back
+    // to created_at for legacy/backfilled rows) so late marks, GHL re-syncs,
+    // and the closed-deals backfill don't relocate attendance into the wrong
+    // period. Read on every stats poll, so it must self-heal here.
+    { table: "event_attendance",       column: "event_date",           defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),

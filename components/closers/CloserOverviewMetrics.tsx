@@ -3,7 +3,8 @@
 import { Award, Clock, DollarSign, FileText, Target, Trophy, UserCheck, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
-import type { DealMetricBucket } from "@/lib/deals";
+import { TrendDelta } from "@/components/shared/TrendDelta";
+import { computeCloseRate, type DealMetricBucket } from "@/lib/deals";
 
 interface TopPerformer {
   closerId: string;
@@ -15,6 +16,8 @@ interface TopPerformer {
 interface OverviewStats {
   lifetime: DealMetricBucket;
   window: DealMetricBucket;
+  /** Same-length period before the window — powers the Δ chips. */
+  previous?: DealMetricBucket | null;
   closeRate: number; // already computed from window
   topPerformer: TopPerformer | null;
 }
@@ -32,6 +35,11 @@ interface MetricCard {
   icon: React.ElementType;
   iconBg: string;
   iconColor: string;
+  delta?: React.ReactNode;
+}
+
+function bucketCloseRate(b: DealMetricBucket): number {
+  return computeCloseRate(b.closedCount, b.pendingCount, b.inFlightCount);
 }
 
 /**
@@ -86,6 +94,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
     },
   ];
 
+  const previous = stats.previous ?? null;
   const windowCards: MetricCard[] = [
     {
       label: "Closed revenue",
@@ -94,6 +103,12 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       icon: DollarSign,
       iconBg: "bg-violet-500/10",
       iconColor: "text-violet-500",
+      delta: (
+        <TrendDelta
+          current={stats.window.closedRevenue}
+          previous={previous?.closedRevenue}
+        />
+      ),
     },
     {
       label: "Paid revenue",
@@ -102,6 +117,9 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       icon: Wallet,
       iconBg: "bg-emerald-500/10",
       iconColor: "text-emerald-500",
+      delta: (
+        <TrendDelta current={stats.window.paidRevenue} previous={previous?.paidRevenue} />
+      ),
     },
     {
       label: "Outstanding",
@@ -110,10 +128,20 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       icon: Clock,
       iconBg: "bg-amber-500/10",
       iconColor: "text-amber-500",
+      delta: (
+        <TrendDelta
+          current={stats.window.outstandingRevenue}
+          previous={previous?.outstandingRevenue}
+          lowerIsBetter
+        />
+      ),
     },
     {
       label: "Close rate",
       value: `${stats.closeRate}%`,
+      delta: previous ? (
+        <TrendDelta current={stats.closeRate} previous={bucketCloseRate(previous)} mode="pp" />
+      ) : undefined,
       // Denominator now includes in-flight (rescheduled/follow_up/not_closed)
       // so the rate matches the conventional "of all opportunities, what %
       // closed" — those deals stay hidden from the queue but the count is
@@ -177,7 +205,10 @@ function Section({
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
-                  <p className="text-lg font-bold text-foreground truncate">{card.value}</p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="text-lg font-bold text-foreground truncate">{card.value}</p>
+                    {card.delta}
+                  </div>
                   <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
                 </div>
               </div>

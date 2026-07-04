@@ -15,6 +15,30 @@ import { format, startOfWeek, startOfMonth } from "date-fns";
 
 type RangeFilter = "all" | "week" | "month";
 
+type StatusFilter = "closed" | "sent" | "paid" | "viewed";
+
+/** Toggleable status chips. Multiple active chips AND together, so
+ *  "Closed + Paid" narrows to closed deals that are also paid. */
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "closed", label: "Closed" },
+  { value: "sent", label: "Invoice Sent" },
+  { value: "paid", label: "Paid" },
+  { value: "viewed", label: "Contract Viewed" },
+];
+
+function matchesStatusFilter(deal: DealWithInvoice, filter: StatusFilter): boolean {
+  switch (filter) {
+    case "closed":
+      return deal.status === "closed";
+    case "sent":
+      return deal.invoiceStatus === "sent";
+    case "paid":
+      return deal.paidStatus === "paid";
+    case "viewed":
+      return deal.contractStatus === "viewed";
+  }
+}
+
 const STATUS_STYLES: Record<string, string> = {
   closed: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
   not_closed: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
@@ -51,7 +75,9 @@ function parseDealDate(raw: string | null | undefined): Date | null {
     const [y, m, d] = raw.split("-").map(Number);
     return new Date(y, m - 1, d);
   }
-  const dt = new Date(raw);
+  // SQLite datetime('now') stamps "YYYY-MM-DD HH:MM:SS" — Safari rejects the
+  // space separator, so normalize to ISO "T" before parsing.
+  const dt = new Date(raw.replace(" ", "T"));
   return isNaN(dt.getTime()) ? null : dt;
 }
 
@@ -74,6 +100,9 @@ interface DealWithInvoice extends DealPublic {
 
 interface Props {
   deals: DealWithInvoice[];
+  /** Admin "view as" mode — edit/delete hit closer-session endpoints, so
+   *  mutation controls must not render for admins. */
+  readOnly?: boolean;
 }
 
 // Closers can delete in-flight deals; closed and pending_signature deals
@@ -85,11 +114,21 @@ const DELETABLE_STATUSES: ReadonlySet<DealStatus> = new Set([
   "not_closed",
 ]);
 
-export function CloserRecentDeals({ deals }: Props) {
+export function CloserRecentDeals({ deals, readOnly }: Props) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
   const [range, setRange] = useState<RangeFilter>("all");
+  const [statusFilters, setStatusFilters] = useState<ReadonlySet<StatusFilter>>(new Set());
   const [search, setSearch] = useState("");
+
+  function toggleStatusFilter(filter: StatusFilter) {
+    setStatusFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  }
   // Set instead of single string so two concurrent deletes don't visually
   // re-enable each other's buttons mid-flight.
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(new Set());
@@ -107,6 +146,9 @@ export function CloserRecentDeals({ deals }: Props) {
         const brand = (d.brandName ?? "").toLowerCase();
         if (!name.includes(q) && !brand.includes(q)) return false;
       }
+      for (const filter of statusFilters) {
+        if (!matchesStatusFilter(d, filter)) return false;
+      }
       if (range === "all") return true;
       const dt = parseDealDate(d.closingDate) ?? parseDealDate(d.createdAt);
       if (!dt) return false;
@@ -114,7 +156,7 @@ export function CloserRecentDeals({ deals }: Props) {
       if (range === "month") return dt >= monthStart;
       return true;
     });
-  }, [deals, range, search]);
+  }, [deals, range, statusFilters, search]);
 
   const totalCount = deals.length;
   const showingCount = filtered.length;
@@ -192,6 +234,36 @@ export function CloserRecentDeals({ deals }: Props) {
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
             />
           </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Status filters">
+          {STATUS_FILTERS.map((opt) => {
+            const active = statusFilters.has(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleStatusFilter(opt.value)}
+                aria-pressed={active}
+                className={cn(
+                  "inline-flex items-center h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+          {statusFilters.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setStatusFilters(new Set())}
+              className="inline-flex items-center h-7 px-2 rounded-full text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -277,6 +349,7 @@ export function CloserRecentDeals({ deals }: Props) {
                     <td className="px-5 py-3 text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-0.5">
+                        {!readOnly && (
                         <button
                           onClick={() => setEditDeal(deal)}
                           aria-label="Edit deal"
@@ -284,7 +357,8 @@ export function CloserRecentDeals({ deals }: Props) {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        {DELETABLE_STATUSES.has(deal.status) && (
+                        )}
+                        {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
                           <button
                             onClick={() => handleDelete(deal)}
                             disabled={deletingIds.has(deal.id)}
@@ -358,6 +432,7 @@ export function CloserRecentDeals({ deals }: Props) {
                   <span className="text-sm font-semibold text-foreground">
                     {formatCents(deal.dealValue)}
                   </span>
+                  {!readOnly && (
                   <button
                     onClick={() => setEditDeal(deal)}
                     aria-label="Edit deal"
@@ -365,7 +440,8 @@ export function CloserRecentDeals({ deals }: Props) {
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
-                  {DELETABLE_STATUSES.has(deal.status) && (
+                  )}
+                  {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
                     <button
                       onClick={() => handleDelete(deal)}
                       disabled={deletingIds.has(deal.id)}
