@@ -1,9 +1,23 @@
 import type { DealRecord } from "./deals";
 import type { ContractTemplateRecord } from "./contractTemplates";
 import { docusealFetch, docusealPost } from "./docuseal/client";
-import { DocuSealTemplateSchema } from "./docuseal/schemas";
+import { DocuSealTemplateSchema, type DocuSealTemplate } from "./docuseal/schemas";
 import { parseServiceCategory } from "./serviceCategory";
 import { z } from "zod";
+
+/**
+ * Fetch a DocuSeal template (roles + field names) by its effective template
+ * id. Exposed so batch senders can prefetch each unique template ONCE and in
+ * parallel with other work, instead of one GET per contract inside
+ * generateContractFromDeal.
+ */
+export async function fetchDocusealTemplate(effectiveDocusealTemplateId: number): Promise<DocuSealTemplate> {
+  return docusealFetch(
+    `/templates/${effectiveDocusealTemplateId}`,
+    DocuSealTemplateSchema,
+    { retries: 1 }
+  );
+}
 
 // The submission creation response includes the submitters array with embed_src
 const CreateSubmissionResponseSchema = z.array(
@@ -28,18 +42,16 @@ export async function generateContractFromDeal(
   deal: DealRecord,
   clientEmail: string,
   templateRecord: ContractTemplateRecord,
-  docusealTemplateIdOverride?: number | null
+  docusealTemplateIdOverride?: number | null,
+  prefetchedTemplate?: DocuSealTemplate
 ): Promise<{ submissionId: number; submitterId: number; signingUrl: string }> {
   const services = parseServiceCategory(deal.serviceCategory);
   const dealValueDollars = (deal.dealValue / 100).toFixed(2);
   const effectiveDocusealTemplateId = docusealTemplateIdOverride ?? templateRecord.docusealTemplateId;
 
-  // Fetch the template to get the actual submitter roles
-  const template = await docusealFetch(
-    `/templates/${effectiveDocusealTemplateId}`,
-    DocuSealTemplateSchema,
-    { retries: 1 }
-  );
+  // Fetch the template to get the actual submitter roles (unless the caller
+  // already prefetched it — e.g. deduped across contracts sharing a template)
+  const template = prefetchedTemplate ?? (await fetchDocusealTemplate(effectiveDocusealTemplateId));
 
   // Determine the client-facing role from the template's submitters
   const rawSubmitters = Array.isArray(template.submitters) ? template.submitters : [];
@@ -101,7 +113,12 @@ export async function generateContractFromDeal(
         body: "Hi {{submitter.name}},\n\nPlease review and sign the attached contract at your earliest convenience.\n\nSigning link: {{submitter.link}}\n\nThank you for choosing Agency Collective!",
       },
     },
-    CreateSubmissionResponseSchema
+    CreateSubmissionResponseSchema,
+    // Submission creation is NOT idempotent: a request that times out after
+    // DocuSeal processed it would, on retry, create a duplicate submission
+    // and email the client a second signing request. Fail fast and let the
+    // admin retry explicitly.
+    { retries: 0 }
   );
 
   const submitter = submitters[0];

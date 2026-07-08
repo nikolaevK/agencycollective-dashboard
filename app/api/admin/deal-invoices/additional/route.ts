@@ -5,7 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findDealInvoiceByDealId, generateInvoiceNumber } from "@/lib/dealInvoices";
 import {
   findAdditionalInvoicesByDealId,
-  findAdditionalInvoice,
+  additionalInvoiceExists,
   insertAdditionalInvoice,
   updateAdditionalInvoice,
   deleteAdditionalInvoice,
@@ -88,8 +88,8 @@ export async function PATCH(req: NextRequest) {
     const { id, invoiceData } = body;
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    const invoice = await findAdditionalInvoice(id);
-    if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    const exists = await additionalInvoiceExists(id);
+    if (!exists) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
     const changes: Record<string, string | number | null> = {};
     if (invoiceData !== undefined) {

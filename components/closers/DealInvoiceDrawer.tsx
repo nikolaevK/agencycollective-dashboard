@@ -640,30 +640,28 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       setMsg({ type: "error", text: "Client email is required" });
       return;
     }
-    await handleSave();
     setSending(true);
     setMsg(null);
     try {
-      // Resolve data after save flushed everything
+      // Flush the active tab to its storage, then resolve primary + additional
+      // data locally. The invoice JSON rides along on the send request (the
+      // server persists it with the sent status), so no separate save
+      // round-trip is needed first.
       const primaryData = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
       const finalAddl = new Map(addlData);
       if (activeInvoiceId !== null && invoiceData) {
         finalAddl.set(activeInvoiceId, invoiceData);
       }
+      if (activeInvoiceId === null) {
+        primaryDataRef.current = invoiceData;
+      } else {
+        setAddlData(finalAddl);
+      }
 
       if (!primaryData) return;
 
-      // Generate all PDFs in parallel
-      const addlEntries = additionalInvoices
-        .map((inv) => ({ inv, data: finalAddl.get(inv.id) }))
-        .filter((e): e is { inv: typeof additionalInvoices[0]; data: InvoiceData } => !!e.data);
-
-      const [primaryBlob, ...addlBlobs] = await Promise.all([
-        pdf(<InvoicePdfDocument data={primaryData} />).toBlob(),
-        ...addlEntries.map((e) => pdf(<InvoicePdfDocument data={e.data} />).toBlob()),
-      ]);
-
-      // Commit any pending CC input so it isn't silently dropped.
+      // Commit any pending CC input so it isn't silently dropped — validated
+      // BEFORE the (slow) PDF renders so bad input fails fast.
       // If the pending value is invalid or would be dropped (dup/cap), surface the error
       // and abort the send so the user can fix or clear the field.
       let finalCcs = ccEmails;
@@ -690,11 +688,22 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         setCcError(null);
       }
 
+      // Generate all PDFs in parallel
+      const addlEntries = additionalInvoices
+        .map((inv) => ({ inv, data: finalAddl.get(inv.id) }))
+        .filter((e): e is { inv: typeof additionalInvoices[0]; data: InvoiceData } => !!e.data);
+
+      const [primaryBlob, ...addlBlobs] = await Promise.all([
+        pdf(<InvoicePdfDocument data={primaryData} />).toBlob(),
+        ...addlEntries.map((e) => pdf(<InvoicePdfDocument data={e.data} />).toBlob()),
+      ]);
+
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
       formData.append("email", clientEmail);
       for (const addr of finalCcs) formData.append("cc", addr);
       formData.append("pdf", new File([primaryBlob], `invoice-${primaryData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+      formData.append("invoiceData", JSON.stringify(primaryData));
       if (canSendContract) {
         formData.append("sendContract", "true");
       }
@@ -703,6 +712,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       for (let i = 0; i < addlEntries.length; i++) {
         const { inv, data } = addlEntries[i];
         formData.append("additionalPdfs", new File([addlBlobs[i]], `invoice-${data.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+        formData.append("additionalInvoiceData", JSON.stringify(data));
         additionalIds.push(inv.id);
       }
       if (additionalIds.length > 0) {

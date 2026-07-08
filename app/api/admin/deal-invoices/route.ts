@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { findDealInvoiceByDealId, findDealInvoice, updateDealInvoice } from "@/lib/dealInvoices";
+import { findDealInvoiceByDealId, dealInvoiceExists, updateDealInvoice } from "@/lib/dealInvoices";
 
 export async function GET(req: NextRequest) {
   const session = getAdminSession();
@@ -26,8 +26,8 @@ export async function PATCH(req: NextRequest) {
     const { id, invoiceData, clientEmail } = body;
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    const invoice = await findDealInvoice(id);
-    if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    const exists = await dealInvoiceExists(id);
+    if (!exists) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
     const changes: Record<string, string | number | null> = {};
     if (invoiceData !== undefined) {

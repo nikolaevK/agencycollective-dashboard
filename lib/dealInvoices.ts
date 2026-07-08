@@ -28,7 +28,12 @@ function rowToInvoice(row: Row): DealInvoiceRecord {
     clientEmail: row.client_email != null ? String(row.client_email) : null,
     sentAt: row.sent_at != null ? String(row.sent_at) : null,
     sentCount: Number(row.sent_count ?? 0),
-    hasPdf: row.pdf_data != null && row.pdf_data !== "",
+    // Reads project a SQL `has_pdf` flag instead of the BLOB itself; keep the
+    // pdf_data fallback for any read that still selects the raw column.
+    hasPdf:
+      row.has_pdf != null
+        ? Number(row.has_pdf) === 1
+        : row.pdf_data != null && row.pdf_data !== "",
     createdBy: row.created_by != null ? String(row.created_by) : null,
     sentBy: row.sent_by != null ? String(row.sent_by) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
@@ -36,18 +41,59 @@ function rowToInvoice(row: Row): DealInvoiceRecord {
   };
 }
 
+// Project everything EXCEPT pdf_data — SELECT * shipped the previously-sent
+// PDF (up to 10 MB) over the wire just so rowToInvoice could check its
+// presence. Same fix as findAdditionalInvoicesByDealId (lib/
+// dealAdditionalInvoices.ts). LENGTH() reads only the record header, not the
+// BLOB.
+const INVOICE_COLS = `id, deal_id, invoice_number, invoice_data, status, client_email,
+       sent_at, sent_count, created_by, sent_by, created_at, updated_at,
+       (pdf_data IS NOT NULL AND LENGTH(pdf_data) > 0) AS has_pdf`;
+
 export async function findDealInvoiceByDealId(dealId: string): Promise<DealInvoiceRecord | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM deal_invoices WHERE deal_id = ?", args: [dealId] });
+  const result = await db.execute({ sql: `SELECT ${INVOICE_COLS} FROM deal_invoices WHERE deal_id = ?`, args: [dealId] });
   return result.rows[0] ? rowToInvoice(result.rows[0]) : null;
 }
 
 export async function findDealInvoice(id: string): Promise<DealInvoiceRecord | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM deal_invoices WHERE id = ?", args: [id] });
+  const result = await db.execute({ sql: `SELECT ${INVOICE_COLS} FROM deal_invoices WHERE id = ?`, args: [id] });
   return result.rows[0] ? rowToInvoice(result.rows[0]) : null;
+}
+
+/**
+ * Metadata-only read for the send path. id, deal_id, invoice_number are
+ * stored physically BEFORE invoice_data/pdf_data in the record, so this read
+ * never walks the row's overflow pages nor ships the large payloads
+ * (~1s/call observed for the full record vs one plain roundtrip for this).
+ */
+export interface DealInvoiceMeta {
+  id: string;
+  dealId: string;
+  invoiceNumber: string;
+}
+
+export async function findDealInvoiceMeta(id: string): Promise<DealInvoiceMeta | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT id, deal_id, invoice_number FROM deal_invoices WHERE id = ?",
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return null;
+  return { id: String(row.id), dealId: String(row.deal_id), invoiceNumber: String(row.invoice_number) };
+}
+
+/** Existence probe for update paths that don't need the record itself. */
+export async function dealInvoiceExists(id: string): Promise<boolean> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({ sql: "SELECT id FROM deal_invoices WHERE id = ?", args: [id] });
+  return result.rows.length > 0;
 }
 
 export async function insertDealInvoice(record: {
@@ -85,6 +131,8 @@ export async function updateDealInvoice(
     clientEmail?: string | null;
     sentAt?: string | null;
     sentCount?: number;
+    /** Atomic sent_count bump — avoids the read-modify-write race of sentCount. */
+    incrementSentCount?: boolean;
     sentBy?: string | null;
     pdfData?: Buffer;
   }
@@ -97,6 +145,7 @@ export async function updateDealInvoice(
   if (changes.clientEmail !== undefined) { fields.push("client_email = ?"); args.push(changes.clientEmail); }
   if (changes.sentAt !== undefined) { fields.push("sent_at = ?"); args.push(changes.sentAt); }
   if (changes.sentCount !== undefined) { fields.push("sent_count = ?"); args.push(changes.sentCount); }
+  if (changes.incrementSentCount) { fields.push("sent_count = COALESCE(sent_count, 0) + 1"); }
   if (changes.sentBy !== undefined) { fields.push("sent_by = ?"); args.push(changes.sentBy); }
   if (changes.pdfData !== undefined) { fields.push("pdf_data = ?"); args.push(changes.pdfData); }
 

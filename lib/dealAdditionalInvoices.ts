@@ -54,8 +54,23 @@ export async function findAdditionalInvoicesByDealId(dealId: string): Promise<De
 export async function findAdditionalInvoice(id: string): Promise<DealAdditionalInvoiceRecord | null> {
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute({ sql: "SELECT * FROM deal_additional_invoices WHERE id = ?", args: [id] });
+  // Same pdf_data exclusion as the list read above — don't ship the BLOB.
+  const result = await db.execute({
+    sql: `SELECT id, deal_id, invoice_number, invoice_data, status, sort_order,
+                 created_by, created_at, updated_at,
+                 (pdf_data IS NOT NULL AND LENGTH(pdf_data) > 0) AS has_pdf
+          FROM deal_additional_invoices WHERE id = ?`,
+    args: [id],
+  });
   return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/** Existence probe for update paths that don't need the record itself. */
+export async function additionalInvoiceExists(id: string): Promise<boolean> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({ sql: "SELECT id FROM deal_additional_invoices WHERE id = ?", args: [id] });
+  return result.rows.length > 0;
 }
 
 export async function insertAdditionalInvoice(record: {
