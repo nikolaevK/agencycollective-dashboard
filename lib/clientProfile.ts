@@ -67,10 +67,9 @@ export const MANUAL_BILLING_OPTIONS = [
   { value: "paused", label: "Paused" },
 ] as const;
 
-const STAGE_VALUES = new Set<string>(STAGE_OPTIONS.map((o) => o.value));
-const HEALTH_VALUES = new Set<string>(HEALTH_OPTIONS.map((o) => o.value));
-// Ad-platform values are NOT gated to a static set — the vocabulary is
-// admin-extensible (see sanitizeOpenStringArray + lib/adPlatformOptions.ts).
+// Stage / health / ad-platform values are NOT gated to a static set — those
+// vocabularies are admin-extensible (see sanitizeOpenStringArray +
+// lib/adPlatformOptions.ts / lib/rosterOptions.ts).
 const MANUAL_BILLING_VALUES = new Set<string>(MANUAL_BILLING_OPTIONS.map((o) => o.value));
 const SERVICE_VALUES = new Set<string>(SERVICE_OPTIONS.map((o) => o.value));
 
@@ -95,9 +94,9 @@ export interface ClientProfile {
   website: string | null;
   isTop: boolean;
   adsRunning: boolean;
-  adPlatforms: string[]; // AD_PLATFORM_OPTIONS values
-  stages: string[]; // STAGE_OPTIONS values
-  health: string[]; // HEALTH_OPTIONS values
+  adPlatforms: string[]; // AD_PLATFORM_OPTIONS + custom ad_platform_options values
+  stages: string[]; // STAGE_OPTIONS + custom roster_options values
+  health: string[]; // HEALTH_OPTIONS + custom roster_options values
   services: string[]; // SERVICE_OPTIONS values (fixed roster vocabulary)
   perfFee: string | null; // manual override; null = derive from linked ad_accounts
   revThreshold: string | null;
@@ -212,12 +211,13 @@ function sanitizeEnumArray(values: unknown, allowed: Set<string>): string[] {
 }
 
 /**
- * Open-vocabulary chip array (ad platforms). Unlike the fixed enums, the
- * platform vocabulary is admin-extensible (ad_platform_options), so values
- * can't be gated against a static set — that would silently drop a freshly
- * added custom option, and re-validating against the LIVE set would drop a
- * still-tagged value whose option was later removed. Instead: trim, drop
- * empties, cap length/count, dedupe. The picker only ever emits known slugs.
+ * Open-vocabulary chip array (ad platforms, stages, health). Unlike the fixed
+ * enums, these vocabularies are admin-extensible (ad_platform_options /
+ * roster_options), so values can't be gated against a static set — that would
+ * silently drop a freshly added custom option, and re-validating against the
+ * LIVE set would drop a still-tagged value whose option was later removed.
+ * Instead: trim, drop empties, cap length/count, dedupe. The picker only ever
+ * emits known slugs.
  */
 function sanitizeOpenStringArray(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -302,8 +302,8 @@ export function sanitizeProfileInput(body: Record<string, unknown>): {
   if (body.adsRunning !== undefined) input.adsRunning = Boolean(body.adsRunning);
   if (body.adPlatforms !== undefined)
     input.adPlatforms = sanitizeOpenStringArray(body.adPlatforms);
-  if (body.stages !== undefined) input.stages = sanitizeEnumArray(body.stages, STAGE_VALUES);
-  if (body.health !== undefined) input.health = sanitizeEnumArray(body.health, HEALTH_VALUES);
+  if (body.stages !== undefined) input.stages = sanitizeOpenStringArray(body.stages);
+  if (body.health !== undefined) input.health = sanitizeOpenStringArray(body.health);
   if (body.services !== undefined) input.services = sanitizeServiceValues(body.services);
   if (body.perfFee !== undefined) input.perfFee = sanitizeText(body.perfFee, MAX_TEXT_LEN);
   if (body.revThreshold !== undefined)

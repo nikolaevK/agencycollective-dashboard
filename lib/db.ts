@@ -161,6 +161,17 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       label      TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // Admin-managed extra Stage / Client Health roster chips (kind-discriminated,
+    // see lib/rosterOptions.ts) — same rationale and lifecycle as
+    // ad_platform_options above: self-heals without a SCHEMA_VERSION bump,
+    // brand-new empty table, reads degrade to [] if it's somehow absent.
+    `CREATE TABLE IF NOT EXISTS roster_options (
+      kind       TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      label      TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (kind, value)
+    )`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

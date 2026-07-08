@@ -32,9 +32,8 @@ import {
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
+import { useRosterOptions } from "@/hooks/useRosterOptions";
 import {
-  STAGE_OPTIONS,
-  HEALTH_OPTIONS,
   MANUAL_BILLING_OPTIONS,
   SERVICE_OPTIONS,
   type ClientTeamMember,
@@ -68,6 +67,10 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   const { patchProfile, putTeam } = useClientProfileMutations();
   const { options: platformOptions, addOption: addPlatformOption } =
     useAdPlatformOptions();
+  const { options: stageOptions, addOption: addStageOption } =
+    useRosterOptions("stage");
+  const { options: healthOptions, addOption: addHealthOption } =
+    useRosterOptions("health");
 
   // Reset to page 1 when the FILTERS change, so applying a filter doesn't
   // strand the user on a now-out-of-range page. (Keyed on the filters, not the
@@ -249,9 +252,10 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
         <td className="px-4 py-3 min-w-[170px]">
           <ChipMultiSelect
             value={profile.stages}
-            options={STAGE_OPTIONS}
+            options={stageOptions}
             colorOf={(v) => STAGE_CHIP_CLS[v]}
             onChange={(stages) => patch(client, { stages })}
+            onCreateOption={addStageOption}
             addLabel="Add stage"
           />
         </td>
@@ -259,9 +263,10 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
         <td className="px-4 py-3 min-w-[170px]">
           <ChipMultiSelect
             value={profile.health}
-            options={HEALTH_OPTIONS}
+            options={healthOptions}
             colorOf={(v) => HEALTH_CHIP_CLS[v]}
             onChange={(health) => patch(client, { health })}
+            onCreateOption={addHealthOption}
             addLabel="Add health"
           />
         </td>
@@ -656,16 +661,18 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 <div className="mt-3 flex flex-wrap gap-1">
                   <ChipMultiSelect
                     value={profile.stages}
-                    options={STAGE_OPTIONS}
+                    options={stageOptions}
                     colorOf={(v) => STAGE_CHIP_CLS[v]}
                     onChange={(stages) => patch(client, { stages })}
+                    onCreateOption={addStageOption}
                     compact
                   />
                   <ChipMultiSelect
                     value={profile.health}
-                    options={HEALTH_OPTIONS}
+                    options={healthOptions}
                     colorOf={(v) => HEALTH_CHIP_CLS[v]}
                     onChange={(health) => patch(client, { health })}
+                    onCreateOption={addHealthOption}
                     compact
                   />
                 </div>

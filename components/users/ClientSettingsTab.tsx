@@ -30,9 +30,8 @@ import {
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
+import { useRosterOptions } from "@/hooks/useRosterOptions";
 import {
-  STAGE_OPTIONS,
-  HEALTH_OPTIONS,
   MANUAL_BILLING_OPTIONS,
   BOOK_OPTIONS,
   SERVICE_OPTIONS,
@@ -74,6 +73,10 @@ export function ClientSettingsTab({
   const { patchProfile, putTeam } = useClientProfileMutations();
   const { options: platformOptions, addOption: addPlatformOption } =
     useAdPlatformOptions();
+  const { options: stageOptions, addOption: addStageOption } =
+    useRosterOptions("stage");
+  const { options: healthOptions, addOption: addHealthOption } =
+    useRosterOptions("health");
   const [manualMrr, setManualMrr] = useState(
     profile.manualMrrCents != null ? (profile.manualMrrCents / 100).toString() : ""
   );
@@ -326,17 +329,19 @@ export function ClientSettingsTab({
           <RosterField label="Stage">
             <ChipMultiSelect
               value={profile.stages}
-              options={STAGE_OPTIONS}
+              options={stageOptions}
               colorOf={(v) => STAGE_CHIP_CLS[v]}
               onChange={(stages) => patchNow({ stages })}
+              onCreateOption={addStageOption}
             />
           </RosterField>
           <RosterField label="Client health">
             <ChipMultiSelect
               value={profile.health}
-              options={HEALTH_OPTIONS}
+              options={healthOptions}
               colorOf={(v) => HEALTH_CHIP_CLS[v]}
               onChange={(health) => patchNow({ health })}
+              onCreateOption={addHealthOption}
             />
           </RosterField>
           <RosterField label="Ad platforms">

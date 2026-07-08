@@ -6,13 +6,10 @@ import { cn } from "@/lib/utils";
 import type { ClientPublic } from "./types";
 import type { ClientFilterState } from "./ClientFilters";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
+import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { AdPlatformOptionsModal } from "./AdPlatformOptionsModal";
-import {
-  STAGE_OPTIONS,
-  HEALTH_OPTIONS,
-  SERVICE_OPTIONS,
-  type TeamRole,
-} from "@/lib/clientProfile";
+import { RosterOptionsModal } from "./RosterOptionsModal";
+import { SERVICE_OPTIONS, type TeamRole } from "@/lib/clientProfile";
 
 // ---------------------------------------------------------------------------
 // Roster dashboard — the prototype's count-group cards: Overview, Media Buyer,
@@ -76,8 +73,6 @@ function toPills(options: ReadonlyArray<{ value: string; label: string }>) {
   }));
 }
 
-const STAGE_PILLS = toPills(STAGE_OPTIONS);
-const HEALTH_PILLS = toPills(HEALTH_OPTIONS);
 const SERVICE_PILLS = toPills(SERVICE_OPTIONS);
 
 export function RosterDashboard({
@@ -90,9 +85,15 @@ export function RosterDashboard({
   onFiltersChange: (next: ClientFilterState) => void;
 }) {
   const { options: platformOptions } = useAdPlatformOptions();
-  const [manageOpen, setManageOpen] = useState(false);
-  // Built-in + admin-managed custom platforms (custom get the fallback color).
+  const { options: stageOptions } = useRosterOptions("stage");
+  const { options: healthOptions } = useRosterOptions("health");
+  const [manageOpen, setManageOpen] = useState<
+    "platform" | "stage" | "health" | null
+  >(null);
+  // Built-in + admin-managed custom options (custom get the fallback color).
   const platformPills = useMemo(() => toPills(platformOptions), [platformOptions]);
+  const stagePills = useMemo(() => toPills(stageOptions), [stageOptions]);
+  const healthPills = useMemo(() => toPills(healthOptions), [healthOptions]);
 
   const stats = useMemo(() => {
     const count = (key: "stages" | "health" | "services" | "adPlatforms") => {
@@ -198,15 +199,10 @@ export function RosterDashboard({
         label="Ad Accounts"
         dot="bg-orange-500"
         action={
-          <button
-            type="button"
-            onClick={() => setManageOpen(true)}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          <ManageButton
             title="Manage ad platform options"
-          >
-            <Settings2 className="h-3 w-3" />
-            Manage
-          </button>
+            onClick={() => setManageOpen("platform")}
+          />
         }
       >
         {platformPills.map((p) => (
@@ -234,8 +230,17 @@ export function RosterDashboard({
         ))}
       </Group>
 
-      <Group label="Stage" dot="bg-emerald-500">
-        {STAGE_PILLS.map((p) => (
+      <Group
+        label="Stage"
+        dot="bg-emerald-500"
+        action={
+          <ManageButton
+            title="Manage stage options"
+            onClick={() => setManageOpen("stage")}
+          />
+        }
+      >
+        {stagePills.map((p) => (
           <Pill
             key={p.value}
             label={p.label}
@@ -247,8 +252,17 @@ export function RosterDashboard({
         ))}
       </Group>
 
-      <Group label="Client Health" dot="bg-red-500">
-        {HEALTH_PILLS.map((p) => (
+      <Group
+        label="Client Health"
+        dot="bg-red-500"
+        action={
+          <ManageButton
+            title="Manage client health options"
+            onClick={() => setManageOpen("health")}
+          />
+        }
+      >
+        {healthPills.map((p) => (
           <Pill
             key={p.value}
             label={p.label}
@@ -260,8 +274,27 @@ export function RosterDashboard({
         ))}
       </Group>
 
-      {manageOpen && <AdPlatformOptionsModal onClose={() => setManageOpen(false)} />}
+      {manageOpen === "platform" && (
+        <AdPlatformOptionsModal onClose={() => setManageOpen(null)} />
+      )}
+      {(manageOpen === "stage" || manageOpen === "health") && (
+        <RosterOptionsModal kind={manageOpen} onClose={() => setManageOpen(null)} />
+      )}
     </div>
+  );
+}
+
+function ManageButton({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+      title={title}
+    >
+      <Settings2 className="h-3 w-3" />
+      Manage
+    </button>
   );
 }
 

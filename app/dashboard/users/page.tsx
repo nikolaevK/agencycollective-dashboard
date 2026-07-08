@@ -12,11 +12,10 @@ import {
   effectiveMrrCents,
   effectiveLtvCents,
   SERVICE_LABELS,
-  STAGE_LABELS,
-  HEALTH_LABELS,
   MANUAL_BILLING_LABELS,
 } from "@/components/users/rosterPresentation";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
+import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
 import { AddClientModal } from "@/components/users/AddClientModal";
 import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
@@ -108,7 +107,9 @@ function csvField(value: string | number | null | undefined): string {
 /** Full roster (both books, every column) as CSV — mirrors the prototype's Copy CSV. */
 function buildRosterCsv(
   clients: ClientPublic[],
-  platformLabels: Record<string, string>
+  platformLabels: Record<string, string>,
+  stageLabels: Record<string, string>,
+  healthLabels: Record<string, string>
 ): string {
   const header = [
     "Client", "Book", "Status", "Website", "Stages", "Health", "Ad Platforms",
@@ -124,8 +125,8 @@ function buildRosterCsv(
       isPepads ? "PepAds" : "Agency Collective",
       c.status,
       p.website ?? "",
-      p.stages.map((v) => STAGE_LABELS[v] ?? v).join("; "),
-      p.health.map((v) => HEALTH_LABELS[v] ?? v).join("; "),
+      p.stages.map((v) => stageLabels[v] ?? v).join("; "),
+      p.health.map((v) => healthLabels[v] ?? v).join("; "),
       p.adPlatforms.map((v) => platformLabels[v] ?? v).join("; "),
       p.adsRunning ? "running" : "paused",
       p.services.map((v) => SERVICE_LABELS[v] ?? v).join("; "),
@@ -158,6 +159,8 @@ export default function UsersPage() {
   const [sentInvoicesOpen, setSentInvoicesOpen] = useState(false);
   const [csvCopied, setCsvCopied] = useState(false);
   const { platformLabels } = useAdPlatformOptions();
+  const { labels: stageLabels } = useRosterOptions("stage");
+  const { labels: healthLabels } = useRosterOptions("health");
 
   const { data: unreadSupport = 0 } = useQuery<number>({
     queryKey: ["admin-support-unread"],
@@ -205,7 +208,9 @@ export default function UsersPage() {
 
   async function handleCopyCsv() {
     try {
-      await navigator.clipboard.writeText(buildRosterCsv(clients, platformLabels));
+      await navigator.clipboard.writeText(
+        buildRosterCsv(clients, platformLabels, stageLabels, healthLabels)
+      );
       setCsvCopied(true);
       setTimeout(() => setCsvCopied(false), 2000);
     } catch {

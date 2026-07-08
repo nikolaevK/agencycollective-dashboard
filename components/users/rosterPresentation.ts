@@ -1,9 +1,4 @@
-import {
-  STAGE_OPTIONS,
-  HEALTH_OPTIONS,
-  MANUAL_BILLING_OPTIONS,
-  SERVICE_OPTIONS,
-} from "@/lib/clientProfile";
+import { MANUAL_BILLING_OPTIONS, SERVICE_OPTIONS } from "@/lib/clientProfile";
 
 // ---------------------------------------------------------------------------
 // Roster chip presentation — pure label/color maps (palette mirrors the
@@ -65,9 +60,8 @@ function toLabelMap(
   return Object.fromEntries(options.map((o) => [o.value, o.label]));
 }
 
-export const STAGE_LABELS = toLabelMap(STAGE_OPTIONS);
-export const HEALTH_LABELS = toLabelMap(HEALTH_OPTIONS);
-// Ad-platform labels are dynamic (built-in + custom) — see useAdPlatformOptions.
+// Stage / health / ad-platform labels are dynamic (built-in + custom) — see
+// useRosterOptions / useAdPlatformOptions.
 export const MANUAL_BILLING_LABELS = toLabelMap(MANUAL_BILLING_OPTIONS);
 export const SERVICE_LABELS = toLabelMap(SERVICE_OPTIONS);
 
