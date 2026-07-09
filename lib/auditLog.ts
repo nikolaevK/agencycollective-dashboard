@@ -93,6 +93,68 @@ export async function clearAuditLogsByTargetPrefix(
   return r.rowsAffected ?? 0;
 }
 
+export interface AuditLogQuery {
+  /** Prefix match on action, e.g. "deal." or "client.logo" (parameterized LIKE). */
+  action?: string;
+  targetType?: string;
+  targetId?: string;
+  adminId?: string;
+  /** yyyy-mm-dd, inclusive (created_at is zone-less UTC). */
+  since?: string;
+  until?: string;
+  limit: number;
+  offset: number;
+}
+
+/** Filtered, paginated audit read for the external API. */
+export async function queryAuditLogs(
+  query: AuditLogQuery
+): Promise<{ entries: AuditLogEntry[]; total: number }> {
+  await ensureMigrated();
+  const db = getDb();
+
+  const where: string[] = [];
+  const args: (string | number)[] = [];
+  if (query.action) {
+    where.push("action LIKE ?");
+    args.push(`${query.action.replace(/[%_]/g, "")}%`);
+  }
+  if (query.targetType) {
+    where.push("target_type = ?");
+    args.push(query.targetType);
+  }
+  if (query.targetId) {
+    where.push("target_id = ?");
+    args.push(query.targetId);
+  }
+  if (query.adminId) {
+    where.push("admin_id = ?");
+    args.push(query.adminId);
+  }
+  if (query.since) {
+    where.push("created_at >= ?");
+    args.push(`${query.since} 00:00:00`);
+  }
+  if (query.until) {
+    where.push("created_at <= ?");
+    args.push(`${query.until} 23:59:59`);
+  }
+  const whereSql = where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "";
+
+  const [countResult, pageResult] = await Promise.all([
+    db.execute({ sql: `SELECT COUNT(*) AS n FROM audit_log${whereSql}`, args }),
+    db.execute({
+      sql: `SELECT * FROM audit_log${whereSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      args: [...args, query.limit, query.offset],
+    }),
+  ]);
+
+  return {
+    entries: pageResult.rows.map((row) => rowToEntry(row as Record<string, unknown>)),
+    total: Number((countResult.rows[0] as Record<string, unknown>)?.n ?? 0),
+  };
+}
+
 export async function getRecentAuditLogs(limit = 20): Promise<AuditLogEntry[]> {
   await ensureMigrated();
   const db = getDb();

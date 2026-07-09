@@ -36,6 +36,7 @@ function rowToAdmin(row: Row): AdminRecord {
       media: Number(row.perm_media) === 1,
       media_manage: Number(row.perm_media_manage) === 1,
       admin: Number(row.perm_admin) === 1,
+      apitokens: Number(row.perm_apitokens) === 1,
     },
   };
 }
@@ -88,8 +89,8 @@ export async function insertAdmin(
       display_name, email, avatar_path, role,
       perm_dashboard, perm_analyst, perm_studio, perm_jsoneditor,
       perm_adcopy, perm_invoice, perm_users, perm_closers,
-      perm_media, perm_media_manage, perm_admin
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      perm_media, perm_media_manage, perm_admin, perm_apitokens
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       admin.id,
       admin.username,
@@ -110,6 +111,7 @@ export async function insertAdmin(
       perms.media ? 1 : 0,
       perms.media_manage ? 1 : 0,
       perms.admin ? 1 : 0,
+      perms.apitokens ? 1 : 0,
     ],
   });
 }
@@ -163,6 +165,7 @@ export async function updateAdmin(
     if (p.media !== undefined) { fields.push("perm_media = ?"); args.push(p.media ? 1 : 0); }
     if (p.media_manage !== undefined) { fields.push("perm_media_manage = ?"); args.push(p.media_manage ? 1 : 0); }
     if (p.admin !== undefined) { fields.push("perm_admin = ?"); args.push(p.admin ? 1 : 0); }
+    if (p.apitokens !== undefined) { fields.push("perm_apitokens = ?"); args.push(p.apitokens ? 1 : 0); }
   }
 
   if (fields.length === 0) return;

@@ -69,6 +69,7 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
         media: false,
         media_manage: false,
         admin: false,
+        apitokens: false,
         ...(data.permissions ?? {}),
       },
     };

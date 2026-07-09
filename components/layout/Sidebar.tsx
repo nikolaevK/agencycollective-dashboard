@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -32,6 +32,8 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/projection", label: "Revenue Projection", icon: TrendingUp, perm: "dashboard" },
   { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
   { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
+  { href: "/dashboard/api-tokens", label: "API Tokens", icon: KeyRound, perm: "apitokens" },
+  { href: "/dashboard/api-docs", label: "API Docs", icon: Code2, perm: "apitokens" },
 ];
 
 export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarProps) {

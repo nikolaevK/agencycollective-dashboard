@@ -1,4 +1,4 @@
-export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'jsoneditor' | 'adcopy' | 'invoice' | 'users' | 'closers' | 'media' | 'media_manage' | 'admin';
+export type PermissionKey = 'dashboard' | 'analyst' | 'studio' | 'jsoneditor' | 'adcopy' | 'invoice' | 'users' | 'closers' | 'media' | 'media_manage' | 'admin' | 'apitokens';
 
 export interface AdminPermissions {
   dashboard: boolean;
@@ -12,6 +12,7 @@ export interface AdminPermissions {
   media: boolean;
   media_manage: boolean;
   admin: boolean;
+  apitokens: boolean;
 }
 
 export const PERMISSION_MODULES: {
@@ -32,6 +33,7 @@ export const PERMISSION_MODULES: {
   { key: 'media', label: 'Media Buyers', description: 'Paid-media docs & assistant', icon: 'Megaphone' },
   { key: 'media_manage', label: 'Head of Paid Media', description: 'Manage media team & delete docs', icon: 'ClipboardCheck', elevated: true },
   { key: 'admin', label: 'Admin Management', description: 'Full system authority', icon: 'ShieldCheck', elevated: true },
+  { key: 'apitokens', label: 'API Tokens', description: 'Mint & manage external API tokens', icon: 'KeyRound', elevated: true },
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_MODULES.map((m) => m.key);
@@ -49,6 +51,7 @@ export function allPermissionsTrue(): AdminPermissions {
     media: true,
     media_manage: true,
     admin: true,
+    apitokens: true,
   };
 }
 
@@ -65,6 +68,7 @@ export function allPermissionsFalse(): AdminPermissions {
     media: false,
     media_manage: false,
     admin: false,
+    apitokens: false,
   };
 }
 

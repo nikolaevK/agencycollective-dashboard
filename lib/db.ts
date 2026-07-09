@@ -172,9 +172,64 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (kind, value)
     )`,
+    // External API bearer tokens (lib/apiTokens.ts) — verified on EVERY
+    // /api/v1/* and /api/mcp request, so they must self-heal without a
+    // SCHEMA_VERSION bump (same rationale as media_folders). Secret is stored
+    // as a SHA-256 hex digest only; `prefix` is the visible non-secret id
+    // (UNIQUE gives it a lookup index). scopes/client_ids/closer_ids are JSON
+    // TEXT so new resources/levels never need a migration.
+    `CREATE TABLE IF NOT EXISTS api_tokens (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      prefix           TEXT NOT NULL UNIQUE,
+      token_hash       TEXT NOT NULL,
+      scopes           TEXT NOT NULL DEFAULT '{}',
+      client_ids       TEXT,
+      closer_ids       TEXT,
+      expires_at       TEXT,
+      revoked_at       TEXT,
+      last_used_at     TEXT,
+      request_count    INTEGER NOT NULL DEFAULT 0,
+      created_by       TEXT,
+      created_by_name  TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Per-token per-day request rollup for the usage UI, upserted
+    // fire-and-forget on each authenticated request (lib/apiTokens.ts).
+    `CREATE TABLE IF NOT EXISTS api_token_usage (
+      token_id  TEXT NOT NULL,
+      day       TEXT NOT NULL,
+      count     INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (token_id, day)
+    )`,
+    // OAuth 2.1 layer for MCP custom connectors (lib/oauth.ts) — dynamically
+    // registered public clients (PKCE only, no secret) and single-use
+    // authorization codes carrying the consent-minted api_token encrypted
+    // until exchange. Read on OAuth flows, so self-heal like api_tokens.
+    `CREATE TABLE IF NOT EXISTS oauth_clients (
+      client_id     TEXT PRIMARY KEY,
+      client_name   TEXT,
+      redirect_uris TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_codes (
+      code             TEXT PRIMARY KEY,
+      client_id        TEXT NOT NULL,
+      redirect_uri     TEXT NOT NULL,
+      code_challenge   TEXT NOT NULL,
+      token_ciphertext TEXT NOT NULL,
+      api_token_id     TEXT NOT NULL,
+      expires_at       TEXT NOT NULL,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [
+    // API Tokens page permission (lib/permissions.ts `apitokens`) — written by
+    // every Admins-page permission save (insert/updateAdmin emit the column
+    // unconditionally), so it must self-heal on existing deploys.
+    { table: "admins",                 column: "perm_apitokens",     defn: "INTEGER NOT NULL DEFAULT 0" },
     { table: "appointments",           column: "setter_tier",        defn: "TEXT" },
     { table: "appointments",           column: "setter_tier_at",     defn: "TEXT" },
     { table: "deals",                  column: "setter_tier",        defn: "TEXT" },
@@ -455,7 +510,8 @@ export async function migrate(): Promise<void> {
       perm_closers   INTEGER NOT NULL DEFAULT 0,
       perm_media     INTEGER NOT NULL DEFAULT 0,
       perm_media_manage INTEGER NOT NULL DEFAULT 0,
-      perm_admin     INTEGER NOT NULL DEFAULT 0
+      perm_admin     INTEGER NOT NULL DEFAULT 0,
+      perm_apitokens INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -507,7 +563,8 @@ export async function migrate(): Promise<void> {
         perm_closers   INTEGER NOT NULL DEFAULT 0,
         perm_media     INTEGER NOT NULL DEFAULT 0,
         perm_media_manage INTEGER NOT NULL DEFAULT 0,
-        perm_admin     INTEGER NOT NULL DEFAULT 0
+        perm_admin     INTEGER NOT NULL DEFAULT 0,
+        perm_apitokens INTEGER NOT NULL DEFAULT 0
       )
     `);
 

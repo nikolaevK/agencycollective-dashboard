@@ -64,7 +64,7 @@ function decodePayload(token: string): Record<string, unknown> | null {
 }
 
 /** Map route patterns to required permission keys. */
-type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin";
+type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin" | "apitokens";
 
 const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p === "/dashboard/chat", perm: "analyst" },
@@ -76,6 +76,8 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/dashboard/media-buyers"), perm: "media" },
   { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
+  { match: (p) => p.startsWith("/dashboard/api-tokens"), perm: "apitokens" },
+  { match: (p) => p.startsWith("/dashboard/api-docs"), perm: "apitokens" },
   { match: (p) => p.startsWith("/dashboard/projection"), perm: "dashboard" },
   // Dashboard overview, accounts, alerts, settings need 'dashboard'
   { match: (p) => p === "/dashboard" || p.startsWith("/dashboard/accounts") || p === "/dashboard/alerts" || p === "/dashboard/settings", perm: "dashboard" },
@@ -104,6 +106,7 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/media-chat"), perm: "media" },
   { match: (p) => p.startsWith("/api/admin/audit-log"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
+  { match: (p) => p.startsWith("/api/admin/api-tokens"), perm: "apitokens" },
   { match: (p) => p.startsWith("/api/admin/projection"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/accounts"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/ads"), perm: "dashboard" },
@@ -283,6 +286,10 @@ export const config = {
     "/api/admin/agency-config/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
+    // Cookie-gated token management. NOTE: /api/v1/* and /api/mcp are
+    // deliberately NOT matched — they are bearer-token authed in-route
+    // (Node runtime; DB token lookups can't run in Edge middleware).
+    "/api/admin/api-tokens/:path*",
     "/api/admin/projection/:path*",
     "/api/closer/:path*",
     "/api/calendar/:path*",
