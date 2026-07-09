@@ -1901,6 +1901,21 @@ export default function AdminDocumentationPage() {
                 layer has no env override; its TTLs are hard-coded per
                 resource in <Pill>lib/cache.ts</Pill>.
               </Bullet>
+              <Bullet>
+                <Pill>API_INTERNAL_ORIGIN</Pill> — trusted origin the MCP
+                server uses to call its own <Pill>/api/v1</Pill> routes.
+                Set it to the public production domain when Vercel
+                Deployment Protection is on (the <Pill>VERCEL_URL</Pill>{" "}
+                fallback hits the HTML auth wall). Alternatively enable
+                Vercel&apos;s Protection Bypass for Automation (
+                <Pill>VERCEL_AUTOMATION_BYPASS_SECRET</Pill>), which the
+                dispatch attaches automatically.
+              </Bullet>
+              <Bullet>
+                <Pill>API_ALLOWED_ORIGINS</Pill> — comma-separated CORS
+                allow-list for <Pill>/api/v1</Pill> (default <Pill>*</Pill>;
+                the matching request Origin is echoed back).
+              </Bullet>
             </ul>
           </SubSection>
         </Section>
@@ -2141,6 +2156,185 @@ export default function AdminDocumentationPage() {
             SOPs are admin-only for now. Surfacing read-only SOPs to department
             members (e.g. inside the closer/setter portal) is a planned, additive
             follow-up.
+          </Note>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
+        {/* External API, MCP & AI connectors                       */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={Globe}
+          title="External API, MCP & AI connectors"
+          subtitle="/dashboard/api-tokens + /dashboard/api-docs · permission: apitokens"
+        >
+          <p>
+            The platform exposes a machine-to-machine surface that mirrors the{" "}
+            <span className="font-medium text-foreground">admin</span> modules
+            (never the client or closer portals): a REST API under{" "}
+            <Pill>/api/v1</Pill>, an MCP server at <Pill>/api/mcp/mcp</Pill>{" "}
+            for AI agents, and an OAuth flow so Claude.ai can be connected as
+            a custom connector. All three authenticate with the same API
+            tokens and enforce the same scopes, rate limits, and audit
+            logging.
+          </p>
+
+          <SubSection title="API tokens (/dashboard/api-tokens)">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                Tokens look like <Pill>ac_live_…</Pill> and are{" "}
+                <span className="font-semibold text-foreground">
+                  shown once at creation
+                </span>{" "}
+                — only a SHA-256 hash is stored, so a lost secret means
+                rotating (same token record, new secret) rather than
+                re-reading it.
+              </Bullet>
+              <Bullet>
+                Access is granted per resource at{" "}
+                <Pill>read</Pill> / <Pill>write</Pill> / <Pill>delete</Pill>{" "}
+                (each level implies the ones below): <Pill>closer</Pill>{" "}
+                (Closers, deals, payouts, attendance), <Pill>client</Pill>{" "}
+                (Client Directory, billing, ad accounts, welcome kit),{" "}
+                <Pill>media</Pill> (Media Buyers), <Pill>sops</Pill>, and the
+                read-only <Pill>audit</Pill> (audit trail).
+              </Bullet>
+              <Bullet>
+                Tokens can optionally be restricted to specific clients or
+                closers (lists are filtered, aggregates are refused) and given
+                an expiry date. Every token shows per-day usage stats on its
+                card.
+              </Bullet>
+              <Bullet>
+                Requests are rate-limited to 120/min per token. Revoking a
+                token takes effect immediately.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="REST API (/api/v1)">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                142 operations documented on the{" "}
+                <span className="font-semibold text-foreground">
+                  API Docs
+                </span>{" "}
+                page (<Pill>/dashboard/api-docs</Pill>) and published at{" "}
+                <Pill>GET /api/v1/openapi.json</Pill>. Money is always
+                integer <span className="font-semibold text-foreground">cents</span>;
+                dates are <Pill>yyyy-mm-dd</Pill>; lists page with{" "}
+                <Pill>limit</Pill>/<Pill>offset</Pill>.
+              </Bullet>
+              <Bullet>
+                File endpoints are dual-format: binary downloads also serve{" "}
+                <Pill>?format=base64</Pill> (with an optional{" "}
+                <Pill>maxBytes</Pill> guard), and uploads accept JSON with{" "}
+                <Pill>fileBase64</Pill> alongside multipart.
+              </Bullet>
+              <Bullet>
+                Every mutation lands in the audit log attributed as{" "}
+                <Pill>api:&lt;token name&gt;</Pill>, and{" "}
+                <Pill>GET /api/v1/audit-log</Pill> (scope{" "}
+                <Pill>audit:read</Pill>) exposes the trail with action /
+                target / date filters.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="MCP server (/api/mcp/mcp)">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                One MCP tool per API operation — including file transfer via
+                base64 — plus a <Pill>getStarted</Pill> tool that returns the
+                API guide and the calling token&apos;s scopes and
+                restrictions. Tools carry read-only / destructive annotations
+                so agent clients can gate risky calls.
+              </Bullet>
+              <Bullet>
+                Every tool call dispatches through the real{" "}
+                <Pill>/api/v1</Pill> route internally, so scope checks, rate
+                limiting, usage stats, and audit logging are identical to
+                REST — MCP grants nothing a raw API call wouldn&apos;t.
+              </Bullet>
+              <Bullet>
+                Clients that support custom headers (Claude Code, SDKs)
+                connect with{" "}
+                <Pill>Authorization: Bearer ac_live_…</Pill> directly.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Connecting Claude.ai (custom connector)">
+            <Step n={1}>
+              In Claude.ai, open{" "}
+              <span className="font-medium text-foreground">
+                Settings → Connectors → Add custom connector
+              </span>
+              . Enter any name and the server URL{" "}
+              <Pill>https://&lt;your-domain&gt;/api/mcp/mcp</Pill>. Leave
+              OAuth Client ID / Secret{" "}
+              <span className="font-semibold text-foreground">empty</span> —
+              the server registers the client automatically.
+            </Step>
+            <Step n={2}>
+              Claude redirects you to this dashboard&apos;s consent page. You
+              must already be signed in as an admin{" "}
+              <span className="font-semibold text-foreground">
+                with the API Tokens permission
+              </span>{" "}
+              (or super admin) — other admins are refused. If you&apos;re
+              signed out, the page asks you to log in from another tab and
+              reload.
+            </Step>
+            <Step n={3}>
+              On the consent screen, name the token and pick the scopes the
+              connector should get. The connector receives{" "}
+              <span className="font-semibold text-foreground">
+                exactly these scopes — not your admin permissions
+              </span>
+              . A full-access admin can still mint a read-only connector.
+            </Step>
+            <Step n={4}>
+              Approve. A regular API token is created and handed to Claude
+              via a one-time code. From here on the connection behaves like
+              any other token — it appears on the API Tokens page with usage
+              stats, can have its scopes edited, and can be revoked.
+            </Step>
+            <Note>
+              Revoking the token immediately cuts the connector off — Claude
+              gets 401s and asks the user to reconnect, which lands back on
+              the consent gate.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Security model">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                The OAuth flow is authorization-code + PKCE (S256): codes are
+                single-use, expire after 10 minutes, and carry the minted
+                token encrypted until exchange. Anyone can{" "}
+                <em>register</em> an OAuth client (that&apos;s the spec), but
+                a registration grants nothing — every authorization goes
+                through the admin consent gate.
+              </Bullet>
+              <Bullet>
+                Token verification is timing-safe, and unknown, revoked, and
+                expired tokens all fail identically (no oracle). Plaintext
+                secrets are never logged.
+              </Bullet>
+              <Bullet>
+                The audit log records both who approved each connector (with
+                which scopes) and everything the connector later does.
+              </Bullet>
+            </ul>
+          </SubSection>
+
+          <Note tone="warn">
+            On Vercel, request/response bodies cap at ~4.5 MB — base64 file
+            tools handle files up to roughly 3 MB. Agents should pass{" "}
+            <Pill>maxBytes</Pill> to fail fast on larger documents. If MCP
+            tools ever return an HTML error page, the internal dispatch is
+            being intercepted by Vercel Deployment Protection — see{" "}
+            <Pill>API_INTERNAL_ORIGIN</Pill> under Environment variables.
           </Note>
         </Section>
 
