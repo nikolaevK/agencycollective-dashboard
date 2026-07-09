@@ -210,22 +210,44 @@ export async function dispatchOperation(
   // Tools always receive file bytes as base64 JSON, never a raw stream.
   if (operation["x-binary"]) url.searchParams.set("format", "base64");
 
+  const headers: Record<string, string> = { authorization: `Bearer ${context.bearer}` };
+  // Vercel Deployment Protection / firewall challenges intercept fetches to
+  // the generated *.vercel.app URLs with an HTML auth wall. When the project
+  // has "Protection Bypass for Automation" enabled, Vercel injects this
+  // secret — attach it so the internal dispatch passes the wall.
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+    headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  }
   const init: RequestInit = {
     method: operation.method.toUpperCase(),
-    headers: { authorization: `Bearer ${context.bearer}` },
+    headers,
   };
   if (tool.bodyParams.length > 0 && operation.method !== "get") {
     const body: Record<string, unknown> = {};
     for (const name of tool.bodyParams) {
       if (args[name] !== undefined) body[name] = args[name];
     }
-    init.headers = { ...init.headers, "content-type": "application/json" };
+    headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
   }
 
   const response = await fetch(url, init);
   const text = await response.text();
   if (!response.ok) {
+    // Our v1 routes ALWAYS answer JSON. An HTML body means the request never
+    // reached them — a platform wall (Vercel Deployment Protection, firewall
+    // challenge, proxy error page) on the dispatch origin. Don't dump HTML
+    // at the agent; explain the misconfiguration instead.
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html") || text.trimStart().startsWith("<")) {
+      throw new McpDispatchError(
+        `Internal dispatch to ${url.origin} was intercepted before reaching the API ` +
+          `(HTTP ${response.status}, HTML response — likely Vercel Deployment Protection ` +
+          `or a firewall challenge). Fix on the server: set API_INTERNAL_ORIGIN to the ` +
+          `public production domain, or enable "Protection Bypass for Automation" ` +
+          `(VERCEL_AUTOMATION_BYPASS_SECRET) on the Vercel project.`
+      );
+    }
     // The v1 error envelope is already JSON with a stable code — pass through.
     throw new McpDispatchError(`HTTP ${response.status}: ${text.slice(0, 2000)}`);
   }
