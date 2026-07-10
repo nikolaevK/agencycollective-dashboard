@@ -48,10 +48,23 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 // quiet stretches stay visible instead of being silently skipped.
 const PERIODS: Record<Grouping, number> = { day: 14, week: 12, month: 12 };
 
+// Plain-language explainer per grouping. Buckets are whole calendar units
+// (weeks run Mon–Sun) and ignore any time-frame filter on the page — the
+// usual "cards say $52k, chart says $40.5k" confusion is an edge week
+// counting days past the filter window, so say it outright.
+const CAPTIONS: Record<Grouping, string> = {
+  day: "Each bar is one calendar day. Deals count on the day they closed.",
+  week: "Each bar is a full Mon–Sun calendar week, so its total can differ from cards filtered to a custom date range. Deals count on the day they closed.",
+  month: "Each bar is a full calendar month, so its total can differ from cards filtered to a custom date range. Deals count on the day they closed.",
+};
+
 interface ChartDataPoint {
   key: string;
   label: string;
   tooltipLabel: string;
+  /** The bucket containing today — flagged in the tooltip so a low current
+   *  bar isn't read as a slump. */
+  inProgress: boolean;
   /** Closed revenue in the bucket (status = closed). */
   closed: number;
   /** Paid revenue — closed or pending_signature deals marked paid. */
@@ -99,10 +112,18 @@ function bucketKey(day: string, grouping: Grouping): string {
   return day;
 }
 
-function buildBuckets(grouping: Grouping): { key: string; label: string; tooltipLabel: string }[] {
+interface BucketDef {
+  key: string;
+  label: string;
+  tooltipLabel: string;
+  /** True for the bucket containing today — its bar is still filling up. */
+  inProgress: boolean;
+}
+
+function buildBuckets(grouping: Grouping): BucketDef[] {
   const now = new Date();
   const count = PERIODS[grouping];
-  const out: { key: string; label: string; tooltipLabel: string }[] = [];
+  const out: BucketDef[] = [];
   for (let i = count - 1; i >= 0; i--) {
     if (grouping === "month") {
       const d = subMonths(now, i);
@@ -110,13 +131,20 @@ function buildBuckets(grouping: Grouping): { key: string; label: string; tooltip
         key: format(d, "yyyy-MM"),
         label: format(d, "MMM"),
         tooltipLabel: format(d, "MMMM yyyy"),
+        inProgress: i === 0,
       });
     } else if (grouping === "week") {
       const d = startOfWeek(subWeeks(now, i), { weekStartsOn: 1 });
+      const end = addDays(d, 6);
+      // Spell out the full Mon–Sun span — "Week of Jun 15" hid that the
+      // bucket runs through Jun 21, which read as a mismatch against
+      // date-filtered cards ending mid-week.
+      const sameMonth = format(d, "yyyy-MM") === format(end, "yyyy-MM");
       out.push({
         key: format(d, "yyyy-MM-dd"),
         label: format(d, "MMM d"),
-        tooltipLabel: `Week of ${format(d, "MMM d, yyyy")}`,
+        tooltipLabel: `${format(d, "MMM d")} – ${format(end, sameMonth ? "d, yyyy" : "MMM d, yyyy")}`,
+        inProgress: i === 0,
       });
     } else {
       const d = subDays(now, i);
@@ -124,6 +152,7 @@ function buildBuckets(grouping: Grouping): { key: string; label: string; tooltip
         key: format(d, "yyyy-MM-dd"),
         label: format(d, "MMM d"),
         tooltipLabel: format(d, "MMM d, yyyy"),
+        inProgress: i === 0,
       });
     }
   }
@@ -210,7 +239,7 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
 
   return (
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
-      <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
         <div className="flex items-baseline gap-2">
           <h3 className="text-sm font-semibold text-foreground">Performance Trends</h3>
           <span className="text-[11px] text-muted-foreground">by closing date</span>
@@ -234,6 +263,8 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
           ))}
         </div>
       </div>
+
+      <p className="text-[11px] text-muted-foreground mb-5">{CAPTIONS[grouping]}</p>
 
       {!hasData ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -281,6 +312,9 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
                     <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-md">
                       <p className="text-xs font-medium text-muted-foreground mb-1">
                         {item.tooltipLabel}
+                        {item.inProgress && (
+                          <span className="text-[10px] font-normal"> · in progress</span>
+                        )}
                       </p>
                       <p className="text-sm text-foreground">
                         <span className="font-semibold">{formatCents(item.closed)}</span>{" "}
