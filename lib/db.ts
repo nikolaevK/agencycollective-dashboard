@@ -223,6 +223,65 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       expires_at       TEXT NOT NULL,
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // Meta Accounts Directory — inventory of aged FB accounts being provisioned
+    // and warmed into Meta ad accounts (lib/metaAccounts.ts). Same lifecycle as
+    // roster_options/ad_platform_options above: self-heals WITHOUT a
+    // SCHEMA_VERSION bump, brand-new empty tables that touch no existing rows.
+    // stage/status hold a meta_account_options `value` slug; client_id is an
+    // optional link to a client (nulled by deleteUser — libSQL cascade isn't
+    // guaranteed). Credentials are stored as-is (plaintext) by product decision,
+    // mirroring the spreadsheets this replaces — gated only by the meta_accounts
+    // permission. Reads degrade to [] if a table is somehow absent.
+    `CREATE TABLE IF NOT EXISTS meta_accounts (
+      id               TEXT PRIMARY KEY,
+      fb_email         TEXT NOT NULL DEFAULT '',
+      fb_password      TEXT,
+      twofa_secret     TEXT,
+      twofa_link       TEXT,
+      mail_password    TEXT,
+      recovery_email   TEXT,
+      profile_link     TEXT,
+      bm_id            TEXT,
+      login_ok         INTEGER NOT NULL DEFAULT 0,
+      page_made        INTEGER NOT NULL DEFAULT 0,
+      ad_account_made  INTEGER NOT NULL DEFAULT 0,
+      bm_made          INTEGER NOT NULL DEFAULT 0,
+      card_added       INTEGER NOT NULL DEFAULT 0,
+      stage            TEXT,
+      status           TEXT,
+      assignee         TEXT,
+      client_id        TEXT REFERENCES users(id) ON DELETE SET NULL,
+      batch            TEXT,
+      notes            TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Admin-managed Stage / Status chip vocabulary for the Meta Accounts
+    // Directory (kind-discriminated). Unlike roster_options, there are NO in-code
+    // built-ins — the full vocabulary lives here and is fully editable
+    // (add/rename/recolor/reorder/remove). Initial values are seeded once via an
+    // agency_config marker (lib/metaAccountOptions.ts), so deleting a seeded
+    // option never resurrects it on the next boot.
+    `CREATE TABLE IF NOT EXISTS meta_account_options (
+      kind       TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      label      TEXT NOT NULL,
+      color      TEXT NOT NULL DEFAULT 'slate',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (kind, value)
+    )`,
+    // meta_accounts indexes (same batch, ordered after the CREATE TABLE):
+    // the unique email index is the race-proof backstop behind the import
+    // de-dupe (bulk insert is INSERT OR IGNORE against it; single writes map
+    // a violation to DuplicateMetaAccountEmailError). Partial — the '' default
+    // never conflicts. client_id serves deleteUser's unattach + API filters.
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_accounts_email
+     ON meta_accounts (lower(fb_email)) WHERE fb_email <> ''`,
+    `CREATE INDEX IF NOT EXISTS idx_meta_accounts_client
+     ON meta_accounts (client_id) WHERE client_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_meta_accounts_created
+     ON meta_accounts (created_at DESC, fb_email)`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [
@@ -230,6 +289,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // every Admins-page permission save (insert/updateAdmin emit the column
     // unconditionally), so it must self-heal on existing deploys.
     { table: "admins",                 column: "perm_apitokens",     defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Meta Accounts Directory page permission (lib/permissions.ts `meta_accounts`)
+    // — written by every Admins-page permission save (insert/updateAdmin emit
+    // the column unconditionally), so it must self-heal on existing deploys.
+    { table: "admins",                 column: "perm_meta_accounts", defn: "INTEGER NOT NULL DEFAULT 0" },
     { table: "appointments",           column: "setter_tier",        defn: "TEXT" },
     { table: "appointments",           column: "setter_tier_at",     defn: "TEXT" },
     { table: "deals",                  column: "setter_tier",        defn: "TEXT" },
@@ -511,7 +574,8 @@ export async function migrate(): Promise<void> {
       perm_media     INTEGER NOT NULL DEFAULT 0,
       perm_media_manage INTEGER NOT NULL DEFAULT 0,
       perm_admin     INTEGER NOT NULL DEFAULT 0,
-      perm_apitokens INTEGER NOT NULL DEFAULT 0
+      perm_apitokens INTEGER NOT NULL DEFAULT 0,
+      perm_meta_accounts INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -564,7 +628,8 @@ export async function migrate(): Promise<void> {
         perm_media     INTEGER NOT NULL DEFAULT 0,
         perm_media_manage INTEGER NOT NULL DEFAULT 0,
         perm_admin     INTEGER NOT NULL DEFAULT 0,
-        perm_apitokens INTEGER NOT NULL DEFAULT 0
+        perm_apitokens INTEGER NOT NULL DEFAULT 0,
+        perm_meta_accounts INTEGER NOT NULL DEFAULT 0
       )
     `);
 

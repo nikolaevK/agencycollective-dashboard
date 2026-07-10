@@ -35,7 +35,7 @@ Conventions:
 - Errors return { error, code } with stable codes (invalid_request, insufficient_scope, resource_forbidden, not_found, conflict, rate_limited). Rate limit: 120 requests/min per token.
 - File downloads return { fileName, contentType, size, dataBase64 } — pass maxBytes to avoid oversized payloads. File uploads take fileBase64 (+ fileName, and contentType for images).
 
-Domains: closer (closers, deals, contracts, invoices, payouts, attendance/show rates), client (Client Directory: clients, billing + re-bill schedule, ad accounts + invoices, welcome kit), media (media-buyer PDF library), sops (standard operating procedures), audit (read-only audit trail).
+Domains: closer (closers, deals, contracts, invoices, payouts, attendance/show rates), client (Client Directory: clients, billing + re-bill schedule, ad accounts + invoices, welcome kit), media (media-buyer PDF library), sops (standard operating procedures), audit (read-only audit trail), metaaccounts (FB account inventory & warm-up — credential fields are write-only, never returned).
 
 Start with getStarted to see this token's scopes and any client/closer restrictions. Use list tools to discover ids before calling item tools. Mutations are audit-logged as api:<token name>.`;
 

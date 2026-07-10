@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2 } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2, Boxes } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -26,6 +26,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exa
   { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool, perm: "adcopy" },
   { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
   { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
+  { href: "/dashboard/meta-accounts", label: "Meta Accounts", icon: Boxes, perm: "meta_accounts" },
   { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
   { href: "/dashboard/media-buyers", label: "Media Buyers", icon: Megaphone, perm: "media" },
   { href: "/dashboard/sops", label: "SOPs", icon: ClipboardList, perm: "dashboard", alwaysShow: true },

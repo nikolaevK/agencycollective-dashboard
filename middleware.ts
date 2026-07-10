@@ -64,7 +64,7 @@ function decodePayload(token: string): Record<string, unknown> | null {
 }
 
 /** Map route patterns to required permission keys. */
-type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin" | "apitokens";
+type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin" | "apitokens" | "meta_accounts";
 
 const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p === "/dashboard/chat", perm: "analyst" },
@@ -73,6 +73,7 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/dashboard/ad-copy"), perm: "adcopy" },
   { match: (p) => p.startsWith("/dashboard/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
+  { match: (p) => p.startsWith("/dashboard/meta-accounts"), perm: "meta_accounts" },
   { match: (p) => p.startsWith("/dashboard/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/dashboard/media-buyers"), perm: "media" },
   { match: (p) => p.startsWith("/dashboard/admins"), perm: "admin" },
@@ -93,6 +94,7 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/admin/users"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/clients"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/ad-accounts"), perm: "users" },
+  { match: (p) => p.startsWith("/api/admin/meta-accounts"), perm: "meta_accounts" },
   { match: (p) => p.startsWith("/api/admin/support"), perm: "users" },
   { match: (p) => p.startsWith("/api/admin/closers"), perm: "closers" },
   { match: (p) => p.startsWith("/api/admin/deals"), perm: "closers" },
@@ -272,6 +274,7 @@ export const config = {
     "/api/admin/users/:path*",
     "/api/admin/clients/:path*",
     "/api/admin/ad-accounts/:path*",
+    "/api/admin/meta-accounts/:path*",
     "/api/admin/support/:path*",
     "/api/admin/closers/:path*",
     "/api/admin/deals/:path*",

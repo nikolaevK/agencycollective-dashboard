@@ -433,6 +433,21 @@ export async function deleteUser(id: string): Promise<boolean> {
     }
   }
 
+  // Meta Accounts (FB inventory) survive a client deletion — they're standalone
+  // and the client link is optional. Just unattach (FK is ON DELETE SET NULL,
+  // but libSQL cascade isn't guaranteed, so do it explicitly). Best-effort.
+  try {
+    await db.execute({
+      sql: "UPDATE meta_accounts SET client_id = NULL, updated_at = datetime('now') WHERE client_id = ?",
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] unattach of meta_accounts failed (non-fatal):", err);
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM users WHERE id = ?",
     args: [id],

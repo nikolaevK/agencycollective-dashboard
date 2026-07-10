@@ -131,6 +131,33 @@ function op(
 
 /* ── Reusable body schemas ──────────────────────────────────────────── */
 
+/** Meta account writable fields. Credential fields are write-only (redacted from every read). */
+const metaAccountBody = (required?: string[]): OpenApiSchema =>
+  obj(
+    {
+      fbEmail: str("Account email — required on create, non-empty on update"),
+      fbPassword: str("WRITE-ONLY credential — never returned"),
+      twofaSecret: str("WRITE-ONLY credential — never returned"),
+      twofaLink: str("WRITE-ONLY credential (2FA code generator link) — never returned"),
+      mailPassword: str("WRITE-ONLY credential — never returned"),
+      recoveryEmail: str("WRITE-ONLY credential — never returned"),
+      profileLink: str("FB profile URL"),
+      bmId: str("Business Manager id"),
+      loginOk: bool("Setup checklist: login verified"),
+      pageMade: bool("Setup checklist: page created"),
+      adAccountMade: bool("Setup checklist: ad account created"),
+      bmMade: bool("Setup checklist: Business Manager created"),
+      cardAdded: bool("Setup checklist: card added"),
+      stage: str("Stage slug from /meta-accounts/options?kind=stage"),
+      status: str("Status slug from /meta-accounts/options?kind=status"),
+      assignee: str("Who has access"),
+      clientId: str("Linked client id"),
+      batch: str("Source batch label"),
+      notes: str(),
+    },
+    required
+  );
+
 const closerBody = obj(
   {
     displayName: str(),
@@ -278,6 +305,11 @@ export const openApiSpec: OpenApiSpec = {
     { name: "media", description: "Media Buyers: documents, folders, reads, activity" },
     { name: "sops", description: "SOPs: documents, folders, deterministic import" },
     { name: "audit", description: "Audit Log: read-only trail of admin + API actions" },
+    {
+      name: "metaaccounts",
+      description:
+        "Meta Accounts: aged FB account inventory & warm-up. Credential fields are write-only — accepted on create/update/import, never returned.",
+    },
   ],
   securitySchemes: {
     bearerAuth: {
@@ -1174,6 +1206,100 @@ export const openApiSpec: OpenApiSpec = {
             ["fileBase64", "fileName"]
           ),
         },
+      }),
+    },
+
+    /* ── Meta Accounts surface ──────────────────────────────────────── */
+    "/meta-accounts": {
+      get: op("listMetaAccounts", "List Meta accounts", "metaaccounts", "metaaccounts:read", {
+        description:
+          "FB account inventory, newest first. Credential fields (fbPassword, twofaSecret, twofaLink, mailPassword, recoveryEmail) are never returned.",
+        parameters: [
+          q("stage", "Exact stage slug (see /meta-accounts/options?kind=stage)"),
+          q("status", "Exact status slug (see /meta-accounts/options?kind=status)"),
+          q("batch", "Exact batch label"),
+          q("clientId", "Linked client id"),
+          ...PAGINATION,
+        ],
+      }),
+      post: op("createMetaAccount", "Add a Meta account", "metaaccounts", "metaaccounts:write", {
+        description: "Credential fields are write-only — stored but never returned by any read.",
+        requestBody: { required: true, schema: metaAccountBody(["fbEmail"]) },
+      }),
+    },
+    "/meta-accounts/{id}": {
+      get: op("getMetaAccount", "One Meta account", "metaaccounts", "metaaccounts:read", {
+        description: "Credential fields are never returned.",
+        parameters: [pathParam("id", "Meta account id")],
+      }),
+      patch: op("updateMetaAccount", "Update a Meta account", "metaaccounts", "metaaccounts:write", {
+        description:
+          "Partial update — only provided fields change. Credential fields are write-only.",
+        parameters: [pathParam("id", "Meta account id")],
+        requestBody: { required: true, schema: metaAccountBody() },
+      }),
+      delete: op("deleteMetaAccount", "Delete a Meta account", "metaaccounts", "metaaccounts:delete", {
+        parameters: [pathParam("id", "Meta account id")],
+      }),
+    },
+    "/meta-accounts/import": {
+      post: op("importMetaAccounts", "Bulk import from a spreadsheet", "metaaccounts", "metaaccounts:write", {
+        "x-multipart": true,
+        description:
+          "xlsx/csv with a header row; columns matched by header name. De-dupes by fbEmail against existing rows and within the file. multipart/form-data (file, batch?) or application/json with fileBase64. Max 4 MB decoded — the platform rejects request bodies over ~4.5 MB, and base64 adds ~33%.",
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              fileBase64: fileBase64("xlsx or csv, ≤4 MB decoded."),
+              fileName: str("Original file name — its base becomes the default batch label"),
+              batch: str("Batch/provenance label for the imported rows"),
+            },
+            ["fileBase64"]
+          ),
+        },
+      }),
+    },
+    "/meta-accounts/options": {
+      get: op("listMetaAccountOptions", "Stage/Status chip vocabulary", "metaaccounts", "metaaccounts:read", {
+        parameters: [
+          q("kind", "stage or status", { type: "string", enum: ["stage", "status"] }),
+        ],
+      }),
+      post: op("addMetaAccountOption", "Add a chip option", "metaaccounts", "metaaccounts:write", {
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              kind: { type: "string", enum: ["stage", "status"] },
+              label: str("Display label (≤40 chars); the stored slug is derived once"),
+              color: str("Palette token (e.g. slate, sky, teal, emerald, amber, red)"),
+            },
+            ["kind", "label"]
+          ),
+        },
+      }),
+      patch: op("updateMetaAccountOption", "Rename/recolor a chip option", "metaaccounts", "metaaccounts:write", {
+        description: "The slug (value) never changes, so tagged accounts are untouched.",
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              kind: { type: "string", enum: ["stage", "status"] },
+              value: str("Option slug"),
+              label: str(),
+              color: str(),
+            },
+            ["kind", "value"]
+          ),
+        },
+      }),
+      delete: op("removeMetaAccountOption", "Remove a chip option", "metaaccounts", "metaaccounts:delete", {
+        description: "Accounts tagged with the slug keep it (renders as a plain chip).",
+        parameters: [
+          q("kind", "stage or status", { type: "string", enum: ["stage", "status"] }),
+          q("value", "Option slug"),
+        ],
       }),
     },
   },

@@ -5,14 +5,15 @@
  * token grants per-resource access at read | write | delete granularity
  * (ordinal — delete implies write implies read). Resource keys map 1:1 to
  * admin dashboard modules: closer → Closers page, client → Client Directory,
- * media → Media Buyers, sops → SOPs.
+ * media → Media Buyers, sops → SOPs, metaaccounts → Meta Accounts Directory
+ * (credential columns are write-only over the API — redacted from every read).
  *
  * Scopes are stored as a JSON TEXT column on `api_tokens` and evaluated in
  * Node after the row loads by hash — adding a resource or level never needs
  * a migration.
  */
 
-export const RESOURCE_KEYS = ["closer", "client", "media", "sops", "audit"] as const;
+export const RESOURCE_KEYS = ["closer", "client", "media", "sops", "audit", "metaaccounts"] as const;
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
 export const ACCESS_LEVELS = ["none", "read", "write", "delete"] as const;
@@ -78,6 +79,13 @@ export const SCOPE_MODULES: {
     icon: "ScrollText",
     auditPrefix: "audit",
     maxLevel: "read",
+  },
+  {
+    key: "metaaccounts",
+    label: "Meta Accounts",
+    description: "FB account inventory & warm-up (credentials write-only — never returned)",
+    icon: "Boxes",
+    auditPrefix: "meta_account",
   },
 ];
 

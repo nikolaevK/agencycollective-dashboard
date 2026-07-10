@@ -26,6 +26,7 @@ import {
   FolderTree,
   ClipboardList,
   Printer,
+  Boxes,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 
@@ -982,6 +983,123 @@ export default function AdminDocumentationPage() {
         </Section>
 
         {/* ------------------------------------------------------ */}
+        {/* Meta Accounts                                           */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={Boxes}
+          title="Meta Accounts"
+          subtitle="/dashboard/meta-accounts · permission: meta_accounts"
+        >
+          <p>
+            Inventory of aged Facebook accounts being provisioned and warmed
+            into Meta ad accounts — the in-app replacement for the tracking
+            spreadsheets. Each row is one FB account with its credentials,
+            setup progress, warm-up stage, health status, and (optionally)
+            the client it&apos;s assigned to.
+          </p>
+          <SubSection title="What each row holds">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Credentials
+                </span>{" "}
+                — FB email + password, 2FA secret (with an optional
+                code-generator link), mail password, recovery email. Masked in
+                the table with per-cell reveal and copy buttons.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Setup checklist
+                </span>{" "}
+                — five toggleable letters:{" "}
+                <Pill>L</Pill> login OK, <Pill>P</Pill> page made,{" "}
+                <Pill>A</Pill> ad account made, <Pill>B</Pill> BM made,{" "}
+                <Pill>C</Pill> card added. The &quot;Setup complete&quot;
+                summary card counts rows with all five done.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Pipeline</span>{" "}
+                — warm-up stage and health status chips, who has access
+                (free text), profile link, BM ID, source batch, and notes.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Client link
+                </span>{" "}
+                — assign an account to a client from the inline dropdown.
+                Deleting a client only unassigns its accounts; the inventory
+                rows survive.
+              </Bullet>
+            </ul>
+            <Note tone="warn">
+              Credentials are stored as-is (mirroring the sheets this
+              replaces) and the <Pill>meta_accounts</Pill> permission is the
+              only gate — treat that permission as highly sensitive and grant
+              it sparingly.
+            </Note>
+          </SubSection>
+          <SubSection title="Stage & Status chips (fully editable)">
+            <p>
+              Both vocabularies live in the database and are entirely
+              admin-managed — click{" "}
+              <span className="font-medium text-foreground">Manage</span> on
+              either filter card to add, rename, recolor, reorder, or remove
+              options. The initial set (7 stages from Harvested → Trusted, 5
+              statuses from Active → Account Not Found) is seeded once;
+              deleting an option never brings it back. Removing an option
+              keeps its tag on already-tagged rows (shown as a plain chip).
+              The filter cards double as one-click filters with live counts,
+              and the third summary card always tracks the{" "}
+              <span className="font-medium text-foreground">last</span> stage
+              in your ordering — the warm-up goal.
+            </p>
+          </SubSection>
+          <SubSection title="Importing a sheet">
+            <Step n={1}>
+              Click <span className="font-medium text-foreground">Import</span>{" "}
+              and choose an <Pill>.xlsx</Pill> or <Pill>.csv</Pill> file (max
+              4 MB — split bigger sheets and import in parts).
+            </Step>
+            <Step n={2}>
+              Columns are matched by{" "}
+              <span className="font-medium text-foreground">header name</span>,
+              not position — both existing sheet layouts and future rounds
+              work without reformatting. Unrecognized headers are reported,
+              not fatal.
+            </Step>
+            <Step n={3}>
+              Rows without an email-shaped value are skipped (this drops
+              trailing note blocks). Rows whose FB email already exists are
+              skipped too, so re-uploading an overlapping sheet is safe.
+            </Step>
+            <Step n={4}>
+              Stage text from the sheet maps onto your stage vocabulary; when
+              the sheet has no stage, one is inferred from the checklist
+              (harvested / setup / card added). The result summary shows
+              imported / skipped counts and any unmatched columns.
+            </Step>
+            <p>
+              The batch label (defaults to the file name) is kept on every
+              imported row and becomes a filter in the toolbar — provenance
+              for each import round.
+            </p>
+          </SubSection>
+          <SubSection title="External API access">
+            <p>
+              The module is exposed to the external API and MCP under the
+              dedicated <Pill>metaaccounts</Pill> scope with{" "}
+              <span className="font-medium text-foreground">
+                credentials write-only
+              </span>
+              : API and connector clients can create, update, and import
+              accounts (including credential fields), but no API read ever
+              returns passwords, 2FA secrets, or recovery emails — this
+              dashboard is the only place they can be read back.
+            </p>
+          </SubSection>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
         {/* Closers — sub-nav                                       */}
         {/* ------------------------------------------------------ */}
         <Section
@@ -1602,7 +1720,7 @@ export default function AdminDocumentationPage() {
             deleted and is the only account that can promote others to
             super.
           </p>
-          <SubSection title="Permission keys (9)">
+          <SubSection title="Permission keys (13)">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
                 <Pill>dashboard</Pill> — Overview + per-account drill-downs
@@ -1627,6 +1745,21 @@ export default function AdminDocumentationPage() {
               </Bullet>
               <Bullet>
                 <Pill>closers</Pill> — Closers section (all sub-tabs)
+              </Bullet>
+              <Bullet>
+                <Pill>media</Pill> — Media Buyers library
+              </Bullet>
+              <Bullet>
+                <Pill>media_manage</Pill> — Head of Paid Media: manage media
+                team &amp; delete docs
+              </Bullet>
+              <Bullet>
+                <Pill>meta_accounts</Pill> — Meta Accounts directory
+                (FB account inventory incl. credentials — grant sparingly)
+              </Bullet>
+              <Bullet>
+                <Pill>apitokens</Pill> — mint &amp; manage external API
+                tokens + API docs
               </Bullet>
               <Bullet>
                 <Pill>admin</Pill> — Admins page (this one)
@@ -2195,7 +2328,9 @@ export default function AdminDocumentationPage() {
                 (each level implies the ones below): <Pill>closer</Pill>{" "}
                 (Closers, deals, payouts, attendance), <Pill>client</Pill>{" "}
                 (Client Directory, billing, ad accounts, welcome kit),{" "}
-                <Pill>media</Pill> (Media Buyers), <Pill>sops</Pill>, and the
+                <Pill>media</Pill> (Media Buyers), <Pill>sops</Pill>,{" "}
+                <Pill>metaaccounts</Pill> (Meta Accounts — credential fields
+                are write-only, never returned by any API read), and the
                 read-only <Pill>audit</Pill> (audit trail).
               </Bullet>
               <Bullet>
@@ -2214,7 +2349,7 @@ export default function AdminDocumentationPage() {
           <SubSection title="REST API (/api/v1)">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                142 operations documented on the{" "}
+                152 operations documented on the{" "}
                 <span className="font-semibold text-foreground">
                   API Docs
                 </span>{" "}
