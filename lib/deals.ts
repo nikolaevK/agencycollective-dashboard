@@ -504,24 +504,29 @@ export interface ChartDeal {
   status: string;
   paidStatus: string;
   createdAt: string;
+  closingDate: string | null;
 }
 
 /**
  * Complete chart feed for the closer's Performance Trends graph: every
- * closed/pending deal added in the trailing ~12 months, four small columns.
+ * closed/pending deal dated in the trailing ~12 months, five small columns.
  * Exists because `readDealsByCloser` caps at the 500 newest rows — enough
  * for the deals table, but a high-volume closer's 12-month chart would
  * silently undercount its oldest buckets from that list.
+ * Window matches the chart's bucketing (and aggregateBucket): a deal's
+ * metric date is `closing_date` when set, else the `created_at` day — a
+ * created_at-only window dropped deals closed inside the window but added
+ * before it, and vice versa.
  */
 export async function getCloserChartDeals(closerId: string): Promise<ChartDeal[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
-    sql: `SELECT deal_value, status, paid_status, created_at
+    sql: `SELECT deal_value, status, paid_status, created_at, closing_date
           FROM deals
           WHERE closer_id = ?
             AND status IN ('closed', 'pending_signature')
-            AND created_at >= datetime('now', '-370 days')
+            AND COALESCE(closing_date, substr(created_at,1,10)) >= date('now', '-370 days')
           ORDER BY created_at ASC`,
     args: [closerId],
   });
@@ -530,6 +535,7 @@ export async function getCloserChartDeals(closerId: string): Promise<ChartDeal[]
     status: String(row.status),
     paidStatus: String(row.paid_status ?? "unpaid"),
     createdAt: String(row.created_at),
+    closingDate: row.closing_date != null ? String(row.closing_date) : null,
   }));
 }
 

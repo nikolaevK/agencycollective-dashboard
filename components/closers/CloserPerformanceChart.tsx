@@ -29,6 +29,7 @@ export interface PerformanceChartDeal {
   status: string;
   paidStatus?: string | null;
   createdAt: string;
+  closingDate?: string | null;
 }
 
 interface CloserPerformanceChartProps {
@@ -77,6 +78,16 @@ function addedDay(deal: PerformanceChartDeal): string {
   const raw = deal.createdAt;
   const d = new Date(raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`);
   return isNaN(d.getTime()) ? raw.slice(0, 10) : format(d, "yyyy-MM-dd");
+}
+
+/** The day a deal counts toward: `closing_date` when set (a plain
+ *  admin-entered yyyy-mm-dd — no TZ conversion), else the added day. Matches
+ *  aggregateBucket's COALESCE(closing_date, created day), so the chart's
+ *  buckets agree with the stat cards and deals table — bucketing by added
+ *  date alone misfiled deals closed in a different month than they were
+ *  logged (e.g. added Jun 23, closed Jul 2 → missing from July). */
+function metricDay(deal: PerformanceChartDeal): string {
+  return deal.closingDate?.slice(0, 10) || addedDay(deal);
 }
 
 function bucketKey(day: string, grouping: Grouping): string {
@@ -133,7 +144,7 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
         (deal.status === "closed" || deal.status === "pending_signature") &&
         deal.paidStatus === "paid";
       if (!isClosed && !isPaid) continue;
-      const key = bucketKey(addedDay(deal), grouping);
+      const key = bucketKey(metricDay(deal), grouping);
       const entry = totals.get(key) ?? { closed: 0, paid: 0, count: 0, paidCount: 0 };
       if (isClosed) {
         entry.closed += deal.dealValue;
@@ -168,7 +179,7 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
           (deal.status === "closed" || deal.status === "pending_signature") &&
           deal.paidStatus === "paid";
         if (!isPaid) continue;
-        const day = addedDay(deal);
+        const day = metricDay(deal);
         const entry = dayPaid.get(day) ?? { paid: 0, count: 0 };
         entry.paid += deal.dealValue;
         entry.count += 1;
@@ -202,7 +213,7 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
       <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
         <div className="flex items-baseline gap-2">
           <h3 className="text-sm font-semibold text-foreground">Performance Trends</h3>
-          <span className="text-[11px] text-muted-foreground">by deal added date</span>
+          <span className="text-[11px] text-muted-foreground">by closing date</span>
         </div>
         <div className="inline-flex items-center rounded-lg bg-muted/60 p-0.5 text-xs font-medium">
           {GROUPINGS.map((opt) => (
