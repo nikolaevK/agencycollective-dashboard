@@ -448,6 +448,23 @@ export async function deleteUser(id: string): Promise<boolean> {
     }
   }
 
+  // Team hub tasks / action items survive a client deletion — they belong to
+  // the member, the client tag is optional context. Unattach explicitly (FK is
+  // ON DELETE SET NULL but libSQL cascade isn't guaranteed). Best-effort.
+  for (const table of ["team_tasks", "team_action_items"]) {
+    try {
+      await db.execute({
+        sql: `UPDATE ${table} SET client_id = NULL, updated_at = datetime('now') WHERE client_id = ?`,
+        args: [id],
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/no such table/i.test(msg)) {
+        console.error(`[deleteUser] unattach of ${table} failed (non-fatal):`, err);
+      }
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM users WHERE id = ?",
     args: [id],

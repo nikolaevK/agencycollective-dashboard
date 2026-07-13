@@ -33,6 +33,9 @@ export async function GET() {
       // Raw perm_media flag (not effective perms — supers would all read as
       // media buyers otherwise). Used to sort/badge the buyer picker.
       isMediaBuyer: a.permissions.media,
+      // Admins-side role slug (admins.role) — a CSM shares the Media Buyer
+      // permission set but is its own role; used to sort/badge the CSM picker.
+      isCsm: a.role === "csm",
     })),
   });
 }

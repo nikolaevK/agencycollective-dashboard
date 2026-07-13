@@ -19,8 +19,8 @@ interface RouteContext {
 
 /**
  * Replace the assignment set for one (client, role): body
- * `{ role: 'media_buyer' | 'lead', adminIds: string[] }`. Unknown admin ids
- * are dropped silently; the other role's assignments are untouched.
+ * `{ role: 'media_buyer' | 'lead' | 'csm', adminIds: string[] }`. Unknown
+ * admin ids are dropped silently; the other roles' assignments are untouched.
  */
 export async function PUT(request: Request, { params }: RouteContext) {
   const admin = await requireAdminSession();
@@ -39,9 +39,9 @@ export async function PUT(request: Request, { params }: RouteContext) {
       adminIds?: unknown;
     };
 
-    if (body.role !== "media_buyer" && body.role !== "lead")
+    if (body.role !== "media_buyer" && body.role !== "lead" && body.role !== "csm")
       return NextResponse.json(
-        { error: "role must be 'media_buyer' or 'lead'" },
+        { error: "role must be 'media_buyer', 'lead', or 'csm'" },
         { status: 400 }
       );
     if (!Array.isArray(body.adminIds))

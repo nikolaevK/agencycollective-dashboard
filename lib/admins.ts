@@ -198,6 +198,32 @@ export async function deleteAdmin(id: string): Promise<boolean> {
     }
   }
 
+  // Team hub rows (roster, goals, tasks + comments, action items) belong to
+  // the admin — remove them with the account. Their comments on OTHER members'
+  // tasks survive with the author id nulled. Best-effort, same rationale.
+  const teamCleanup: { sql: string; args: string[] }[] = [
+    {
+      sql: `DELETE FROM team_task_comments
+            WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
+      args: [id],
+    },
+    { sql: "UPDATE team_task_comments SET admin_id = NULL WHERE admin_id = ?", args: [id] },
+    { sql: "DELETE FROM team_tasks WHERE admin_id = ?", args: [id] },
+    { sql: "DELETE FROM team_action_items WHERE admin_id = ?", args: [id] },
+    { sql: "DELETE FROM team_member_goals WHERE admin_id = ?", args: [id] },
+    { sql: "DELETE FROM team_members WHERE admin_id = ?", args: [id] },
+  ];
+  for (const stmt of teamCleanup) {
+    try {
+      await db.execute(stmt);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/no such table/i.test(msg)) {
+        console.error("[deleteAdmin] team-hub cleanup failed (non-fatal):", err);
+      }
+    }
+  }
+
   const result = await db.execute({
     sql: "DELETE FROM admins WHERE id = ? AND is_super = 0",
     args: [id],

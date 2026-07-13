@@ -2,7 +2,7 @@
 
 import { Pencil, ShieldCheck, Shield } from "lucide-react";
 import Image from "next/image";
-import type { AdminPublic } from "./types";
+import { adminRoleLabel, type AdminPublic } from "./types";
 import { PERMISSION_MODULES } from "@/lib/permissions";
 import { getInitials } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ export function AdminCardList({ admins, canMutate, onEdit }: AdminCardListProps)
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                   <Shield className="h-3 w-3" />
-                  Admin
+                  {adminRoleLabel(admin.role)}
                 </span>
               )}
             </div>

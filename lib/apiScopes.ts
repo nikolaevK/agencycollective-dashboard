@@ -13,7 +13,7 @@
  * a migration.
  */
 
-export const RESOURCE_KEYS = ["closer", "client", "media", "sops", "audit", "metaaccounts"] as const;
+export const RESOURCE_KEYS = ["closer", "client", "media", "sops", "audit", "metaaccounts", "team"] as const;
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
 export const ACCESS_LEVELS = ["none", "read", "write", "delete"] as const;
@@ -86,6 +86,13 @@ export const SCOPE_MODULES: {
     description: "FB account inventory & warm-up (credentials write-only — never returned)",
     icon: "Boxes",
     auditPrefix: "meta_account",
+  },
+  {
+    key: "team",
+    label: "Team",
+    description: "Team hub: roster rollups, member tasks, action items",
+    icon: "UsersRound",
+    auditPrefix: "team",
   },
 ];
 

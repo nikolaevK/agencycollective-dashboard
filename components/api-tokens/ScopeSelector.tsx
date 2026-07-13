@@ -1,6 +1,6 @@
 "use client";
 
-import { Handshake, Users, Megaphone, BookOpen, ScrollText, LayoutDashboard } from "lucide-react";
+import { Handshake, Users, Megaphone, BookOpen, ScrollText, UsersRound, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   SCOPE_MODULES,
@@ -15,6 +15,7 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   Megaphone,
   BookOpen,
   ScrollText,
+  UsersRound,
 };
 
 const LEVELS: { value: AccessLevel; label: string }[] = [

@@ -375,6 +375,13 @@ export function ClientSettingsTab({
               onChange={(members) => saveTeamNow("media_buyer", members)}
             />
           </RosterField>
+          <RosterField label="Client Success Manager">
+            <TeamPicker
+              role="csm"
+              members={client.team.filter((m) => m.role === "csm")}
+              onChange={(members) => saveTeamNow("csm", members)}
+            />
+          </RosterField>
         </div>
 
         <div className="flex items-center gap-3">

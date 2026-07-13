@@ -289,6 +289,9 @@ export const config = {
     "/api/admin/agency-config/:path*",
     "/api/admin/audit-log/:path*",
     "/api/admin/admins/:path*",
+    // Session-gated only (no API_PERMISSIONS entry) — the Team hub's
+    // self-vs-privileged checks live in-route (lib/teamAuth.ts).
+    "/api/admin/team/:path*",
     // Cookie-gated token management. NOTE: /api/v1/* and /api/mcp are
     // deliberately NOT matched — they are bearer-token authed in-route
     // (Node runtime; DB token lookups can't run in Edge middleware).

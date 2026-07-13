@@ -11,12 +11,16 @@ import { readUsers } from "./users";
 // One client_profile row per client, created lazily on first edit — absence
 // means defaults (book 'agency', ads running, no chips), mirroring
 // client_billing. client_team links clients to people from the admins table
-// (roles 'media_buyer' | 'lead'). Strictly additive on top of the existing
-// directory — nothing here touches billing math or Meta linking.
+// (roles 'media_buyer' | 'lead' | 'csm'). Strictly additive on top of the
+// existing directory — nothing here touches billing math or Meta linking.
 // ---------------------------------------------------------------------------
 
 export type ClientBook = "agency" | "pepads";
-export type TeamRole = "media_buyer" | "lead";
+// 'csm' (Client Success Manager) is its OWN role — grouped, counted, and
+// labeled separately from media_buyer everywhere (pickers, filter cards,
+// roster groups, Team-page attribution).
+export type TeamRole = "media_buyer" | "lead" | "csm";
+export const TEAM_ROLES: readonly TeamRole[] = ["media_buyer", "lead", "csm"];
 export type ManualBillingStatus = "extended" | "paid" | "upcoming" | "paused";
 
 export const BOOK_OPTIONS = [
@@ -436,7 +440,7 @@ function rowToTeamMember(row: Row): ClientTeamMember | null {
   // LEFT JOIN admins — a null username means the admin was deleted; drop it.
   if (row.username == null) return null;
   const role = String(row.role);
-  if (role !== "media_buyer" && role !== "lead") return null;
+  if (role !== "media_buyer" && role !== "lead" && role !== "csm") return null;
   return {
     adminId: String(row.admin_id),
     role,

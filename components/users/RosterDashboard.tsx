@@ -121,6 +121,7 @@ export function RosterDashboard({
       running: clients.filter((c) => c.profile.adsRunning).length,
       buyers: people("media_buyer"),
       leads: people("lead"),
+      csms: people("csm"),
       stages: count("stages"),
       health: count("health"),
       services: count("services"),
@@ -190,6 +191,21 @@ export function RosterDashboard({
               cls="text-purple-600 dark:text-purple-400"
               active={filters.team?.adminId === p.adminId && filters.team?.role === "lead"}
               onClick={() => togglePerson(p.adminId, "lead")}
+            />
+          ))}
+        </Group>
+      )}
+
+      {stats.csms.length > 0 && (
+        <Group label="Client Success Manager" dot="bg-violet-500">
+          {stats.csms.map((p) => (
+            <Pill
+              key={p.adminId}
+              label={p.name}
+              count={p.count}
+              cls="text-violet-600 dark:text-violet-400"
+              active={filters.team?.adminId === p.adminId && filters.team?.role === "csm"}
+              onClick={() => togglePerson(p.adminId, "csm")}
             />
           ))}
         </Group>

@@ -113,7 +113,7 @@ function buildRosterCsv(
 ): string {
   const header = [
     "Client", "Book", "Status", "Website", "Stages", "Health", "Ad Platforms",
-    "Ads Running", "Services", "Lead", "Media Buyer", "Monthly MRR", "Perf Fee",
+    "Ads Running", "Services", "Lead", "Media Buyer", "CSM", "Monthly MRR", "Perf Fee",
     "Rev Threshold", "LTV", "Billing Status", "Next Re-bill", "Last Re-bill",
     "Date Joined", "Notes",
   ];
@@ -132,6 +132,7 @@ function buildRosterCsv(
       p.services.map((v) => SERVICE_LABELS[v] ?? v).join("; "),
       c.team.filter((m) => m.role === "lead").map((m) => m.name).join("; "),
       c.team.filter((m) => m.role === "media_buyer").map((m) => m.name).join("; "),
+      c.team.filter((m) => m.role === "csm").map((m) => m.name).join("; "),
       (effectiveMrrCents(c) / 100).toFixed(2),
       p.perfFee ?? c.derivedPerfFee ?? "",
       p.revThreshold ?? "",

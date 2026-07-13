@@ -22,7 +22,12 @@ interface PersonCard {
 const ROLE_LABEL: Record<TeamRole, string> = {
   media_buyer: "Media Buyer",
   lead: "Head of Ads",
+  csm: "Client Success Manager",
 };
+
+// Buyers first (the primary roster view), then leads, then CSMs — each role
+// is its own card group, never merged.
+const ROLE_RANK: Record<TeamRole, number> = { media_buyer: 0, lead: 1, csm: 2 };
 
 /**
  * Clickable per-person filter cards (one per assigned admin × role across the
@@ -60,10 +65,10 @@ export function TeamFilterCards({
         byKey.set(key, card);
       }
     }
-    // Buyers first (the primary roster view), then leads; biggest books first.
+    // Role groups in rank order; biggest books first within each.
     return [...byKey.values()].sort(
       (a, b) =>
-        (a.role === "media_buyer" ? 0 : 1) - (b.role === "media_buyer" ? 0 : 1) ||
+        ROLE_RANK[a.role] - ROLE_RANK[b.role] ||
         b.clientCount - a.clientCount ||
         a.name.localeCompare(b.name)
     );

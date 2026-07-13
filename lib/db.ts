@@ -282,6 +282,101 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
      ON meta_accounts (client_id) WHERE client_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_meta_accounts_created
      ON meta_accounts (created_at DESC, fb_email)`,
+    // Team Hub (lib/teamMembers.ts / teamTasks.ts / teamActionItems.ts /
+    // teamHub.ts) — per-member workspaces combining Client Directory rollups
+    // with Asana-style tasks and an action-item inbox. Same lifecycle as
+    // meta_accounts above: self-heals WITHOUT a SCHEMA_VERSION bump, brand-new
+    // empty tables that touch no existing rows. libSQL cascade isn't
+    // guaranteed, so deleteAdmin/deleteUser clean these explicitly.
+    //
+    // team_members: manual roster satellite over admins. `attribution` drives
+    // how the member's clients/MRR derive from the directory (book = whole
+    // active book, else client_team role match).
+    `CREATE TABLE IF NOT EXISTS team_members (
+      id          TEXT PRIMARY KEY,
+      admin_id    TEXT NOT NULL UNIQUE,
+      position    TEXT NOT NULL DEFAULT '',
+      attribution TEXT NOT NULL DEFAULT 'lead',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      split_share_percent INTEGER,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Per-month MRR-managed goal history ('yyyy-mm', business TZ). A month
+    // without a row inherits the latest earlier goal (carry-forward).
+    `CREATE TABLE IF NOT EXISTS team_member_goals (
+      admin_id   TEXT NOT NULL,
+      month      TEXT NOT NULL,
+      goal_cents INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (admin_id, month)
+    )`,
+    // Tasks are assigned to ONE individual admin (never a team). checklist is
+    // a JSON [{id,text,done}] TEXT column (client_profile JSON convention).
+    // sort_pos orders the Kanban board within an (admin_id, status) lane —
+    // spaced floats, midpoint on drop, lane rebalance when gaps vanish.
+    `CREATE TABLE IF NOT EXISTS team_tasks (
+      id              TEXT PRIMARY KEY,
+      admin_id        TEXT NOT NULL,
+      client_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
+      title           TEXT NOT NULL,
+      description     TEXT NOT NULL DEFAULT '',
+      status          TEXT NOT NULL DEFAULT 'todo',
+      priority        TEXT NOT NULL DEFAULT 'normal',
+      due_date        TEXT,
+      source          TEXT NOT NULL DEFAULT 'manual',
+      lineup          INTEGER NOT NULL DEFAULT 0,
+      checklist       TEXT NOT NULL DEFAULT '[]',
+      sort_pos        REAL NOT NULL DEFAULT 0,
+      completed_at    TEXT,
+      created_by      TEXT,
+      created_by_name TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_team_tasks_admin
+     ON team_tasks (admin_id, status, sort_pos)`,
+    `CREATE INDEX IF NOT EXISTS idx_team_tasks_client
+     ON team_tasks (client_id) WHERE client_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_team_tasks_due
+     ON team_tasks (due_date) WHERE due_date IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS team_task_comments (
+      id          TEXT PRIMARY KEY,
+      task_id     TEXT NOT NULL,
+      admin_id    TEXT,
+      author_name TEXT NOT NULL DEFAULT '',
+      body        TEXT NOT NULL,
+      kind        TEXT NOT NULL DEFAULT 'comment',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_team_task_comments_task
+     ON team_task_comments (task_id, created_at)`,
+    // Action items: inbox entries (Slack/dashboard reports via the external
+    // API, or system sweeps) routed to one member. Each auto-creates a linked
+    // team_tasks row; solving one side syncs the other. dedup_key makes the
+    // system sweep idempotent (NULL for non-system items — SQLite UNIQUE
+    // allows many NULLs).
+    `CREATE TABLE IF NOT EXISTS team_action_items (
+      id             TEXT PRIMARY KEY,
+      admin_id       TEXT NOT NULL,
+      client_id      TEXT REFERENCES users(id) ON DELETE SET NULL,
+      task_id        TEXT,
+      source_type    TEXT NOT NULL DEFAULT 'dashboard',
+      source_channel TEXT,
+      author_label   TEXT,
+      external_ts    TEXT,
+      body           TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'unsolved',
+      solved_at      TEXT,
+      solved_by      TEXT,
+      dedup_key      TEXT UNIQUE,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_team_action_items_admin
+     ON team_action_items (admin_id, status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_team_action_items_task
+     ON team_action_items (task_id) WHERE task_id IS NOT NULL`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [
@@ -359,6 +454,11 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // and the closed-deals backfill don't relocate attendance into the wrong
     // period. Read on every stats poll, so it must self-heal here.
     { table: "event_attendance",       column: "event_date",           defn: "TEXT" },
+    // Team hub — CSM auto-split weight (null = equal share) and the
+    // comment/activity discriminator on task comments. Both tables live in
+    // CRITICAL_TABLE_DDL (created inline with these columns on a fresh DB).
+    { table: "team_members",           column: "split_share_percent",  defn: "INTEGER" },
+    { table: "team_task_comments",     column: "kind",                 defn: "TEXT NOT NULL DEFAULT 'comment'" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -1914,9 +2014,9 @@ export async function migrate(): Promise<void> {
     )
   `);
 
-  // ── Client team assignments (roster Lead / Media Buyer columns) ─────────
+  // ── Client team assignments (roster Lead / Media Buyer / CSM columns) ───
   // Links a client (users row) to people from the admins table. role is
-  // 'media_buyer' | 'lead'. Multi-assign allowed; replace-set writes go
+  // 'media_buyer' | 'lead' | 'csm'. Multi-assign allowed; replace-set writes go
   // through db.batch (atomic). Cleaned explicitly on user AND admin delete
   // (libSQL cascade not guaranteed); the reader also LEFT JOINs admins and
   // drops orphans. Strictly additive.

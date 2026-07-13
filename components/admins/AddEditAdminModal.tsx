@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { AdminAvatarUpload } from "./AdminAvatarUpload";
 import { PermissionToggleList } from "./PermissionToggleList";
-import type { AdminPublic } from "./types";
+import { ADMIN_ROLE_OPTIONS, type AdminPublic } from "./types";
 import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { allPermissionsFalse } from "@/lib/permissions";
 import { getInitials } from "@/lib/utils";
@@ -149,6 +149,33 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
               />
             </div>
           </div>
+
+          {/* Role — a label, not a permission preset: CSM/Media Buyer keep
+              whatever module toggles are set below. */}
+          {!admin?.isSuper && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Role</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className={INPUT_CLS}
+              >
+                {ADMIN_ROLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                {/* Legacy free-text role — keep it selectable so editing other
+                    fields doesn't silently clobber it. */}
+                {!ADMIN_ROLE_OPTIONS.some((o) => o.value === role) && (
+                  <option value={role}>{role}</option>
+                )}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                A label shown across the dashboard — module permissions are set below.
+              </p>
+            </div>
+          )}
 
           {/* Permissions */}
           <div className="space-y-2">

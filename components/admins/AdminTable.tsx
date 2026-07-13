@@ -3,7 +3,7 @@
 import { Pencil, Trash2, ShieldCheck, Shield } from "lucide-react";
 import Image from "next/image";
 import { AdminPermissionGrid } from "./AdminPermissionGrid";
-import type { AdminPublic } from "./types";
+import { adminRoleLabel, type AdminPublic } from "./types";
 import { getInitials } from "@/lib/utils";
 
 interface AdminTableProps {
@@ -61,7 +61,7 @@ export function AdminTable({ admins, canMutate, onEdit, onDelete, isPending }: A
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                     <Shield className="h-3 w-3" />
-                    {admin.role === "admin" ? "Admin" : admin.role}
+                    {adminRoleLabel(admin.role)}
                   </span>
                 )}
               </td>

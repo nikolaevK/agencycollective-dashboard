@@ -158,6 +158,50 @@ const metaAccountBody = (required?: string[]): OpenApiSchema =>
     required
   );
 
+/** Team task writable fields. Assignee is ONE individual admin. */
+const teamTaskBody = (required?: string[]): OpenApiSchema =>
+  obj(
+    {
+      adminId: str("Assignee admin id (one individual — required on create, immutable after)"),
+      title: str("Required on create"),
+      description: str(),
+      clientId: str("Optional tagged client id (null to clear)"),
+      status: {
+        type: "string",
+        enum: ["todo", "in_progress", "review", "complete"],
+      },
+      priority: { type: "string", enum: ["urgent", "high", "normal", "low"] },
+      dueDate: str("yyyy-mm-dd (business calendar; null to clear)"),
+      lineup: bool("Pinned to the member's Lineup"),
+      checklist: arr(
+        obj({ id: str("Stable item id (optional)"), text: str(), done: bool() }, ["text"])
+      ),
+    },
+    required
+  );
+
+/** Team action item writable fields (create). */
+const teamActionItemBody = (required?: string[]): OpenApiSchema =>
+  obj(
+    {
+      adminId: str("Routed member admin id (one individual)"),
+      body: str("The report text — also becomes the linked task's description"),
+      clientId: str("Optional tagged client id"),
+      sourceType: { type: "string", enum: ["slack", "dashboard", "system"] },
+      sourceChannel: str("Source label, e.g. '#felix-chem' or 'Client notes'"),
+      authorLabel: str("Who raised it, e.g. 'Chris' or 'Rebill bot'"),
+      externalTs: str("Original timestamp in the source system (ISO 8601)"),
+      taskTitle: str("Override for the auto-created task title (default: body head)"),
+      dueDate: str("Linked task due date (yyyy-mm-dd)"),
+      priority: {
+        type: "string",
+        enum: ["urgent", "high", "normal", "low"],
+        description: "Linked task priority (default normal)",
+      },
+    },
+    required
+  );
+
 const closerBody = obj(
   {
     displayName: str(),
@@ -309,6 +353,11 @@ export const openApiSpec: OpenApiSpec = {
       name: "metaaccounts",
       description:
         "Meta Accounts: aged FB account inventory & warm-up. Credential fields are write-only — accepted on create/update/import, never returned.",
+    },
+    {
+      name: "team",
+      description:
+        "Team hub: roster member rollups (clients, MRR managed vs goal, rebills, task stats), per-member tasks, and action items. Creating an action item auto-creates its linked task; solving one side syncs the other.",
     },
   ],
   securitySchemes: {
@@ -725,7 +774,7 @@ export const openApiSpec: OpenApiSpec = {
           required: true,
           schema: obj(
             {
-              role: { type: "string", enum: ["media_buyer", "lead"] },
+              role: { type: "string", enum: ["media_buyer", "lead", "csm"] },
               adminIds: arr(str()),
             },
             ["role", "adminIds"]
@@ -1300,6 +1349,116 @@ export const openApiSpec: OpenApiSpec = {
           q("kind", "stage or status", { type: "string", enum: ["stage", "status"] }),
           q("value", "Option slug"),
         ],
+      }),
+    },
+
+    /* ── Team hub surface ─────────────────────────────────────────────── */
+    "/team/members": {
+      get: op("listTeamMembers", "List Team roster members", "team", "team:read", {
+        description:
+          "Roster members with live rollups for the timeframe: client count, MRR managed (cents) vs monthly goal, health chip counts, rebill counts, task stats, unsolved action items.",
+        parameters: [
+          q("timeframe", "Rollup window (default week)", {
+            type: "string",
+            enum: ["today", "week", "month"],
+          }),
+        ],
+      }),
+    },
+    "/team/members/{adminId}": {
+      get: op("getTeamMember", "One member's hub", "team", "team:read", {
+        description:
+          "Member summary plus the attributed client slices (MRR, health/stage chips, team, rebill status — null for manually-billed PepAds clients) and goal history.",
+        parameters: [
+          pathParam("adminId", "Admin id of the roster member"),
+          q("timeframe", "Rollup window (default week)", {
+            type: "string",
+            enum: ["today", "week", "month"],
+          }),
+        ],
+      }),
+    },
+    "/team/tasks": {
+      get: op("listTeamTasks", "List tasks", "team", "team:read", {
+        parameters: [
+          q("adminId", "Assignee admin id"),
+          q("status", "Task status", {
+            type: "string",
+            enum: ["todo", "in_progress", "review", "complete"],
+          }),
+          q("clientId", "Tagged client id"),
+          q("search", "Substring match on title/description"),
+          q("dueBefore", "Due on or before (yyyy-mm-dd)"),
+          ...PAGINATION,
+        ],
+      }),
+      post: op("createTeamTask", "Create a task", "team", "team:write", {
+        description: "Tasks are assigned to ONE individual admin (adminId).",
+        requestBody: { required: true, schema: teamTaskBody(["adminId", "title"]) },
+      }),
+    },
+    "/team/tasks/{id}": {
+      get: op("getTeamTask", "One task (with comments)", "team", "team:read", {
+        parameters: [pathParam("id", "Task id")],
+      }),
+      patch: op("updateTeamTask", "Update a task", "team", "team:write", {
+        description:
+          "Partial update. Setting status=complete solves the linked action item (and reopening un-solves it).",
+        parameters: [pathParam("id", "Task id")],
+        requestBody: { required: true, schema: teamTaskBody() },
+      }),
+      delete: op("deleteTeamTask", "Delete a task", "team", "team:delete", {
+        parameters: [pathParam("id", "Task id")],
+      }),
+    },
+    "/team/tasks/{id}/comments": {
+      post: op("createTeamTaskComment", "Comment on a task", "team", "team:write", {
+        description:
+          'Append a progress note to the task\'s comment/activity trail (e.g. a daily follow-up: "still unsolved, day 3"). Author is recorded as the API token. Read comments via getTeamTask.',
+        parameters: [pathParam("id", "Task id")],
+        requestBody: {
+          required: true,
+          schema: obj({ body: str("Comment text (max 5000 chars)") }, ["body"]),
+        },
+      }),
+    },
+    "/team/action-items": {
+      get: op("listTeamActionItems", "List action items", "team", "team:read", {
+        parameters: [
+          q("adminId", "Routed member admin id"),
+          q("status", "unsolved or solved", {
+            type: "string",
+            enum: ["unsolved", "solved"],
+          }),
+          q("clientId", "Tagged client id"),
+          ...PAGINATION,
+        ],
+      }),
+      post: op("createTeamActionItem", "Create an action item (+ linked task)", "team", "team:write", {
+        description:
+          "The agent ingest path: relay a Slack thread or dashboard report to a member's inbox. Auto-creates a linked task on their board and returns both.",
+        requestBody: { required: true, schema: teamActionItemBody(["adminId", "body"]) },
+      }),
+    },
+    "/team/action-items/{id}": {
+      get: op("getTeamActionItem", "One action item", "team", "team:read", {
+        parameters: [pathParam("id", "Action item id")],
+      }),
+      patch: op("updateTeamActionItem", "Solve / unsolve an action item", "team", "team:write", {
+        description:
+          "{ status: 'solved' | 'unsolved' }. Solving completes the linked task; unsolving reopens it (atomic two-way sync).",
+        parameters: [pathParam("id", "Action item id")],
+        requestBody: {
+          required: true,
+          schema: obj(
+            { status: { type: "string", enum: ["solved", "unsolved"] } },
+            ["status"]
+          ),
+        },
+      }),
+      delete: op("deleteTeamActionItem", "Delete an action item", "team", "team:delete", {
+        description: "The linked task survives — it just loses its inbox entry.",
+        parameters: [pathParam("id", "Action item id")],
       }),
     },
   },

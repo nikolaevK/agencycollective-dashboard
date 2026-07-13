@@ -14,9 +14,11 @@ export interface TeamOption {
   name: string;
   avatarPath: string | null;
   isMediaBuyer: boolean;
+  /** admins.role === 'csm' — its own role, never merged with Media Buyer. */
+  isCsm: boolean;
 }
 
-/** Assignable people (admins) for the Lead / Media Buyer pickers. */
+/** Assignable people (admins) for the Lead / Media Buyer / CSM pickers. */
 export function useTeamOptions() {
   return useQuery<TeamOption[]>({
     queryKey: ["client-team-options"],
@@ -35,8 +37,10 @@ const PERSON_CHIP_CLS = "bg-primary/10 text-primary";
 /**
  * Roster people picker: assigned admins render as chips with an ×, the `+`
  * popover lists all admins. For the media_buyer role, media-perm admins sort
- * first with a small "Media" badge. onChange receives the full desired member
- * list for THIS role (replace-set semantics, matching PUT …/team).
+ * first with a small "Media" badge; for the csm role, CSM-role admins sort
+ * first with a "CSM" badge (parallel but never mixed). onChange receives the
+ * full desired member list for THIS role (replace-set semantics, matching
+ * PUT …/team).
  */
 export function TeamPicker({
   role,
@@ -73,7 +77,11 @@ export function TeamPicker({
       ? [...options].sort(
           (a, b) => Number(b.isMediaBuyer) - Number(a.isMediaBuyer) || a.name.localeCompare(b.name)
         )
-      : [...options].sort((a, b) => a.name.localeCompare(b.name));
+      : role === "csm"
+        ? [...options].sort(
+            (a, b) => Number(b.isCsm) - Number(a.isCsm) || a.name.localeCompare(b.name)
+          )
+        : [...options].sort((a, b) => a.name.localeCompare(b.name));
 
   function toggle(opt: TeamOption) {
     if (selected.some((m) => m.adminId === opt.id)) {
@@ -118,7 +126,13 @@ export function TeamPicker({
             setOpen((o) => !o);
           }}
           className="inline-flex items-center justify-center h-5 w-5 rounded-full border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-          aria-label={role === "media_buyer" ? "Assign media buyer" : "Assign lead"}
+          aria-label={
+            role === "media_buyer"
+              ? "Assign media buyer"
+              : role === "csm"
+                ? "Assign client success manager"
+                : "Assign lead"
+          }
         >
           <Plus className="h-3 w-3" />
         </button>
@@ -154,6 +168,11 @@ export function TeamPicker({
                 {opt.isMediaBuyer && (
                   <span className="shrink-0 px-1.5 py-0 rounded text-[9px] font-bold uppercase bg-sky-500/10 text-sky-600 dark:text-sky-400">
                     Media
+                  </span>
+                )}
+                {opt.isCsm && (
+                  <span className="shrink-0 px-1.5 py-0 rounded text-[9px] font-bold uppercase bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                    CSM
                   </span>
                 )}
               </button>

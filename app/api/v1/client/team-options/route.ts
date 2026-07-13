@@ -9,7 +9,7 @@ export function OPTIONS() {
   return corsPreflight();
 }
 
-/** Admins assignable as Head-of-Ads / Media Buyer. Never exposes hashes. */
+/** Admins assignable as Head-of-Ads / Media Buyer / CSM. Never exposes hashes. */
 export async function GET(request: Request) {
   const auth = await authenticateApiRequest(request, "client:read");
   if (!auth.ok) return auth.response;
@@ -22,6 +22,7 @@ export async function GET(request: Request) {
         name: a.displayName ?? a.username,
         avatarPath: a.avatarPath,
         isMediaBuyer: Boolean(a.permissions.media),
+        isCsm: a.role === "csm",
       }))
     );
   } catch (err) {

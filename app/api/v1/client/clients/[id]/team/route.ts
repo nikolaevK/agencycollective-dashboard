@@ -28,7 +28,7 @@ export async function GET(
   return ok(team);
 }
 
-/** Replace-set one role's assignments: { role: "media_buyer"|"lead", adminIds: string[] }. */
+/** Replace-set one role's assignments: { role: "media_buyer"|"lead"|"csm", adminIds: string[] }. */
 export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
@@ -46,8 +46,8 @@ export async function PUT(
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
 
     const role = String(body.role ?? "") as TeamRole;
-    if (role !== "media_buyer" && role !== "lead") {
-      return fail("invalid_request", "role must be media_buyer or lead", 400);
+    if (role !== "media_buyer" && role !== "lead" && role !== "csm") {
+      return fail("invalid_request", "role must be media_buyer, lead, or csm", 400);
     }
     if (!Array.isArray(body.adminIds)) {
       return fail("invalid_request", "adminIds must be an array of admin ids", 400);

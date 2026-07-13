@@ -14,6 +14,7 @@ import { RebillStatusChip } from "./RebillStatusChip";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { TeamPicker } from "./TeamPicker";
 import { InlineTextCell } from "./InlineTextCell";
+import { NewTeamTaskDialog } from "@/components/team/NewTeamTaskDialog";
 import {
   STAGE_CHIP_CLS,
   HEALTH_CHIP_CLS,
@@ -43,7 +44,7 @@ import type { ClientPublic } from "./types";
 import type { UserStatus } from "@/lib/users";
 
 const PAGE_SIZE = 20;
-const COL_COUNT = 18;
+const COL_COUNT = 19;
 
 interface ClientDirectoryProps {
   clients: ClientPublic[];
@@ -63,6 +64,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   const [editingId, setEditingId] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [mrrClientId, setMrrClientId] = useState<string | null>(null);
+  const [taskClientId, setTaskClientId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { patchProfile, putTeam } = useClientProfileMutations();
   const { options: platformOptions, addOption: addPlatformOption } =
@@ -78,6 +80,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   useEffect(() => setPage(1), [resetKey]);
 
   const editingClient = editingId ? clients.find((c) => c.id === editingId) ?? null : null;
+  const taskClient = taskClientId ? clients.find((c) => c.id === taskClientId) ?? null : null;
   const managingClient = managingId ? clients.find((c) => c.id === managingId) ?? null : null;
   const mrrClient = mrrClientId ? clients.find((c) => c.id === mrrClientId) ?? null : null;
 
@@ -166,6 +169,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
     const isPepads = profile.book === "pepads";
     const leads = client.team.filter((m) => m.role === "lead");
     const buyers = client.team.filter((m) => m.role === "media_buyer");
+    const csms = client.team.filter((m) => m.role === "csm");
     const perfDerived = profile.perfFee ? null : client.derivedPerfFee;
 
     return (
@@ -302,6 +306,14 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             role="media_buyer"
             members={buyers}
             onChange={(members) => saveTeam(client, "media_buyer", members)}
+          />
+        </td>
+        {/* CSM — Client Success Manager (own role, never merged with MB) */}
+        <td className="px-4 py-3 min-w-[140px]">
+          <TeamPicker
+            role="csm"
+            members={csms}
+            onChange={(members) => saveTeam(client, "csm", members)}
           />
         </td>
         {/* Services */}
@@ -458,6 +470,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             client={client}
             onEdit={() => setEditingId(client.id)}
             onManageAccounts={() => setManagingId(client.id)}
+            onNewTask={() => setTaskClientId(client.id)}
             onArchive={() => handleArchive(client)}
             onDelete={() => handleDelete(client)}
           />
@@ -501,6 +514,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               <Th>Ads</Th>
               <Th>Head of Ads</Th>
               <Th>Media Buyer</Th>
+              <Th>CSM</Th>
               <Th>Services</Th>
               <Th>Perf Fee</Th>
               <Th>Rev / Threshold</Th>
@@ -582,6 +596,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             const isPepads = profile.book === "pepads";
             const leads = client.team.filter((m) => m.role === "lead");
             const buyers = client.team.filter((m) => m.role === "media_buyer");
+            const csms = client.team.filter((m) => m.role === "csm");
             return (
               <div key={client.id}>
                 {firstOfSection && (
@@ -651,6 +666,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                       client={client}
                       onEdit={() => setEditingId(client.id)}
                       onManageAccounts={() => setManagingId(client.id)}
+                      onNewTask={() => setTaskClientId(client.id)}
                       onArchive={() => handleArchive(client)}
                       onDelete={() => handleDelete(client)}
                     />
@@ -715,6 +731,19 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                         role="media_buyer"
                         members={buyers}
                         onChange={(members) => saveTeam(client, "media_buyer", members)}
+                        compact
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                      CSM
+                    </p>
+                    <div className="mt-1">
+                      <TeamPicker
+                        role="csm"
+                        members={csms}
+                        onChange={(members) => saveTeam(client, "csm", members)}
                         compact
                       />
                     </div>
@@ -841,6 +870,9 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
           clientName={mrrClient.displayName}
           mrrCents={mrrClient.payoutMrr}
         />
+      )}
+      {taskClient && (
+        <NewTeamTaskDialog client={taskClient} onClose={() => setTaskClientId(null)} />
       )}
     </div>
   );

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MoreVertical, Pencil, Link2, Eye, Archive, Trash2, ArchiveRestore } from "lucide-react";
+import { MoreVertical, Pencil, Link2, Eye, Archive, Trash2, ArchiveRestore, ClipboardPlus } from "lucide-react";
 import type { ClientPublic } from "./types";
 
 interface ClientActionsMenuProps {
   client: ClientPublic;
   onEdit: () => void;
   onManageAccounts: () => void;
+  onNewTask: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }
@@ -16,6 +17,7 @@ export function ClientActionsMenu({
   client,
   onEdit,
   onManageAccounts,
+  onNewTask,
   onArchive,
   onDelete,
 }: ClientActionsMenuProps) {
@@ -56,6 +58,13 @@ export function ClientActionsMenu({
           >
             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
             Manage Accounts
+          </button>
+          <button
+            onClick={() => { setOpen(false); onNewTask(); }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <ClipboardPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            New Team Task
           </button>
           {client.slug && (
             <a
