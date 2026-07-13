@@ -17,6 +17,11 @@ export type {
   RebillRollup,
   CsmSplitAssignment,
 } from "@/lib/teamHub";
+export type {
+  MonthlyRebillProgress,
+  MonthlyRebillBucket,
+  MonthlyRetention,
+} from "@/lib/teamRebill";
 export type { TeamMemberRecord, TeamAttribution, UnrosteredAssignee } from "@/lib/teamMembers";
 export type {
   TeamTaskRecord,

@@ -1,4 +1,10 @@
-import type { TaskStatus, TaskPriority, ActionSourceType, TeamAttribution } from "./types";
+import type {
+  TaskStatus,
+  TaskPriority,
+  ActionSourceType,
+  TeamAttribution,
+  MonthlyRebillBucket,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Team hub presentation maps — pure label/color constants, mirroring the
@@ -87,6 +93,59 @@ export const SOURCE_META: Record<
     symbol: "⚙",
   },
 };
+
+/**
+ * Monthly re-bill tracker buckets — labels + colors matching the Client
+ * Directory's RebillStatusChip semantics (Paid = emerald, Invoice sent =
+ * violet, Due = amber, Overdue = red). Bar segment fills are validated for
+ * both surfaces (dark shifts emerald/amber one step down for the lightness
+ * band); `bar: null` buckets render as the muted track, never a fill.
+ */
+export const MONTHLY_REBILL_META: Record<
+  MonthlyRebillBucket,
+  { label: string; bar: string | null; text: string }
+> = {
+  collected: {
+    label: "Collected",
+    bar: "bg-emerald-500 dark:bg-emerald-600",
+    text: "text-emerald-600 dark:text-emerald-400",
+  },
+  sent: {
+    label: "Sent",
+    bar: "bg-violet-500",
+    text: "text-violet-600 dark:text-violet-400",
+  },
+  due: {
+    label: "Due",
+    bar: "bg-amber-500 dark:bg-amber-600",
+    text: "text-amber-600 dark:text-amber-400",
+  },
+  overdue: {
+    label: "Overdue",
+    bar: "bg-red-500",
+    text: "text-red-600 dark:text-red-400",
+  },
+  scheduled: {
+    label: "Upcoming",
+    bar: null,
+    text: "text-muted-foreground",
+  },
+  untracked: {
+    label: "Untracked",
+    bar: null,
+    text: "text-muted-foreground/70",
+  },
+};
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "2026-07" → "July" (business-month label; falls back to the raw string). */
+export function monthName(month: string): string {
+  return MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month;
+}
 
 export const ATTRIBUTION_LABEL: Record<TeamAttribution, string> = {
   book: "Entire book",

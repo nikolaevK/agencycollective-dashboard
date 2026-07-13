@@ -796,6 +796,34 @@ export async function getRebillPayoutMonthsByBrand(): Promise<
 }
 
 /**
+ * Σ amount_due (cents) of the REBILL-flagged payout ROWS in one calendar
+ * month — the Team hub's whole-book "re-billed this month" aggregate.
+ * Deliberately row-level, unlike `classifyMonth`'s brand-group metric
+ * (`rebillAccountRevenue`), which counts a brand's ENTIRE month once any of
+ * its rows is flagged — that inflates the total with one-off upsell rows.
+ * Month-scoped single query; no historical scan.
+ */
+export async function getMonthRebillRevenueCents(
+  month: number,
+  year: number
+): Promise<number> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT amount_due, sales_rep FROM payouts
+          WHERE payout_month = ? AND payout_year = ?`,
+    args: [month, year],
+  });
+  let total = 0;
+  for (const row of result.rows) {
+    const salesRep = row.sales_rep != null ? String(row.sales_rep) : null;
+    if (!isRebillSalesRep(salesRep)) continue;
+    total += Number(row.amount_due ?? 0);
+  }
+  return total;
+}
+
+/**
  * (year, month) pairs of every payout flagged as an "Ad Account" in the Sales
  * Rep column, grouped by normalized brand. The Ad Accounts directory uses this
  * to confirm payment of a sent ad-account invoice: a brand's ad-account payout

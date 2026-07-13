@@ -1356,7 +1356,7 @@ export const openApiSpec: OpenApiSpec = {
     "/team/members": {
       get: op("listTeamMembers", "List Team roster members", "team", "team:read", {
         description:
-          "Roster members with live rollups for the timeframe: client count, MRR managed (cents) vs monthly goal, health chip counts, rebill counts, task stats, unsolved action items.",
+          "Roster members with live rollups for the timeframe: client count, MRR managed (cents), monthly re-bill collection goal (`goalCents` — compared against collected, not MRR), health chip counts, rebill counts, current-month re-bill collection progress (`monthly.buckets` — collected/sent/due/overdue/scheduled/untracked, each {count, mrrCents}; collected = qualifying REBILL payout recorded in the month; `monthly.rebilledRevenueCents` = whole-book sum of the month's REBILL-flagged payout rows, non-null only for book-attribution members and totals), `retention` ({base, retained} — clients re-billed this month out of total clients managed), task stats, unsolved action items.",
         parameters: [
           q("timeframe", "Rollup window (default week)", {
             type: "string",
@@ -1368,7 +1368,7 @@ export const openApiSpec: OpenApiSpec = {
     "/team/members/{adminId}": {
       get: op("getTeamMember", "One member's hub", "team", "team:read", {
         description:
-          "Member summary plus the attributed client slices (MRR, health/stage chips, team, rebill status — null for manually-billed PepAds clients) and goal history.",
+          "Member summary (incl. current-month re-bill collection progress in `summary.monthly`) plus the attributed client slices (MRR, health/stage chips, team, rebill status — null for manually-billed PepAds clients) and goal history.",
         parameters: [
           pathParam("adminId", "Admin id of the roster member"),
           q("timeframe", "Rollup window (default week)", {

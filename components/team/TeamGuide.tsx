@@ -83,8 +83,10 @@ export function TeamGuide() {
         <ul className="mt-3 space-y-2">
           <li>
             <strong>MRR managed</strong> sums each attributed client&rsquo;s effective MRR
-            (PepAds manual MRR included) and is compared against the member&rsquo;s{" "}
-            <strong>monthly goal</strong>.
+            (PepAds manual MRR included). The <strong>monthly goal</strong> is the expected
+            re-bill <em>collection</em> for the month — it is compared against collected
+            re-bills (the tracker&rsquo;s &ldquo;% of goal&rdquo; and the hub&rsquo;s goal
+            ring), never against MRR managed.
           </li>
           <li>
             Goals are stored per month and <strong>carry forward</strong> — a month without an
@@ -93,6 +95,32 @@ export function TeamGuide() {
           <li>
             Re-bill rollups skip PepAds and paused/unscheduled clients — the same exclusions the
             alerts banner uses.
+          </li>
+          <li>
+            <strong>Monthly re-bill tracker</strong> — member cards and the hub home show a
+            segmented progress bar for the current business month. Each attributed client falls
+            into exactly one bucket: <em>Collected</em> (a qualifying REBILL-flagged payout was
+            recorded in the Payout DB <strong>in this month</strong> — stricter than the Client
+            Directory&rsquo;s green Paid chip, which stays on for the whole billing cycle),{" "}
+            <em>Sent</em> (invoice sent, awaiting payment), <em>Due</em>, <em>Overdue</em>,{" "}
+            <em>Upcoming</em>, or <em>Untracked</em> (PepAds / paused / unscheduled). Collected
+            MRR is shown as a % of MRR managed and, when a goal is set, % of the monthly goal.
+            It reads the same computed schedules the Clients page renders — a payout landing or
+            an invoice send updates the tracker automatically; nothing is entered here. For{" "}
+            <strong>whole-book members</strong> (Entire book attribution, e.g. COO) and the
+            team-level tile, the headline number is instead the sum of the month&rsquo;s{" "}
+            <strong>REBILL-flagged payout rows</strong> across the entire Payout DB — including
+            brands without a directory client and manually-billed PepAds, but NOT unflagged
+            one-off payments — shown as &ldquo;re-billed · all book&rdquo;. That aggregate can
+            exceed 100% of book MRR (it spans more than the active directory), and when several
+            members have Entire-book attribution they all show the same total.
+          </li>
+          <li>
+            <strong>Retention</strong> — clients re-billed this month out of{" "}
+            <strong>total clients managed</strong>: the collected bucket&rsquo;s count over
+            the member&rsquo;s whole client count. It fills toward 100% as the month&rsquo;s
+            payouts land, so early-month numbers are naturally low. Shown in the
+            tracker&rsquo;s footer and as a hub header chip.
           </li>
           <li>
             An admin who has client assignments but no roster row shows up as an{" "}

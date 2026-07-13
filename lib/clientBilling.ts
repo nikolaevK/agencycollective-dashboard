@@ -42,6 +42,13 @@ export interface RebillSchedule {
    * or `upcoming` and NOT paid (a brand-new account that's never billed).
    */
   paid: boolean;
+  /**
+   * "yyyy-mm" of the LATEST qualifying payment month (same standard as
+   * `paid`), independent of cycle coverage. Lets month-scoped consumers (the
+   * Team hub monthly tracker) ask "did a qualifying payment land in month X?"
+   * — `paid` alone can't answer that, since a cycle can span the boundary.
+   */
+  lastPaidMonth: string | null;
   paused: boolean;
   extendUntil: string | null;
   daysUntilDue: number | null; // negative = overdue
@@ -167,6 +174,18 @@ export function computeRebillSchedule(params: {
   const anchor = parseDate(anchorDate);
   const overrideDate = parseDate(override);
 
+  // Latest qualifying payment month — needs no billing day, so it's available
+  // to every return path (including the unschedulable one below).
+  const latestPaid =
+    paidMonths.length > 0
+      ? [...paidMonths].sort((a, b) => a.year - b.year || a.month - b.month)[
+          paidMonths.length - 1
+        ]
+      : null;
+  const lastPaidMonth = latestPaid
+    ? `${latestPaid.year}-${String(latestPaid.month).padStart(2, "0")}`
+    : null;
+
   // Day-of-month, in priority order: explicit billing day → the "last billed"
   // override's day (pinning "last billed = May 28" means the cycle recurs on
   // the 28th, so the next bill is June 28 — a working manual lever) → the
@@ -185,6 +204,7 @@ export function computeRebillSchedule(params: {
       nextRebillAt: null,
       status: paused ? "paused" : "unscheduled",
       paid: false,
+      lastPaidMonth,
       paused,
       extendUntil,
       daysUntilDue: null,
@@ -276,10 +296,7 @@ export function computeRebillSchedule(params: {
   // UI shows this as a separate chip alongside the upcoming/due/overdue status,
   // so an account can be e.g. "Paid" AND "Upcoming", or "Upcoming" and not paid.
   let paid = false;
-  if (paidMonths.length > 0) {
-    const latestPaid = [...paidMonths].sort(
-      (a, b) => a.year - b.year || a.month - b.month
-    )[paidMonths.length - 1];
+  if (latestPaid) {
     const paidThrough = nextCycleAfter(
       billingDateFor(latestPaid.year, latestPaid.month - 1, day),
       day
@@ -294,6 +311,7 @@ export function computeRebillSchedule(params: {
     nextRebillAt: next ? toIsoDate(next) : null,
     status,
     paid,
+    lastPaidMonth,
     paused,
     extendUntil,
     daysUntilDue,

@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Flag, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { monthlyHeadline } from "@/lib/teamRebill";
 import { formatMoney } from "@/components/users/format";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
 import { MemberAvatar } from "./TeamHome";
+import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
 import { TasksTab } from "./TasksTab";
 import { ActionItemsTab } from "./ActionItemsTab";
 import { ClientsTab } from "./ClientsTab";
@@ -24,6 +26,7 @@ import {
   TASK_PRIORITY_ORDER,
   ATTRIBUTION_LABEL,
   TIMEFRAME_OPTIONS,
+  monthName,
 } from "./presentation";
 import type { MemberHubPayload, TeamTaskRecord, TeamTimeframeValue } from "./types";
 
@@ -105,11 +108,15 @@ export function MemberHub({ adminId }: { adminId: string }) {
             managed
           </p>
         </div>
-        <GoalRing mrrCents={hub.summary.mrrManagedCents} goalCents={hub.summary.goalCents} month={hub.goalMonth} />
+        <GoalRing
+          collectedCents={monthlyHeadline(hub.summary.monthly).cents}
+          goalCents={hub.summary.goalCents}
+          month={hub.goalMonth}
+        />
       </div>
 
       {/* Stat chips */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
         <HeaderStat label="Tasks" value={tasks.length} />
         <HeaderStat label="Pending" value={pending} tone={pending > 0 ? "amber" : undefined} />
         <HeaderStat label="Done" value={hub.summary.tasks.done} tone="green" />
@@ -119,6 +126,7 @@ export function MemberHub({ adminId }: { adminId: string }) {
           tone={hub.summary.tasks.overdue > 0 ? "red" : undefined}
         />
         <HeaderStat label="Clients" value={hub.summary.clientCount} />
+        <RetentionStat retention={hub.summary.retention} />
         <HeaderStat label="Unsolved" value={unsolved} tone={unsolved > 0 ? "amber" : undefined} />
       </div>
 
@@ -203,6 +211,43 @@ export function MemberHub({ adminId }: { adminId: string }) {
   );
 }
 
+/**
+ * Retention: clients re-billed this month out of total clients managed —
+ * fills toward 100% as the month's payouts land, so no alarm colors.
+ */
+function RetentionStat({
+  retention,
+}: {
+  retention: { base: number; retained: number };
+}) {
+  const pct =
+    retention.base > 0
+      ? Math.round((retention.retained / retention.base) * 100)
+      : null;
+  return (
+    <div
+      className="rounded-xl border border-border/60 bg-card px-3 py-2 text-center"
+      title={
+        pct !== null
+          ? `${retention.retained} of ${retention.base} managed clients re-billed this month`
+          : "No clients managed yet"
+      }
+    >
+      <p
+        className={cn(
+          "text-lg font-black leading-none",
+          pct === null ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
+        {pct !== null ? `${pct}%` : "—"}
+      </p>
+      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+        Retention
+      </p>
+    </div>
+  );
+}
+
 function HeaderStat({
   label,
   value,
@@ -232,22 +277,26 @@ function HeaderStat({
   );
 }
 
+/**
+ * Collected re-bills vs the monthly goal — the goal is a re-bill COLLECTION
+ * target, so the ring fills as payouts land, not with book size. The arc
+ * clamps at 100%; the center text shows the real percentage.
+ */
 function GoalRing({
-  mrrCents,
+  collectedCents,
   goalCents,
   month,
 }: {
-  mrrCents: number;
+  collectedCents: number;
   goalCents: number;
   month: string;
 }) {
-  const pct = goalCents > 0 ? Math.min(100, Math.round((mrrCents / goalCents) * 100)) : null;
+  const pct = goalCents > 0 ? Math.round((collectedCents / goalCents) * 100) : null;
   const C = 2 * Math.PI * 26;
   // "2026-07" → "July 2026"
   const [gy, gm] = month.split("-").map(Number);
-  const monthLabel = Number.isFinite(gy) && gm >= 1 && gm <= 12
-    ? `${new Date(Date.UTC(gy, gm - 1, 1)).toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${gy}`
-    : month;
+  const monthLabel =
+    Number.isFinite(gy) && gm >= 1 && gm <= 12 ? `${monthName(month)} ${gy}` : month;
   return (
     <div className="flex items-center gap-3">
       <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden>
@@ -261,7 +310,7 @@ function GoalRing({
             strokeWidth="7"
             fill="none"
             strokeLinecap="round"
-            strokeDasharray={`${((C * pct) / 100).toFixed(1)} ${C.toFixed(1)}`}
+            strokeDasharray={`${((C * Math.min(pct, 100)) / 100).toFixed(1)} ${C.toFixed(1)}`}
             transform="rotate(-90 32 32)"
           />
         )}
@@ -278,12 +327,14 @@ function GoalRing({
       </svg>
       <div>
         <p className="text-sm font-bold text-foreground">
-          {formatMoney(mrrCents)}{" "}
+          {formatMoney(collectedCents)}{" "}
           <span className="text-muted-foreground font-medium">
             {goalCents > 0 ? `of ${formatMoney(goalCents)}` : "· no goal set"}
           </span>
         </p>
-        <p className="text-[11px] text-muted-foreground mt-0.5">{monthLabel} MRR managed target</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          {monthLabel} re-bill collection goal
+        </p>
       </div>
     </div>
   );
@@ -365,6 +416,22 @@ function HomeTab({
             Nothing pinned — flag tasks from their detail view.
           </p>
         )}
+      </HomeCard>
+
+      <HomeCard
+        title="💵 Monthly Re-bills"
+        hint="open Clients →"
+        onClick={onGoClients}
+        className="lg:col-span-2"
+      >
+        <div className="px-2 pb-1">
+          <MonthlyRebillTracker
+            monthly={hub.summary.monthly}
+            mrrManagedCents={hub.summary.mrrManagedCents}
+            goalCents={hub.summary.goalCents}
+            retention={hub.summary.retention}
+          />
+        </div>
       </HomeCard>
 
       <HomeCard title="📅 Agenda" hint="today & overdue">

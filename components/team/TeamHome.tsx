@@ -5,18 +5,20 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { X, UserPlus, Settings2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { classifyRebill } from "@/lib/teamRebill";
+import { classifyRebill, monthlyHeadline } from "@/lib/teamRebill";
 import { formatMoney, formatDate } from "@/components/users/format";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
 import { useTeamDirectory } from "./useTeamData";
 import { RosterManageDialog } from "./RosterManageDialog";
+import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
 import {
   TIMEFRAME_OPTIONS,
   TIMEFRAME_PHRASE,
   ATTRIBUTION_LABEL,
   avatarTint,
+  monthName,
 } from "./presentation";
 import type {
   TeamDirectoryPayload,
@@ -25,7 +27,14 @@ import type {
   TeamTimeframeValue,
 } from "./types";
 
-type DrillKind = "mrr" | "health" | "rebills" | "tasksdue" | "overdue" | "actions";
+type DrillKind =
+  | "mrr"
+  | "health"
+  | "rebills"
+  | "collected"
+  | "tasksdue"
+  | "overdue"
+  | "actions";
 
 export function TeamHome() {
   const [timeframe, setTimeframe] = useState<TeamTimeframeValue>("week");
@@ -170,6 +179,9 @@ function KpiStrip({
   // Count CLIENTS with any health chip (not chip instances) so the tile
   // matches the drill list length exactly.
   const healthFlagged = data.clients.filter((c) => c.health.length > 0).length;
+  // Team-level collected = the whole-book Payout-DB aggregate (all re-billed
+  // revenue this month), falling back to the bucket sum if absent.
+  const collected = monthlyHeadline(t.monthly);
   const tiles: {
     kind: DrillKind;
     label: string;
@@ -201,6 +213,18 @@ function KpiStrip({
       tone: t.rebills.overdue > 0 ? "red" : undefined,
     },
     {
+      kind: "collected",
+      label: `Re-billed · ${monthName(t.monthly.month)}`,
+      value: formatMoney(collected.cents),
+      // "all rebills" qualifies the mixed populations: the aggregate spans
+      // the whole Payout DB while book MRR is active-directory only.
+      sub:
+        t.bookMrrCents > 0
+          ? `${Math.round((collected.cents / t.bookMrrCents) * 100)}% of book MRR · all rebills`
+          : "all rebills this month",
+      tone: "green",
+    },
+    {
       kind: "tasksdue",
       label: `Tasks Due · ${tfl}`,
       value: String(t.tasksDueInWindow),
@@ -224,7 +248,7 @@ function KpiStrip({
   ];
 
   return (
-    <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+    <div className="grid gap-3 grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
       {tiles.map((tile) => (
         <button
           key={tile.kind}
@@ -276,6 +300,7 @@ function DrillPanel({
     mrr: "MRR managed by member",
     health: "Client health",
     rebills: `Rebills · ${tfl}`,
+    collected: `Re-billed · ${monthName(data.totals.monthly.month)} · by member`,
     tasksdue: `Tasks due · ${tfl}`,
     overdue: "Overdue tasks by member",
     actions: "Unsolved action items by member",
@@ -316,6 +341,42 @@ function DrillPanel({
           </span>
         </span>
       )
+    );
+  } else if (kind === "collected") {
+    // Same headline resolution the member cards render (monthlyHeadline) —
+    // the drill always matches the bars. Whole-book members show the
+    // all-book Payout-DB aggregate.
+    const anyWholeBook = data.members.some(
+      (m) => monthlyHeadline(m.monthly).wholeBook
+    );
+    body = (
+      <>
+        {data.members.map((m) => {
+          const h = monthlyHeadline(m.monthly);
+          const pct =
+            m.mrrManagedCents > 0
+              ? Math.round((h.cents / m.mrrManagedCents) * 100)
+              : null;
+          return memberRow(
+            m,
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+              {formatMoney(h.cents)}
+              <span className="ml-2 text-[11px] font-semibold text-muted-foreground">
+                {h.wholeBook && "all book · "}
+                {pct !== null ? `${pct}% of MRR` : "no MRR"}
+                {m.goalCents > 0 &&
+                  ` · ${Math.round((h.cents / m.goalCents) * 100)}% of goal`}
+              </span>
+            </span>
+          );
+        })}
+        {anyWholeBook && (
+          <p className="px-2 pt-2 text-[10px] text-muted-foreground">
+            &ldquo;All book&rdquo; rows show the same whole-book total — the
+            column is not additive.
+          </p>
+        )}
+      </>
     );
   } else if (kind === "health") {
     const flagged = data.clients
@@ -505,8 +566,6 @@ function MemberCard({
   const router = useRouter();
   const { labels: healthLabels } = useRosterOptions("health");
   const canOpen = viewer.privileged || viewer.adminId === m.adminId;
-  const pct =
-    m.goalCents > 0 ? Math.min(100, Math.round((m.mrrManagedCents / m.goalCents) * 100)) : null;
   const topHealth = useMemo(
     () =>
       Object.entries(m.healthCounts)
@@ -553,25 +612,26 @@ function MemberCard({
         )}
       </div>
 
+      {/* The monthly goal is a re-bill COLLECTION target — it's compared
+          against collected in the tracker below, never against MRR managed. */}
       <div className="mt-3 flex items-baseline gap-2 flex-wrap">
         <span className="text-lg font-black text-foreground">
           {formatMoney(m.mrrManagedCents)}
         </span>
-        <span className="text-[11px] text-muted-foreground">
-          MRR managed
-          {pct !== null && ` · ${pct}% of ${formatMoney(m.goalCents)} goal`}
-        </span>
+        <span className="text-[11px] text-muted-foreground">MRR managed</span>
       </div>
-      {pct !== null && (
-        <div className="mt-1.5 h-1.5 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-primary to-cyan-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      )}
 
-      <div className="mt-3 flex items-center gap-2 flex-wrap rounded-lg bg-muted/40 px-3 py-2 text-xs">
+      <MonthlyRebillTracker
+        monthly={m.monthly}
+        mrrManagedCents={m.mrrManagedCents}
+        goalCents={m.goalCents}
+        retention={m.retention}
+        className="mt-2.5 rounded-lg bg-muted/40 px-3 py-2.5"
+      />
+
+      {/* Timeframe-scoped window strip — the month tracker above doesn't
+          answer "what lands {tfl}?", so this keeps the toggle meaningful. */}
+      <div className="mt-2 flex items-center gap-2 flex-wrap rounded-lg bg-muted/40 px-3 py-2 text-xs">
         <span className="font-bold text-foreground">
           {m.rebills.inWindow} rebill{m.rebills.inWindow === 1 ? "" : "s"}
         </span>

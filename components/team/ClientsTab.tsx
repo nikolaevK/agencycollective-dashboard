@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Star, UserPlus } from "lucide-react";
 import { CsmClientAssignDialog } from "./CsmClientAssignDialog";
 import { cn } from "@/lib/utils";
+import { monthlyHeadline } from "@/lib/teamRebill";
 import { formatMoney, formatDate } from "@/components/users/format";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
@@ -54,9 +55,14 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
       )}
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         <SummaryTile label="Clients" value={String(clients.length)} />
         <SummaryTile label="Total MRR managed" value={formatMoney(totalMrr)} tone="green" />
+        <SummaryTile
+          label="Rebilled this month"
+          value={formatMoney(monthlyHeadline(hub.summary.monthly).cents)}
+          tone="green"
+        />
         <SummaryTile
           label="$0-MRR actives"
           value={String(zeroMrr)}

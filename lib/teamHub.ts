@@ -4,7 +4,13 @@ import {
 } from "./clientDirectory";
 import { effectiveMrrCents, setClientTeam } from "./clientProfile";
 import type { RebillStatus } from "./clientBilling";
-import { classifyRebill } from "./teamRebill";
+import {
+  classifyRebill,
+  buildMonthlyRebillProgress,
+  monthlyRetentionOf,
+  type MonthlyRebillProgress,
+  type MonthlyRetention,
+} from "./teamRebill";
 import { businessTodayYmd } from "./businessTime";
 import {
   listTeamMembers,
@@ -21,6 +27,7 @@ import {
   emptyTaskStats,
   type TaskStats,
 } from "./teamTasks";
+import { getMonthRebillRevenueCents } from "./payouts";
 import {
   unsolvedCountsByAdmin,
   runTeamSystemSweep,
@@ -88,6 +95,15 @@ export interface TeamClientSlice {
   manualNextRebill: string | null; // pepads manual date
 }
 
+/**
+ * The row's computed schedule, or null for pepads (manually billed — the
+ * computed schedule is excluded from every rollup, mirroring the
+ * rebill-alerts exclusion). The single source of that rule in this module.
+ */
+function trackedSchedule(row: ClientDirectoryRow) {
+  return row.profile.book === "pepads" ? null : row.schedule;
+}
+
 function toClientSlice(row: ClientDirectoryRow): TeamClientSlice {
   const isPepads = row.profile.book === "pepads";
   return {
@@ -101,13 +117,11 @@ function toClientSlice(row: ClientDirectoryRow): TeamClientSlice {
     health: row.profile.health,
     stages: row.profile.stages,
     team: row.team.map((t) => ({ adminId: t.adminId, role: t.role, name: t.name })),
-    rebill: isPepads
-      ? null
-      : {
-          status: row.schedule.status,
-          nextRebillAt: row.schedule.nextRebillAt,
-          paid: row.schedule.paid,
-        },
+    rebill: trackedSchedule(row) && {
+      status: row.schedule.status,
+      nextRebillAt: row.schedule.nextRebillAt,
+      paid: row.schedule.paid,
+    },
     manualBilling: isPepads ? row.profile.manualBilling : [],
     manualNextRebill: isPepads ? row.profile.manualNextRebill : null,
   };
@@ -155,11 +169,7 @@ function rebillRollup(
 ): RebillRollup {
   const roll = emptyRebillRollup();
   for (const row of rows) {
-    // PepAds are manually billed — excluded via the shared classifier (null).
-    const bucket = classifyRebill(
-      row.profile.book === "pepads" ? null : row.schedule,
-      window
-    );
+    const bucket = classifyRebill(trackedSchedule(row), window);
     const mrr = effectiveMrrCents(row);
     if (bucket.overdue) {
       roll.overdue += 1;
@@ -174,6 +184,27 @@ function rebillRollup(
   }
   return roll;
 }
+
+/**
+ * Monthly collection progress over the rows' computed schedules (pepads =
+ * untracked). `rebilledRevenueCents` (whole-book Payout-DB aggregate) is
+ * passed only for whole-book scopes — book-attribution members and totals.
+ */
+function monthlyProgress(
+  rows: ClientDirectoryRow[],
+  month: string,
+  rebilledRevenueCents: number | null = null
+): MonthlyRebillProgress {
+  return buildMonthlyRebillProgress(
+    rows.map((row) => ({
+      rebill: trackedSchedule(row),
+      mrrCents: effectiveMrrCents(row),
+    })),
+    month,
+    rebilledRevenueCents
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Member summaries + Team directory
@@ -193,6 +224,10 @@ export interface TeamMemberSummary {
   healthCounts: Record<string, number>;
   zeroMrrActiveCount: number;
   rebills: RebillRollup;
+  /** Current-business-month re-bill collection progress across the member's clients. */
+  monthly: MonthlyRebillProgress;
+  /** Month-over-month client retention across the member's clients. */
+  retention: MonthlyRetention;
   tasks: TaskStats;
   unsolvedActionItems: number;
 }
@@ -209,6 +244,8 @@ export interface TeamDirectory {
     unassignedActive: number;
     zeroMrrActive: number;
     rebills: RebillRollup;
+    monthly: MonthlyRebillProgress;
+    retention: MonthlyRetention;
     tasksDueInWindow: number; // incl. overdue (they always need attention)
     tasksOverdue: number;
     unsolvedActionItems: number;
@@ -232,10 +269,19 @@ function summarizeMember(
   member: TeamMemberRecord,
   clients: ClientDirectoryRow[],
   window: { start: string; end: string },
+  month: string,
+  monthRebilledCents: number | null,
   tasks: TaskStats,
   goalCents: number,
   unsolvedActionItems: number
 ): TeamMemberSummary {
+  // Whole-book members (COO) oversee ALL re-bills — their collected number
+  // is the Payout-DB month aggregate, not just their clients' bucket sum.
+  const monthly = monthlyProgress(
+    clients,
+    month,
+    member.attribution === "book" ? monthRebilledCents : null
+  );
   return {
     adminId: member.adminId,
     name: member.name,
@@ -250,6 +296,8 @@ function summarizeMember(
     healthCounts: healthCountsOf(clients),
     zeroMrrActiveCount: clients.filter((r) => effectiveMrrCents(r) === 0).length,
     rebills: rebillRollup(clients, window),
+    monthly,
+    retention: monthlyRetentionOf(monthly),
     tasks,
     unsolvedActionItems,
   };
@@ -271,13 +319,21 @@ export async function buildTeamDirectory(
     console.error("[teamHub] system sweep failed", err);
   }
 
-  const [members, taskStats, unsolvedCounts, goals, unrostered] =
+  const month = today.slice(0, 7);
+  const [members, taskStats, unsolvedCounts, goals, unrostered, monthRebilledCents] =
     await Promise.all([
       listTeamMembers(),
       taskStatsByAdmin(today, window.end),
       unsolvedCountsByAdmin(),
-      getGoalsCentsByAdmin(today.slice(0, 7)),
+      getGoalsCentsByAdmin(month),
       listUnrosteredAssignees(),
+      // Whole-book re-billed revenue for the month — feeds book-attribution
+      // members' + totals' collected headline. Row-level REBILL sum, NOT the
+      // Closers-page brand-group metric (which counts unflagged upsell rows).
+      getMonthRebillRevenueCents(
+        Number(month.slice(5, 7)),
+        Number(month.slice(0, 4))
+      ),
     ]);
 
   const active = rows.filter((r) => r.status === "active");
@@ -287,6 +343,8 @@ export async function buildTeamDirectory(
       member,
       attributedClients(member, rows),
       window,
+      month,
+      monthRebilledCents,
       taskStats.get(member.adminId) ?? emptyTaskStats(),
       goals.get(member.adminId) ?? 0,
       unsolvedCounts.get(member.adminId) ?? 0
@@ -306,6 +364,8 @@ export async function buildTeamDirectory(
     tasksDueInWindow += s.tasks.overdue + s.tasks.dueToday + s.tasks.dueInWindow;
   }
 
+  const totalsMonthly = monthlyProgress(active, month, monthRebilledCents);
+
   return {
     timeframe,
     today,
@@ -318,6 +378,8 @@ export async function buildTeamDirectory(
       unassignedActive: active.filter((r) => r.team.length === 0).length,
       zeroMrrActive: active.filter((r) => effectiveMrrCents(r) === 0).length,
       rebills: rebillRollup(active, window),
+      monthly: totalsMonthly,
+      retention: monthlyRetentionOf(totalsMonthly),
       tasksDueInWindow,
       tasksOverdue,
       unsolvedActionItems: unsolvedTotal,
@@ -355,12 +417,20 @@ export async function buildMemberHub(
   const rows = await buildClientDirectory();
   const clients = attributedClients(member, rows);
 
-  const [taskStats, unsolvedCounts, goalCents, goalHistory] = await Promise.all([
-    taskStatsByAdmin(today, window.end, adminId),
-    unsolvedCountsByAdmin(adminId),
-    getGoalCents(adminId, goalMonth),
-    listGoalHistory(adminId),
-  ]);
+  const [taskStats, unsolvedCounts, goalCents, goalHistory, monthRebilledCents] =
+    await Promise.all([
+      taskStatsByAdmin(today, window.end, adminId),
+      unsolvedCountsByAdmin(adminId),
+      getGoalCents(adminId, goalMonth),
+      listGoalHistory(adminId),
+      // Only whole-book members surface the Payout-DB month aggregate.
+      member.attribution === "book"
+        ? getMonthRebillRevenueCents(
+            Number(goalMonth.slice(5, 7)),
+            Number(goalMonth.slice(0, 4))
+          )
+        : Promise.resolve(null),
+    ]);
 
   return {
     member,
@@ -370,6 +440,8 @@ export async function buildMemberHub(
       member,
       clients,
       window,
+      goalMonth,
+      monthRebilledCents,
       taskStats.get(adminId) ?? emptyTaskStats(),
       goalCents,
       unsolvedCounts.get(adminId) ?? 0
