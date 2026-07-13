@@ -5,7 +5,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, Zap, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
-import { useActionItemMutations } from "./useTeamData";
+import {
+  useActionItemMutations,
+  useTeamMemberOptions,
+  type TeamMemberOption,
+} from "./useTeamData";
 import { SOURCE_META, TASK_STATUS_META } from "./presentation";
 import type { MemberHubPayload, TeamActionItemRecord, TaskStatus } from "./types";
 
@@ -18,8 +22,26 @@ export function ActionItemsTab({
   items: TeamActionItemRecord[];
   onOpenTask: (id: string) => void;
 }) {
-  const { setItemStatus } = useActionItemMutations(hub.member.adminId);
+  const { setItemStatus, reassignItem } = useActionItemMutations(hub.member.adminId);
+  const { data: memberOptions = [] } = useTeamMemberOptions();
+  const forwardTargets = memberOptions.filter(
+    (m) => m.adminId !== hub.member.adminId
+  );
   const [addOpen, setAddOpen] = useState(false);
+
+  function forward(item: TeamActionItemRecord, toAdminId: string) {
+    const target = forwardTargets.find((m) => m.adminId === toAdminId);
+    if (!target) return;
+    if (
+      !confirm(
+        `Forward this action item to ${target.name}? It moves to their inbox with full ownership (linked task included).`
+      )
+    )
+      return;
+    reassignItem(item.id, toAdminId).catch((err) =>
+      alert(err instanceof Error ? err.message : String(err))
+    );
+  }
 
   const unsolved = items.filter((i) => i.status === "unsolved");
   const solved = items.filter((i) => i.status === "solved");
@@ -61,6 +83,8 @@ export function ActionItemsTab({
             )
           }
           onOpenTask={onOpenTask}
+          forwardTargets={forwardTargets}
+          onForward={(toAdminId) => forward(item, toAdminId)}
         />
       ))}
       {items.length === 0 && (
@@ -77,11 +101,15 @@ function ActionItemCard({
   clientName,
   onFlip,
   onOpenTask,
+  forwardTargets,
+  onForward,
 }: {
   item: TeamActionItemRecord;
   clientName: string | null;
   onFlip: (status: "solved" | "unsolved") => void;
   onOpenTask: (id: string) => void;
+  forwardTargets: TeamMemberOption[];
+  onForward: (toAdminId: string) => void;
 }) {
   const src = SOURCE_META[item.sourceType];
   const solved = item.status === "solved";
@@ -134,6 +162,25 @@ function ActionItemCard({
               {TASK_STATUS_META[taskStatus]?.label}
             </span>
           </button>
+        )}
+        {/* Sweep items (dedup-keyed) are per-member; the API rejects
+            forwarding them. Agent-created 'system'-labeled items forward fine. */}
+        {forwardTargets.length > 0 && item.dedupKey == null && (
+          <select
+            value=""
+            onChange={(e) => e.target.value && onForward(e.target.value)}
+            className="h-7 rounded-lg border border-input bg-background px-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+            aria-label="Forward to another member"
+            title="Moves this item (and its linked task) to the selected member's hub"
+          >
+            <option value="">Forward to…</option>
+            {forwardTargets.map((m) => (
+              <option key={m.adminId} value={m.adminId}>
+                {m.name}
+                {m.position ? ` — ${m.position}` : ""}
+              </option>
+            ))}
+          </select>
         )}
         {solved ? (
           <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">

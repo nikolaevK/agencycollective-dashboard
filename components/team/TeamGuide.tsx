@@ -11,6 +11,10 @@ import {
   Radar,
   ArrowRight,
   ArrowLeftRight,
+  Gauge,
+  Percent,
+  MousePointerClick,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -20,15 +24,19 @@ import {
   TASK_PRIORITY_ORDER,
   SOURCE_META,
   ATTRIBUTION_LABEL,
+  MONTHLY_REBILL_META,
 } from "./presentation";
-import type { TeamAttribution } from "./types";
+import type { TeamAttribution, MonthlyRebillBucket } from "./types";
 
 /**
  * The Documentation tab on /dashboard/team. Read-only explainer for the whole
- * Team hub — roster & attribution, tasks, action items, the two-way sync, the
+ * Team hub — roster & attribution, the monthly re-bill tracker + retention,
+ * header drilldowns, tasks, action items, the two-way sync, reassignment, the
  * system sweep, CSM auto-split, and the external API/MCP agent workflow (with
- * payload schemas). No data fetches — purely explanatory. Keep in sync with
- * lib/teamHub.ts / teamTasks.ts / teamActionItems.ts and the v1 team surface.
+ * payload schemas). Diagrams render from the SAME presentation constants the
+ * live UI uses, so colors/labels can't drift. No data fetches — purely
+ * explanatory. Keep in sync with lib/teamHub.ts / teamRebill.ts /
+ * teamTasks.ts / teamActionItems.ts and the v1 team surface.
  */
 export function TeamGuide() {
   return (
@@ -37,9 +45,10 @@ export function TeamGuide() {
       <p className="text-muted-foreground">
         The <strong className="text-foreground">Team hub</strong> gives every team member one
         workspace that combines their slice of the Client Directory (clients, MRR managed,
-        re-bills, health) with a personal task board and an action-item inbox. The roster,
-        goals, and client attribution live here; the client data itself always comes live from
-        the Client Directory — nothing is duplicated.
+        monthly re-bill collection, retention, health) with a personal task board and an
+        action-item inbox. The roster, goals, and client attribution live here; the client and
+        payout data itself always comes live from the Client Directory and the Payout DB —
+        nothing is duplicated or entered twice.
       </p>
 
       {/* Access */}
@@ -57,6 +66,10 @@ export function TeamGuide() {
           <li>
             Tasks and action items belonging to someone else read as{" "}
             <em>not found</em> for non-privileged admins — ids are never leaked.
+          </li>
+          <li>
+            Every member can <strong>forward their own</strong> tasks and action items to
+            another roster member — see <em>Reassignment</em> below.
           </li>
         </ul>
       </Section>
@@ -93,40 +106,178 @@ export function TeamGuide() {
             explicit goal inherits the latest earlier one.
           </li>
           <li>
-            Re-bill rollups skip PepAds and paused/unscheduled clients — the same exclusions the
-            alerts banner uses.
-          </li>
-          <li>
-            <strong>Monthly re-bill tracker</strong> — member cards and the hub home show a
-            segmented progress bar for the current business month. Each attributed client falls
-            into exactly one bucket: <em>Collected</em> (a qualifying REBILL-flagged payout was
-            recorded in the Payout DB <strong>in this month</strong> — stricter than the Client
-            Directory&rsquo;s green Paid chip, which stays on for the whole billing cycle),{" "}
-            <em>Sent</em> (invoice sent, awaiting payment), <em>Due</em>, <em>Overdue</em>,{" "}
-            <em>Upcoming</em>, or <em>Untracked</em> (PepAds / paused / unscheduled). Collected
-            MRR is shown as a % of MRR managed and, when a goal is set, % of the monthly goal.
-            It reads the same computed schedules the Clients page renders — a payout landing or
-            an invoice send updates the tracker automatically; nothing is entered here. For{" "}
-            <strong>whole-book members</strong> (Entire book attribution, e.g. COO) and the
-            team-level tile, the headline number is instead the sum of the month&rsquo;s{" "}
-            <strong>REBILL-flagged payout rows</strong> across the entire Payout DB — including
-            brands without a directory client and manually-billed PepAds, but NOT unflagged
-            one-off payments — shown as &ldquo;re-billed · all book&rdquo;. That aggregate can
-            exceed 100% of book MRR (it spans more than the active directory), and when several
-            members have Entire-book attribution they all show the same total.
-          </li>
-          <li>
-            <strong>Retention</strong> — clients re-billed this month out of{" "}
-            <strong>total clients managed</strong>: the collected bucket&rsquo;s count over
-            the member&rsquo;s whole client count. It fills toward 100% as the month&rsquo;s
-            payouts land, so early-month numbers are naturally low. Shown in the
-            tracker&rsquo;s footer and as a hub header chip.
-          </li>
-          <li>
             An admin who has client assignments but no roster row shows up as an{" "}
             <em>unrostered assignee</em> notice so they can be added.
           </li>
         </ul>
+      </Section>
+
+      {/* Monthly re-bill tracker */}
+      <Section icon={Gauge} title="The monthly re-bill tracker">
+        <p>
+          Member cards, the hub home, and the team-level &ldquo;Re-billed&rdquo; KPI tile all
+          show the same tracker for the current business month. Anatomy:
+        </p>
+
+        {/* Tracker anatomy mock — classes come from MONTHLY_REBILL_META */}
+        <div className="mt-3 rounded-xl border border-border/60 bg-card p-4">
+          <div className="flex items-baseline justify-between gap-2 flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Re-bills · July
+            </span>
+            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+              $41,200{" "}
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                collected · 66% of MRR · 55% of goal
+              </span>
+            </span>
+          </div>
+          <div className="mt-1.5 flex h-2 gap-0.5 rounded-full bg-muted overflow-hidden">
+            <span className={cn("h-full w-[46%]", MONTHLY_REBILL_META.collected.bar)} />
+            <span className={cn("h-full w-[14%]", MONTHLY_REBILL_META.sent.bar)} />
+            <span className={cn("h-full w-[10%]", MONTHLY_REBILL_META.due.bar)} />
+            <span className={cn("h-full w-[6%]", MONTHLY_REBILL_META.overdue.bar)} />
+          </div>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2 flex-wrap text-[11px]">
+            <p>
+              <span className={cn("font-semibold", MONTHLY_REBILL_META.collected.text)}>6 collected</span>
+              <span className="text-muted-foreground/50"> · </span>
+              <span className={cn("font-semibold", MONTHLY_REBILL_META.sent.text)}>2 sent</span>
+              <span className="text-muted-foreground/50"> · </span>
+              <span className={cn("font-semibold", MONTHLY_REBILL_META.due.text)}>1 due</span>
+              <span className="text-muted-foreground/50"> · </span>
+              <span className={cn("font-semibold", MONTHLY_REBILL_META.overdue.text)}>1 overdue</span>
+              <span className="text-muted-foreground/50"> · </span>
+              <span className={cn("font-semibold", MONTHLY_REBILL_META.scheduled.text)}>2 upcoming</span>
+            </p>
+            <span className="font-semibold text-muted-foreground">
+              Retention <span className="font-bold text-foreground">50%</span> (6/12)
+            </span>
+          </div>
+        </div>
+
+        <p className="mt-4">
+          Every attributed client lands in <strong>exactly one bucket</strong>, checked top to
+          bottom — first match wins — so bucket MRR always sums exactly to MRR managed and the
+          bar can never overflow:
+        </p>
+
+        {/* Bucket decision flow */}
+        <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1.5 text-xs">
+          <BucketRow bucket="untracked" cond="PepAds (manually billed), paused, or unscheduled — no computed cycle" />
+          <BucketRow bucket="collected" cond="A qualifying REBILL-flagged payout was recorded in the Payout DB THIS month" />
+          <BucketRow bucket="sent" cond="Re-bill invoice sent for the current cycle, awaiting the payout" />
+          <BucketRow bucket="overdue" cond="Past the re-bill date, nothing landed" />
+          <BucketRow bucket="due" cond="Inside the lead window, not yet billed" />
+          <BucketRow bucket="scheduled" cond="Bill lands later in the cycle (upcoming / extended)" />
+        </div>
+
+        <ul className="mt-3 space-y-2">
+          <li>
+            <strong>Collected is month-scoped</strong> — deliberately stricter than the Client
+            Directory&rsquo;s green <em>Paid</em> chip, which stays on for the whole billing
+            cycle. A June payment whose cycle covers into July does <em>not</em> count as
+            collected for July; the tracker starts each month near zero and fills as payouts
+            land.
+          </li>
+          <li>
+            Fully <strong>reactive</strong>: a payout recorded on the Closers page or an
+            invoice sent from the Client Directory moves a segment on the next load. Nothing
+            is entered on the Team page.
+          </li>
+          <li>
+            <strong>Two headline modes</strong> (the bar is always bucket-based):
+          </li>
+        </ul>
+
+        {/* Headline modes comparison */}
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+            <div className="text-xs font-bold text-foreground">
+              Head of Ads · Media Buyer · CSM
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Headline = Σ MRR of <em>their clients</em> in the Collected bucket — shown as
+              &ldquo;collected&rdquo;. Percentages vs their MRR managed and their goal.
+            </div>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+            <div className="text-xs font-bold text-foreground">
+              Entire book (COO) &amp; team KPI tile
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Headline = Σ of the month&rsquo;s <strong>REBILL-flagged payout rows</strong>{" "}
+              across the whole Payout DB — including brands without a directory client and
+              manually-billed PepAds, but never unflagged one-off payments. Shown as
+              &ldquo;re-billed · all book&rdquo;; can exceed 100% of book MRR, and every
+              Entire-book member shows the same total (the drill notes it&rsquo;s not
+              additive).
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Retention */}
+      <Section icon={Percent} title="Retention">
+        <p>
+          Retention answers &ldquo;how much of my book re-billed this month?&rdquo; — the
+          Collected bucket&rsquo;s <em>client count</em> over the member&rsquo;s{" "}
+          <strong>total clients managed</strong>:
+        </p>
+        {/* Formula visual */}
+        <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <div className="flex items-center justify-center gap-2.5 text-xs font-semibold flex-wrap">
+            <span className={cn("rounded-md bg-card border border-border/60 px-3 py-2", MONTHLY_REBILL_META.collected.text)}>
+              Clients collected this month · 6
+            </span>
+            <span className="text-lg font-black text-muted-foreground">÷</span>
+            <span className="rounded-md bg-card border border-border/60 px-3 py-2 text-foreground">
+              Total clients managed · 12
+            </span>
+            <span className="text-lg font-black text-muted-foreground">=</span>
+            <span className="rounded-md bg-card border border-border/60 px-3 py-2 font-black text-foreground">
+              50%
+            </span>
+          </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Derived from the same buckets as the tracker bar — the chip and its drill-down can
+            never disagree.
+          </p>
+        </div>
+        <ul className="mt-3 space-y-2">
+          <li>
+            It <strong>fills toward 100%</strong> as the month&rsquo;s payouts land — low
+            numbers early in the month are normal, which is why the chip carries no alarm
+            color.
+          </li>
+          <li>
+            The denominator is the <em>whole</em> book, so PepAds / paused / unscheduled
+            clients (which can never enter the Collected bucket) cap the ceiling — the
+            Retention drill-down lists them separately so the gap is explainable.
+          </li>
+          <li>
+            Shown in the tracker footer on member cards + hub home, and as a{" "}
+            <strong>Retention</strong> chip in the hub header.
+          </li>
+        </ul>
+      </Section>
+
+      {/* Header drilldowns */}
+      <Section icon={MousePointerClick} title="Hub header chips drill down">
+        <p>
+          Every metric chip in a hub&rsquo;s header is clickable and expands an inline panel
+          below the strip (click again to collapse; each panel links to its full tab):
+        </p>
+        <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1.5 text-xs">
+          <FlowRow from="Tasks / Pending / Done / Overdue" tool="task lists" note="rows open the task detail sheet" />
+          <FlowRow from="Clients" tool="client list" note="MRR + live re-bill status chip; rows open the client page" />
+          <FlowRow from="Retention" tool="two groups" note="Re-billed this month vs Not yet re-billed (+ untracked note)" />
+          <FlowRow from="Unsolved" tool="inbox list" note="rows open the linked task" />
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          The Retention drill uses the same bucket classifier as the chip, so its group counts
+          always sum to the chip&rsquo;s ratio.
+        </p>
       </Section>
 
       {/* Tasks */}
@@ -183,8 +334,8 @@ export function TeamGuide() {
           </li>
           <li>
             Each task has a <strong>comment trail</strong> that also records{" "}
-            <em>activity rows</em> automatically (status moves, action-item solves) — a muted
-            timeline in the task detail view.
+            <em>activity rows</em> automatically (status moves, action-item solves,
+            reassignments) — a muted timeline in the task detail view.
           </li>
         </ul>
       </Section>
@@ -262,6 +413,82 @@ export function TeamGuide() {
         </ul>
       </Section>
 
+      {/* Reassignment */}
+      <Section icon={Send} title="Reassignment — moving work between hubs">
+        <p>
+          Work that landed in the wrong hub can be forwarded to the correct member. Ownership
+          transfers <strong>fully and atomically</strong> — the task and its linked action
+          item always move together, in one database batch:
+        </p>
+
+        {/* Transfer flow visual */}
+        <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <div className="flex items-center justify-center gap-3 text-xs font-semibold flex-wrap">
+            <div className="rounded-md bg-card border border-border/60 px-3 py-2 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Hub · Roxana
+              </div>
+              <div className="mt-1 space-y-1">
+                <div className="rounded bg-muted/60 px-2 py-1">▣ Task</div>
+                <div className="rounded bg-muted/60 px-2 py-1">⚡ Linked item</div>
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-0.5 shrink-0">
+              <ArrowRight className="h-4 w-4 text-primary" />
+              <span className="text-[10px] font-bold text-primary">one atomic batch</span>
+            </div>
+            <div className="rounded-md bg-card border border-primary/50 px-3 py-2 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Hub · Sam
+              </div>
+              <div className="mt-1 space-y-1">
+                <div className="rounded bg-muted/60 px-2 py-1">▣ Task → bottom of its lane</div>
+                <div className="rounded bg-muted/60 px-2 py-1">⚡ Item → Sam&rsquo;s inbox</div>
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            The activity trail records &ldquo;Reassigned to Sam — by Roxana&rdquo;; the
+            previous owner loses access.
+          </p>
+        </div>
+
+        <ul className="mt-3 space-y-2">
+          <li>
+            <strong>Who can:</strong> the <em>current assignee</em> can forward their own work
+            anywhere on the roster (that&rsquo;s the point — misrouted work escapes); admins
+            with the <Pill>admin</Pill> permission can reassign anyone&rsquo;s.
+          </li>
+          <li>
+            <strong>How:</strong> the task sheet&rsquo;s <em>Assignee</em> select, or the{" "}
+            <em>Forward to…</em> picker on an action-item card. Both confirm before moving.
+          </li>
+          <li>
+            <strong>Targets:</strong> Team roster members only — an unrostered admin&rsquo;s
+            hub would be unreachable from this page.
+          </li>
+          <li>
+            <strong>Not reassignable:</strong> sweep-generated work (&ldquo;by System&rdquo;) —
+            the sweep creates and auto-solves it per member, so forwarding would duplicate it.
+            Agent-created work that merely wears the <Pill>System</Pill> source label
+            (&ldquo;by api:&hellip;&rdquo;) forwards normally.
+          </li>
+          <li>
+            <strong>Over the API/MCP:</strong>{" "}
+            <code className="rounded bg-muted px-1 text-xs">PATCH {"{ reassignTo: <adminId> }"}</code>{" "}
+            on updateTeamTask / updateTeamActionItem (exclusive shape — other fields are
+            ignored). An <code className="rounded bg-muted px-1 text-xs">adminId</code> echoed
+            back in an update body is inert; reassigning to the current owner is an idempotent
+            no-op (nothing recorded).
+          </li>
+          <li>
+            <strong>Caution:</strong> deleting an admin deletes their hub&rsquo;s tasks and
+            action items, <em>including forwarded ones</em> — reassign work out of a hub
+            before deleting the account.
+          </li>
+        </ul>
+      </Section>
+
       {/* System sweep */}
       <Section icon={Radar} title="System sweep">
         <p>
@@ -272,6 +499,26 @@ export function TeamGuide() {
           (team assigned, client paused/removed), the sweep auto-solves the item — and if a
           human dismissed it early, that dismissal holds until the condition actually clears.
         </p>
+        <p className="mt-2">
+          Note the <Pill>System</Pill> label appears on two different kinds of work:
+        </p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+            <div className="text-xs font-bold text-foreground">Sweep-generated · &ldquo;by System&rdquo;</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Created by the sweep itself. De-dup keyed, auto-solved when the condition
+              clears, <strong>not reassignable</strong> — it resolves by fixing the underlying
+              condition, not by working the task.
+            </div>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+            <div className="text-xs font-bold text-foreground">Agent-created · &ldquo;by api:&hellip;&rdquo;</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Filed by the external agent with the <em>system</em> source label (styling
+              only). Ordinary work: solvable, editable, and <strong>fully reassignable</strong>.
+            </div>
+          </div>
+        </div>
       </Section>
 
       {/* CSM auto-split */}
@@ -303,6 +550,7 @@ export function TeamGuide() {
             <FlowRow from="SOLVED" tool="updateTeamActionItem" note='{ status: "solved" } — completes the task too' />
             <FlowRow from="IN MOTION" tool="updateTeamTask" note='{ status: "in_progress" } on the linked task' />
             <FlowRow from="Aging update" tool="createTeamTaskComment" note='"still unsolved, day 3" on the task trail' />
+            <FlowRow from="MISROUTED" tool="updateTeamActionItem" note='{ reassignTo: "<adminId>" } — moves item + task to the right hub' />
             <FlowRow from="UNSOLVED" tool="—" note="leave the existing item open (no call)" />
           </div>
         </div>
@@ -327,6 +575,17 @@ export function TeamGuide() {
           and the linked <code className="rounded bg-muted px-1 text-xs">taskId</code> — keep
           both for follow-ups.
         </p>
+
+        <p className="mt-3">
+          <strong>Reassigning</strong> —{" "}
+          <code className="rounded bg-muted px-1 text-xs">PATCH /api/v1/team/tasks/&#123;id&#125;</code>{" "}
+          or <code className="rounded bg-muted px-1 text-xs">/team/action-items/&#123;id&#125;</code>:
+        </p>
+        <Schema>{`{
+  "reassignTo": "…"   // roster member admin id — EXCLUSIVE shape:
+                      // other fields in the same body are ignored.
+                      // adminId echoed from a GET is inert — safe to send.
+}`}</Schema>
 
         <ul className="mt-3 space-y-2">
           <li>
@@ -412,6 +671,21 @@ function FlowRow({ from, tool, note }: { from: string; tool: string; note: strin
         {tool}
       </code>
       <span className="text-muted-foreground">{note}</span>
+    </div>
+  );
+}
+
+/** One row of the bucket decision flow — condition → bucket chip. */
+function BucketRow({ bucket, cond }: { bucket: MonthlyRebillBucket; cond: string }) {
+  const meta = MONTHLY_REBILL_META[bucket];
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="flex-1 min-w-[220px] text-muted-foreground">{cond}</span>
+      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-card border border-border/60 px-2 py-0.5 font-semibold", meta.text)}>
+        {meta.bar && <span className={cn("h-2 w-2 rounded-full", meta.bar)} />}
+        {meta.label}
+      </span>
     </div>
   );
 }

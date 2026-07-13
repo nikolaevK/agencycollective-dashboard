@@ -7,6 +7,7 @@ import {
   getTask,
   updateTask,
   deleteTask,
+  reassignTask,
   listComments,
   parseTaskStatus,
   parseTaskPriority,
@@ -16,6 +17,7 @@ import {
   type UpdateTaskInput,
 } from "@/lib/teamTasks";
 import { syncActionItemForTask } from "@/lib/teamActionItems";
+import { getTeamMember } from "@/lib/teamMembers";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -46,7 +48,11 @@ export async function GET(
 
 /**
  * Partial update. status=complete solves the linked action item; leaving
- * complete reopens a task-solved item (two-way sync).
+ * complete reopens a task-solved item (two-way sync). `reassignTo` transfers
+ * the task to another roster member's hub — full ownership, the linked
+ * action item moves too (exclusive shape). `adminId` in the body stays INERT
+ * on update (it's the create-time assignee field, and clients commonly echo
+ * whole records back — an echoed adminId must never trigger a transfer).
  */
 export async function PATCH(
   request: Request,
@@ -61,6 +67,46 @@ export async function PATCH(
 
     const body = await readJsonBody(request);
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
+
+    // Reassign — exclusive shape via the DEDICATED key (never body.adminId,
+    // which clients echo back from GETs): full ownership transfer.
+    if (body.reassignTo !== undefined) {
+      // Only true SWEEP tasks (created_by='system') are locked — a 'system'
+      // source label alone (agent-created) stays reassignable.
+      if (existing.source === "system" && existing.createdBy === "system") {
+        return fail(
+          "invalid_request",
+          "Sweep-generated tasks can't be reassigned — the sweep routes them per member",
+          400
+        );
+      }
+      const toAdminId =
+        typeof body.reassignTo === "string" ? body.reassignTo.trim() : "";
+      // Roster-validated — an unrostered admin's hub is unreachable in the UI.
+      const target = toAdminId ? await getTeamMember(toAdminId) : null;
+      if (!target) {
+        return fail("invalid_request", "reassignTo must be a Team roster member's admin id", 400);
+      }
+      const task = await reassignTask(params.id, target.adminId);
+      if (!task) return fail("not_found", "Task not found", 404);
+      // Same-owner request = idempotent no-op: no activity, no audit row.
+      if (task.adminId !== existing.adminId) {
+        const actor = tokenAuditActor(auth.token);
+        recordTaskActivity(
+          task.id,
+          { id: actor.adminId, name: actor.adminUsername },
+          `Reassigned to ${target.name}`
+        ).catch(() => {});
+        logAuditEvent({
+          ...actor,
+          action: "team.task_reassign",
+          targetType: "team_task",
+          targetId: task.id,
+          details: JSON.stringify({ from: existing.adminId, to: task.adminId }),
+        }).catch(() => {});
+      }
+      return ok(task);
+    }
 
     const changes: UpdateTaskInput = {};
     if (body.title !== undefined) {

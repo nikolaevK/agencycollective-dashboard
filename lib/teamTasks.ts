@@ -84,7 +84,8 @@ const MAX_DESC_LEN = 10_000;
 const MAX_CHECKLIST_ITEMS = 50;
 const MAX_CHECKLIST_TEXT = 300;
 const MAX_COMMENT_LEN = 5_000;
-const LANE_SPACING = 1024;
+/** Board lane gap — exported so teamActionItems' raw-SQL task writes stay in sync. */
+export const LANE_SPACING = 1024;
 const MIN_GAP = 1e-6;
 
 function isNoSuchTable(err: unknown): boolean {
@@ -547,6 +548,45 @@ export async function moveTask(
   }
 
   await db.batch(statements, "write");
+  return getTask(id);
+}
+
+/**
+ * Full ownership transfer to another admin's hub. The task drops to the
+ * bottom of the target hub's lane (same status), and any linked action item
+ * moves with it in the SAME atomic batch — raw SQL on the item side by
+ * design (mirrors the solve⇄complete sync; this module stays import-free of
+ * lib/teamActionItems). The subquery reads the row's OLD admin_id, so the
+ * moving task never counts itself in the target lane.
+ */
+export async function reassignTask(
+  id: string,
+  toAdminId: string
+): Promise<TeamTaskRecord | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const task = await getTask(id);
+  if (!task) return null;
+  if (task.adminId === toAdminId) return task;
+  await db.batch(
+    [
+      {
+        sql: `UPDATE team_tasks
+              SET admin_id = ?,
+                  sort_pos = COALESCE((SELECT MAX(sort_pos) FROM team_tasks
+                                       WHERE admin_id = ? AND status = ?), 0) + ${LANE_SPACING},
+                  updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [toAdminId, toAdminId, task.status, id],
+      },
+      {
+        sql: `UPDATE team_action_items SET admin_id = ?, updated_at = datetime('now')
+              WHERE task_id = ?`,
+        args: [toAdminId, id],
+      },
+    ],
+    "write"
+  );
   return getTask(id);
 }
 

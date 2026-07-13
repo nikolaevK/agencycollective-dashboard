@@ -90,6 +90,8 @@ export interface TeamClientSlice {
     status: RebillStatus;
     nextRebillAt: string | null;
     paid: boolean;
+    /** "yyyy-mm" of the latest qualifying payment — collected when === tracker month. */
+    lastPaidMonth: string | null;
   } | null;
   manualBilling: string[]; // pepads chips
   manualNextRebill: string | null; // pepads manual date
@@ -121,6 +123,7 @@ function toClientSlice(row: ClientDirectoryRow): TeamClientSlice {
       status: row.schedule.status,
       nextRebillAt: row.schedule.nextRebillAt,
       paid: row.schedule.paid,
+      lastPaidMonth: row.schedule.lastPaidMonth,
     },
     manualBilling: isPepads ? row.profile.manualBilling : [],
     manualNextRebill: isPepads ? row.profile.manualNextRebill : null,

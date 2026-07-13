@@ -9,6 +9,12 @@ import { findAdmin, type AdminRecord } from "./admins";
 //   permission — no new permission key.
 // - Everyone else may view and manage ONLY their own hub (self tasks, self
 //   action items, self comments).
+// - REASSIGNMENT is deliberately owner-side-gated only: canManageMember is
+//   checked against the CURRENT owner, and the TARGET is unrestricted (any
+//   roster member) — that's what lets a non-privileged member forward a
+//   misrouted task/item out of their own hub. Do NOT "harden" reassign
+//   routes with a target-side canManageMember check; it would kill
+//   forwarding for every non-privileged member.
 // Role truth is the DB (findAdmin), never the session token — mirrors the
 // closer/setter layout-guard principle.
 // ---------------------------------------------------------------------------

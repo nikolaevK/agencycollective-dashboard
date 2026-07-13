@@ -162,7 +162,9 @@ const metaAccountBody = (required?: string[]): OpenApiSchema =>
 const teamTaskBody = (required?: string[]): OpenApiSchema =>
   obj(
     {
-      adminId: str("Assignee admin id (one individual — required on create, immutable after)"),
+      adminId: str(
+        "Assignee admin id (one individual — required on create, INERT on update; echoing it back is always safe). To transfer ownership use reassignTo on PATCH."
+      ),
       title: str("Required on create"),
       description: str(),
       clientId: str("Optional tagged client id (null to clear)"),
@@ -1403,9 +1405,20 @@ export const openApiSpec: OpenApiSpec = {
       }),
       patch: op("updateTeamTask", "Update a task", "team", "team:write", {
         description:
-          "Partial update. Setting status=complete solves the linked action item (and reopening un-solves it).",
+          "Partial update. Setting status=complete solves the linked action item (and reopening un-solves it). Passing reassignTo (a Team roster member's admin id) REASSIGNS the task to that member's hub — full ownership transfer, linked action item included (EXCLUSIVE shape: other fields are ignored; send reassignTo alone). adminId in the body stays inert. Sweep-generated tasks (created_by='system') can't be reassigned; agent-created tasks with a 'system' source label can.",
         parameters: [pathParam("id", "Task id")],
-        requestBody: { required: true, schema: teamTaskBody() },
+        requestBody: {
+          required: true,
+          schema: {
+            ...teamTaskBody(),
+            properties: {
+              ...teamTaskBody().properties,
+              reassignTo: str(
+                "Roster member admin id — full ownership transfer (exclusive of other fields)"
+              ),
+            },
+          },
+        },
       }),
       delete: op("deleteTeamTask", "Delete a task", "team", "team:delete", {
         parameters: [pathParam("id", "Task id")],
@@ -1444,16 +1457,18 @@ export const openApiSpec: OpenApiSpec = {
       get: op("getTeamActionItem", "One action item", "team", "team:read", {
         parameters: [pathParam("id", "Action item id")],
       }),
-      patch: op("updateTeamActionItem", "Solve / unsolve an action item", "team", "team:write", {
+      patch: op("updateTeamActionItem", "Solve / unsolve / reassign an action item", "team", "team:write", {
         description:
-          "{ status: 'solved' | 'unsolved' }. Solving completes the linked task; unsolving reopens it (atomic two-way sync).",
+          "Send EXACTLY ONE of: { status: 'solved' | 'unsolved' } — solving completes the linked task; unsolving reopens it (atomic two-way sync) — OR { reassignTo: <roster member admin id> } — full ownership transfer to that member's inbox, linked task moves too. reassignTo wins if both are sent (status is ignored). Sweep-generated items (dedup-keyed) can't be reassigned; agent-created 'system'-labeled items can.",
         parameters: [pathParam("id", "Action item id")],
         requestBody: {
           required: true,
-          schema: obj(
-            { status: { type: "string", enum: ["solved", "unsolved"] } },
-            ["status"]
-          ),
+          schema: obj({
+            status: { type: "string", enum: ["solved", "unsolved"] },
+            reassignTo: str(
+              "Roster member admin id — full ownership transfer (exclusive of status)"
+            ),
+          }),
         },
       }),
       delete: op("deleteTeamActionItem", "Delete an action item", "team", "team:delete", {

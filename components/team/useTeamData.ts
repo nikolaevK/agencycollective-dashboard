@@ -70,6 +70,27 @@ export function useMemberTasks(adminId: string) {
   });
 }
 
+export interface TeamMemberOption {
+  adminId: string;
+  name: string;
+  position: string;
+  attribution: string;
+}
+
+/** Slim roster list for assignee/forward pickers (any admin may fetch). */
+export function useTeamMemberOptions() {
+  return useQuery<TeamMemberOption[]>({
+    queryKey: ["team-member-options"],
+    queryFn: async () => {
+      const data = await fetchJson<{ members: TeamMemberOption[] }>(
+        "/api/admin/team/members"
+      );
+      return data.members;
+    },
+    staleTime: 300_000,
+  });
+}
+
 export function useMemberActionItems(adminId: string) {
   return useQuery<TeamActionItemRecord[]>({
     queryKey: ["team-action-items", adminId],
@@ -98,6 +119,8 @@ export interface TaskMutations {
     move: { status: TaskStatus; afterTaskId: string | null },
     optimistic?: TeamTaskRecord[]
   ) => Promise<void>;
+  /** Full ownership transfer to another hub (linked action item moves too). */
+  reassignTask: (id: string, toAdminId: string) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
 }
 
@@ -167,6 +190,21 @@ export function useTaskMutations(adminId: string): TaskMutations {
       }
     },
 
+    async reassignTask(id, toAdminId) {
+      // Deliberately NOT optimistic: removing the row up-front unmounts an
+      // open TaskDetailSheet mid-request, and a failed PATCH would then
+      // remount it reset to server state, discarding unsaved edits. Reassign
+      // isn't latency-critical — wait for the server, then drop the row.
+      await mutateJson(`/api/admin/team/tasks/${id}`, "PATCH", {
+        reassignTo: toAdminId,
+      });
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      invalidateLinked();
+      queryClient.invalidateQueries({ queryKey: ["team-tasks", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-action-items", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-member", toAdminId] });
+    },
+
     async removeTask(id) {
       setTasks((prev) => prev.filter((t) => t.id !== id));
       try {
@@ -219,6 +257,32 @@ export function useActionItemMutations(adminId: string) {
         queryClient.invalidateQueries({ queryKey: tasksKey });
         throw err;
       }
+    },
+
+    /**
+     * Full ownership transfer to another inbox (linked task moves too).
+     * Not optimistic — see reassignTask in useTaskMutations for the rationale.
+     */
+    async reassignItem(id: string, toAdminId: string) {
+      const item = queryClient
+        .getQueryData<TeamActionItemRecord[]>(itemsKey)
+        ?.find((i) => i.id === id);
+      await mutateJson(`/api/admin/team/action-items/${id}`, "PATCH", {
+        reassignTo: toAdminId,
+      });
+      queryClient.setQueryData<TeamActionItemRecord[]>(itemsKey, (prev) =>
+        (prev ?? []).filter((i) => i.id !== id)
+      );
+      if (item?.taskId) {
+        queryClient.setQueryData<TeamTaskRecord[]>(tasksKey, (prev) =>
+          (prev ?? []).filter((t) => t.id !== item.taskId)
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ["team-member", adminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-tasks", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-action-items", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-member", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-directory"] });
     },
   };
 }

@@ -6,6 +6,7 @@ import { findAdmin } from "@/lib/admins";
 import { getTeamActor } from "@/lib/teamAuth";
 import {
   createTeamMember,
+  listTeamMembers,
   setGoalCents,
   isValidGoalMonth,
   parseAttribution,
@@ -13,6 +14,34 @@ import {
 } from "@/lib/teamMembers";
 import { businessTodayYmd } from "@/lib/businessTime";
 import { logAuditEvent } from "@/lib/auditLog";
+
+/**
+ * Slim roster list — powers assignee/forward pickers (task + action-item
+ * reassignment). Any admin: every admin already sees member names on the Team
+ * overview, and non-privileged members need targets to forward their own
+ * tasks to. No rollups, no directory build.
+ */
+export async function GET() {
+  const actor = await getTeamActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await ensureMigrated();
+  try {
+    const members = await listTeamMembers();
+    return NextResponse.json({
+      data: {
+        members: members.map((m) => ({
+          adminId: m.adminId,
+          name: m.name,
+          position: m.position,
+          attribution: m.attribution,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error("[team] GET members failed:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 /** Add an admin to the Team roster. Privileged only. */
 export async function POST(request: Request) {

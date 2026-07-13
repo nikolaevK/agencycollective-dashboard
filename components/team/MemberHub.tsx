@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Flag, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Flag, X, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { monthlyHeadline } from "@/lib/teamRebill";
+import { monthlyHeadline, monthlyRebillBucket } from "@/lib/teamRebill";
 import { formatMoney } from "@/components/users/format";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
+import { AvatarInitials } from "@/components/users/AvatarInitials";
+import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
 import { MemberAvatar } from "./TeamHome";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
@@ -26,16 +29,34 @@ import {
   TASK_PRIORITY_ORDER,
   ATTRIBUTION_LABEL,
   TIMEFRAME_OPTIONS,
+  SOURCE_META,
   monthName,
 } from "./presentation";
-import type { MemberHubPayload, TeamTaskRecord, TeamTimeframeValue } from "./types";
+import type {
+  MemberHubPayload,
+  TeamTaskRecord,
+  TeamActionItemRecord,
+  TeamClientSlice,
+  TeamTimeframeValue,
+} from "./types";
 
 type HubTab = "home" | "tasks" | "actions" | "clients";
+
+/** Header metric chips drill into the matching list inline (KPI-tile pattern). */
+type HeaderDrillKind =
+  | "tasks"
+  | "pending"
+  | "done"
+  | "overdue"
+  | "clients"
+  | "retention"
+  | "unsolved";
 
 export function MemberHub({ adminId }: { adminId: string }) {
   const [timeframe, setTimeframe] = useState<TeamTimeframeValue>("week");
   const [tab, setTab] = useState<HubTab>("home");
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [headerDrill, setHeaderDrill] = useState<HeaderDrillKind | null>(null);
 
   const hubQuery = useMemberHub(adminId, timeframe);
   const tasksQuery = useMemberTasks(adminId);
@@ -115,20 +136,70 @@ export function MemberHub({ adminId }: { adminId: string }) {
         />
       </div>
 
-      {/* Stat chips */}
+      {/* Stat chips — click to drill into the matching list */}
       <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
-        <HeaderStat label="Tasks" value={tasks.length} />
-        <HeaderStat label="Pending" value={pending} tone={pending > 0 ? "amber" : undefined} />
-        <HeaderStat label="Done" value={hub.summary.tasks.done} tone="green" />
+        <HeaderStat
+          label="Tasks"
+          value={tasks.length}
+          onClick={() => setHeaderDrill(headerDrill === "tasks" ? null : "tasks")}
+          active={headerDrill === "tasks"}
+        />
+        <HeaderStat
+          label="Pending"
+          value={pending}
+          tone={pending > 0 ? "amber" : undefined}
+          onClick={() => setHeaderDrill(headerDrill === "pending" ? null : "pending")}
+          active={headerDrill === "pending"}
+        />
+        <HeaderStat
+          label="Done"
+          value={hub.summary.tasks.done}
+          tone="green"
+          onClick={() => setHeaderDrill(headerDrill === "done" ? null : "done")}
+          active={headerDrill === "done"}
+        />
         <HeaderStat
           label="Overdue"
           value={hub.summary.tasks.overdue}
           tone={hub.summary.tasks.overdue > 0 ? "red" : undefined}
+          onClick={() => setHeaderDrill(headerDrill === "overdue" ? null : "overdue")}
+          active={headerDrill === "overdue"}
         />
-        <HeaderStat label="Clients" value={hub.summary.clientCount} />
-        <RetentionStat retention={hub.summary.retention} />
-        <HeaderStat label="Unsolved" value={unsolved} tone={unsolved > 0 ? "amber" : undefined} />
+        <HeaderStat
+          label="Clients"
+          value={hub.summary.clientCount}
+          onClick={() => setHeaderDrill(headerDrill === "clients" ? null : "clients")}
+          active={headerDrill === "clients"}
+        />
+        <RetentionStat
+          retention={hub.summary.retention}
+          onClick={() => setHeaderDrill(headerDrill === "retention" ? null : "retention")}
+          active={headerDrill === "retention"}
+        />
+        <HeaderStat
+          label="Unsolved"
+          value={unsolved}
+          tone={unsolved > 0 ? "amber" : undefined}
+          onClick={() => setHeaderDrill(headerDrill === "unsolved" ? null : "unsolved")}
+          active={headerDrill === "unsolved"}
+        />
       </div>
+
+      {headerDrill && (
+        <HeaderDrillPanel
+          kind={headerDrill}
+          hub={hub}
+          tasks={tasks}
+          items={items}
+          today={today}
+          onOpenTask={setOpenTaskId}
+          onGoTab={(t) => {
+            setHeaderDrill(null);
+            setTab(t);
+          }}
+          onClose={() => setHeaderDrill(null)}
+        />
+      )}
 
       {/* Tab bar + timeframe */}
       <div className="flex items-end justify-between gap-3 border-b border-border flex-wrap">
@@ -211,22 +282,40 @@ export function MemberHub({ adminId }: { adminId: string }) {
   );
 }
 
+/** Shared clickable-chip shell for the header stats. */
+function statChipCls(active?: boolean, clickable?: boolean) {
+  return cn(
+    "rounded-xl border bg-card px-3 py-2 text-center w-full transition-colors",
+    active
+      ? "border-primary ring-2 ring-primary/20 bg-primary/[0.03]"
+      : "border-border/60",
+    clickable && !active && "hover:border-primary/50 cursor-pointer"
+  );
+}
+
 /**
  * Retention: clients re-billed this month out of total clients managed —
  * fills toward 100% as the month's payouts land, so no alarm colors.
  */
 function RetentionStat({
   retention,
+  onClick,
+  active,
 }: {
   retention: { base: number; retained: number };
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const pct =
     retention.base > 0
       ? Math.round((retention.retained / retention.base) * 100)
       : null;
+  const Tag = onClick ? "button" : "div";
   return (
-    <div
-      className="rounded-xl border border-border/60 bg-card px-3 py-2 text-center"
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={statChipCls(active, !!onClick)}
       title={
         pct !== null
           ? `${retention.retained} of ${retention.base} managed clients re-billed this month`
@@ -244,7 +333,7 @@ function RetentionStat({
       <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
         Retention
       </p>
-    </div>
+    </Tag>
   );
 }
 
@@ -252,13 +341,22 @@ function HeaderStat({
   label,
   value,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   tone?: "red" | "amber" | "green";
+  onClick?: () => void;
+  active?: boolean;
 }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="rounded-xl border border-border/60 bg-card px-3 py-2 text-center">
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={statChipCls(active, !!onClick)}
+    >
       <p
         className={cn(
           "text-lg font-black leading-none",
@@ -273,7 +371,7 @@ function HeaderStat({
       <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-    </div>
+    </Tag>
   );
 }
 
@@ -336,6 +434,236 @@ function GoalRing({
           {monthLabel} re-bill collection goal
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ── Header drill panel — inline expansion of a header metric chip ─────── */
+
+const HEADER_DRILL_TAB: Record<HeaderDrillKind, HubTab> = {
+  tasks: "tasks",
+  pending: "tasks",
+  done: "tasks",
+  overdue: "tasks",
+  clients: "clients",
+  retention: "clients",
+  unsolved: "actions",
+};
+
+function HeaderDrillPanel({
+  kind,
+  hub,
+  tasks,
+  items,
+  today,
+  onOpenTask,
+  onGoTab,
+  onClose,
+}: {
+  kind: HeaderDrillKind;
+  hub: MemberHubPayload;
+  tasks: TeamTaskRecord[];
+  items: TeamActionItemRecord[];
+  today: string;
+  onOpenTask: (id: string) => void;
+  onGoTab: (tab: HubTab) => void;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const month = hub.summary.monthly.month;
+
+  const titles: Record<HeaderDrillKind, string> = {
+    tasks: "All tasks",
+    pending: "Pending tasks",
+    done: "Completed tasks",
+    overdue: "Overdue tasks",
+    clients: "Clients managed",
+    retention: `Retention · ${monthName(month)}`,
+    unsolved: "Unsolved action items",
+  };
+  const tabLabels: Record<HubTab, string> = {
+    home: "Home",
+    tasks: "Tasks",
+    actions: "Action Items",
+    clients: "Clients",
+  };
+
+  const byPriority = (a: TeamTaskRecord, b: TeamTaskRecord) =>
+    TASK_PRIORITY_ORDER.indexOf(a.priority) - TASK_PRIORITY_ORDER.indexOf(b.priority);
+
+  const taskRow = (t: TeamTaskRecord) => (
+    <button
+      key={t.id}
+      type="button"
+      onClick={() => onOpenTask(t.id)}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
+    >
+      <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
+      <span className="flex-1 truncate text-sm font-semibold text-foreground">{t.title}</span>
+      <DueLabel task={t} today={today} />
+      <Flag className={cn("h-3.5 w-3.5 shrink-0", TASK_PRIORITY_META[t.priority].flag)} />
+    </button>
+  );
+
+  const clientRow = (c: TeamClientSlice, right?: React.ReactNode) => (
+    <button
+      key={c.id}
+      type="button"
+      onClick={() => router.push(`/dashboard/users/${c.id}`)}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
+    >
+      <AvatarInitials name={c.displayName} className="w-7 h-7" />
+      <span className="flex-1 truncate text-sm font-semibold text-foreground">
+        {c.displayName}
+      </span>
+      {right ?? (
+        <span className="text-xs font-bold text-foreground">{formatMoney(c.mrrCents)}</span>
+      )}
+    </button>
+  );
+
+  const groupHeader = (text: string, tone?: "green" | "amber") => (
+    <p
+      className={cn(
+        "px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider",
+        tone === "green" && "text-emerald-600 dark:text-emerald-400",
+        tone === "amber" && "text-amber-600 dark:text-amber-400",
+        !tone && "text-muted-foreground"
+      )}
+    >
+      {text}
+    </p>
+  );
+
+  const empty = (text: string) => (
+    <p className="px-2 py-6 text-center text-sm text-muted-foreground">{text}</p>
+  );
+
+  let body: React.ReactNode;
+  if (kind === "tasks" || kind === "pending" || kind === "done" || kind === "overdue") {
+    const list =
+      kind === "tasks"
+        ? [...tasks].sort(
+            (a, b) =>
+              Number(a.status === "complete") - Number(b.status === "complete") ||
+              byPriority(a, b)
+          )
+        : kind === "pending"
+          ? tasks
+              .filter((t) => t.status !== "complete")
+              .sort((a, b) => byPriority(a, b) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+          : kind === "done"
+            ? tasks
+                .filter((t) => t.status === "complete")
+                .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+            : tasks
+                .filter((t) => t.status !== "complete" && !!t.dueDate && t.dueDate < today)
+                .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+    body = list.length ? list.map(taskRow) : empty("Nothing here 🎉");
+  } else if (kind === "clients") {
+    body = hub.clients.length
+      ? hub.clients.map((c) =>
+          clientRow(
+            c,
+            <span className="inline-flex items-center gap-2">
+              <span className="text-xs font-bold text-foreground">
+                {formatMoney(c.mrrCents)}
+              </span>
+              {c.rebill && <RebillStatusChip status={c.rebill.status} paid={c.rebill.paid} />}
+            </span>
+          )
+        )
+      : empty("No clients attributed yet");
+  } else if (kind === "retention") {
+    // The SAME classifier the Retention chip's rollup uses — paused and
+    // unscheduled clients land in untracked here too, so the drill lists
+    // always sum to the chip's numbers.
+    const grouped = hub.clients.map((c) => ({
+      c,
+      bucket: monthlyRebillBucket(c.rebill, month),
+    }));
+    const rebilled = grouped.filter((g) => g.bucket === "collected").map((g) => g.c);
+    const notYet = grouped
+      .filter((g) => g.bucket !== "collected" && g.bucket !== "untracked")
+      .map((g) => g.c);
+    const untracked = grouped.filter((g) => g.bucket === "untracked").map((g) => g.c);
+    body = (
+      <>
+        {groupHeader(`Re-billed this month · ${rebilled.length}`, "green")}
+        {rebilled.map((c) => clientRow(c))}
+        {rebilled.length === 0 && empty("No re-bills collected yet this month")}
+        {notYet.length > 0 && groupHeader(`Not yet re-billed · ${notYet.length}`, "amber")}
+        {notYet.map((c) =>
+          clientRow(
+            c,
+            <span className="inline-flex items-center gap-2">
+              <span className="text-xs font-bold text-foreground">
+                {formatMoney(c.mrrCents)}
+              </span>
+              {c.rebill && <RebillStatusChip status={c.rebill.status} paid={c.rebill.paid} />}
+            </span>
+          )
+        )}
+        {untracked.length > 0 && (
+          <p className="px-2 pt-2 text-[10px] text-muted-foreground">
+            {untracked.length} manually-billed / paused / unscheduled client
+            {untracked.length === 1 ? "" : "s"} counted in the base but not tracked here.
+          </p>
+        )}
+      </>
+    );
+  } else {
+    const unsolvedItems = items.filter((i) => i.status === "unsolved");
+    body = unsolvedItems.length
+      ? unsolvedItems.map((i) => (
+          <button
+            key={i.id}
+            type="button"
+            onClick={() => (i.taskId ? onOpenTask(i.taskId) : onGoTab("actions"))}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
+          >
+            <span
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                SOURCE_META[i.sourceType].chip
+              )}
+            >
+              {SOURCE_META[i.sourceType].symbol}
+            </span>
+            <span className="flex-1 truncate text-sm font-semibold text-foreground">
+              {i.body}
+            </span>
+            {i.authorLabel && (
+              <span className="shrink-0 text-[11px] text-muted-foreground">{i.authorLabel}</span>
+            )}
+          </button>
+        ))
+      : empty("Inbox zero 🎉");
+  }
+
+  return (
+    <div className="rounded-xl border border-primary/50 bg-card p-4">
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <h3 className="text-sm font-bold text-foreground">{titles[kind]}</h3>
+        <span className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onGoTab(HEADER_DRILL_TAB[kind])}
+            className="text-xs font-semibold text-primary hover:underline"
+          >
+            Open {tabLabels[HEADER_DRILL_TAB[kind]]} →
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-muted-foreground hover:text-foreground"
+            aria-label="Close panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </span>
+      </div>
+      <div className="max-h-80 overflow-y-auto">{body}</div>
     </div>
   );
 }
@@ -407,7 +735,10 @@ function HomeTab({
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    // items-start: cards size to their own content — without it the grid
+    // stretches every card to its tallest row-mate (a long Agenda left the
+    // small Client Pulse button as a page-tall box with centered chips).
+    <div className="grid gap-4 lg:grid-cols-2 items-start">
       <HomeCard title="🔥 Lineup" hint="hand-picked priorities" className="lg:col-span-2">
         {lineup.length > 0 ? (
           lineup.map((t, i) => taskRow(t, i + 1))
@@ -436,7 +767,7 @@ function HomeTab({
 
       <HomeCard title="📅 Agenda" hint="today & overdue">
         {agenda.length > 0 ? (
-          agenda.map((t) => taskRow(t))
+          <div className="max-h-72 overflow-y-auto">{agenda.map((t) => taskRow(t))}</div>
         ) : (
           <p className="px-2 py-4 text-center text-sm text-muted-foreground">Clear for today 🎉</p>
         )}

@@ -3,7 +3,7 @@ import { getDb, ensureMigrated } from "./db";
 import type { Row, InValue } from "@libsql/client";
 import type { ClientDirectoryRow } from "./clientDirectory";
 import { listTeamMembers } from "./teamMembers";
-import { parseTaskPriority, utcNowStamp } from "./teamTasks";
+import { parseTaskPriority, utcNowStamp, LANE_SPACING } from "./teamTasks";
 
 // ---------------------------------------------------------------------------
 // Team action items — the inbox half of the Team hub (team_action_items, see
@@ -234,7 +234,7 @@ export async function createActionItem(
                  due_date, source, sort_pos, created_by, created_by_name)
               VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?,
                       COALESCE((SELECT MAX(sort_pos) FROM team_tasks
-                                WHERE admin_id = ? AND status = 'todo'), 0) + 1024,
+                                WHERE admin_id = ? AND status = 'todo'), 0) + ${LANE_SPACING},
                       ?, ?)`,
         args: [
           taskId,
@@ -273,6 +273,45 @@ export async function createActionItem(
   const created = await getActionItem(itemId);
   if (!created) throw new Error("Action item insert did not persist");
   return created;
+}
+
+/**
+ * Full ownership transfer to another admin's inbox. The linked task moves
+ * with it in the SAME atomic batch — raw SQL on the task side by design (see
+ * module header) — landing at the bottom of the target hub's lane for its
+ * current status (the task row still holds its old admin_id when the
+ * subquery evaluates, so it never counts itself).
+ */
+export async function reassignActionItem(
+  id: string,
+  toAdminId: string
+): Promise<TeamActionItemRecord | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const item = await getActionItem(id);
+  if (!item) return null;
+  if (item.adminId === toAdminId) return item;
+  const statements: { sql: string; args: InValue[] }[] = [
+    {
+      sql: `UPDATE team_action_items SET admin_id = ?, updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [toAdminId, id],
+    },
+  ];
+  if (item.taskId) {
+    // Bound status from the joined linkedTask (mirrors reassignTask's shape).
+    statements.push({
+      sql: `UPDATE team_tasks
+            SET admin_id = ?,
+                sort_pos = COALESCE((SELECT MAX(sort_pos) FROM team_tasks
+                                     WHERE admin_id = ? AND status = ?), 0) + ${LANE_SPACING},
+                updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [toAdminId, toAdminId, item.linkedTask?.status ?? "todo", item.taskId],
+    });
+  }
+  await db.batch(statements, "write");
+  return getActionItem(id);
 }
 
 /**
@@ -437,7 +476,7 @@ export async function runTeamSystemSweep(rows: ClientDirectoryRow[]): Promise<vo
                    source, sort_pos, created_by, created_by_name)
                 SELECT ?, ?, ?, ?, ?, 'todo', 'high', 'system',
                        COALESCE((SELECT MAX(sort_pos) FROM team_tasks
-                                 WHERE admin_id = ? AND status = 'todo'), 0) + 1024,
+                                 WHERE admin_id = ? AND status = 'todo'), 0) + ${LANE_SPACING},
                        'system', 'System'
                 WHERE EXISTS (SELECT 1 FROM team_action_items WHERE id = ?)`,
           args: [

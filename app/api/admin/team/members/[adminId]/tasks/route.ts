@@ -42,6 +42,11 @@ export async function GET(request: Request, { params }: RouteContext) {
       status: status ?? undefined,
       clientId: url.searchParams.get("clientId") ?? undefined,
       search: url.searchParams.get("search") ?? undefined,
+      // Max cap, not the 200 default: the hub board, header chips, and drill
+      // panels all derive from this one list — a silent truncation makes them
+      // disagree with the SQL-aggregate stats (and drops todo rows first,
+      // since listTasks orders 'complete' ahead alphabetically).
+      limit: 500,
     });
     return NextResponse.json({ data: { tasks, total } });
   } catch (err) {

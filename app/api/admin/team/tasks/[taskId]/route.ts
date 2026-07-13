@@ -8,6 +8,7 @@ import {
   updateTask,
   moveTask,
   deleteTask,
+  reassignTask,
   parseTaskStatus,
   parseTaskPriority,
   sanitizeChecklist,
@@ -16,6 +17,7 @@ import {
   type UpdateTaskInput,
 } from "@/lib/teamTasks";
 import { syncActionItemForTask } from "@/lib/teamActionItems";
+import { getTeamMember } from "@/lib/teamMembers";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -26,11 +28,14 @@ interface RouteContext {
 }
 
 /**
- * Update a task. Two shapes:
+ * Update a task. Three shapes:
  * - field updates: { title?, description?, clientId?, status?, priority?,
  *   dueDate?, lineup?, checklist? }
  * - DnD move: { move: { status, afterTaskId: string | null } } — the server
  *   computes the board position (midpoint of neighbors in the target lane).
+ * - reassign: { reassignTo: adminId } — FULL ownership transfer to another
+ *   hub (linked action item moves too, atomically). The current assignee can
+ *   forward their own task; privileged admins can reassign anyone's.
  * A status change syncs the linked action item (complete ⇄ solve).
  * Assignee or privileged.
  */
@@ -52,6 +57,52 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   }
 
   try {
+    // Reassign — exclusive shape: full ownership transfer to another hub.
+    if (body.reassignTo !== undefined) {
+      // SWEEP-generated tasks are per-member by construction (created +
+      // auto-solved per book member, dedup-keyed) — forwarding one would
+      // duplicate work in the target's inbox and orphan the dedup pairing.
+      // Only the sweep writes created_by='system'; a 'system' SOURCE label
+      // alone (e.g. the external agent's api-created items) is provenance
+      // styling and stays fully reassignable.
+      if (existing.source === "system" && existing.createdBy === "system") {
+        return NextResponse.json(
+          { error: "Sweep-generated tasks can't be reassigned — the sweep routes them per member" },
+          { status: 400 }
+        );
+      }
+      const toAdminId =
+        typeof body.reassignTo === "string" ? body.reassignTo.trim() : "";
+      // Roster-validated: a task moved to an admin with no team_members row
+      // would land in a hub no Team surface can reach (hub URL 404s).
+      const target = toAdminId ? await getTeamMember(toAdminId) : null;
+      if (!target) {
+        return NextResponse.json(
+          { error: "reassignTo must be a Team roster member" },
+          { status: 400 }
+        );
+      }
+      const task = await reassignTask(params.taskId, target.adminId);
+      if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      // Same-owner request = idempotent no-op: no activity, no audit row.
+      if (task.adminId !== existing.adminId) {
+        recordTaskActivity(
+          task.id,
+          { id: actor.admin.id, name: actor.admin.displayName?.trim() || actor.admin.username },
+          `Reassigned to ${target.name}`
+        ).catch(() => {});
+        logAuditEvent({
+          adminId: actor.admin.id,
+          adminUsername: actor.admin.username,
+          action: "team.task_reassign",
+          targetType: "team_task",
+          targetId: task.id,
+          details: JSON.stringify({ from: existing.adminId, to: task.adminId }),
+        }).catch(() => {});
+      }
+      return NextResponse.json({ data: task });
+    }
+
     // DnD move — exclusive shape, handled server-side for ordering integrity.
     if (body.move && typeof body.move === "object") {
       const move = body.move as Record<string, unknown>;

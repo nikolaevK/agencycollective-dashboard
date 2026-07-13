@@ -7,9 +7,11 @@ import {
   getActionItem,
   solveActionItem,
   unsolveActionItem,
+  reassignActionItem,
   deleteActionItem,
 } from "@/lib/teamActionItems";
 import { recordTaskActivity } from "@/lib/teamTasks";
+import { getTeamMember } from "@/lib/teamMembers";
 import { logAuditEvent } from "@/lib/auditLog";
 
 export function OPTIONS() {
@@ -34,7 +36,12 @@ export async function GET(
   }
 }
 
-/** Solve / unsolve: { status } — syncs the linked task atomically. */
+/**
+ * Solve / unsolve: { status } — syncs the linked task atomically. Or
+ * reassign: { reassignTo } — full ownership transfer to another roster
+ * member's inbox, moving the linked task with it (exclusive shape). Any
+ * `adminId` in the body stays INERT (clients echo whole records back).
+ */
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -48,9 +55,56 @@ export async function PATCH(
 
     const body = await readJsonBody(request);
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
+
+    // Reassign — exclusive shape via the DEDICATED key (never body.adminId,
+    // which clients echo back from GETs): full ownership transfer.
+    if (body.reassignTo !== undefined) {
+      // dedup_key is the authoritative sweep marker — a 'system' source
+      // label alone (agent-created) stays reassignable.
+      if (existing.dedupKey != null) {
+        return fail(
+          "invalid_request",
+          "Sweep-generated action items can't be reassigned — the sweep routes them per member",
+          400
+        );
+      }
+      const toAdminId =
+        typeof body.reassignTo === "string" ? body.reassignTo.trim() : "";
+      // Roster-validated — an unrostered admin's hub is unreachable in the UI.
+      const target = toAdminId ? await getTeamMember(toAdminId) : null;
+      if (!target) {
+        return fail("invalid_request", "reassignTo must be a Team roster member's admin id", 400);
+      }
+      const item = await reassignActionItem(params.id, target.adminId);
+      if (!item) return fail("not_found", "Action item not found", 404);
+      // Same-owner request = idempotent no-op: no activity, no audit row.
+      if (item.adminId !== existing.adminId) {
+        const actor = tokenAuditActor(auth.token);
+        if (item.taskId) {
+          recordTaskActivity(
+            item.taskId,
+            { id: actor.adminId, name: actor.adminUsername },
+            `Reassigned to ${target.name}`
+          ).catch(() => {});
+        }
+        logAuditEvent({
+          ...actor,
+          action: "team.action_item_reassign",
+          targetType: "team_action_item",
+          targetId: item.id,
+          details: JSON.stringify({ from: existing.adminId, to: item.adminId, taskId: item.taskId }),
+        }).catch(() => {});
+      }
+      return ok(item);
+    }
+
     const status = body.status;
     if (status !== "solved" && status !== "unsolved") {
-      return fail("invalid_request", "status must be 'solved' or 'unsolved'", 400);
+      return fail(
+        "invalid_request",
+        "status must be 'solved' or 'unsolved' (or pass reassignTo to transfer ownership)",
+        400
+      );
     }
 
     const actor = tokenAuditActor(auth.token);

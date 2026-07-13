@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Flag, Pin, PinOff, Trash2, Plus, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
-import type { TaskMutations } from "./useTeamData";
+import { useTeamMemberOptions, type TaskMutations } from "./useTeamData";
 import {
   TASK_STATUS_META,
   TASK_STATUS_ORDER,
@@ -38,10 +38,26 @@ export function TaskDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: memberOptions = [] } = useTeamMemberOptions();
   const [title, setTitle] = useState(t.title);
   const [description, setDescription] = useState(t.description);
   const [newItem, setNewItem] = useState("");
   const [comment, setComment] = useState("");
+
+  function reassign(toAdminId: string) {
+    const target = memberOptions.find((m) => m.adminId === toAdminId);
+    if (!target || toAdminId === hub.member.adminId) return;
+    if (
+      !confirm(
+        `Reassign "${t.title}" to ${target.name}? It moves to their hub with full ownership (linked action item included).`
+      )
+    )
+      return;
+    mutations
+      .reassignTask(t.id, toAdminId)
+      .then(onClose) // the task no longer belongs to this hub
+      .catch((err) => alert(err instanceof Error ? err.message : String(err)));
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -219,6 +235,33 @@ export function TaskDetailSheet({
 
           {/* Fields */}
           <div className="grid grid-cols-[100px_1fr] gap-y-2.5 items-center text-sm">
+            <span className="text-muted-foreground text-xs font-semibold">Assignee</span>
+            {/* Controlled by the hub owner — a declined confirm or failed
+                reassign simply re-renders back to the current assignee.
+                Only true SWEEP tasks (created_by='system') are locked —
+                agent-created tasks with a 'system' source label reassign fine. */}
+            <select
+              value={hub.member.adminId}
+              onChange={(e) => reassign(e.target.value)}
+              disabled={t.source === "system" && t.createdBy === "system"}
+              className={cn(INPUT_CLS, "h-8 py-0 w-56 max-w-full text-xs disabled:opacity-60")}
+              aria-label="Assignee"
+              title={
+                t.source === "system" && t.createdBy === "system"
+                  ? "Sweep-generated tasks can't be reassigned — the sweep routes them per member"
+                  : "Reassigning moves this task (and its linked action item) to the selected member's hub"
+              }
+            >
+              {!memberOptions.some((m) => m.adminId === hub.member.adminId) && (
+                <option value={hub.member.adminId}>{hub.member.name}</option>
+              )}
+              {memberOptions.map((m) => (
+                <option key={m.adminId} value={m.adminId}>
+                  {m.name}
+                  {m.position ? ` — ${m.position}` : ""}
+                </option>
+              ))}
+            </select>
             <span className="text-muted-foreground text-xs font-semibold">Due date</span>
             <input
               type="date"
