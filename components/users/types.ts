@@ -39,6 +39,8 @@ export interface ClientPublic {
   team: ClientTeamMember[];
   /** Derived ad-spend fee from linked ad_accounts; profile.perfFee wins. */
   derivedPerfFee: string | null;
+  /** Number of linked ad_accounts rows (purchased ad accounts, NOT Meta-linked `accounts`). */
+  adAccountCount: number;
 }
 
 /** A brand in the Payout DB not yet linked to a client (add-client picker). */

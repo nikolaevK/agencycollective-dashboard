@@ -88,6 +88,8 @@ export interface ClientDirectoryRow {
   team: ClientTeamMember[];
   /** Ad-spend fee derived from linked active ad_accounts ("2.5%" / "2–5%"); manual profile.perfFee wins at display time. */
   derivedPerfFee: string | null;
+  /** Number of linked ad_accounts rows (purchased ad accounts, NOT Meta-linked `accounts`). */
+  adAccountCount: number;
 }
 
 /** Normalize a stored timestamp/date to yyyy-mm-dd, best-effort. */
@@ -268,6 +270,7 @@ function buildRow(
     profile,
     team,
     derivedPerfFee: deriveAdSpendFeeLabel(adAccounts),
+    adAccountCount: adAccounts.length,
   };
   return { row, matched };
 }

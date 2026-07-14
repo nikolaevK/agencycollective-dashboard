@@ -44,7 +44,7 @@ import type { ClientPublic } from "./types";
 import type { UserStatus } from "@/lib/users";
 
 const PAGE_SIZE = 20;
-const COL_COUNT = 19;
+const COL_COUNT = 20;
 
 interface ClientDirectoryProps {
   clients: ClientPublic[];
@@ -274,12 +274,20 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             addLabel="Add health"
           />
         </td>
-        {/* Ads: running switch + platforms */}
-        <td className="px-4 py-3 min-w-[160px]">
+        {/* Ads: Meta + TikTok running switches + platforms */}
+        <td className="px-4 py-3 min-w-[180px]">
           <div className="space-y-1.5">
             <RunningSwitch
+              label="Meta"
               running={profile.adsRunning}
               onToggle={() => patch(client, { adsRunning: !profile.adsRunning })}
+            />
+            <RunningSwitch
+              label="TikTok"
+              running={profile.tiktokAdsRunning}
+              onToggle={() =>
+                patch(client, { tiktokAdsRunning: !profile.tiktokAdsRunning })
+              }
             />
             <ChipMultiSelect
               value={profile.adPlatforms}
@@ -455,6 +463,22 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
         <td className="px-4 py-3 text-center">
           <span className="text-sm font-medium text-foreground">{client.accounts.length}</span>
         </td>
+        {/* Ad Accounts (purchased ad_accounts) — opens the client's Ad Accounts tab */}
+        <td className="px-4 py-3 text-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/dashboard/users/${client.id}?tab=adAccounts`);
+            }}
+            className={cn(
+              "text-sm font-medium underline decoration-primary/30 underline-offset-2 hover:decoration-primary transition-colors",
+              client.adAccountCount > 0 ? "text-foreground" : "text-muted-foreground"
+            )}
+            title="Open Ad Accounts tab"
+          >
+            {client.adAccountCount}
+          </button>
+        </td>
         {/* Quick notes */}
         <td className="px-4 py-3 min-w-[200px] max-w-[260px]">
           <InlineTextCell
@@ -502,7 +526,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
       {/* Desktop Table */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-left min-w-[2150px]">
+        <table className="w-full text-left min-w-[2250px]">
           <thead>
             <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
               <Th className="pl-4 sticky left-0 z-20 bg-card border-r border-border/40 min-w-[260px]">
@@ -524,6 +548,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               <Th>Last Re-bill</Th>
               <Th>Next Re-bill</Th>
               <Th className="text-center">Accounts</Th>
+              <Th className="text-center">Ad Accounts</Th>
               <Th>Notes</Th>
               <Th className="text-right pr-4">Actions</Th>
             </tr>
@@ -692,10 +717,18 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     compact
                   />
                 </div>
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
                   <RunningSwitch
+                    label="Meta"
                     running={profile.adsRunning}
                     onToggle={() => patch(client, { adsRunning: !profile.adsRunning })}
+                  />
+                  <RunningSwitch
+                    label="TikTok"
+                    running={profile.tiktokAdsRunning}
+                    onToggle={() =>
+                      patch(client, { tiktokAdsRunning: !profile.tiktokAdsRunning })
+                    }
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
@@ -878,7 +911,15 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   );
 }
 
-function RunningSwitch({ running, onToggle }: { running: boolean; onToggle: () => void }) {
+function RunningSwitch({
+  label,
+  running,
+  onToggle,
+}: {
+  label: string;
+  running: boolean;
+  onToggle: () => void;
+}) {
   return (
     <button
       type="button"
@@ -887,8 +928,15 @@ function RunningSwitch({ running, onToggle }: { running: boolean; onToggle: () =
         onToggle();
       }}
       className="inline-flex items-center gap-1.5"
-      title={running ? "Ads running — click to pause" : "Ads paused — click to resume"}
+      title={
+        running
+          ? `${label} ads running — click to pause`
+          : `${label} ads paused — click to resume`
+      }
     >
+      <span className="w-10 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <span
         className={cn(
           "relative inline-flex h-[18px] w-8 shrink-0 rounded-full transition-colors",

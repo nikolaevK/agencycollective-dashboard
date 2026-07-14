@@ -751,6 +751,7 @@ export const openApiSpec: OpenApiSpec = {
             website: str(),
             isTop: bool(),
             adsRunning: bool(),
+            tiktokAdsRunning: bool(),
             adPlatforms: arr(str()),
             stages: arr(str()),
             health: arr(str()),

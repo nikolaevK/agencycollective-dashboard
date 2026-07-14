@@ -57,6 +57,7 @@ import { mergeTimeSeries } from "@/lib/timeseries";
 
 interface ClientProfilePageProps {
   params: { userId: string };
+  searchParams?: { tab?: string };
 }
 
 type DetailTab =
@@ -301,13 +302,18 @@ function CombinedPerformanceSection({
 
 // ---------- Main page ----------
 
-export default function ClientProfilePage({ params }: ClientProfilePageProps) {
+export default function ClientProfilePage({ params, searchParams }: ClientProfilePageProps) {
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [showMrrDetail, setShowMrrDetail] = useState(false);
   const { patchProfile } = useClientProfileMutations();
-  const [tab, setTab] = useState<DetailTab>("overview");
+  // ?tab=… deep-links a tab (e.g. the directory's Ad Accounts count column).
+  const [tab, setTab] = useState<DetailTab>(() =>
+    DETAIL_TABS.some((t) => t.id === searchParams?.tab)
+      ? (searchParams!.tab as DetailTab)
+      : "overview"
+  );
 
   const { dateRange } = useDateRange();
   const { data: allMetaAccounts } = useAccounts(dateRange);

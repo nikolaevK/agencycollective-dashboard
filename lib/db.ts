@@ -477,6 +477,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // "no such table" here is benign on a fresh DB (created with the columns).
     { table: "client_profile",         column: "manual_mrr_cents",     defn: "INTEGER" },
     { table: "client_profile",         column: "manual_ltv_cents",     defn: "INTEGER" },
+    // TikTok ads running toggle (directory Ads column, alongside the Meta
+    // toggle ads_running). Read on every directory build, so it self-heals
+    // here. Defaults OFF (unlike Meta's ads_running, which defaults on).
+    { table: "client_profile",         column: "tiktok_ads_running",   defn: "INTEGER NOT NULL DEFAULT 0" },
     // Internal-only label to disambiguate preset services that share an
     // invoice header (e.g. "(Ads + Creatives + Email)"). Written by
     // insert/updateInvoiceService, so it must self-heal here. invoice_services'
@@ -2033,6 +2037,7 @@ export async function migrate(): Promise<void> {
       website            TEXT,
       is_top             INTEGER NOT NULL DEFAULT 0,
       ads_running        INTEGER NOT NULL DEFAULT 1,
+      tiktok_ads_running INTEGER NOT NULL DEFAULT 0,
       ad_platforms       TEXT,
       stages             TEXT,
       health             TEXT,

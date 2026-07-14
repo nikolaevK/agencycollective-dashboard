@@ -384,7 +384,7 @@ export function ClientSettingsTab({
           </RosterField>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             Ads
           </span>
@@ -398,7 +398,23 @@ export function ClientSettingsTab({
                 : "bg-muted text-muted-foreground"
             )}
           >
-            {profile.adsRunning ? "Running — click to pause" : "Paused — click to resume"}
+            {profile.adsRunning
+              ? "Meta: Running — click to pause"
+              : "Meta: Paused — click to resume"}
+          </button>
+          <button
+            type="button"
+            onClick={() => patchNow({ tiktokAdsRunning: !profile.tiktokAdsRunning })}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+              profile.tiktokAdsRunning
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {profile.tiktokAdsRunning
+              ? "TikTok: Running — click to pause"
+              : "TikTok: Paused — click to resume"}
           </button>
         </div>
 

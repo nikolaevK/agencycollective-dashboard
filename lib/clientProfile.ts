@@ -97,7 +97,8 @@ export interface ClientProfile {
   book: ClientBook;
   website: string | null;
   isTop: boolean;
-  adsRunning: boolean;
+  adsRunning: boolean; // Meta ads toggle
+  tiktokAdsRunning: boolean; // TikTok ads toggle (defaults off)
   adPlatforms: string[]; // AD_PLATFORM_OPTIONS + custom ad_platform_options values
   stages: string[]; // STAGE_OPTIONS + custom roster_options values
   health: string[]; // HEALTH_OPTIONS + custom roster_options values
@@ -151,6 +152,7 @@ export function defaultClientProfile(userId: string): ClientProfile {
     website: null,
     isTop: false,
     adsRunning: true,
+    tiktokAdsRunning: false,
     adPlatforms: [],
     stages: [],
     health: [],
@@ -175,6 +177,7 @@ function rowToProfile(row: Row): ClientProfile {
     website: row.website != null ? String(row.website) : null,
     isTop: Number(row.is_top ?? 0) === 1,
     adsRunning: Number(row.ads_running ?? 1) === 1,
+    tiktokAdsRunning: Number(row.tiktok_ads_running ?? 0) === 1,
     adPlatforms: parseStringArray(row.ad_platforms),
     stages: parseStringArray(row.stages),
     health: parseStringArray(row.health),
@@ -271,6 +274,7 @@ export interface ClientProfileInput {
   website?: string | null;
   isTop?: boolean;
   adsRunning?: boolean;
+  tiktokAdsRunning?: boolean;
   adPlatforms?: string[];
   stages?: string[];
   health?: string[];
@@ -304,6 +308,8 @@ export function sanitizeProfileInput(body: Record<string, unknown>): {
   if (body.website !== undefined) input.website = sanitizeText(body.website, MAX_WEBSITE_LEN);
   if (body.isTop !== undefined) input.isTop = Boolean(body.isTop);
   if (body.adsRunning !== undefined) input.adsRunning = Boolean(body.adsRunning);
+  if (body.tiktokAdsRunning !== undefined)
+    input.tiktokAdsRunning = Boolean(body.tiktokAdsRunning);
   if (body.adPlatforms !== undefined)
     input.adPlatforms = sanitizeOpenStringArray(body.adPlatforms);
   if (body.stages !== undefined) input.stages = sanitizeOpenStringArray(body.stages);
@@ -402,6 +408,8 @@ export async function upsertClientProfile(
   if (changes.website !== undefined) set("website", changes.website);
   if (changes.isTop !== undefined) set("is_top", changes.isTop ? 1 : 0);
   if (changes.adsRunning !== undefined) set("ads_running", changes.adsRunning ? 1 : 0);
+  if (changes.tiktokAdsRunning !== undefined)
+    set("tiktok_ads_running", changes.tiktokAdsRunning ? 1 : 0);
   if (changes.adPlatforms !== undefined)
     set("ad_platforms", serializeStringArray(changes.adPlatforms));
   if (changes.stages !== undefined) set("stages", serializeStringArray(changes.stages));
