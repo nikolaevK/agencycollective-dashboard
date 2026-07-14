@@ -26,11 +26,14 @@ export type { TeamMemberRecord, TeamAttribution, UnrosteredAssignee } from "@/li
 export type {
   TeamTaskRecord,
   TeamTaskComment,
+  TeamTaskTag,
+  TaggedTaskRecord,
   TaskChecklistItem,
   TaskStatus,
   TaskPriority,
   TaskStats,
 } from "@/lib/teamTasks";
+export type { TeamTaskDocument } from "@/lib/teamTaskDocuments";
 export type { TeamActionItemRecord, ActionSourceType } from "@/lib/teamActionItems";
 
 export interface TeamViewer {

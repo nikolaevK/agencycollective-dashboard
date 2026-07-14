@@ -9,6 +9,8 @@ import {
   moveTask,
   deleteTask,
   reassignTask,
+  addComment,
+  addTaskTag,
   parseTaskStatus,
   parseTaskPriority,
   sanitizeChecklist,
@@ -33,9 +35,13 @@ interface RouteContext {
  *   dueDate?, lineup?, checklist? }
  * - DnD move: { move: { status, afterTaskId: string | null } } — the server
  *   computes the board position (midpoint of neighbors in the target lane).
- * - reassign: { reassignTo: adminId } — FULL ownership transfer to another
- *   hub (linked action item moves too, atomically). The current assignee can
- *   forward their own task; privileged admins can reassign anyone's.
+ * - reassign: { reassignTo: adminId, alsoTag?: adminId[], comment? } — FULL
+ *   ownership transfer to another hub (linked action item moves too,
+ *   atomically). The current assignee can forward their own task; privileged
+ *   admins can reassign anyone's. Ownership stays SINGLE — `alsoTag` members
+ *   are tagged instead (task shows in their hub's Tagged tab), so one call
+ *   fans a task out to multiple people. An optional comment lands on the
+ *   task's trail as a handoff note from the reassigner.
  * A status change syncs the linked action item (complete ⇄ solve).
  * Assignee or privileged.
  */
@@ -82,13 +88,47 @@ export async function PATCH(request: Request, { params }: RouteContext) {
           { status: 400 }
         );
       }
+      // Multi-recipient reassign: ownership stays SINGLE (reassignTo — the
+      // board/stats/sync model requires one owner), and every alsoTag member
+      // is tagged instead, so the task shows in their hub's Tagged tab.
+      // Validated up-front so a bad id fails BEFORE any mutation.
+      const alsoTag: { adminId: string; name: string }[] = [];
+      if (body.alsoTag !== undefined) {
+        if (!Array.isArray(body.alsoTag)) {
+          return NextResponse.json(
+            { error: "alsoTag must be an array of roster member admin ids" },
+            { status: 400 }
+          );
+        }
+        const ids = [
+          ...new Set(
+            body.alsoTag
+              .filter((v): v is string => typeof v === "string")
+              .map((v) => v.trim())
+              .filter(Boolean)
+          ),
+        ].filter((id) => id !== target.adminId); // the new assignee needs no tag
+        // One parallel lookup round instead of N serial Turso round-trips.
+        const members = await Promise.all(ids.map((id) => getTeamMember(id)));
+        for (const member of members) {
+          if (!member) {
+            return NextResponse.json(
+              { error: "alsoTag must contain only Team roster members" },
+              { status: 400 }
+            );
+          }
+          alsoTag.push({ adminId: member.adminId, name: member.name });
+        }
+      }
       const task = await reassignTask(params.taskId, target.adminId);
       if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      const actorName = actor.admin.displayName?.trim() || actor.admin.username;
+      const transferred = task.adminId !== existing.adminId;
       // Same-owner request = idempotent no-op: no activity, no audit row.
-      if (task.adminId !== existing.adminId) {
+      if (transferred) {
         recordTaskActivity(
           task.id,
-          { id: actor.admin.id, name: actor.admin.displayName?.trim() || actor.admin.username },
+          { id: actor.admin.id, name: actorName },
           `Reassigned to ${target.name}`
         ).catch(() => {});
         logAuditEvent({
@@ -99,6 +139,52 @@ export async function PATCH(request: Request, { params }: RouteContext) {
           targetId: task.id,
           details: JSON.stringify({ from: existing.adminId, to: task.adminId }),
         }).catch(() => {});
+      }
+      // Tag the extra recipients AFTER the transfer (the assignee-conflict
+      // rule applies to the NEW owner). Applied even on a same-owner no-op —
+      // "share with more people" is meaningful without an ownership change.
+      // Already-tagged members are idempotent no-ops (no activity/audit).
+      let tagged = 0;
+      for (const member of alsoTag) {
+        const added = await addTaskTag({
+          taskId: task.id,
+          adminId: member.adminId,
+          taggedBy: actor.admin.id,
+          taggedByName: actorName,
+        });
+        if (added) {
+          tagged++;
+          recordTaskActivity(
+            task.id,
+            { id: actor.admin.id, name: actorName },
+            `Tagged ${member.name}`
+          ).catch(() => {});
+          logAuditEvent({
+            adminId: actor.admin.id,
+            adminUsername: actor.admin.username,
+            action: "team.task_tag",
+            targetType: "team_task",
+            targetId: task.id,
+            details: JSON.stringify({ tagged: member.adminId }),
+          }).catch(() => {});
+        }
+      }
+      // Handoff note — posted whenever the call did something (a transfer OR
+      // new tags), so a tags-only share keeps its context. AWAITED: this is
+      // user-authored content, and a fire-and-forget write can be dropped
+      // when the serverless instance freezes right after the response.
+      const note = typeof body.comment === "string" ? body.comment.trim() : "";
+      if (note && (transferred || tagged > 0)) {
+        try {
+          await addComment({
+            taskId: task.id,
+            adminId: actor.admin.id,
+            authorName: actorName,
+            body: note,
+          });
+        } catch (err) {
+          console.error("[team] reassign comment failed:", err);
+        }
       }
       return NextResponse.json({ data: task });
     }

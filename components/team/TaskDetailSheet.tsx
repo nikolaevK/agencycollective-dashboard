@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Flag, Pin, PinOff, Trash2, Plus, Check } from "lucide-react";
+import { X, Flag, Pin, PinOff, Trash2, Plus, Check, Paperclip, AtSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
+import { ReassignTaskDialog } from "./ReassignTaskDialog";
 import { useTeamMemberOptions, type TaskMutations } from "./useTeamData";
 import {
   TASK_STATUS_META,
@@ -17,6 +18,8 @@ import type {
   MemberHubPayload,
   TeamTaskRecord,
   TeamTaskComment,
+  TeamTaskTag,
+  TeamTaskDocument,
   TaskChecklistItem,
 } from "./types";
 
@@ -44,19 +47,32 @@ export function TaskDetailSheet({
   const [newItem, setNewItem] = useState("");
   const [comment, setComment] = useState("");
 
-  function reassign(toAdminId: string) {
-    const target = memberOptions.find((m) => m.adminId === toAdminId);
-    if (!target || toAdminId === hub.member.adminId) return;
-    if (
-      !confirm(
-        `Reassign "${t.title}" to ${target.name}? It moves to their hub with full ownership (linked action item included).`
-      )
-    )
-      return;
+  // Picking a new assignee opens the confirm dialog, where extra members can
+  // be checked to TAG (multi-recipient reassign: single owner + tags) and a
+  // handoff note added.
+  const [reassignTargetId, setReassignTargetId] = useState<string | null>(null);
+  const [reassignBusy, setReassignBusy] = useState(false);
+  const reassignTarget = reassignTargetId
+    ? memberOptions.find((m) => m.adminId === reassignTargetId) ?? null
+    : null;
+
+  function confirmReassign(alsoTag: string[], note: string) {
+    if (!reassignTarget) return;
+    setReassignBusy(true);
     mutations
-      .reassignTask(t.id, toAdminId)
+      .reassignTask(
+        t.id,
+        reassignTarget.adminId,
+        note || undefined,
+        alsoTag.length > 0 ? alsoTag : undefined
+      )
       .then(onClose) // the task no longer belongs to this hub
-      .catch((err) => alert(err instanceof Error ? err.message : String(err)));
+      .catch((err) => {
+        // Keep the dialog open — a failed transfer must not eat the typed
+        // note and checked tags; the user can retry or cancel.
+        alert(err instanceof Error ? err.message : String(err));
+        setReassignBusy(false);
+      });
   }
 
   useEffect(() => {
@@ -88,6 +104,116 @@ export function TaskDetailSheet({
     },
     staleTime: 15_000,
   });
+
+  const { data: tags = [] } = useQuery<TeamTaskTag[]>({
+    queryKey: ["team-task-tags", t.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/team/tasks/${t.id}/tags`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      return json.data.tags as TeamTaskTag[];
+    },
+    staleTime: 15_000,
+  });
+
+  const { data: documents = [] } = useQuery<TeamTaskDocument[]>({
+    queryKey: ["team-task-documents", t.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/team/tasks/${t.id}/documents`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      return json.data.documents as TeamTaskDocument[];
+    },
+    staleTime: 15_000,
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Tag/comment/attachment writes refresh the trail too (activity rows).
+  const refreshTrail = () => {
+    queryClient.invalidateQueries({ queryKey: ["team-task-comments", t.id] });
+  };
+
+  async function tagMember(adminId: string) {
+    const res = await fetch(`/api/admin/team/tasks/${t.id}/tags`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminId }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      alert(json?.error ?? `HTTP ${res.status}`);
+      return;
+    }
+    queryClient.setQueryData(["team-task-tags", t.id], json.data.tags);
+    queryClient.invalidateQueries({ queryKey: ["team-tagged-tasks", adminId] });
+    refreshTrail();
+  }
+
+  async function untagMember(adminId: string) {
+    const res = await fetch(`/api/admin/team/tasks/${t.id}/tags/${adminId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      alert(json?.error ?? `HTTP ${res.status}`);
+      return;
+    }
+    queryClient.setQueryData<TeamTaskTag[]>(["team-task-tags", t.id], (prev) =>
+      (prev ?? []).filter((tag) => tag.adminId !== adminId)
+    );
+    queryClient.invalidateQueries({ queryKey: ["team-tagged-tasks", adminId] });
+    refreshTrail();
+  }
+
+  async function uploadDocument(file: File) {
+    if (file.type && file.type !== "application/pdf") {
+      alert("Only PDF files can be attached");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File too large (max 10 MB)");
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/admin/team/tasks/${t.id}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(json?.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      queryClient.setQueryData<TeamTaskDocument[]>(["team-task-documents", t.id], (prev) => [
+        ...(prev ?? []),
+        json.data as TeamTaskDocument,
+      ]);
+      refreshTrail();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeDocument(doc: TeamTaskDocument) {
+    if (!confirm(`Remove attachment "${doc.fileName}"?`)) return;
+    const res = await fetch(`/api/admin/team/tasks/${t.id}/documents/${doc.id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      alert(json?.error ?? `HTTP ${res.status}`);
+      return;
+    }
+    queryClient.setQueryData<TeamTaskDocument[]>(["team-task-documents", t.id], (prev) =>
+      (prev ?? []).filter((d) => d.id !== doc.id)
+    );
+    refreshTrail();
+  }
 
   const patch = (changes: Record<string, unknown>) =>
     mutations
@@ -242,7 +368,10 @@ export function TaskDetailSheet({
                 agent-created tasks with a 'system' source label reassign fine. */}
             <select
               value={hub.member.adminId}
-              onChange={(e) => reassign(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v && v !== hub.member.adminId) setReassignTargetId(v);
+              }}
               disabled={t.source === "system" && t.createdBy === "system"}
               className={cn(INPUT_CLS, "h-8 py-0 w-56 max-w-full text-xs disabled:opacity-60")}
               aria-label="Assignee"
@@ -284,6 +413,49 @@ export function TaskDetailSheet({
                 </option>
               ))}
             </select>
+            <span className="text-muted-foreground text-xs font-semibold">Tagged</span>
+            {/* Tagged teammates see this task in their hub's Tagged section. */}
+            <span className="flex items-center gap-1.5 flex-wrap">
+              {tags.map((tag) => (
+                <span
+                  key={tag.adminId}
+                  className="inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[11px] font-bold text-violet-600 dark:text-violet-400"
+                  title={tag.taggedByName ? `Tagged by ${tag.taggedByName}` : undefined}
+                >
+                  <AtSign className="h-3 w-3" />
+                  {tag.name}
+                  <button
+                    type="button"
+                    onClick={() => untagMember(tag.adminId)}
+                    className="hover:text-red-500"
+                    aria-label={`Untag ${tag.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <select
+                value=""
+                onChange={(e) => e.target.value && tagMember(e.target.value)}
+                className={cn(INPUT_CLS, "h-7 py-0 w-40 max-w-full text-xs")}
+                aria-label="Tag a teammate"
+                title="The tagged member sees this task in their hub's Tagged section"
+              >
+                <option value="">Tag teammate…</option>
+                {memberOptions
+                  .filter(
+                    (m) =>
+                      m.adminId !== hub.member.adminId &&
+                      !tags.some((tag) => tag.adminId === m.adminId)
+                  )
+                  .map((m) => (
+                    <option key={m.adminId} value={m.adminId}>
+                      {m.name}
+                      {m.position ? ` — ${m.position}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </span>
             <span className="text-muted-foreground text-xs font-semibold">Source</span>
             <span className="text-xs font-semibold text-foreground">
               {t.source === "manual"
@@ -390,6 +562,66 @@ export function TaskDetailSheet({
             </div>
           </div>
 
+          {/* Attachments — PDF BLOBs ≤10 MB, served by the documents route */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Attachments{" "}
+              {documents.length > 0 && (
+                <span className="normal-case tracking-normal font-semibold">
+                  {documents.length}
+                </span>
+              )}
+            </p>
+            <div className="space-y-1">
+              {documents.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-2 group text-xs">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <a
+                    href={`/api/admin/team/tasks/${t.id}/documents/${doc.id}?view=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 min-w-0 truncate font-semibold text-foreground hover:text-primary hover:underline"
+                    title={`${doc.fileName} · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB`}
+                  >
+                    {doc.fileName}
+                  </a>
+                  <span className="shrink-0 text-muted-foreground">
+                    {doc.uploadedByName ? `${doc.uploadedByName} · ` : ""}
+                    {formatDate(doc.createdAt)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeDocument(doc)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-500"
+                    aria-label={`Remove ${doc.fileName}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = ""; // allow re-selecting the same file
+                  if (file) uploadDocument(file);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {uploading ? "Uploading…" : "Attach PDF (max 10 MB)"}
+              </button>
+            </div>
+          </div>
+
           {/* Activity & comments — one chronological trail */}
           <div className="border-t border-border pt-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
@@ -430,6 +662,18 @@ export function TaskDetailSheet({
           </div>
         </div>
       </div>
+
+      {reassignTarget && (
+        <ReassignTaskDialog
+          task={t}
+          currentAdminId={hub.member.adminId}
+          target={reassignTarget}
+          memberOptions={memberOptions}
+          busy={reassignBusy}
+          onConfirm={confirmReassign}
+          onCancel={() => setReassignTargetId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -359,7 +359,7 @@ export const openApiSpec: OpenApiSpec = {
     {
       name: "team",
       description:
-        "Team hub: roster member rollups (clients, MRR managed vs goal, rebills, task stats), per-member tasks, and action items. Creating an action item auto-creates its linked task; solving one side syncs the other.",
+        "Team hub: roster member rollups (clients, MRR managed vs goal, rebills, task stats), per-member tasks (comments, teammate tags, PDF attachments), and action items. Creating an action item auto-creates its linked task; solving one side syncs the other.",
     },
   ],
   securitySchemes: {
@@ -1391,6 +1391,10 @@ export const openApiSpec: OpenApiSpec = {
           q("clientId", "Tagged client id"),
           q("search", "Substring match on title/description"),
           q("dueBefore", "Due on or before (yyyy-mm-dd)"),
+          q(
+            "taggedAdminId",
+            "Only tasks this member is TAGGED on (their hub's Tagged section, any owner)"
+          ),
           ...PAGINATION,
         ],
       }),
@@ -1400,12 +1404,14 @@ export const openApiSpec: OpenApiSpec = {
       }),
     },
     "/team/tasks/{id}": {
-      get: op("getTeamTask", "One task (with comments)", "team", "team:read", {
+      get: op("getTeamTask", "One task (with comments, tags, attachments)", "team", "team:read", {
+        description:
+          "The task plus its comment/activity trail, tagged teammates (`tags`), and attachment metadata (`documents` — bytes via the documents download op).",
         parameters: [pathParam("id", "Task id")],
       }),
       patch: op("updateTeamTask", "Update a task", "team", "team:write", {
         description:
-          "Partial update. Setting status=complete solves the linked action item (and reopening un-solves it). Passing reassignTo (a Team roster member's admin id) REASSIGNS the task to that member's hub — full ownership transfer, linked action item included (EXCLUSIVE shape: other fields are ignored; send reassignTo alone). adminId in the body stays inert. Sweep-generated tasks (created_by='system') can't be reassigned; agent-created tasks with a 'system' source label can.",
+          "Partial update. Setting status=complete solves the linked action item (and reopening un-solves it). Passing reassignTo (a Team roster member's admin id) REASSIGNS the task to that member's hub — full ownership transfer, linked action item included (EXCLUSIVE shape: other fields are ignored; only the optional `comment` handoff note and `alsoTag` ride along). To reach MULTIPLE members in one call, add alsoTag: ownership stays single (reassignTo), and each alsoTag member is TAGGED — the task surfaces in their hub's Tagged tab. Sending reassignTo equal to the CURRENT owner is a share-without-transfer: ownership is untouched (no reassign activity/audit) but alsoTag members are still tagged. A pre-existing tag on the new assignee is removed automatically — an assignee is never tagged on their own task. adminId in the body stays inert. Sweep-generated tasks (created_by='system') can't be reassigned; agent-created tasks with a 'system' source label can.",
         parameters: [pathParam("id", "Task id")],
         requestBody: {
           required: true,
@@ -1415,6 +1421,14 @@ export const openApiSpec: OpenApiSpec = {
               ...teamTaskBody().properties,
               reassignTo: str(
                 "Roster member admin id — full ownership transfer (exclusive of other fields)"
+              ),
+              alsoTag: {
+                ...arr(str("Roster member admin id")),
+                description:
+                  "Only with reassignTo: additional roster members to TAG (not co-own) — the task lands in each member's Tagged tab. The new assignee and already-tagged members are skipped.",
+              },
+              comment: str(
+                "Only with reassignTo: optional handoff note posted to the task's trail as a comment from the reassigner. Posted when the call transferred ownership OR added at least one new tag; a pure no-op call drops it."
               ),
             },
           },
@@ -1433,6 +1447,57 @@ export const openApiSpec: OpenApiSpec = {
           required: true,
           schema: obj({ body: str("Comment text (max 5000 chars)") }, ["body"]),
         },
+      }),
+    },
+    "/team/tasks/{id}/tags": {
+      post: op("createTeamTaskTag", "Tag a teammate on a task", "team", "team:write", {
+        description:
+          "Tags a roster member — the task surfaces in their hub's Tagged section (their notification surface). Tagging the current assignee is rejected; an already-tagged member is an idempotent no-op. Returns the task's full tag list.",
+        parameters: [pathParam("id", "Task id")],
+        requestBody: {
+          required: true,
+          schema: obj({ adminId: str("Roster member admin id to tag") }, ["adminId"]),
+        },
+      }),
+    },
+    "/team/tasks/{id}/tags/{adminId}": {
+      delete: op("deleteTeamTaskTag", "Untag a teammate", "team", "team:delete", {
+        description: "The task leaves that member's Tagged section.",
+        parameters: [pathParam("id", "Task id"), pathParam("adminId", "Tagged member's admin id")],
+      }),
+    },
+    "/team/tasks/{id}/documents": {
+      get: op("listTeamTaskDocuments", "List task attachments", "team", "team:read", {
+        description: "Attachment metadata only — bytes via downloadTeamTaskDocument.",
+        parameters: [pathParam("id", "Task id")],
+      }),
+      post: op("uploadTeamTaskDocument", "Attach a PDF to a task", "team", "team:write", {
+        "x-multipart": true,
+        description: "PDF only, max 10 MB.",
+        parameters: [pathParam("id", "Task id")],
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              fileBase64: fileBase64("PDF only, max 10 MB."),
+              fileName: str("File name to store"),
+            },
+            ["fileBase64"]
+          ),
+        },
+      }),
+    },
+    "/team/tasks/{id}/documents/{documentId}": {
+      get: op("downloadTeamTaskDocument", "Download a task attachment", "team", "team:read", {
+        "x-binary": true,
+        parameters: [
+          pathParam("id", "Task id"),
+          pathParam("documentId", "Document id"),
+          ...BASE64_DOWNLOAD,
+        ],
+      }),
+      delete: op("deleteTeamTaskDocument", "Remove a task attachment", "team", "team:delete", {
+        parameters: [pathParam("id", "Task id"), pathParam("documentId", "Document id")],
       }),
     },
     "/team/action-items": {

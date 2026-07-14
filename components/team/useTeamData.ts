@@ -5,6 +5,7 @@ import type {
   TeamDirectoryPayload,
   MemberHubPayload,
   TeamTaskRecord,
+  TaggedTaskRecord,
   TeamActionItemRecord,
   TaskStatus,
   TeamTimeframeValue,
@@ -91,6 +92,20 @@ export function useTeamMemberOptions() {
   });
 }
 
+/** Tasks this member is TAGGED on (any owner) — the hub's Tagged section. */
+export function useTaggedTasks(adminId: string) {
+  return useQuery<TaggedTaskRecord[]>({
+    queryKey: ["team-tagged-tasks", adminId],
+    queryFn: async () => {
+      const data = await fetchJson<{ tasks: TaggedTaskRecord[] }>(
+        `/api/admin/team/members/${adminId}/tagged-tasks`
+      );
+      return data.tasks;
+    },
+    staleTime: 30_000,
+  });
+}
+
 export function useMemberActionItems(adminId: string) {
   return useQuery<TeamActionItemRecord[]>({
     queryKey: ["team-action-items", adminId],
@@ -119,8 +134,17 @@ export interface TaskMutations {
     move: { status: TaskStatus; afterTaskId: string | null },
     optimistic?: TeamTaskRecord[]
   ) => Promise<void>;
-  /** Full ownership transfer to another hub (linked action item moves too). */
-  reassignTask: (id: string, toAdminId: string) => Promise<void>;
+  /**
+   * Full ownership transfer to another hub (linked action item moves too).
+   * `comment` lands on the task's trail as a handoff note; `alsoTag` members
+   * are tagged (ownership stays single — the task shows in their Tagged tab).
+   */
+  reassignTask: (
+    id: string,
+    toAdminId: string,
+    comment?: string,
+    alsoTag?: string[]
+  ) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
 }
 
@@ -190,19 +214,24 @@ export function useTaskMutations(adminId: string): TaskMutations {
       }
     },
 
-    async reassignTask(id, toAdminId) {
+    async reassignTask(id, toAdminId, comment, alsoTag) {
       // Deliberately NOT optimistic: removing the row up-front unmounts an
       // open TaskDetailSheet mid-request, and a failed PATCH would then
       // remount it reset to server state, discarding unsaved edits. Reassign
       // isn't latency-critical — wait for the server, then drop the row.
       await mutateJson(`/api/admin/team/tasks/${id}`, "PATCH", {
         reassignTo: toAdminId,
+        ...(comment ? { comment } : {}),
+        ...(alsoTag?.length ? { alsoTag } : {}),
       });
       setTasks((prev) => prev.filter((t) => t.id !== id));
       invalidateLinked();
       queryClient.invalidateQueries({ queryKey: ["team-tasks", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-action-items", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-member", toAdminId] });
+      for (const taggedId of alsoTag ?? []) {
+        queryClient.invalidateQueries({ queryKey: ["team-tagged-tasks", taggedId] });
+      }
     },
 
     async removeTask(id) {

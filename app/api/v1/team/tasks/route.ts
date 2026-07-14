@@ -20,7 +20,7 @@ export function OPTIONS() {
   return corsPreflight();
 }
 
-/** List tasks. Filters: ?adminId&status&clientId&search&dueBefore. */
+/** List tasks. Filters: ?adminId&status&clientId&search&dueBefore&taggedAdminId. */
 export async function GET(request: Request) {
   const auth = await authenticateApiRequest(request, "team:read");
   if (!auth.ok) return auth.response;
@@ -42,6 +42,7 @@ export async function GET(request: Request) {
       clientId: url.searchParams.get("clientId")?.trim() || undefined,
       search: url.searchParams.get("search")?.trim() || undefined,
       dueBefore,
+      taggedAdminId: url.searchParams.get("taggedAdminId")?.trim() || undefined,
       limit,
       offset,
     });

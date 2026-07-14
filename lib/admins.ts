@@ -208,6 +208,21 @@ export async function deleteAdmin(id: string): Promise<boolean> {
       args: [id],
     },
     { sql: "UPDATE team_task_comments SET admin_id = NULL WHERE admin_id = ?", args: [id] },
+    {
+      sql: `DELETE FROM team_task_documents
+            WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
+      args: [id],
+    },
+    { sql: "UPDATE team_task_documents SET uploaded_by = NULL WHERE uploaded_by = ?", args: [id] },
+    {
+      sql: `DELETE FROM team_task_tags
+            WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
+      args: [id],
+    },
+    // Tags pointing AT the deleted admin on other members' tasks go too —
+    // their Tagged section is gone with the account.
+    { sql: "DELETE FROM team_task_tags WHERE admin_id = ?", args: [id] },
+    { sql: "UPDATE team_task_tags SET tagged_by = NULL WHERE tagged_by = ?", args: [id] },
     { sql: "DELETE FROM team_tasks WHERE admin_id = ?", args: [id] },
     { sql: "DELETE FROM team_action_items WHERE admin_id = ?", args: [id] },
     { sql: "DELETE FROM team_member_goals WHERE admin_id = ?", args: [id] },

@@ -377,6 +377,41 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
      ON team_action_items (admin_id, status, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_team_action_items_task
      ON team_action_items (task_id) WHERE task_id IS NOT NULL`,
+    // Task attachments: PDF BLOBs ≤10 MB (payout_documents pattern — Vercel FS
+    // is read-only). `data` is deliberately the LAST column: columns stored
+    // after a BLOB force a per-row overflow-chain walk (the deal-queue trap),
+    // so metadata reads must never touch it. List queries SELECT metadata
+    // columns only, forced onto the covering index below via INDEXED BY
+    // (Turso disallows ANALYZE, so the planner won't pick it unaided).
+    `CREATE TABLE IF NOT EXISTS team_task_documents (
+      id               TEXT PRIMARY KEY,
+      task_id          TEXT NOT NULL,
+      file_name        TEXT NOT NULL,
+      file_size        INTEGER NOT NULL,
+      uploaded_by      TEXT,
+      uploaded_by_name TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      data             BLOB NOT NULL
+    )`,
+    // Covers every metadata read (list by task_id + point lookups scan the
+    // small index instead of blob-bearing rows) — also heals a DB where the
+    // table was created by an earlier build with data mid-row.
+    `CREATE INDEX IF NOT EXISTS idx_team_task_documents_meta
+     ON team_task_documents (task_id, created_at, id, file_name, file_size,
+       uploaded_by, uploaded_by_name)`,
+    // Teammate tags on a task — the tagged member sees the task in their
+    // hub's Tagged section. One row per (task, member); tags ride along on
+    // reassignment.
+    `CREATE TABLE IF NOT EXISTS team_task_tags (
+      task_id        TEXT NOT NULL,
+      admin_id       TEXT NOT NULL,
+      tagged_by      TEXT,
+      tagged_by_name TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (task_id, admin_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_team_task_tags_admin
+     ON team_task_tags (admin_id, created_at DESC)`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

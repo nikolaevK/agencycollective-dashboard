@@ -15,12 +15,14 @@ import { MemberAvatar } from "./TeamHome";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
 import { TasksTab } from "./TasksTab";
 import { ActionItemsTab } from "./ActionItemsTab";
+import { TaggedTab } from "./TaggedTab";
 import { ClientsTab } from "./ClientsTab";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import {
   useMemberHub,
   useMemberTasks,
   useMemberActionItems,
+  useTaggedTasks,
   useTaskMutations,
 } from "./useTeamData";
 import {
@@ -40,7 +42,7 @@ import type {
   TeamTimeframeValue,
 } from "./types";
 
-type HubTab = "home" | "tasks" | "actions" | "clients";
+type HubTab = "home" | "tasks" | "actions" | "tagged" | "clients";
 
 /** Header metric chips drill into the matching list inline (KPI-tile pattern). */
 type HeaderDrillKind =
@@ -61,6 +63,7 @@ export function MemberHub({ adminId }: { adminId: string }) {
   const hubQuery = useMemberHub(adminId, timeframe);
   const tasksQuery = useMemberTasks(adminId);
   const itemsQuery = useMemberActionItems(adminId);
+  const taggedQuery = useTaggedTasks(adminId);
   const mutations = useTaskMutations(adminId);
 
   if (hubQuery.isLoading) {
@@ -94,15 +97,19 @@ export function MemberHub({ adminId }: { adminId: string }) {
   const hub = hubQuery.data;
   const tasks = tasksQuery.data ?? [];
   const items = itemsQuery.data ?? [];
+  const tagged = taggedQuery.data ?? [];
   const today = hub.today;
   const pending = tasks.filter((t) => t.status !== "complete").length;
   const unsolved = items.filter((i) => i.status === "unsolved").length;
+  // The tag "notification": open tagged tasks badge the tab until untagged.
+  const taggedOpen = tagged.filter((t) => t.status !== "complete").length;
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
   const tabs: { id: HubTab; label: string; count: number | null }[] = [
     { id: "home", label: "Home", count: null },
     { id: "tasks", label: "Tasks", count: pending },
     { id: "actions", label: "Action Items", count: unsolved },
+    { id: "tagged", label: "Tagged", count: taggedOpen },
     { id: "clients", label: "Clients", count: hub.summary.clientCount },
   ];
 
@@ -267,6 +274,7 @@ export function MemberHub({ adminId }: { adminId: string }) {
         />
       )}
       {tab === "actions" && <ActionItemsTab hub={hub} items={items} onOpenTask={setOpenTaskId} />}
+      {tab === "tagged" && <TaggedTab hub={hub} tasks={tagged} today={today} />}
       {tab === "clients" && <ClientsTab hub={hub} />}
 
       {openTask && (
@@ -485,6 +493,7 @@ function HeaderDrillPanel({
     home: "Home",
     tasks: "Tasks",
     actions: "Action Items",
+    tagged: "Tagged",
     clients: "Clients",
   };
 

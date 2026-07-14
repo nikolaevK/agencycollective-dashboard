@@ -202,7 +202,8 @@ export async function updateTeamMember(
 
 /**
  * Remove a member from the roster AND their team workspace data (goals,
- * tasks + comments, action items). Destructive — the confirm lives in the UI.
+ * tasks + comments + attachments + tags, action items, tags pointing AT
+ * them). Destructive — the confirm lives in the UI.
  * Client assignments (client_team) are NOT touched: attribution of clients is
  * directory data, not Team-page data.
  */
@@ -216,6 +217,19 @@ export async function removeTeamMember(adminId: string): Promise<void> {
               WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
         args: [adminId],
       },
+      {
+        sql: `DELETE FROM team_task_documents
+              WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
+        args: [adminId],
+      },
+      {
+        sql: `DELETE FROM team_task_tags
+              WHERE task_id IN (SELECT id FROM team_tasks WHERE admin_id = ?)`,
+        args: [adminId],
+      },
+      // Tags pointing AT the removed member go too — their Tagged section
+      // leaves with the hub (mirrors deleteAdmin).
+      { sql: "DELETE FROM team_task_tags WHERE admin_id = ?", args: [adminId] },
       { sql: "DELETE FROM team_tasks WHERE admin_id = ?", args: [adminId] },
       { sql: "DELETE FROM team_action_items WHERE admin_id = ?", args: [adminId] },
       { sql: "DELETE FROM team_member_goals WHERE admin_id = ?", args: [adminId] },

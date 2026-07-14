@@ -179,6 +179,8 @@ export interface ListTasksFilter {
   clientId?: string;
   search?: string;
   dueBefore?: string; // yyyy-mm-dd inclusive
+  /** Only tasks this member is tagged on (team_task_tags). */
+  taggedAdminId?: string;
   limit?: number;
   offset?: number;
 }
@@ -211,6 +213,10 @@ export async function listTasks(
   if (filter.dueBefore && ISO_DATE_RE.test(filter.dueBefore)) {
     where.push("due_date IS NOT NULL AND due_date <= ?");
     args.push(filter.dueBefore);
+  }
+  if (filter.taggedAdminId) {
+    where.push("id IN (SELECT task_id FROM team_task_tags WHERE admin_id = ?)");
+    args.push(filter.taggedAdminId);
   }
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -584,6 +590,13 @@ export async function reassignTask(
               WHERE task_id = ?`,
         args: [toAdminId, id],
       },
+      {
+        // Tags ride along by task_id, but a pre-existing tag on the NEW owner
+        // would leave them tagged on their own task (a phantom row + badge in
+        // their Tagged tab) — scrub it in the same atomic batch.
+        sql: "DELETE FROM team_task_tags WHERE task_id = ? AND admin_id = ?",
+        args: [id, toAdminId],
+      },
     ],
     "write"
   );
@@ -601,6 +614,8 @@ export async function deleteTask(id: string): Promise<boolean> {
       // (the LEFT JOIN read is null-safe, but solve-via-task would dead-end).
       { sql: "UPDATE team_action_items SET task_id = NULL WHERE task_id = ?", args: [id] },
       { sql: "DELETE FROM team_task_comments WHERE task_id = ?", args: [id] },
+      { sql: "DELETE FROM team_task_documents WHERE task_id = ?", args: [id] },
+      { sql: "DELETE FROM team_task_tags WHERE task_id = ?", args: [id] },
       { sql: "DELETE FROM team_tasks WHERE id = ?", args: [id] },
     ],
     "write"
@@ -666,6 +681,115 @@ export async function addComment(input: {
     args: [id],
   });
   return rowToComment(result.rows[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Teammate tags — team_task_tags. Tagging a member surfaces the task in their
+// hub's Tagged section (their notification surface); tags ride along on
+// reassignment and are cleaned with the task.
+// ---------------------------------------------------------------------------
+
+export interface TeamTaskTag {
+  taskId: string;
+  adminId: string;
+  /** Tagged member's display name (resolved from admins at read time). */
+  name: string;
+  taggedBy: string | null;
+  taggedByName: string | null;
+  createdAt: string;
+}
+
+function rowToTag(row: Row): TeamTaskTag {
+  return {
+    taskId: String(row.task_id),
+    adminId: String(row.admin_id),
+    name: String(row.display_name ?? "").trim() || String(row.username ?? ""),
+    taggedBy: row.tagged_by != null ? String(row.tagged_by) : null,
+    taggedByName: row.tagged_by_name != null ? String(row.tagged_by_name) : null,
+    createdAt: String(row.created_at || ""),
+  };
+}
+
+export async function listTaskTags(taskId: string): Promise<TeamTaskTag[]> {
+  await ensureMigrated();
+  const db = getDb();
+  try {
+    const result = await db.execute({
+      sql: `SELECT t.*, a.display_name, a.username
+            FROM team_task_tags t
+            LEFT JOIN admins a ON a.id = t.admin_id
+            WHERE t.task_id = ?
+            ORDER BY t.created_at`,
+      args: [taskId],
+    });
+    return result.rows.map(rowToTag);
+  } catch (err) {
+    if (isNoSuchTable(err)) return [];
+    throw err;
+  }
+}
+
+/** Idempotent: tagging an already-tagged member is a no-op (returns false). */
+export async function addTaskTag(input: {
+  taskId: string;
+  adminId: string;
+  taggedBy: string | null;
+  taggedByName: string | null;
+}): Promise<boolean> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `INSERT OR IGNORE INTO team_task_tags (task_id, admin_id, tagged_by, tagged_by_name)
+          VALUES (?, ?, ?, ?)`,
+    args: [input.taskId, input.adminId, input.taggedBy, input.taggedByName],
+  });
+  return (result.rowsAffected ?? 0) > 0;
+}
+
+export async function removeTaskTag(taskId: string, adminId: string): Promise<boolean> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "DELETE FROM team_task_tags WHERE task_id = ? AND admin_id = ?",
+    args: [taskId, adminId],
+  });
+  return (result.rowsAffected ?? 0) > 0;
+}
+
+/** A task the member is tagged on, with its owner + tag context for the hub list. */
+export interface TaggedTaskRecord extends TeamTaskRecord {
+  ownerName: string;
+  taggedByName: string | null;
+  taggedAt: string;
+}
+
+/** Tasks this member is tagged on (any owner), newest tag first. */
+export async function listTaggedTasks(adminId: string): Promise<TaggedTaskRecord[]> {
+  await ensureMigrated();
+  const db = getDb();
+  try {
+    const result = await db.execute({
+      sql: `SELECT k.*, g.tagged_by_name, g.created_at AS tagged_at,
+                   a.display_name AS owner_display_name, a.username AS owner_username
+            FROM team_task_tags g
+            JOIN team_tasks k ON k.id = g.task_id
+            LEFT JOIN admins a ON a.id = k.admin_id
+            WHERE g.admin_id = ?
+            ORDER BY g.created_at DESC
+            LIMIT 500`,
+      args: [adminId],
+    });
+    return result.rows.map((row) => ({
+      ...rowToTask(row),
+      ownerName:
+        String(row.owner_display_name ?? "").trim() || String(row.owner_username ?? ""),
+      taggedByName: row.tagged_by_name != null ? String(row.tagged_by_name) : null,
+      taggedAt: String(row.tagged_at || ""),
+    }));
+  } catch (err) {
+    if (isNoSuchTable(err)) return [];
+    throw err;
+  }
 }
 
 /**

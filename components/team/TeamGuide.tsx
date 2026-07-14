@@ -335,7 +335,21 @@ export function TeamGuide() {
           <li>
             Each task has a <strong>comment trail</strong> that also records{" "}
             <em>activity rows</em> automatically (status moves, action-item solves,
-            reassignments) — a muted timeline in the task detail view.
+            reassignments, tags, attachments) — a muted timeline in the task detail view.
+          </li>
+          <li>
+            <strong>Attachments:</strong> PDFs up to 10&nbsp;MB attach from the task detail
+            view (stored in the database, so they survive deploys). Removing one is recorded
+            on the trail. Attachments move with the task on reassignment — but deleting the
+            task (or its owner&rsquo;s admin account) deletes them too.
+          </li>
+          <li>
+            <strong>Tagging teammates:</strong> the detail view&rsquo;s <em>Tagged</em> row
+            loops in another roster member without transferring ownership. The tagged member
+            is notified in their hub — the task appears under their <Pill>Tagged</Pill> tab
+            (badge = open tagged tasks) until it completes or they dismiss the tag. Tags are
+            a heads-up, not ownership: the assignee keeps the task, and a tagged member can
+            always remove <em>their own</em> tag.
           </li>
         </ul>
       </Section>
@@ -461,7 +475,25 @@ export function TeamGuide() {
           </li>
           <li>
             <strong>How:</strong> the task sheet&rsquo;s <em>Assignee</em> select, or the{" "}
-            <em>Forward to…</em> picker on an action-item card. Both confirm before moving.
+            <em>Forward to…</em> picker on an action-item card. Both confirm before moving —
+            and the task confirm takes an <strong>optional handoff note</strong> that lands
+            on the trail as a comment from you, so the new owner sees <em>why</em> it arrived.
+          </li>
+          <li>
+            <strong>Multiple recipients:</strong> the task confirm also offers{" "}
+            <em>Also tag</em> checkboxes — ownership stays with the <strong>one</strong> new
+            assignee (a task never has two owners), and everyone checked is{" "}
+            <strong>tagged</strong> instead, so the task lands in each of their hubs&rsquo;{" "}
+            <Pill>Tagged</Pill> tabs in the same action. Tag the <em>previous</em> assignee to
+            keep them looped in on work they handed off. If the new assignee was already
+            tagged on the task, that tag is <strong>removed automatically</strong> — an
+            assignee is never tagged on their own task.
+          </li>
+          <li>
+            <strong>Handoff note timing:</strong> the note is posted whenever the action did
+            something — an ownership transfer <em>or</em> at least one new tag. A call that
+            changes nothing (same owner, no new tags) drops it. A failed reassign keeps the
+            dialog open, so the typed note and checked tags survive for a retry.
           </li>
           <li>
             <strong>Targets:</strong> Team roster members only — an unrostered admin&rsquo;s
@@ -477,9 +509,14 @@ export function TeamGuide() {
             <strong>Over the API/MCP:</strong>{" "}
             <code className="rounded bg-muted px-1 text-xs">PATCH {"{ reassignTo: <adminId> }"}</code>{" "}
             on updateTeamTask / updateTeamActionItem (exclusive shape — other fields are
-            ignored). An <code className="rounded bg-muted px-1 text-xs">adminId</code> echoed
-            back in an update body is inert; reassigning to the current owner is an idempotent
-            no-op (nothing recorded).
+            ignored; tasks additionally take{" "}
+            <code className="rounded bg-muted px-1 text-xs">alsoTag</code> +{" "}
+            <code className="rounded bg-muted px-1 text-xs">comment</code>). An{" "}
+            <code className="rounded bg-muted px-1 text-xs">adminId</code> echoed back in an
+            update body is inert. Reassigning a task to the <em>current</em> owner is a{" "}
+            <strong>share-without-transfer</strong>: ownership is untouched (no reassign
+            activity/audit) but <code className="rounded bg-muted px-1 text-xs">alsoTag</code>{" "}
+            members are still tagged — without alsoTag it&rsquo;s a pure idempotent no-op.
           </li>
           <li>
             <strong>Caution:</strong> deleting an admin deletes their hub&rsquo;s tasks and
@@ -537,7 +574,7 @@ export function TeamGuide() {
       <Section icon={Bot} title="Feeding the hub from outside (API / MCP agent)">
         <p>
           The Team hub is exposed on the external API under the <Pill>team</Pill> scope
-          (13&nbsp;operations, one MCP tool each). This is how an agent relays client follow-up
+          (19&nbsp;operations, one MCP tool each). This is how an agent relays client follow-up
           reports — e.g. a daily Slack sweep — into members&rsquo; inboxes.
         </p>
 
@@ -551,6 +588,8 @@ export function TeamGuide() {
             <FlowRow from="IN MOTION" tool="updateTeamTask" note='{ status: "in_progress" } on the linked task' />
             <FlowRow from="Aging update" tool="createTeamTaskComment" note='"still unsolved, day 3" on the task trail' />
             <FlowRow from="MISROUTED" tool="updateTeamActionItem" note='{ reassignTo: "<adminId>" } — moves item + task to the right hub' />
+            <FlowRow from="Loop someone in" tool="createTeamTaskTag" note='{ adminId } — task lands in their hub&#39;s Tagged tab' />
+            <FlowRow from="Evidence file" tool="uploadTeamTaskDocument" note="{ fileBase64, fileName } — PDF ≤10 MB on the task" />
             <FlowRow from="UNSOLVED" tool="—" note="leave the existing item open (no call)" />
           </div>
         </div>
@@ -582,10 +621,30 @@ export function TeamGuide() {
           or <code className="rounded bg-muted px-1 text-xs">/team/action-items/&#123;id&#125;</code>:
         </p>
         <Schema>{`{
-  "reassignTo": "…"   // roster member admin id — EXCLUSIVE shape:
+  "reassignTo": "…",  // roster member admin id — EXCLUSIVE shape:
                       // other fields in the same body are ignored.
                       // adminId echoed from a GET is inert — safe to send.
+                      // = current owner → share-without-transfer: ownership
+                      // untouched, alsoTag members still get tagged.
+  "alsoTag": ["…"],   // tasks only, optional: MORE roster members to reach —
+                      // they're TAGGED (not co-owners); ownership stays single.
+                      // A stale tag on the new assignee is auto-removed.
+  "comment": "…"      // tasks only, optional: handoff note posted to the
+                      // task's trail — lands when the call transferred
+                      // ownership OR added a new tag (pure no-op drops it)
 }`}</Schema>
+        <p className="mt-3">
+          <strong>Tags &amp; attachments</strong> —{" "}
+          <code className="rounded bg-muted px-1 text-xs">getTeamTask</code> returns both
+          (<code className="rounded bg-muted px-1 text-xs">tags</code>,{" "}
+          <code className="rounded bg-muted px-1 text-xs">documents</code> metadata);{" "}
+          <code className="rounded bg-muted px-1 text-xs">listTeamTasks?taggedAdminId=</code>{" "}
+          lists a member&rsquo;s Tagged section. Tag/untag via{" "}
+          <code className="rounded bg-muted px-1 text-xs">POST /team/tasks/&#123;id&#125;/tags</code>{" "}
+          / <code className="rounded bg-muted px-1 text-xs">DELETE …/tags/&#123;adminId&#125;</code>;
+          PDF bytes via{" "}
+          <code className="rounded bg-muted px-1 text-xs">…/documents/&#123;documentId&#125;?format=base64</code>.
+        </p>
 
         <ul className="mt-3 space-y-2">
           <li>
@@ -616,7 +675,7 @@ export function TeamGuide() {
       </Section>
 
       <p className="text-xs text-muted-foreground">
-        Full API reference (all 13 team operations with schemas): <strong>Dashboard → API
+        Full API reference (all 19 team operations with schemas): <strong>Dashboard → API
         Docs</strong>, or <code className="rounded bg-muted px-1">GET /api/v1/openapi.json</code>.
         MCP endpoint for agents: <code className="rounded bg-muted px-1">/api/mcp/mcp</code>.
       </p>
