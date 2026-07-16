@@ -1,21 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import {
+
   getMaintenanceConfig,
   setMaintenanceConfig,
   MAINTENANCE_MESSAGE_MAX,
 } from "@/lib/maintenance";
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
 // Middleware gates /api/admin/clients/* on the `users` permission; the handler
 // re-checks the admin session as defense in depth.
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 export async function GET() {
   if (!(await requireAdminSession()))

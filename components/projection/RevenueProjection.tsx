@@ -362,7 +362,7 @@ export function RevenueProjection() {
           </p>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[340px_1fr]">
           {/* Controls */}
           <div className="space-y-4">
             {/* Growth levers */}
@@ -646,7 +646,7 @@ export function RevenueProjection() {
       </div>
 
       {/* Book + scenarios */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="rounded-xl border bg-card p-5">
           <h3 className="text-sm font-semibold text-foreground">Active client book</h3>
           <p className="mb-3 text-[12.5px] text-muted-foreground/70">Retained + newly won, month by month</p>

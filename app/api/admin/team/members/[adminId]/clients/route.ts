@@ -5,6 +5,7 @@ import { ensureMigrated } from "@/lib/db";
 import { getTeamActor } from "@/lib/teamAuth";
 import { getTeamMember } from "@/lib/teamMembers";
 import { getClientTeam, setClientTeam } from "@/lib/clientProfile";
+import { invalidateTeamDirectoryMemo } from "@/lib/teamHub";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -60,6 +61,9 @@ export async function POST(request: Request, { params }: RouteContext) {
       ? [...new Set([...current, params.adminId])]
       : current.filter((id) => id !== params.adminId);
     await setClientTeam(clientId, "csm", next, actor.admin.id);
+    // The team surfaces memo directory rows briefly — the UI refetches the
+    // hub right after this write and must see the new assignment.
+    invalidateTeamDirectoryMemo();
 
     logAuditEvent({
       adminId: actor.admin.id,

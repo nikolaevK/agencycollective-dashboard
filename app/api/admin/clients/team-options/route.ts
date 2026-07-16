@@ -1,15 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin, readAdmins } from "@/lib/admins";
+import { readAdmins } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
 /**
  * Assignable people for the roster Lead / Media Buyer pickers — the admins

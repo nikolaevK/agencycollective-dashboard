@@ -83,14 +83,7 @@ export function formatRole(role: string): string {
   return CLOSER_ROLES.find((r) => r.value === role)?.label ?? role;
 }
 
-export function formatCents(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+export { formatCents } from "@/lib/format";
 
 export function formatBasisPoints(bp: number): string {
   return `${(bp / 100).toFixed(1)}%`;

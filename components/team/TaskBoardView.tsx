@@ -131,7 +131,7 @@ export function TaskBoardView({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 items-start">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 items-start">
         {TASK_STATUS_ORDER.map((status) => (
           <BoardColumn
             key={status}
@@ -190,7 +190,18 @@ function BoardColumn({
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className={cn("space-y-2", tasks.length === 0 && "min-h-[48px]")}>
           {tasks.map((t) => (
-            <BoardCard key={t.id} task={t} hub={hub} today={today} onOpen={() => onOpenTask(t.id)} />
+            <BoardCard
+              key={t.id}
+              task={t}
+              hub={hub}
+              today={today}
+              onOpen={() => onOpenTask(t.id)}
+              onStatusChange={(next) =>
+                mutations
+                  .patchTask(t.id, { status: next })
+                  .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+              }
+            />
           ))}
         </div>
       </SortableContext>
@@ -206,11 +217,13 @@ function BoardCard({
   hub,
   today,
   onOpen,
+  onStatusChange,
 }: {
   task: TeamTaskRecord;
   hub: MemberHubPayload;
   today: string;
   onOpen: () => void;
+  onStatusChange: (status: TaskStatus) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: t.id,
@@ -233,7 +246,7 @@ function BoardCard({
           {...attributes}
           {...listeners}
           onClick={(e) => e.stopPropagation()}
-          className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground touch-none"
+          className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing p-2.5 -m-2 text-muted-foreground/50 hover:text-muted-foreground touch-none"
           aria-label="Drag to move"
         >
           <GripVertical className="h-3.5 w-3.5" />
@@ -261,6 +274,21 @@ function BoardCard({
             ⚡ auto
           </span>
         )}
+        {/* Touch users can't drag across vertically-stacked columns — give
+            them a direct status control (hidden on md+ where DnD works). */}
+        <select
+          value={t.status}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
+          className="md:hidden ml-auto rounded-md border border-border bg-background px-1.5 py-1 text-[10px] font-semibold text-muted-foreground"
+          aria-label="Change status"
+        >
+          {TASK_STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {TASK_STATUS_META[s].label}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

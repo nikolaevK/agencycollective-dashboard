@@ -223,7 +223,19 @@ export function NoteEditor({ note, initialLeadLabel, initialLeadKind, onClose, o
             {showPreview ? (
               <div className="min-h-32 rounded-lg border border-input bg-background px-3 py-2 text-sm max-h-80 overflow-y-auto">
                 {body ? (
-                  <ReactMarkdown>{body}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      // Keep fenced code blocks inside the preview card on
+                      // narrow screens instead of overflowing horizontally.
+                      pre: (p: { children?: React.ReactNode }) => (
+                        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs font-mono my-2">
+                          {p.children}
+                        </pre>
+                      ),
+                    }}
+                  >
+                    {body}
+                  </ReactMarkdown>
                 ) : (
                   <p className="text-muted-foreground italic">Nothing to preview yet.</p>
                 )}

@@ -50,7 +50,7 @@ export function InvoicePage() {
   const { data: agencyConfig } = useQuery<Record<string, string>>({
     queryKey: ["agency-config"],
     queryFn: async () => {
-      const res = await fetch("/api/agency-config");
+      const res = await fetch("/api/admin/agency-config");
       if (!res.ok) return {};
       const json = await res.json();
       return json.data ?? {};

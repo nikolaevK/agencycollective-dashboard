@@ -1,8 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import {
   parseRosterOptionKind,
   listCustomRosterOptions,
@@ -11,6 +9,8 @@ import {
   removeCustomRosterOption,
 } from "@/lib/rosterOptions";
 import { logAuditEvent } from "@/lib/auditLog";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,11 +23,6 @@ function badKind() {
   );
 }
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 /** Custom Stage / Client Health options (built-ins live in the client bundle). */
 export async function GET(request: Request) {

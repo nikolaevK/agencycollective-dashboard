@@ -345,17 +345,35 @@ export function TaskDetailSheet({
             )}
           </div>
 
-          {/* Title */}
-          <input
-            type="text"
+          {/* Title — auto-growing textarea so long titles wrap on phones
+              instead of hiding past the single-line input's edge. Enter
+              commits (blur) rather than inserting a newline. */}
+          <textarea
+            rows={1}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value.replace(/\n/g, " "));
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            ref={(el) => {
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = `${el.scrollHeight}px`;
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
             onBlur={() => {
               const trimmed = title.trim();
               if (trimmed && trimmed !== t.title) patch({ title: trimmed });
               else if (!trimmed) setTitle(t.title); // cleared — revert, never save blank
             }}
-            className="w-full bg-transparent text-lg font-black text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1"
+            className="w-full resize-none overflow-hidden bg-transparent text-lg font-black leading-snug text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1"
             aria-label="Task title"
           />
 
@@ -511,7 +529,7 @@ export function TaskDetailSheet({
                       )
                     }
                     className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors",
                       item.done
                         ? "bg-primary border-primary text-primary-foreground"
                         : "border-input"
@@ -533,7 +551,7 @@ export function TaskDetailSheet({
                     onClick={() =>
                       setChecklist(t.checklist.filter((c) => c.id !== item.id))
                     }
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-500"
+                    className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 -m-1 text-muted-foreground hover:text-red-500"
                     aria-label="Remove item"
                   >
                     <X className="h-3 w-3" />
@@ -592,7 +610,7 @@ export function TaskDetailSheet({
                   <button
                     type="button"
                     onClick={() => removeDocument(doc)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-500"
+                    className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 -m-1 text-muted-foreground hover:text-red-500"
                     aria-label={`Remove ${doc.fileName}`}
                   >
                     <X className="h-3 w-3" />

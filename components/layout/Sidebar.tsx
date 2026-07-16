@@ -118,7 +118,7 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
       </div>
 
       {/* Navigation */}
-      <nav className={cn("flex-1 space-y-0.5 py-4", collapsed ? "md:px-2 px-3" : "px-3")}>
+      <nav className={cn("flex-1 overflow-y-auto overscroll-contain space-y-0.5 py-4", collapsed ? "md:px-2 px-3" : "px-3")}>
         <p className={cn(
           "mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40",
           collapsed && "md:hidden"

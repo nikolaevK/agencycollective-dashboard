@@ -1131,13 +1131,29 @@ export async function migrate(): Promise<void> {
   }
 
   // ── Backfill attendance from closed deals with calendar links ─────
+  // One-time only, gated by an agency_config marker (the
+  // meta_account_options_seeded pattern): this block used to re-run on every
+  // SCHEMA_VERSION bump, silently resurrecting attendance rows that closers/
+  // GHL syncs had deliberately cleared (clearing deletes the row).
   try {
-    await db.execute(`
-      INSERT OR IGNORE INTO event_attendance (google_event_id, closer_id, show_status)
-      SELECT google_event_id, closer_id, 'showed'
-      FROM deals
-      WHERE google_event_id IS NOT NULL AND status = 'closed'
-    `);
+    const marker = await db.execute({
+      sql: "SELECT 1 FROM agency_config WHERE config_key = ?",
+      args: ["attendance_backfill_done"],
+    });
+    if (marker.rows.length === 0) {
+      await db.execute(`
+        INSERT OR IGNORE INTO event_attendance (google_event_id, closer_id, show_status)
+        SELECT google_event_id, closer_id, 'showed'
+        FROM deals
+        WHERE google_event_id IS NOT NULL AND status = 'closed'
+      `);
+      await db.execute({
+        sql: `INSERT INTO agency_config (id, config_key, config_value, updated_at)
+              VALUES (lower(hex(randomblob(16))), ?, ?, datetime('now'))
+              ON CONFLICT(config_key) DO NOTHING`,
+        args: ["attendance_backfill_done", "1"],
+      });
+    }
   } catch {
     // Ignore if backfill fails
   }
@@ -1372,6 +1388,16 @@ export async function migrate(): Promise<void> {
     )
   `);
 
+  // Backstops the count-then-insert seed below against two concurrent cold
+  // starts on a fresh DB double-seeding. try/catch'd: a pre-existing DB that
+  // already contains duplicate names just skips the index (its count is >0,
+  // so the seed never runs there anyway).
+  try {
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_services_name ON invoice_services(name)`);
+  } catch {
+    // Duplicate names already present — index skipped.
+  }
+
   // ── Seed default invoice services if empty ───────────────────────
   {
     const cnt = await db.execute("SELECT COUNT(*) as cnt FROM invoice_services");
@@ -1389,7 +1415,7 @@ export async function migrate(): Promise<void> {
       for (let i = 0; i < seeds.length; i++) {
         const [name, desc, rate, key] = seeds[i];
         await db.execute({
-          sql: `INSERT INTO invoice_services (id, name, description, rate, deal_service_key, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+          sql: `INSERT OR IGNORE INTO invoice_services (id, name, description, rate, deal_service_key, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
           args: [crypto.randomUUID(), name, desc, rate, key, i],
         });
       }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { ApiResponse, DateRangeInput } from "@/types/api";
+import type { DateRangeInput } from "@/types/api";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { dateRangeCacheKey } from "@/lib/utils";
-import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
+import { META_QUERY_STALE_MS, fetchApi } from "@/lib/queryConfig";
 
 interface InsightsResponse {
   metrics: InsightMetrics;
@@ -24,16 +24,7 @@ async function fetchInsights(
   }
   if (withTimeSeries) params.set("timeSeries", "true");
 
-  const res = await fetch(`/api/insights?${params.toString()}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const err = new Error(body.error || `HTTP ${res.status}`) as Error & { status: number };
-    err.status = res.status;
-    throw err;
-  }
-
-  const json: ApiResponse<InsightsResponse> = await res.json();
-  return json.data;
+  return fetchApi<InsightsResponse>(`/api/insights?${params.toString()}`);
 }
 
 export function useInsights(

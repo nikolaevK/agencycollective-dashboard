@@ -38,7 +38,8 @@ export function ClientActionsMenu({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-muted-foreground hover:text-primary rounded-lg hover:bg-muted/50 transition-colors"
+        className="flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-primary rounded-lg hover:bg-muted/50 transition-colors"
+        aria-label="Client actions"
       >
         <MoreVertical className="h-4 w-4" />
       </button>

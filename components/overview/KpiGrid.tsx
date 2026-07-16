@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -183,6 +184,10 @@ interface KpiGridProps {
 }
 
 export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGridProps) {
+  // Tap-to-toggle tooltip (one open at a time) — hover/focus-within alone
+  // doesn't work on touch, where the 12px Info icon can't be hovered.
+  const [openTip, setOpenTip] = useState<string | null>(null);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -279,8 +284,22 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
               </p>
               {card.tooltip && (
                 <>
-                  <Info className="h-3 w-3 text-muted-foreground/50" tabIndex={0} role="button" aria-label={`Info: ${card.label}`} />
-                  <div className="absolute left-0 top-full mt-1.5 z-50 w-56 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-lg p-2.5 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity">
+                  <button
+                    type="button"
+                    className="p-2 -m-2 flex items-center justify-center"
+                    aria-label={`Info: ${card.label}`}
+                    onClick={() =>
+                      setOpenTip(openTip === card.label ? null : card.label)
+                    }
+                  >
+                    <Info className="h-3 w-3 text-muted-foreground/50" />
+                  </button>
+                  <div
+                    className={cn(
+                      "absolute left-0 top-full mt-1.5 z-50 w-56 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-lg p-2.5 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity",
+                      openTip === card.label && "opacity-100 pointer-events-auto"
+                    )}
+                  >
                     {card.tooltip}
                   </div>
                 </>
@@ -335,8 +354,22 @@ export function KpiGrid({ metrics, delta, isLoading, currency = "USD" }: KpiGrid
               </p>
               {card.tooltip && (
                 <>
-                  <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" tabIndex={0} role="button" aria-label={`Info: ${card.label}`} />
-                  <div className="absolute left-0 bottom-full mb-2 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-xl p-3 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity">
+                  <button
+                    type="button"
+                    className="p-2 -m-2 flex items-center justify-center cursor-help"
+                    aria-label={`Info: ${card.label}`}
+                    onClick={() =>
+                      setOpenTip(openTip === card.label ? null : card.label)
+                    }
+                  >
+                    <Info className="h-3 w-3 text-muted-foreground/40" />
+                  </button>
+                  <div
+                    className={cn(
+                      "absolute left-0 bottom-full mb-2 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-lg bg-popover border border-border shadow-xl p-3 text-[11px] leading-relaxed text-foreground/80 opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto group-focus-within/tip:opacity-100 group-focus-within/tip:pointer-events-auto transition-opacity",
+                      openTip === card.label && "opacity-100 pointer-events-auto"
+                    )}
+                  >
                     {card.tooltip}
                   </div>
                 </>

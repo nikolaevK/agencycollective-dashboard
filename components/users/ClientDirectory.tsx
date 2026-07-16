@@ -671,11 +671,11 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                       <StatusBadge status={client.status} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => patch(client, { isTop: !profile.isTop })}
-                      className="p-1"
+                      className="flex h-10 w-10 items-center justify-center"
                       aria-label="Toggle top client"
                     >
                       <Star

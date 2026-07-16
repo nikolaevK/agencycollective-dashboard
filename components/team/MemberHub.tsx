@@ -123,18 +123,22 @@ export function MemberHub({ adminId }: { adminId: string }) {
         Back to Team
       </Link>
 
-      {/* Header */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <MemberAvatar name={hub.member.name} avatarPath={hub.member.avatarPath} size="lg" />
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl lg:text-2xl font-black text-foreground truncate">
-            {hub.member.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {hub.member.position || ATTRIBUTION_LABEL[hub.member.attribution]} ·{" "}
-            {hub.summary.clientCount} clients · {formatMoney(hub.summary.mrrManagedCents)} MRR
-            managed
-          </p>
+      {/* Header — stacks on phones: identity row first, goal ring below.
+          (A single flex row let flex-1 crush the name to a few characters
+          while the goal block kept its intrinsic width.) */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <MemberAvatar name={hub.member.name} avatarPath={hub.member.avatarPath} size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-xl lg:text-2xl font-black text-foreground break-words sm:truncate">
+              {hub.member.name}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {hub.member.position || ATTRIBUTION_LABEL[hub.member.attribution]} ·{" "}
+              {hub.summary.clientCount} clients · {formatMoney(hub.summary.mrrManagedCents)} MRR
+              managed
+            </p>
+          </div>
         </div>
         <GoalRing
           collectedCents={monthlyHeadline(hub.summary.monthly).cents}
@@ -728,7 +732,9 @@ function HomeTab({
       key={t.id}
       type="button"
       onClick={() => onOpenTask(t.id)}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
+      // flex-wrap + the title's min-w floor: on phones the chips/due/flag wrap
+      // to a second line instead of crushing the title to a few characters.
+      className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
     >
       {rank !== undefined && (
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-black text-primary">
@@ -736,7 +742,9 @@ function HomeTab({
         </span>
       )}
       <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
-      <span className="flex-1 truncate text-sm font-semibold text-foreground">{t.title}</span>
+      <span className="flex-1 min-w-[55%] truncate text-sm font-semibold text-foreground">
+        {t.title}
+      </span>
       {t.clientId && <ClientChip hub={hub} clientId={t.clientId} />}
       <DueLabel task={t} today={today} />
       <Flag className={cn("h-3.5 w-3.5 shrink-0", TASK_PRIORITY_META[t.priority].flag)} />
@@ -747,7 +755,7 @@ function HomeTab({
     // items-start: cards size to their own content — without it the grid
     // stretches every card to its tallest row-mate (a long Agenda left the
     // small Client Pulse button as a page-tall box with centered chips).
-    <div className="grid gap-4 lg:grid-cols-2 items-start">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
       <HomeCard title="🔥 Lineup" hint="hand-picked priorities" className="lg:col-span-2">
         {lineup.length > 0 ? (
           lineup.map((t, i) => taskRow(t, i + 1))

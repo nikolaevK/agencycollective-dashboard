@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { InvoiceData, PaymentType } from "@/types/invoice";
 import { calculateTotals } from "./invoice/validation";
+import { businessTodayYmd } from "./businessTime";
 import {
   getAgencySender,
   getAdAccountPaymentTemplate,
@@ -80,7 +81,7 @@ export async function generateAdAccountInvoiceData(params: {
     details: {
       invoiceLogo: defaultLogo,
       invoiceNumber: params.invoiceNumber,
-      invoiceDate: new Date().toISOString().slice(0, 10),
+      invoiceDate: businessTodayYmd(),
       dueDate: "",
       terms: "Due on receipt",
       currency: "USD",

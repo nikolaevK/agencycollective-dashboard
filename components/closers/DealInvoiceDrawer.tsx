@@ -147,7 +147,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const { data: agencyConfig } = useQuery<Record<string, string>>({
     queryKey: ["agency-config"],
     queryFn: async () => {
-      const res = await fetch("/api/agency-config");
+      const res = await fetch("/api/admin/agency-config");
       if (!res.ok) return {};
       return (await res.json()).data ?? {};
     },
@@ -319,6 +319,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     return () => document.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
+  // Hooks must run unconditionally — keep this above the !dealId early return.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+  );
+
   if (!dealId) return null;
 
   const dealValueDollars = dealValue / 100;
@@ -371,11 +377,6 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       },
     }));
   };
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
-  );
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!invoiceData) return;

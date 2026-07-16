@@ -47,7 +47,7 @@ export function TeamHome() {
     return (
       <div className="space-y-4">
         <div className="h-24 rounded-xl bg-muted/40 animate-pulse" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-56 rounded-xl bg-muted/40 animate-pulse" />
           ))}
@@ -135,7 +135,7 @@ export function TeamHome() {
           )}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {data.members.map((m) => (
             <MemberCard
               key={m.adminId}
@@ -650,7 +650,7 @@ function MemberCard({
         )}
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2 min-[400px]:grid-cols-4">
         <StatTile label="Overdue" value={m.tasks.overdue} tone={m.tasks.overdue > 0 ? "red" : undefined} />
         <StatTile label="Today" value={m.tasks.dueToday} tone={m.tasks.dueToday > 0 ? "amber" : undefined} />
         <StatTile label={WINDOW_STAT_LABEL[timeframe]} value={m.tasks.dueInWindow} tone="blue" />

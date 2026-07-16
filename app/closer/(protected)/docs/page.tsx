@@ -118,7 +118,7 @@ function Note({
 
 export default function CloserDocsPage() {
   return (
-    <main className="flex-1 overflow-y-auto">
+    <main className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-3xl px-4 py-8 md:px-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">

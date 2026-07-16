@@ -7,6 +7,7 @@ import { readActiveAccountsForUser } from "@/lib/clientAccounts";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { createSession, getSession, SESSION_COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/session";
 import { ensureMigrated } from "@/lib/db";
+import { checkLoginRate } from "@/lib/loginRateLimit";
 
 /**
  * Resolve accounts for a user.
@@ -32,6 +33,9 @@ export async function loginAction(
   email: string,
   password: string
 ): Promise<{ error: string } | undefined> {
+  const rate = checkLoginRate("client", email);
+  if (!rate.ok) return { error: rate.error! };
+
   await ensureMigrated();
   const user = await findUserByEmail(email.trim());
 

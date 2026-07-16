@@ -262,7 +262,7 @@ export default function CloserCalendarPage() {
   const connected = status?.connected ?? false;
 
   return (
-    <main className="flex-1 overflow-y-auto">
+    <main className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-6">
@@ -463,8 +463,12 @@ export default function CloserCalendarPage() {
               <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                   <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
-                  <button onClick={() => setEditingDealId(null)} className="text-muted-foreground hover:text-foreground">
-                    <span className="sr-only">Close</span>&times;
+                  <button
+                    onClick={() => setEditingDealId(null)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                    aria-label="Close"
+                  >
+                    <span aria-hidden className="text-lg leading-none">&times;</span>
                   </button>
                 </div>
                 <div className="p-6">

@@ -60,7 +60,7 @@ export function InvoiceAgencySettings() {
   const { data: configs } = useQuery<AgencyConfigs>({
     queryKey: ["agency-config"],
     queryFn: async () => {
-      const res = await fetch("/api/agency-config");
+      const res = await fetch("/api/admin/agency-config");
       if (!res.ok) return { sender: "{}", note_local: "", note_international: "", payment_template_local: "", payment_template_international: "" };
       const json = await res.json();
       return json.data;

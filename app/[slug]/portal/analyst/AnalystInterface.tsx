@@ -167,9 +167,21 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
     [datePreset],
   );
 
-  // Auto-scroll
+  // Auto-scroll — only while the user is already near the bottom of the
+  // message list. During streaming this fires on every token; unconditional
+  // scrolling yanked the page down and made re-reading mid-response impossible.
+  const listRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    pinnedToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }, []);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (pinnedToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   }, [messages]);
 
   // Abort on unmount
@@ -498,10 +510,12 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
         </div>
       </div>
 
-      {/* Chat area */}
-      <div className="rounded-2xl border border-border bg-card flex flex-col min-h-[60vh]">
+      {/* Chat area — height-bounded on phones so the message list scrolls
+          internally and the composer stays visible instead of stranded at the
+          bottom of an ever-growing page. */}
+      <div className="rounded-2xl border border-border bg-card flex flex-col min-h-[60vh] max-h-[calc(100dvh-13rem)] md:max-h-none">
         {/* Messages or empty state */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-8 gap-6">
               <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground shadow-lg">
@@ -577,8 +591,7 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
               onKeyDown={handleKeyDown}
               placeholder={`Ask about ${accountDisplay}…`}
               rows={1}
-              disabled={isLoading}
-              className="flex-1 resize-none bg-transparent px-4 py-3 pr-14 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+              className="flex-1 resize-none bg-transparent px-4 py-3 pr-14 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
               style={{ maxHeight: "160px" }}
             />
             {isLoading ? (

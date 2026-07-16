@@ -94,6 +94,45 @@ export function ApiDocsPanel() {
           </div>
         </div>
 
+        {/* Mobile jump-to nav — the sidebar is lg-only and the spec is ~170
+            operations long; without this, phones can only scroll. */}
+        <div className="lg:hidden sticky top-16 z-30 -mx-1 mb-4 rounded-lg border border-border bg-background/95 p-1.5 backdrop-blur">
+          <select
+            className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground"
+            defaultValue=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) return;
+              document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+              e.target.value = "";
+            }}
+            aria-label="Jump to section"
+          >
+            <option value="" disabled>
+              Jump to section…
+            </option>
+            <optgroup label="Reference">
+              {REFERENCE_SECTIONS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </optgroup>
+            {grouped.map(({ tag, operations: ops }) =>
+              ops.length === 0 ? null : (
+                <optgroup key={tag.name} label={`${tag.name} (${ops.length})`}>
+                  <option value={`surface-${tag.name}`}>Overview</option>
+                  {ops.map((o) => (
+                    <option key={o.operationId} value={o.operationId}>
+                      {o.method.toUpperCase()} {o.path}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            )}
+          </select>
+        </div>
+
         <div className="flex gap-8">
           {/* Sidebar */}
           <nav className="hidden w-56 shrink-0 lg:block">

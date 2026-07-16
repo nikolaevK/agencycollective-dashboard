@@ -23,10 +23,11 @@ The sales-pipeline side has three roles sharing the `c_sess` cookie and the `clo
 npm run dev      # Dev server (port 3000)
 npm run build    # Production build
 npm run start    # Production server
-npm run lint     # ESLint
+npm run lint     # ESLint (next/core-web-vitals)
+npm test         # vitest — unit tests for the pure money/date engines (__tests__/)
 ```
 
-No test framework, no CI/CD.
+CI: `.github/workflows/ci.yml` runs typecheck + lint + tests on push/PR.
 
 ## Project Structure
 

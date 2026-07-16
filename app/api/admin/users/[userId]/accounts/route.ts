@@ -1,22 +1,17 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { findUser } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
 import {
+
   readAccountsForUser,
   addAccountToUser,
   removeAccountFromUser,
   toggleAccountActive,
 } from "@/lib/clientAccounts";
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 interface RouteContext {
   params: { userId: string };

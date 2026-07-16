@@ -1,21 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import {
+
   getWelcomeKitRecord,
   saveWelcomeKitDoc,
   setWelcomeKitShare,
   WelcomeKitConflictError,
 } from "@/lib/welcomeKit";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 /** Full kit record (doc + share state) for the builder. */
 export async function GET() {

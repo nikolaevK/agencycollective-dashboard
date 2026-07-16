@@ -50,6 +50,27 @@ const MD_COMPONENTS = {
       {p.children}
     </code>
   ),
+  // pre + table need explicit overflow wrappers — browser defaults
+  // (white-space: pre, no scroll container) overflow the section card
+  // horizontally on phones.
+  pre: (p: { children?: React.ReactNode }) => (
+    <pre className="overflow-x-auto rounded-lg bg-portal-surface-container p-3 text-xs font-mono my-2 [&_code]:bg-transparent [&_code]:p-0">
+      {p.children}
+    </pre>
+  ),
+  table: (p: { children?: React.ReactNode }) => (
+    <div className="overflow-x-auto my-2 rounded-lg border border-border/50">
+      <table className="w-full border-collapse text-xs">{p.children}</table>
+    </div>
+  ),
+  th: (p: { children?: React.ReactNode }) => (
+    <th className="px-2.5 py-1.5 text-left font-semibold border-b border-border/50">
+      {p.children}
+    </th>
+  ),
+  td: (p: { children?: React.ReactNode }) => (
+    <td className="px-2.5 py-1.5 border-b border-border/30 last:border-b-0">{p.children}</td>
+  ),
   blockquote: (p: { children?: React.ReactNode }) => (
     <blockquote className="border-l-2 border-primary/40 pl-3 italic my-2">
       {p.children}

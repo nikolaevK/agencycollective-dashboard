@@ -332,10 +332,12 @@ export async function updateDeal(
 export async function deleteDeal(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
-  // Delete linked invoices and contract first
+  // Delete linked invoices and contracts first (libSQL FK cascade isn't
+  // guaranteed to fire — clean every satellite table explicitly)
   await db.execute({ sql: "DELETE FROM deal_invoices WHERE deal_id = ?", args: [id] });
   await db.execute({ sql: "DELETE FROM deal_additional_invoices WHERE deal_id = ?", args: [id] });
   await db.execute({ sql: "DELETE FROM deal_contracts WHERE deal_id = ?", args: [id] });
+  await db.execute({ sql: "DELETE FROM deal_additional_contracts WHERE deal_id = ?", args: [id] });
   const result = await db.execute({
     sql: "DELETE FROM deals WHERE id = ?",
     args: [id],

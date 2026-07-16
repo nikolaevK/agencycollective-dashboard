@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { DealStatusBadge } from "@/components/closers/DealStatusBadge";
 import { Link2, Pencil, StickyNote, Briefcase, Search, Trash2 } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -39,34 +40,6 @@ function matchesStatusFilter(deal: DealWithInvoice, filter: StatusFilter): boole
   }
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  closed: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  not_closed: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
-  pending_signature: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-  rescheduled: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
-  follow_up: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  closed: "Closed",
-  not_closed: "Not Closed",
-  pending_signature: "Pending",
-  rescheduled: "Rescheduled",
-  follow_up: "Follow Up",
-};
-
-function DealStatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
-        STATUS_STYLES[status] ?? STATUS_STYLES.follow_up
-      )}
-    >
-      {STATUS_LABELS[status] ?? status}
-    </span>
-  );
-}
 
 function parseDealDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
@@ -329,7 +302,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                     <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <DealStatusBadge status={deal.status} />
+                        <DealStatusBadge status={deal.status} compact />
                         {deal.invoiceStatus && (
                           <DealInvoiceStatusBadge status={deal.invoiceStatus} />
                         )}
@@ -414,7 +387,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  <DealStatusBadge status={deal.status} />
+                  <DealStatusBadge status={deal.status} compact />
                   {deal.invoiceStatus && (
                     <DealInvoiceStatusBadge status={deal.invoiceStatus} />
                   )}

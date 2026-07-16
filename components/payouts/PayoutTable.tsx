@@ -343,7 +343,7 @@ function SalesRepDropdown({
             </button>
             <button
               onClick={(e) => handleRemove(opt, e)}
-              className="opacity-0 group-hover:opacity-100 px-2 py-1.5 text-muted-foreground hover:text-destructive transition-all"
+              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
               title={`Remove ${opt}`}
             >
               <X className="h-3 w-3" />
@@ -551,7 +551,7 @@ function VerticalDropdown({
             </button>
             <button
               onClick={(e) => handleRemove(opt, e)}
-              className="opacity-0 group-hover:opacity-100 px-2 py-1.5 text-muted-foreground hover:text-destructive transition-all"
+              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
               title={`Remove ${opt}`}
             >
               <X className="h-3 w-3" />
@@ -790,7 +790,7 @@ function ReferralDropdown({
             </button>
             <button
               onClick={(e) => handleRemove(opt, e)}
-              className="opacity-0 group-hover:opacity-100 px-2 py-1.5 text-muted-foreground hover:text-destructive transition-all"
+              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
               title={`Remove ${opt}`}
             >
               <X className="h-3 w-3" />

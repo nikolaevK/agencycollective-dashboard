@@ -22,6 +22,7 @@ import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAle
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import dynamic from "next/dynamic";
 // Lazy-loaded: the builder pulls in react-markdown (via WelcomeKitRenderer)
 // that only the rarely-opened Welcome Kit tab needs.
@@ -176,10 +177,19 @@ export default function UsersPage() {
     refetchIntervalInBackground: false,
   });
 
-  const { data: clients = [], isLoading } = useQuery({
+  const {
+    data: clients = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["admin-users"],
     queryFn: fetchClients,
-    staleTime: 30_000,
+    // The server-side directory build is expensive (~9 queries + invoice
+    // reconciliation) — don't re-trigger it on every tab refocus; mutations
+    // invalidate this key explicitly.
+    staleTime: 600_000,
+    refetchOnWindowFocus: false,
     enabled: tab === "clients",
   });
 
@@ -311,7 +321,12 @@ export default function UsersPage() {
 
             <ClientFilters value={filters} onChange={setFilters} />
 
-            {isLoading ? (
+            {isError ? (
+              <QueryErrorState
+                title="Couldn't load the Client Directory"
+                onRetry={() => refetch()}
+              />
+            ) : isLoading ? (
               <div className="rounded-xl border border-border/50 bg-card p-8">
                 <div className="space-y-3">
                   {[1, 2, 3, 4, 5, 6].map((i) => (

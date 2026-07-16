@@ -31,7 +31,7 @@ export default async function PublicWelcomeKitPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen overflow-x-hidden bg-background">
       <div className="container mx-auto max-w-7xl p-4 pb-24 md:p-6 md:pb-12">
         <WelcomeKitRenderer doc={doc} variant="public" />
       </div>

@@ -2,7 +2,10 @@ import {
   buildClientDirectory,
   type ClientDirectoryRow,
 } from "./clientDirectory";
-import { effectiveMrrCents, setClientTeam } from "./clientProfile";
+import { effectiveMrrCents } from "./clientProfile";
+import { getDb, ensureMigrated } from "./db";
+import { randomUUID } from "crypto";
+import type { InValue } from "@libsql/client";
 import type { RebillStatus } from "./clientBilling";
 import {
   classifyRebill,
@@ -306,21 +309,51 @@ function summarizeMember(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Short-lived memo of the Client Directory rows shared by the team surfaces.
+// A timeframe toggle (today/week/month) or an overview→hub navigation only
+// changes the day-window rollups — cheap CPU over the same rows — so re-running
+// the full directory pipeline (~9 queries + reconciliation) per view is waste.
+// 15s is short enough that cross-page roster edits appear promptly; team-side
+// mutations that change assignments invalidate explicitly.
+// ---------------------------------------------------------------------------
+const DIRECTORY_MEMO_TTL_MS = 15_000;
+let directoryMemo: { at: number; rows: Promise<ClientDirectoryRow[]> } | null =
+  null;
+
+function getDirectoryRowsMemo(): Promise<ClientDirectoryRow[]> {
+  const now = Date.now();
+  if (directoryMemo && now - directoryMemo.at < DIRECTORY_MEMO_TTL_MS) {
+    return directoryMemo.rows;
+  }
+  const rows = buildClientDirectory();
+  directoryMemo = { at: now, rows };
+  // A failed build must not be served for the next 15s.
+  rows.catch(() => {
+    directoryMemo = null;
+  });
+  return rows;
+}
+
+/** Call after any write that changes client→team attribution. */
+export function invalidateTeamDirectoryMemo(): void {
+  directoryMemo = null;
+}
+
 export async function buildTeamDirectory(
   timeframe: TeamTimeframe
 ): Promise<TeamDirectory> {
   const today = businessTodayYmd();
   const window = timeframeWindow(timeframe, today);
 
-  const rows = await buildClientDirectory();
+  const rows = await getDirectoryRowsMemo();
 
-  // The sweep reads the fresh rows and may create/solve system items — run it
-  // BEFORE the stat queries so the KPIs reflect its output. Never fatal.
-  try {
-    await runTeamSystemSweep(rows);
-  } catch (err) {
+  // The sweep reads the fresh rows and may create/solve system items.
+  // Fire-and-forget: a read path must never wait on (or fail because of) it —
+  // its output simply shows on the NEXT load. Idempotent via dedup_key.
+  void runTeamSystemSweep(rows).catch((err) => {
     console.error("[teamHub] system sweep failed", err);
-  }
+  });
 
   const month = today.slice(0, 7);
   const [members, taskStats, unsolvedCounts, goals, unrostered, monthRebilledCents] =
@@ -417,7 +450,7 @@ export async function buildMemberHub(
   const window = timeframeWindow(timeframe, today);
   const goalMonth = today.slice(0, 7);
 
-  const rows = await buildClientDirectory();
+  const rows = await getDirectoryRowsMemo();
   const clients = attributedClients(member, rows);
 
   const [taskStats, unsolvedCounts, goalCents, goalHistory, monthRebilledCents] =
@@ -547,10 +580,28 @@ export async function autoSplitCsmBook(
     });
   }
 
-  if (opts.confirm) {
-    for (const a of assignments) {
-      await setClientTeam(a.clientId, "csm", [a.adminId], actor.id);
-    }
+  if (opts.confirm && assignments.length > 0) {
+    // One atomic batch for the whole split — the same DELETE+INSERT pairs
+    // setClientTeam issues per client, folded into a single Turso round-trip
+    // (a per-client await loop costs N sequential writes and leaves a
+    // partial-failure window).
+    await ensureMigrated();
+    const db = getDb();
+    await db.batch(
+      assignments.flatMap((a) => [
+        {
+          sql: "DELETE FROM client_team WHERE user_id = ? AND role = 'csm'",
+          args: [a.clientId] as InValue[],
+        },
+        {
+          sql: `INSERT INTO client_team (id, user_id, admin_id, role, assigned_by)
+                VALUES (?, ?, ?, 'csm', ?)`,
+          args: [randomUUID(), a.clientId, a.adminId, actor.id] as InValue[],
+        },
+      ]),
+      "write"
+    );
+    invalidateTeamDirectoryMemo();
   }
 
   return { assignments, applied: opts.confirm };

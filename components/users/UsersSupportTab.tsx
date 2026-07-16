@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Loader2,
   Star,
+  ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Clock,
@@ -93,7 +94,7 @@ function ConversationsView({
   onSelect,
 }: {
   selectedUserId: string | null;
-  onSelect: (userId: string) => void;
+  onSelect: (userId: string | null) => void;
 }) {
   const { data: inbox = [], isLoading } = useQuery<InboxEntry[]>({
     queryKey: ["admin-support-inbox"],
@@ -109,8 +110,16 @@ function ConversationsView({
   });
 
   return (
+    // Below md this is a two-screen flow: inbox OR thread, never both stacked
+    // (the stacked layout gave no feedback on select and stranded the composer
+    // mid-page under the keyboard).
     <div className="grid grid-cols-1 md:grid-cols-12 min-h-[600px]">
-      <div className="md:col-span-4 lg:col-span-3 border-r border-border/50 max-h-[640px] overflow-y-auto">
+      <div
+        className={cn(
+          "md:col-span-4 lg:col-span-3 border-r border-border/50 max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
+          selectedUserId && "hidden md:block"
+        )}
+      >
         {isLoading ? (
           <div className="flex h-32 items-center justify-center">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -135,12 +144,22 @@ function ConversationsView({
         )}
       </div>
 
-      <div className="md:col-span-8 lg:col-span-9">
+      <div className={cn("md:col-span-8 lg:col-span-9", !selectedUserId && "hidden md:block")}>
         {selectedUserId ? (
-          // key forces a fresh mount on switch — without it, React reuses the
-          // ConversationThread instance and the cursor ref / messages state
-          // from the previous client briefly leak into the new view.
-          <ConversationThread key={selectedUserId} userId={selectedUserId} />
+          <>
+            <button
+              type="button"
+              onClick={() => onSelect(null)}
+              className="md:hidden flex w-full items-center gap-1.5 border-b border-border/50 px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              All conversations
+            </button>
+            {/* key forces a fresh mount on switch — without it, React reuses the
+                ConversationThread instance and the cursor ref / messages state
+                from the previous client briefly leak into the new view. */}
+            <ConversationThread key={selectedUserId} userId={selectedUserId} />
+          </>
         ) : (
           <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
             <MessageSquare className="h-10 w-10 opacity-30" />
@@ -402,7 +421,7 @@ function ConversationThread({ userId }: { userId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-[640px]">
+    <div className="flex flex-col h-[calc(100dvh-16rem)] md:h-[640px]">
       <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
@@ -560,7 +579,12 @@ function FeedbackView({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 min-h-[600px]">
-      <div className="md:col-span-5 border-r border-border/50 max-h-[640px] overflow-y-auto">
+      <div
+        className={cn(
+          "md:col-span-5 border-r border-border/50 max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
+          selected && "hidden md:block"
+        )}
+      >
         <div className="px-4 py-3 border-b border-border/50 flex items-center gap-1 flex-wrap">
           <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
             All
@@ -596,24 +620,34 @@ function FeedbackView({
         )}
       </div>
 
-      <div className="md:col-span-7">
+      <div className={cn("md:col-span-7", !selected && "hidden md:block")}>
         {selected ? (
-          // key forces fresh state per feedback item — otherwise replyBody
-          // typed on item A would still be sitting in the textarea after
-          // clicking item B.
-          <FeedbackDetail
-            key={selected.id}
-            item={selected}
-            onChange={() => {
-              void queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
-            }}
-            onDeleted={() => {
-              // Clear the lifted selection so the detail pane reverts to the
-              // empty placeholder instead of holding a stale id.
-              onSelect("");
-              void queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
-            }}
-          />
+          <>
+            <button
+              type="button"
+              onClick={() => onSelect("")}
+              className="md:hidden flex w-full items-center gap-1.5 border-b border-border/50 px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              All feedback
+            </button>
+            {/* key forces fresh state per feedback item — otherwise replyBody
+                typed on item A would still be sitting in the textarea after
+                clicking item B. */}
+            <FeedbackDetail
+              key={selected.id}
+              item={selected}
+              onChange={() => {
+                void queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
+              }}
+              onDeleted={() => {
+                // Clear the lifted selection so the detail pane reverts to the
+                // empty placeholder instead of holding a stale id.
+                onSelect("");
+                void queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
+              }}
+            />
+          </>
         ) : (
           <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
             <Star className="h-10 w-10 opacity-30" />
@@ -788,7 +822,7 @@ function FeedbackDetail({
         : "text-amber-600 dark:text-amber-400";
 
   return (
-    <div className="flex flex-col h-[640px]">
+    <div className="flex flex-col h-[calc(100dvh-16rem)] md:h-[640px]">
       <div className="px-5 py-4 border-b border-border/50">
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <div className="min-w-0">

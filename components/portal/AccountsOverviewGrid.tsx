@@ -15,12 +15,13 @@ interface AccountsOverviewGridProps {
 }
 
 export function AccountsOverviewGrid({ accounts, selectedAccountId, onSelectAccount }: AccountsOverviewGridProps) {
-  if (accounts.length <= 1) return null;
-
+  // Hooks must run unconditionally — the single-account early return comes after.
   const aggregated = useMemo(
     () => aggregateInsights(accounts.map((a) => a.metrics)),
     [accounts]
   );
+
+  if (accounts.length <= 1) return null;
 
   const isAllSelected = selectedAccountId === ALL_ACCOUNTS_ID;
 

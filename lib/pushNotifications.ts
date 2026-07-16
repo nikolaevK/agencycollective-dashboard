@@ -1,5 +1,5 @@
 import crypto from "crypto";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line -- web-push has no ESM build; CJS require is intentional
 const webpush = require("web-push");
 import { getDb, ensureMigrated } from "./db";
 

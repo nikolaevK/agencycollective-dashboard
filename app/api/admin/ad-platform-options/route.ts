@@ -1,8 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import {
   listCustomAdPlatformOptions,
   addCustomAdPlatformOption,
@@ -10,16 +8,13 @@ import {
   removeCustomAdPlatformOption,
 } from "@/lib/adPlatformOptions";
 import { logAuditEvent } from "@/lib/auditLog";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 /** Custom ad-platform options (built-ins live in the client bundle). */
 export async function GET() {

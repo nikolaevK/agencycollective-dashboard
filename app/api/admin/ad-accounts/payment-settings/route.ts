@@ -1,20 +1,13 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import {
   getAdAccountPaymentTemplates,
   setAdAccountPaymentTemplate,
   resetAdAccountPaymentTemplate,
 } from "@/lib/agencyConfig";
 import type { PaymentInfo, PaymentType } from "@/types/invoice";
-
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
 
 // Every editable PaymentInfo field. `paymentType` is set server-side, not trusted.
 const STRING_FIELDS = [

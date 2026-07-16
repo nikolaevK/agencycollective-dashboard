@@ -1,18 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import { buildClientDirectory } from "@/lib/clientDirectory";
 import { isRebillAlertStatus } from "@/lib/clientBilling";
 import { listDueReminders } from "@/lib/clientNotes";
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
 /**
  * Live-computed re-bill alerts: ACTIVE clients whose next bill is due/overdue

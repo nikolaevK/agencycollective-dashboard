@@ -121,6 +121,10 @@ function RenderBarChart({ data, metrics, xAxisKey }: { data: Record<string, unkn
 
 function RenderPieChart({ data, metrics, isDoughnut }: { data: Record<string, unknown>[]; metrics: string[]; isDoughnut: boolean }) {
   const dataKey = metrics[0] ?? "value";
+  // Outside labels clip at both edges inside the fixed-height overflow-hidden
+  // container on narrow screens — rely on the tooltip there instead.
+  const showLabels =
+    typeof window === "undefined" || window.innerWidth >= 480;
   return (
     <ResponsiveContainer>
       <PieChart>
@@ -133,10 +137,13 @@ function RenderPieChart({ data, metrics, isDoughnut }: { data: Record<string, un
           innerRadius={isDoughnut ? 50 : 0}
           outerRadius={90}
           paddingAngle={2}
-          label={({ name, value, percent }) =>
-            `${name}: ${formatLabel(value)} (${(percent * 100).toFixed(0)}%)`
+          label={
+            showLabels
+              ? ({ name, value, percent }) =>
+                  `${name}: ${formatLabel(value)} (${(percent * 100).toFixed(0)}%)`
+              : false
           }
-          labelLine
+          labelLine={showLabels}
         >
           {data.map((_, i) => (
             <Cell key={i} fill={COLORS[i % COLORS.length]} />

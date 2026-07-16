@@ -268,7 +268,7 @@ export function AdAccountsDirectory() {
           placeholder="Search account, vendor, client…"
           className="w-full sm:flex-1 sm:max-w-sm rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setGuideOpen(true)}
             className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -489,7 +489,7 @@ export function AdAccountsDirectory() {
                   </Field>
                 </div>
 
-                <div className="flex items-center justify-end gap-1 border-t border-border/50 pt-2">
+                <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-2">
                   <IconBtn title="Invoices" onClick={() => setInvoicesRow(row)}>
                     <ReceiptText className="h-4 w-4" />
                   </IconBtn>
@@ -615,7 +615,8 @@ function IconBtn({
       aria-label={title}
       onClick={onClick}
       className={cn(
-        "p-1.5 rounded-md text-muted-foreground transition-colors",
+        // 40px touch target on phones, dense on desktop where a pointer is precise.
+        "p-2.5 md:p-1.5 rounded-md text-muted-foreground transition-colors",
         danger
           ? "hover:bg-destructive/10 hover:text-destructive"
           : "hover:bg-muted hover:text-foreground"

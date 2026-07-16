@@ -1,11 +1,10 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApiResponse } from "@/types/api";
 import type { AccountSummary } from "@/types/dashboard";
 import type { DateRangeInput } from "@/types/api";
 import { dateRangeCacheKey } from "@/lib/utils";
-import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
+import { META_QUERY_STALE_MS, fetchApi } from "@/lib/queryConfig";
 
 async function fetchAccounts(dateRange: DateRangeInput): Promise<AccountSummary[]> {
   const params = new URLSearchParams();
@@ -16,29 +15,7 @@ async function fetchAccounts(dateRange: DateRangeInput): Promise<AccountSummary[
     params.set("until", dateRange.until);
   }
 
-  const res = await fetch(`/api/accounts?${params.toString()}`);
-
-  if (res.status === 429) {
-    const retryAfter = res.headers.get("Retry-After");
-    const err = new Error("Rate limit exceeded") as Error & { status: number; retryAfter?: number };
-    err.status = 429;
-    if (retryAfter) err.retryAfter = parseInt(retryAfter, 10);
-    throw err;
-  }
-
-  if (res.status === 401) {
-    const err = new Error("Token expired or invalid") as Error & { status: number };
-    err.status = 401;
-    throw err;
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
-  }
-
-  const json: ApiResponse<AccountSummary[]> = await res.json();
-  return json.data;
+  return fetchApi<AccountSummary[]>(`/api/accounts?${params.toString()}`);
 }
 
 export function useAccounts(dateRange: DateRangeInput) {

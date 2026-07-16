@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChipPopover } from "@/components/users/ChipPopover";
 import { useMetaAccountOptions } from "@/hooks/useMetaAccountOptions";
 import { MetaAccountFormModal } from "./MetaAccountFormModal";
 import { MetaAccountOptionsModal } from "./MetaAccountOptionsModal";
@@ -319,13 +320,130 @@ export function MetaAccountsDirectory() {
         </div>
       )}
 
+      {/* Mobile card list — the 1500px table is unusable on a phone */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          [1, 2, 3].map((i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl border border-border/50 bg-muted/40" />
+          ))
+        ) : paginated.length === 0 ? (
+          <div className="rounded-xl border border-border/50 bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+            {rows.length === 0
+              ? "No accounts yet. Import a sheet or click “Add account”."
+              : "No accounts match your filters."}
+          </div>
+        ) : (
+          paginated.map((row) => (
+            <div key={row.id} className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-3.5 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-foreground break-all">{row.fbEmail}</p>
+                    {row.profileLink && (
+                      <a
+                        href={row.profileLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 text-muted-foreground hover:text-primary"
+                        aria-label="Open FB profile"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
+                  {row.recoveryEmail && (
+                    <p className="text-xs text-muted-foreground break-all">↳ {row.recoveryEmail}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <IconBtn title="Edit" onClick={() => setEditing(row)}>
+                    <Pencil className="h-4 w-4" />
+                  </IconBtn>
+                  <IconBtn title="Remove" danger onClick={() => handleDelete(row)}>
+                    <Trash2 className="h-4 w-4" />
+                  </IconBtn>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <InlineChipSelect
+                  value={row.stage}
+                  options={stages}
+                  labels={stageLabels}
+                  colors={stageColors}
+                  placeholder="Set stage"
+                  onChange={(v) => patchAccount(row.id, { stage: v })}
+                />
+                <InlineChipSelect
+                  value={row.status}
+                  options={statuses}
+                  labels={statusLabels}
+                  colors={statusColors}
+                  placeholder="Set status"
+                  onChange={(v) => patchAccount(row.id, { status: v })}
+                />
+              </div>
+
+              <SetupToggles row={row} onPatch={(c) => patchAccount(row.id, c)} expanded />
+
+              <div className="grid grid-cols-1 gap-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Password</span>
+                  <Secret value={row.fbPassword} />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">2FA secret</span>
+                  <Secret value={row.twofaSecret} link={row.twofaLink} />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Mail pw</span>
+                  <Secret value={row.mailPassword} />
+                </div>
+                {row.bmId && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">BM ID</span>
+                    <CopyText value={row.bmId} className="text-xs font-mono text-foreground" />
+                  </div>
+                )}
+                {row.assignee && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Access</span>
+                    <span className="text-foreground">{row.assignee}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
+                <span className="text-xs text-muted-foreground">Client</span>
+                <select
+                  value={row.clientId ?? ""}
+                  onChange={(e) => patchAccount(row.id, { clientId: e.target.value || null })}
+                  className="min-w-0 max-w-[60%] rounded-md border border-border bg-background px-1.5 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                >
+                  <option value="">— Unassigned —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {row.notes && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">{row.notes}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
       {/* Table */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+      <div className="hidden md:block rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[1500px]">
             <thead>
               <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
-                <Th className="pl-4">Account</Th>
+                <Th className="pl-4 sticky left-0 z-20 bg-muted/30 dark:bg-white/[0.03]">Account</Th>
                 <Th>Password</Th>
                 <Th>2FA secret</Th>
                 <Th>Mail pw</Th>
@@ -361,7 +479,7 @@ export function MetaAccountsDirectory() {
                     key={row.id}
                     className="border-b border-border/50 dark:border-white/[0.06] hover:bg-muted/20 transition-colors align-top"
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 sticky left-0 z-10 bg-card">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-semibold text-foreground truncate max-w-[220px]">{row.fbEmail}</p>
                         {row.profileLink && (
@@ -457,9 +575,12 @@ export function MetaAccountsDirectory() {
             </tbody>
           </table>
         </div>
+      </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border/50">
+      {/* Pagination — shared by the mobile cards and the desktop table */}
+      {totalPages > 1 && (
+        <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card">
+          <div className="flex items-center justify-between px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">
               Showing {paginated.length} of {filtered.length}
             </p>
@@ -483,8 +604,8 @@ export function MetaAccountsDirectory() {
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showAdd && (
@@ -638,14 +759,16 @@ function InlineChipSelect({
   placeholder: string;
   onChange: (value: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // Rendered through the portal-based ChipPopover so the menu isn't clipped
+  // by (or dragged along with) the table's overflow-x-auto scroll container.
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const label = value ? labels[value] ?? value : null;
   const color = value ? colors[value] : undefined;
 
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         className={cn(
           value ? cn(CHIP_BASE, chipClass(color)) : "text-xs text-muted-foreground italic px-2 py-0.5",
           "hover:opacity-80"
@@ -653,16 +776,15 @@ function InlineChipSelect({
       >
         {label ?? placeholder}
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-7 z-20 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-lg">
+      {anchor && (
+        <ChipPopover anchor={anchor} onClose={() => setAnchor(null)} width={200}>
+          <div className="p-1">
             {options.map((o) => (
               <button
                 key={o.value}
                 onClick={() => {
                   onChange(o.value === value ? null : o.value);
-                  setOpen(false);
+                  setAnchor(null);
                 }}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
@@ -676,7 +798,7 @@ function InlineChipSelect({
               <button
                 onClick={() => {
                   onChange(null);
-                  setOpen(false);
+                  setAnchor(null);
                 }}
                 className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
               >
@@ -684,19 +806,25 @@ function InlineChipSelect({
               </button>
             )}
           </div>
-        </>
+        </ChipPopover>
       )}
     </div>
   );
 }
 
-/** Five setup steps as toggleable letter badges: L P A B C. */
+/**
+ * Five setup steps as toggleable badges: letters (L P A B C) in the dense
+ * table, spelled-out labels when `expanded` (the mobile cards — letters alone
+ * carry no meaning on touch, where title-tooltips don't exist).
+ */
 function SetupToggles({
   row,
   onPatch,
+  expanded,
 }: {
   row: MetaAccountDirectoryRow;
   onPatch: (changes: MetaAccountInput) => void;
+  expanded?: boolean;
 }) {
   const steps: { key: keyof MetaAccountInput; letter: string; title: string; on: boolean }[] = [
     { key: "loginOk", letter: "L", title: "Login OK", on: row.loginOk },
@@ -706,20 +834,21 @@ function SetupToggles({
     { key: "cardAdded", letter: "C", title: "Card added", on: row.cardAdded },
   ];
   return (
-    <div className="flex items-center gap-1">
+    <div className={cn("flex items-center gap-1", expanded && "flex-wrap gap-1.5")}>
       {steps.map((s) => (
         <button
           key={s.key}
           title={`${s.title}: ${s.on ? "yes" : "no"}`}
           onClick={() => onPatch({ [s.key]: !s.on } as MetaAccountInput)}
           className={cn(
-            "h-6 w-6 rounded-md text-[11px] font-bold flex items-center justify-center transition-colors",
+            "rounded-md font-bold flex items-center justify-center transition-colors",
+            expanded ? "h-8 px-2.5 text-[11px]" : "h-8 w-8 text-[11px]",
             s.on
               ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
               : "bg-muted text-muted-foreground/50 hover:text-muted-foreground"
           )}
         >
-          {s.letter}
+          {expanded ? s.title : s.letter}
         </button>
       ))}
     </div>
@@ -732,12 +861,17 @@ function Secret({ value, link }: { value: string | null; link?: string | null })
   if (!value) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <div className="flex items-center gap-1">
-      <span className="text-xs font-mono text-foreground max-w-[130px] truncate" title={shown ? value : undefined}>
+      <span
+        className={cn(
+          "text-xs font-mono text-foreground",
+          shown ? "max-w-[220px] break-all" : "max-w-[130px] truncate"
+        )}
+      >
         {shown ? value : "••••••••"}
       </span>
       <button
         onClick={() => setShown((s) => !s)}
-        className="p-1 rounded text-muted-foreground hover:text-foreground"
+        className="p-2 -m-0.5 rounded text-muted-foreground hover:text-foreground"
         title={shown ? "Hide" : "Reveal"}
       >
         {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}

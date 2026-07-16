@@ -2,21 +2,16 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import {
+
   clearWelcomeKitPdf,
   getWelcomeKitRecord,
   setWelcomeKitPdf,
   MAX_WELCOME_KIT_PDF_BYTES,
 } from "@/lib/welcomeKit";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 /** Upload (or replace) the Welcome Kit's downloadable PDF (multipart `file`). */
 export async function POST(request: Request) {

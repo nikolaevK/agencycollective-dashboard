@@ -124,6 +124,31 @@ function matchHistories(
 }
 
 /**
+ * Qualifying re-bill months for a client: REBILL-flagged payouts whose
+ * amount_due matches the brand's recurring re-bill amount (its most recent
+ * REBILL month — the established baseline), evaluated PER BRAND. This is the
+ * single definition of "the recurring bill was actually paid" — it feeds BOTH
+ * the schedule's `paidMonths` and invoice reconciliation, so a one-off
+ * non-REBILL payout can never promote a sent invoice to `paid`.
+ */
+function qualifyingRebillMonths(
+  matched: BrandHistory[],
+  rebillByBrand: RebillMonthsByBrand
+): Array<{ year: number; month: number }> {
+  return matched.flatMap((h) => {
+    const months = rebillByBrand.get(h.normalizedName) ?? [];
+    if (months.length === 0) return [];
+    const sorted = [...months].sort(
+      (a, b) => a.year - b.year || a.month - b.month
+    );
+    const baseline = sorted[sorted.length - 1].amountDue;
+    return sorted
+      .filter((m) => m.amountDue === baseline)
+      .map((m) => ({ year: m.year, month: m.month }));
+  });
+}
+
+/**
  * Build one enriched directory row. Pure assembly given the inputs — shared by
  * the full-directory build and the single-client detail so both compute MRR and
  * the re-bill schedule identically. Returns the matched payout brand timelines
@@ -212,17 +237,7 @@ function buildRow(
   // established baseline), evaluated PER BRAND so a multi-brand client or a
   // month with mixed rebill/non-rebill rows still resolves correctly. A
   // matching REBILL payment marks the client `paid` until the next re-bill date.
-  const paidMonths = matched.flatMap((h) => {
-    const months = rebillByBrand.get(h.normalizedName) ?? [];
-    if (months.length === 0) return [];
-    const sorted = [...months].sort(
-      (a, b) => a.year - b.year || a.month - b.month
-    );
-    const baseline = sorted[sorted.length - 1].amountDue;
-    return sorted
-      .filter((m) => m.amountDue === baseline)
-      .map((m) => ({ year: m.year, month: m.month }));
-  });
+  const paidMonths = qualifyingRebillMonths(matched, rebillByBrand);
 
   const schedule = computeRebillSchedule({
     anchorDate: joinedAt,
@@ -279,8 +294,29 @@ function buildRow(
  * Build the full Client Directory — one enriched row per client. Shared by the
  * directory list endpoint and the re-bill alert computation so both see the
  * same numbers.
+ *
+ * Single-flight: one page load fires several routes (users, rebill-alerts,
+ * sent-invoices) that each need the directory — concurrent default-`today`
+ * callers share one in-flight build instead of each paying the full pipeline
+ * (~9 parallel queries + reconciliation). No TTL cache on purpose: mutations
+ * invalidate client queries and the refetch must observe fresh data.
  */
+let inflightDirectoryBuild: Promise<ClientDirectoryRow[]> | null = null;
+
 export async function buildClientDirectory(
+  today?: Date
+): Promise<ClientDirectoryRow[]> {
+  // An explicit `today` is a different input — bypass the shared build.
+  if (today) return buildClientDirectoryNow(today);
+  if (inflightDirectoryBuild) return inflightDirectoryBuild;
+  const build = buildClientDirectoryNow().finally(() => {
+    inflightDirectoryBuild = null;
+  });
+  inflightDirectoryBuild = build;
+  return build;
+}
+
+async function buildClientDirectoryNow(
   today?: Date
 ): Promise<ClientDirectoryRow[]> {
   // Billing-cycle math runs in the business timezone (see businessTime.ts), not
@@ -339,10 +375,13 @@ export async function buildClientDirectory(
       const invoice = invoiceMap.get(user.id) ?? null;
       if (!invoice) return [user.id, null] as const;
       const matched = matchedByUser.get(user.id) ?? [];
-      const payoutMonths = matched.flatMap((h) =>
-        h.months.map((m) => ({ year: m.year, month: m.month }))
+      // Reconcile against qualifying REBILL months only — an unrelated one-off
+      // payout must not mark a sent re-bill invoice as paid (mirrors the
+      // schedule's paidMonths and the ad-account directory's flagged filter).
+      const updated = await reconcileInvoiceForUser(
+        invoice,
+        qualifyingRebillMonths(matched, rebillByBrand)
       );
-      const updated = await reconcileInvoiceForUser(invoice, payoutMonths);
       return [user.id, updated] as const;
     })
   );
@@ -399,13 +438,14 @@ export async function getClientDetail(
       listAdAccountsForUser(userId),
     ]);
 
-  // Reconcile this user's invoice against their payouts before building the
-  // row so a freshly-recognised payment promotes status before render.
+  // Reconcile this user's invoice against their qualifying REBILL payouts
+  // before building the row so a freshly-recognised payment promotes status
+  // before render (one-off non-REBILL payouts deliberately don't qualify).
   const matchedHistories = matchHistories(user, histories);
-  const payoutMonths = matchedHistories.flatMap((h) =>
-    h.months.map((m) => ({ year: m.year, month: m.month }))
+  const invoice = await reconcileInvoiceForUser(
+    rawInvoice,
+    qualifyingRebillMonths(matchedHistories, rebillByBrand)
   );
-  const invoice = await reconcileInvoiceForUser(rawInvoice, payoutMonths);
 
   const { row, matched } = buildRow(
     user,

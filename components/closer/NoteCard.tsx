@@ -82,6 +82,13 @@ const markdownComponents = {
   code: (p: { children?: React.ReactNode }) => (
     <code className="px-1 py-0.5 rounded bg-muted text-xs font-mono">{p.children}</code>
   ),
+  // Fenced code blocks default to white-space: pre with no scroll container
+  // and would overflow the card horizontally on phones.
+  pre: (p: { children?: React.ReactNode }) => (
+    <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs font-mono my-2 [&_code]:bg-transparent [&_code]:p-0">
+      {p.children}
+    </pre>
+  ),
   a: (p: { children?: React.ReactNode; href?: string }) => (
     <a
       href={p.href}
@@ -226,14 +233,14 @@ export function NoteCard({
             <>
               <button
                 onClick={onEdit}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                className="flex h-10 w-10 md:h-8 md:w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 aria-label="Edit note"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={onDelete}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 transition-colors"
+                className="flex h-10 w-10 md:h-8 md:w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 transition-colors"
                 aria-label="Delete note"
               >
                 <Trash2 className="h-3.5 w-3.5" />

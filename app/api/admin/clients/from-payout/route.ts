@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic";
 
 import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import {
   slugify,
@@ -16,12 +14,7 @@ import {
 import { normalizeBrandName, findLatestSourceDealIdForBrand } from "@/lib/payouts";
 import { findDeal } from "@/lib/deals";
 import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
 /**
  * Create a client seeded from a Payout-DB brand. Uses the SAME creation

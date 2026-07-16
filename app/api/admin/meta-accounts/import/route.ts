@@ -4,14 +4,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import { parseSpreadsheet } from "@/lib/spreadsheet";
 import { mapSpreadsheetToAccounts } from "@/lib/metaAccountImport";
 import { bulkCreateMetaAccounts, listMetaAccountEmails } from "@/lib/metaAccounts";
 import { listMetaAccountOptions } from "@/lib/metaAccountOptions";
 import { logAuditEvent } from "@/lib/auditLog";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+
 
 // Vercel serverless rejects request bodies over ~4.5 MB BEFORE the handler
 // runs — keep our cap under it so users see this route's error, not a raw
@@ -21,11 +21,6 @@ const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
 // oversized body never allocates the decoded Buffer.
 const MAX_BASE64_CHARS = Math.ceil((MAX_BYTES * 4) / 3) + 4;
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

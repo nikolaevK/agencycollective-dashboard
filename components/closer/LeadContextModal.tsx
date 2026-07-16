@@ -24,6 +24,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DEAL_STATUS_STYLES } from "@/components/closers/DealStatusBadge";
 import {
   PRE_CALL_BADGE,
   PRE_CALL_LABELS,
@@ -110,13 +111,6 @@ interface Props {
   onClose: () => void;
 }
 
-const DEAL_STATUS_STYLES: Record<string, string> = {
-  closed: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  not_closed: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
-  pending_signature: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-  rescheduled: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
-  follow_up: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
-};
 
 const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
   accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },

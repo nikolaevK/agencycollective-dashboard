@@ -425,7 +425,6 @@ function PortalLoginContent({ roleKeys, hero, welcome }: PortalLoginProps) {
                       onChange={(e) => setIdentity(e.target.value)}
                       placeholder={config.identityPlaceholder}
                       required
-                      autoFocus
                       autoComplete={config.identityAutoComplete}
                       className="block w-full pl-11 pr-4 py-3.5 bg-[#eaf1ff] border-2 border-transparent rounded-xl focus:ring-0 focus:border-[#702ae1] focus:bg-white text-[#203044] placeholder:text-[#9eaec7] transition-all outline-none text-sm"
                     />

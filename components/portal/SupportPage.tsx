@@ -66,7 +66,9 @@ export function SupportPage() {
   });
 
   return (
-    <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
+    // pb-28 clears the fixed PortalBottomNav (~84px + safe-area) on phones —
+    // this page renders its own <main> instead of DashboardShell.
+    <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background p-4 pb-28 md:p-8 md:pb-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-6">
           <h1 className="text-2xl md:text-3xl font-black tracking-tight text-foreground">

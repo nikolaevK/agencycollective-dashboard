@@ -64,7 +64,7 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
   const isLifetimeWindow = timeFrame.key === "all";
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-8 pb-24 md:px-6 md:pb-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">
@@ -120,7 +120,7 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       {!readOnly && (
         <Link
           href="/closer/new-deal"
-          className="md:hidden fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg shadow-primary/25 active:scale-95 transition-transform"
+          className="md:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg shadow-primary/25 active:scale-95 transition-transform"
           aria-label="New deal"
         >
           <Plus className="h-6 w-6" />

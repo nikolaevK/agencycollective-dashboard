@@ -18,15 +18,8 @@ export function getInitials(displayName: string | null, username: string): strin
     .slice(0, 2);
 }
 
-export function formatCurrency(value: number, currency = "USD"): string {
-  const decimals = Math.abs(value) >= 1_000 ? 0 : 2;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
+import { formatCurrency } from "./format";
+export { formatCurrency };
 
 /** Compact currency: drops cents for values >= 10K, uses K/M suffix for >= 1M */
 export function formatCurrencyCompact(value: number, currency = "USD"): string {

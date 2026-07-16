@@ -6,6 +6,7 @@ import { findCloserByEmail, updateCloser } from "@/lib/closers";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { createCloserSession, CLOSER_SESSION_COOKIE_NAME, CLOSER_SESSION_MAX_AGE } from "@/lib/closerSession";
 import { ensureMigrated } from "@/lib/db";
+import { checkLoginRate } from "@/lib/loginRateLimit";
 
 export async function checkCloserAction(
   email: string
@@ -20,6 +21,9 @@ export async function closerLoginAction(
   email: string,
   password: string
 ): Promise<{ error: string } | undefined> {
+  const rate = checkLoginRate("closer", email);
+  if (!rate.ok) return { error: rate.error! };
+
   await ensureMigrated();
   const closer = await findCloserByEmail(email.trim());
 

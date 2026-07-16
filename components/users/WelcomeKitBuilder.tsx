@@ -351,7 +351,7 @@ export function WelcomeKitBuilder() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Mobile edit/preview switch */}
           <div className="flex bg-muted rounded-lg p-1 xl:hidden">
             <button
@@ -726,8 +726,8 @@ export function WelcomeKitBuilder() {
               <div className="rounded-xl border border-border/60 bg-muted/30 p-3 md:p-4 max-h-[calc(100vh-9rem)] overflow-auto">
                 {/* iframe gives the preview a true 390px viewport so the
                     renderer's responsive breakpoints reflect a real phone. */}
-                <div className="mx-auto w-fit overflow-hidden rounded-[2rem] border-4 border-foreground/10 bg-background shadow-lg">
-                  <div className="h-[680px] w-[390px]">
+                <div className="mx-auto w-fit max-w-full overflow-hidden rounded-[2rem] border-4 border-foreground/10 bg-background shadow-lg">
+                  <div className="h-[min(680px,70dvh)] w-[390px] max-w-[calc(100vw-4.5rem)]">
                     <PreviewFrame width={390}>
                       <div className="bg-background p-3">
                         <WelcomeKitRenderer doc={previewDoc} variant="preview" />

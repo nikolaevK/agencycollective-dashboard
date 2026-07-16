@@ -3,6 +3,7 @@
 import { format, parseISO } from "date-fns";
 import { formatCents } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
+import { DealStatusBadge } from "@/components/closers/DealStatusBadge";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
 import { SETTER_TIER_BADGE } from "@/lib/appointments";
@@ -12,21 +13,6 @@ interface Props {
   deals: SetterRecentDeal[];
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  closed: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  not_closed: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
-  pending_signature: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-  rescheduled: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
-  follow_up: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  closed: "Closed",
-  not_closed: "Not Closed",
-  pending_signature: "Pending",
-  rescheduled: "Rescheduled",
-  follow_up: "Follow Up",
-};
 
 function formatDate(raw: string | null): string {
   if (!raw) return "—";
@@ -92,14 +78,7 @@ export function SetterRecentDeals({ deals }: Props) {
                 </td>
                 <td className="px-4 py-3 font-mono tabular-nums">{formatCents(d.dealValue)}</td>
                 <td className="px-4 py-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
-                      STATUS_STYLES[d.status] ?? STATUS_STYLES.follow_up
-                    )}
-                  >
-                    {STATUS_LABELS[d.status] ?? d.status}
-                  </span>
+                  <DealStatusBadge status={d.status} compact />
                 </td>
                 <td className="px-4 py-3">
                   {d.invoiceStatus ? (

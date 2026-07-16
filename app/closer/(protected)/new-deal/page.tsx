@@ -57,7 +57,7 @@ export default function NewDealPage() {
   const monthRevenue = data?.stats.window.closedRevenue ?? 0;
 
   return (
-    <main className="flex-1 overflow-y-auto">
+    <main className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-6">

@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { ApiResponse, DateRangeInput } from "@/types/api";
+import type { DateRangeInput } from "@/types/api";
 import type { AdRow } from "@/types/dashboard";
 import { dateRangeCacheKey } from "@/lib/utils";
-import { META_QUERY_STALE_MS } from "@/lib/queryConfig";
+import { META_QUERY_STALE_MS, fetchApi } from "@/lib/queryConfig";
 
 async function fetchAds(
   adSetId: string,
@@ -17,16 +17,7 @@ async function fetchAds(
     params.set("until", dateRange.until);
   }
 
-  const res = await fetch(`/api/ads?${params.toString()}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const err = new Error(body.error || `HTTP ${res.status}`) as Error & { status: number };
-    err.status = res.status;
-    throw err;
-  }
-
-  const json: ApiResponse<AdRow[]> = await res.json();
-  return json.data;
+  return fetchApi<AdRow[]>(`/api/ads?${params.toString()}`);
 }
 
 export function useAds(adSetId: string | undefined, dateRange: DateRangeInput) {

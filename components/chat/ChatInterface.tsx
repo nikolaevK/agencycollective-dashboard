@@ -10,12 +10,10 @@ import {
   AlertTriangle,
   Lightbulb,
   BarChart3,
-  Paperclip,
   Bot,
-  Settings,
-  History,
   Wallet,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -270,9 +268,11 @@ function EmptyState({
 function MobileContextBanner({
   accountCount,
   selectedCount,
+  onChange,
 }: {
   accountCount: number;
   selectedCount: number;
+  onChange: () => void;
 }) {
   return (
     <div className="md:hidden mx-6 mb-6 p-4 rounded-xl bg-card shadow-[0_4px_24px_rgba(32,48,68,0.04)] border border-border/30 flex items-center justify-between">
@@ -289,7 +289,10 @@ function MobileContextBanner({
           </p>
         </div>
       </div>
-      <button className="text-primary text-xs font-bold px-3 py-1.5 rounded-full hover:bg-primary/5 transition-all">
+      <button
+        onClick={onChange}
+        className="text-primary text-xs font-bold px-3 py-2 rounded-full hover:bg-primary/5 transition-all"
+      >
         CHANGE
       </button>
     </div>
@@ -383,6 +386,9 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
+  // Mobile bottom sheet hosting the ContextSelector (desktop shows it in the
+  // aside; without this, phones had no way to scope the chat at all).
+  const [showContextSheet, setShowContextSheet] = useState(false);
 
   const selectedAccounts = useMemo(
     () => (allAccounts ?? []).filter((a) => selectedAccountIds.includes(a.id)),
@@ -392,9 +398,23 @@ export function ChatInterface() {
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Only auto-scroll while the user is already near the bottom — during
+  // streaming this effect fires on every token, and unconditional scrolling
+  // made it impossible to scroll up and re-read mid-response.
+  const pinnedToBottomRef = useRef(true);
+
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    pinnedToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (pinnedToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -564,14 +584,7 @@ export function ChatInterface() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Chat history">
-              <History className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <button className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Settings">
-              <Settings className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
+          <ModelPicker model={model} onChange={setModel} disabled={isLoading} />
         </div>
 
         {/* Desktop toolbar */}
@@ -588,11 +601,16 @@ export function ChatInterface() {
           <MobileContextBanner
             accountCount={allAccounts.length}
             selectedCount={selectedAccountIds.length}
+            onChange={() => setShowContextSheet(true)}
           />
         )}
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 md:px-8 py-6 space-y-6 pb-[calc(11rem+env(safe-area-inset-bottom))] md:pb-6">
+        <div
+          ref={listRef}
+          onScroll={handleListScroll}
+          className="flex-1 overflow-y-auto px-6 md:px-8 py-6 space-y-6"
+        >
           {messages.length === 0 ? (
             <EmptyState onPrompt={sendMessage} selectedAccounts={selectedAccounts} />
           ) : (
@@ -625,17 +643,17 @@ export function ChatInterface() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input area — fixed on mobile, static on desktop */}
-        <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] left-0 right-0 bg-background/90 backdrop-blur-md px-6 py-4 md:relative md:bottom-auto md:bg-transparent md:backdrop-blur-none md:border-t md:border-border md:px-8 md:py-4 z-30">
+        {/* Input area — in normal flow at the panel bottom on all sizes.
+            (The old mobile branch was position:fixed with hard-coded offsets
+            matched to BottomNav — brittle, and on iOS a fixed bar detaches
+            from the on-screen keyboard.) The mobile bottom padding clears the
+            fixed BottomNav overlay. */}
+        <div className="bg-background/90 backdrop-blur-md px-6 py-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:bg-transparent md:backdrop-blur-none md:border-t md:border-border md:px-8 md:pb-4">
           <div className="max-w-3xl mx-auto">
             <div className={cn(
               "relative flex items-center focus-within:ring-2 focus-within:ring-primary/20 transition-all",
               "rounded-full bg-muted/50 md:rounded-2xl md:border md:border-border/50 md:bg-card md:px-3 md:py-2 md:shadow-xl md:shadow-primary/5"
             )}>
-              {/* Paperclip — absolute on mobile, flow on desktop */}
-              <button className="absolute left-4 md:relative md:left-auto p-2 text-muted-foreground hover:text-primary transition-colors shrink-0" aria-label="Attach file">
-                <Paperclip className="h-4 w-4" />
-              </button>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -643,8 +661,7 @@ export function ChatInterface() {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask AI Analyst anything..."
                 rows={1}
-                disabled={isLoading}
-                className="flex-1 resize-none bg-transparent py-3.5 pl-10 pr-12 md:py-1.5 md:pl-0 md:pr-0 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+                className="flex-1 resize-none bg-transparent py-3.5 pl-4 pr-12 md:py-1.5 md:pl-0 md:pr-0 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                 style={{ maxHeight: "160px" }}
               />
 
@@ -679,6 +696,47 @@ export function ChatInterface() {
           </div>
         </div>
       </div>
+
+      {/* Mobile context bottom sheet */}
+      {showContextSheet && (
+        <div className="md:hidden fixed inset-0 z-[70]">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowContextSheet(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 flex max-h-[80dvh] flex-col rounded-t-2xl border-t border-border bg-background pb-[env(safe-area-inset-bottom)]">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <p className="text-sm font-semibold text-foreground">Data context</p>
+              <button
+                onClick={() => setShowContextSheet(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent"
+                aria-label="Done"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <ContextSelector
+                dateRange={dateRange}
+                selectedAccountIds={selectedAccountIds}
+                selectedCampaignIds={selectedCampaignIds}
+                onAccountToggle={(id) => setSelectedAccountIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
+                onCampaignToggle={(id) => setSelectedCampaignIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
+                onSelectAll={() => { setSelectedAccountIds((allAccounts ?? []).map((a) => a.id)); setSelectedCampaignIds([]); }}
+                onClearAll={() => { setSelectedAccountIds([]); setSelectedCampaignIds([]); }}
+              />
+            </div>
+            <div className="border-t border-border p-3">
+              <button
+                onClick={() => setShowContextSheet(false)}
+                className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

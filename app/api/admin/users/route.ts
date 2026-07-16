@@ -2,16 +2,9 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { deleteUser } from "@/lib/users";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import { buildClientDirectory } from "@/lib/clientDirectory";
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
 
 export async function GET(request: Request) {
   if (!(await requireAdminSession()))

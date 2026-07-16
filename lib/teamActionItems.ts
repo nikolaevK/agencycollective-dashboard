@@ -309,6 +309,13 @@ export async function reassignActionItem(
             WHERE id = ?`,
       args: [toAdminId, toAdminId, item.linkedTask?.status ?? "todo", item.taskId],
     });
+    // A pre-existing tag on the NEW owner would leave them tagged on their
+    // own task (phantom badge in their Tagged tab) — scrub it in the same
+    // atomic batch, mirroring reassignTask.
+    statements.push({
+      sql: "DELETE FROM team_task_tags WHERE task_id = ? AND admin_id = ?",
+      args: [item.taskId, toAdminId],
+    });
   }
   await db.batch(statements, "write");
   return getActionItem(id);
@@ -336,11 +343,18 @@ export async function solveActionItem(
     },
   ];
   if (item.taskId) {
+    // Re-lane sort_pos to the bottom of the target lane, matching every other
+    // status-change path (linked pairs share one owner, so item.adminId is the
+    // task's admin; the task's own row still holds the old status when the
+    // subquery evaluates, so it never counts itself).
     statements.push({
       sql: `UPDATE team_tasks
-            SET status = 'complete', completed_at = ?, updated_at = datetime('now')
+            SET status = 'complete', completed_at = ?,
+                sort_pos = COALESCE((SELECT MAX(sort_pos) FROM team_tasks
+                                     WHERE admin_id = ? AND status = 'complete'), 0) + ${LANE_SPACING},
+                updated_at = datetime('now')
             WHERE id = ? AND status != 'complete'`,
-      args: [now, item.taskId],
+      args: [now, item.adminId, item.taskId],
     });
   }
   await db.batch(statements, "write");
@@ -365,11 +379,15 @@ export async function unsolveActionItem(
     },
   ];
   if (item.taskId) {
+    // Re-lane to the bottom of the todo lane (see solveActionItem).
     statements.push({
       sql: `UPDATE team_tasks
-            SET status = 'todo', completed_at = NULL, updated_at = datetime('now')
+            SET status = 'todo', completed_at = NULL,
+                sort_pos = COALESCE((SELECT MAX(sort_pos) FROM team_tasks
+                                     WHERE admin_id = ? AND status = 'todo'), 0) + ${LANE_SPACING},
+                updated_at = datetime('now')
             WHERE id = ? AND status = 'complete'`,
-      args: [item.taskId],
+      args: [item.adminId, item.taskId],
     });
   }
   await db.batch(statements, "write");
@@ -444,6 +462,28 @@ export async function runTeamSystemSweep(rows: ClientDirectoryRow[]): Promise<vo
   await ensureMigrated();
   const db = getDb();
 
+  // Cross-instance throttle: the in-process timestamp resets on every lambda
+  // cold start, so on serverless the sweep would otherwise run far more often
+  // than intended. Persist the last-run stamp in agency_config; the small
+  // read-then-write race between instances is fine — the sweep is idempotent
+  // via dedup_key.
+  try {
+    const stored = await db.execute({
+      sql: "SELECT config_value FROM agency_config WHERE config_key = ?",
+      args: ["team_sweep_last_run"],
+    });
+    const storedAt = stored.rows.length > 0 ? Number(stored.rows[0].config_value) : 0;
+    if (Number.isFinite(storedAt) && now - storedAt < SWEEP_INTERVAL_MS) return;
+    await db.execute({
+      sql: `INSERT INTO agency_config (id, config_key, config_value, updated_at)
+            VALUES (lower(hex(randomblob(16))), ?, ?, datetime('now'))
+            ON CONFLICT(config_key) DO UPDATE SET config_value = excluded.config_value, updated_at = excluded.updated_at`,
+      args: ["team_sweep_last_run", String(now)],
+    });
+  } catch {
+    // Throttle bookkeeping must never block the sweep itself.
+  }
+
   const members = await listTeamMembers();
   const bookMembers = members.filter((m) => m.attribution === "book");
 
@@ -506,7 +546,7 @@ export async function runTeamSystemSweep(rows: ClientDirectoryRow[]): Promise<vo
   // (the dismissal holds until the condition actually clears).
   try {
     const open = await db.execute(
-      `SELECT id, status, client_id, task_id FROM team_action_items
+      `SELECT id, status, client_id, task_id, admin_id FROM team_action_items
        WHERE dedup_key LIKE 'unassigned_team:%'`
     );
     const stillUnassigned = new Set(unassigned.map((c) => c.id));
@@ -524,11 +564,15 @@ export async function runTeamSystemSweep(rows: ClientDirectoryRow[]): Promise<vo
           args: [nowStamp, String(row.id)],
         });
         if (row.task_id != null) {
+          // Re-lane to the bottom of the complete lane (see solveActionItem).
           resolves.push({
             sql: `UPDATE team_tasks
-                  SET status = 'complete', completed_at = ?, updated_at = datetime('now')
+                  SET status = 'complete', completed_at = ?,
+                      sort_pos = COALESCE((SELECT MAX(sort_pos) FROM team_tasks
+                                           WHERE admin_id = ? AND status = 'complete'), 0) + ${LANE_SPACING},
+                      updated_at = datetime('now')
                   WHERE id = ? AND status != 'complete'`,
-            args: [nowStamp, String(row.task_id)],
+            args: [nowStamp, String(row.admin_id), String(row.task_id)],
           });
         }
       } else {

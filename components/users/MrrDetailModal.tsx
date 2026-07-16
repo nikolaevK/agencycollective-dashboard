@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, DollarSign, ChevronDown, ChevronLeft, GitBranch } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { PayoutRecord } from "@/lib/payouts";
 
@@ -11,15 +12,6 @@ interface MrrDetailModalProps {
   onClose: () => void;
   clientName: string;
   mrrCents: number;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "\u2014";
-  return new Date(value).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function TogglePill({ value, label }: { value: boolean; label: string }) {

@@ -61,7 +61,7 @@ export default function AdminCloserDashboardViewPage() {
     data?.role === "setter" ? data.payload.setter.displayName : data?.payload.closer.displayName;
 
   return (
-    <main className="flex-1 overflow-y-auto bg-background">
+    <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">
       {/* Sticky "viewing as" banner. */}
       <div className="sticky top-0 z-30 border-b border-amber-500/30 bg-amber-500/10 backdrop-blur supports-[backdrop-filter]:bg-amber-500/[0.08]">
         <div className="mx-auto max-w-6xl px-4 md:px-6 py-2.5 flex items-center justify-between gap-3">

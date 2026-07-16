@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, FileText, FileCheck2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCents } from "@/lib/format";
 
 export interface ImportableDeal {
   dealId: string;
@@ -20,15 +21,6 @@ export interface ImportableDeal {
   paidStatus: "paid" | "unpaid";
   hasInvoice: boolean;
   alreadyImported: boolean;
-}
-
-function formatCents(cents: number): string {
-  return (cents / 100).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
 }
 
 interface ImportDealModalProps {

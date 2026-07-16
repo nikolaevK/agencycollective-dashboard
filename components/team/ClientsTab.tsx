@@ -75,7 +75,61 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
         />
       </div>
 
-      <div className="rounded-xl border border-border/60 overflow-x-auto">
+      {/* Mobile card list — the 860px table needs 2+ screen-widths of panning */}
+      <div className="md:hidden space-y-2.5">
+        {clients.length === 0 ? (
+          <div className="rounded-xl border border-border/60 px-3 py-10 text-center text-sm text-muted-foreground">
+            No clients attributed to this member yet.
+          </div>
+        ) : (
+          <>
+            {clients.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => router.push(`/dashboard/users/${c.id}`)}
+                className="w-full rounded-xl border border-border/60 bg-card p-3 text-left hover:border-primary/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {c.isTop && (
+                      <Star className="h-3.5 w-3.5 shrink-0 text-amber-500 fill-amber-500" />
+                    )}
+                    <AvatarInitials name={c.displayName} className="w-7 h-7" />
+                    <span className="font-bold text-foreground truncate text-sm">
+                      {c.displayName}
+                      {c.book === "pepads" && (
+                        <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>
+                      )}
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      "shrink-0 text-sm font-bold",
+                      c.mrrCents === 0
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-foreground"
+                    )}
+                  >
+                    {c.mrrCents === 0 ? "$0 ⚠" : formatMoney(c.mrrCents)}
+                  </span>
+                </div>
+                <div className="mt-2">
+                  <RebillCell c={c} />
+                </div>
+              </button>
+            ))}
+            <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
+              <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                Total · {clients.length} clients
+              </span>
+              <span className="font-black text-foreground">{formatMoney(totalMrr)}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="hidden md:block rounded-xl border border-border/60 overflow-x-auto">
         <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-left">
@@ -144,39 +198,7 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
                   {c.mrrCents === 0 ? "$0 ⚠" : formatMoney(c.mrrCents)}
                 </td>
                 <td className="px-3 py-2.5">
-                  {c.rebill ? (
-                    <span className="inline-flex items-center gap-2">
-                      <RebillStatusChip status={c.rebill.status} paid={c.rebill.paid} />
-                      {c.rebill.nextRebillAt && (
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                          {formatDate(c.rebill.nextRebillAt)}
-                        </span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 flex-wrap">
-                      {c.manualBilling.length > 0 ? (
-                        c.manualBilling.map((m) => (
-                          <span
-                            key={m}
-                            className={cn(
-                              CHIP_BASE,
-                              MANUAL_BILLING_CHIP_CLS[m] ?? FALLBACK_CHIP_CLS
-                            )}
-                          >
-                            {m}
-                          </span>
-                        ))
-                      ) : (
-                        <span className={cn(CHIP_BASE, FALLBACK_CHIP_CLS)}>manual</span>
-                      )}
-                      {c.manualNextRebill && (
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                          {formatDate(c.manualNextRebill)}
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  <RebillCell c={c} />
                 </td>
               </tr>
             ))}
@@ -212,6 +234,40 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
         />
       )}
     </div>
+  );
+}
+
+/** Re-bill chip(s) + next-bill date — shared by the table cell and mobile card. */
+function RebillCell({ c }: { c: TeamClientSlice }) {
+  return c.rebill ? (
+    <span className="inline-flex items-center gap-2">
+      <RebillStatusChip status={c.rebill.status} paid={c.rebill.paid} />
+      {c.rebill.nextRebillAt && (
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+          {formatDate(c.rebill.nextRebillAt)}
+        </span>
+      )}
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      {c.manualBilling.length > 0 ? (
+        c.manualBilling.map((m) => (
+          <span
+            key={m}
+            className={cn(CHIP_BASE, MANUAL_BILLING_CHIP_CLS[m] ?? FALLBACK_CHIP_CLS)}
+          >
+            {m}
+          </span>
+        ))
+      ) : (
+        <span className={cn(CHIP_BASE, FALLBACK_CHIP_CLS)}>manual</span>
+      )}
+      {c.manualNextRebill && (
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+          {formatDate(c.manualNextRebill)}
+        </span>
+      )}
+    </span>
   );
 }
 

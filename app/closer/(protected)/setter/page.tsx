@@ -31,7 +31,7 @@ export default function SetterDashboardPage() {
   });
 
   return (
-    <main className="flex-1 overflow-y-auto">
+    <main className="flex-1 overflow-y-auto overflow-x-hidden">
       {isError ? (
         <DashboardError message="Failed to load your dashboard. Please refresh in a moment." />
       ) : !data ? (

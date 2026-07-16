@@ -10,6 +10,7 @@ import {
   ADMIN_SESSION_MAX_AGE,
 } from "@/lib/adminSession";
 import { logAuditEvent } from "@/lib/auditLog";
+import { checkLoginRate } from "@/lib/loginRateLimit";
 
 function buildSessionAndSetCookie(admin: AdminRecord) {
   const permissions = getEffectivePermissions(admin);
@@ -42,6 +43,9 @@ export async function adminLoginAction(
   username: string,
   password: string
 ): Promise<{ error: string } | undefined> {
+  const rate = checkLoginRate("admin", username);
+  if (!rate.ok) return { error: rate.error! };
+
   const admin = await findAdminByUsername(username.trim().toLowerCase());
   if (!admin || !admin.passwordHash) return { error: "Invalid credentials" };
   if (!verifyPassword(password, admin.passwordHash)) return { error: "Invalid credentials" };

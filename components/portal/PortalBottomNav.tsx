@@ -2,17 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ClipboardCheck, BookOpen, User } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Home, ClipboardCheck, BookOpen, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function PortalBottomNav() {
   const pathname = usePathname();
   const slug = pathname.split("/")[1] ?? "";
 
+  // Same query key + cadence as UserSidebar's badge — deduped by React Query,
+  // so this adds no extra polling. On phones the bottom nav is the only
+  // always-visible chrome, so unread support replies must surface here.
+  const { data: unreadSupport = 0 } = useQuery<number>({
+    queryKey: ["portal-support-unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/portal/support/unread");
+      if (!res.ok) return 0;
+      const json = await res.json();
+      return Number(json.data?.count ?? 0);
+    },
+    staleTime: 45_000,
+    refetchInterval: 90_000,
+    refetchIntervalInBackground: false,
+  });
+
   const tabs = [
-    { href: `/${slug}/portal/welcome-kit`, label: "Kit", icon: BookOpen, match: "/portal/welcome-kit" },
-    { href: `/${slug}/portal/onboarding`, label: "Onboarding", icon: ClipboardCheck, match: "/portal/onboarding" },
-    { href: `/${slug}/portal/overview`, label: "Home", icon: Home, match: "/portal/overview" },
+    { href: `/${slug}/portal/welcome-kit`, label: "Kit", icon: BookOpen, match: "/portal/welcome-kit", badge: 0 },
+    { href: `/${slug}/portal/onboarding`, label: "Onboarding", icon: ClipboardCheck, match: "/portal/onboarding", badge: 0 },
+    { href: `/${slug}/portal/overview`, label: "Home", icon: Home, match: "/portal/overview", badge: 0 },
+    { href: `/${slug}/portal/support`, label: "Support", icon: MessageSquare, match: "/portal/support", badge: unreadSupport },
   ];
 
   return (
@@ -29,7 +47,7 @@ export function PortalBottomNav() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex items-center gap-1.5 transition-colors",
+                "relative flex items-center gap-1.5 transition-colors",
                 isActive
                   ? "bg-gradient-to-br from-primary to-[#7c3aed] text-white rounded-xl px-4 py-2"
                   : "flex-col text-muted-foreground"
@@ -46,19 +64,14 @@ export function PortalBottomNav() {
               >
                 {tab.label}
               </span>
+              {tab.badge > 0 && (
+                <span className="absolute -top-1 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {tab.badge > 9 ? "9+" : tab.badge}
+                </span>
+              )}
             </Link>
           );
         })}
-
-        {/* Profile placeholder */}
-        <button
-          className="flex flex-col items-center text-muted-foreground transition-colors"
-        >
-          <User className="h-5 w-5" />
-          <span className="text-[10px] font-medium uppercase tracking-wider mt-1">
-            Profile
-          </span>
-        </button>
       </div>
     </nav>
   );

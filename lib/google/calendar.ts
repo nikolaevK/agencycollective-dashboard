@@ -54,7 +54,7 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line -- raw Google Calendar API payload, typed ad hoc below
 function normalizeEvent(event: any, calendarName: string): CalendarEvent {
   const rawAttendees: Array<{
     email?: string;

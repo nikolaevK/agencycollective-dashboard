@@ -1,8 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import {
   getMetaAccount,
@@ -12,16 +10,13 @@ import {
   type MetaAccountInput,
 } from "@/lib/metaAccounts";
 import { logAuditEvent } from "@/lib/auditLog";
+import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+
 
 interface RouteContext {
   params: { id: string };
 }
 
-async function requireAdmin() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

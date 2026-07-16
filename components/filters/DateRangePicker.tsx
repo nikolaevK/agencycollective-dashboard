@@ -76,8 +76,9 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
             onClick={() => setOpen(false)}
           />
 
-          {/* Dropdown */}
-          <div className="absolute left-0 right-0 md:left-auto md:right-0 md:w-72 top-full z-20 mt-2 rounded-lg border bg-popover shadow-lg">
+          {/* Dropdown — right-anchored at a real width on all screens; the old
+              left-0 right-0 mobile branch collapsed it to the trigger's ~150px */}
+          <div className="absolute right-0 w-72 max-w-[calc(100vw-2rem)] top-full z-20 mt-2 rounded-lg border bg-popover shadow-lg">
             <div className="p-2">
               <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Presets
@@ -112,7 +113,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
 
               {showCustom && (
                 <div className="mt-2 space-y-2 px-2">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <div className="flex-1">
                       <label className="mb-1 block text-xs text-muted-foreground">
                         From

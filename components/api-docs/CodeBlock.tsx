@@ -34,7 +34,7 @@ export function CodeBlock({ code, language, className }: CodeBlockProps) {
       <button
         type="button"
         onClick={handleCopy}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-60 transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:text-foreground"
         title="Copy"
       >
         {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}

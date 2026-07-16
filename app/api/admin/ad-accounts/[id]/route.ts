@@ -1,21 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import { getAdAccount, updateAdAccount, deleteAdAccount } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
+import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+
 
 interface RouteContext {
   params: { id: string };
 }
 
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  return findAdmin(session.adminId);
-}
 
 /** Edit an ad account (client link, vendor, fee, retainer, status, notes). */
 export async function PATCH(req: NextRequest, { params }: RouteContext) {
