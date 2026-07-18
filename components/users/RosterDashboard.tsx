@@ -15,7 +15,8 @@ import { SERVICE_OPTIONS, type TeamRole } from "@/lib/clientProfile";
 // Roster dashboard — the prototype's count-group cards: Overview, Media Buyer,
 // Head of Ads, Ad Accounts, Services, Stage, Client Health. Counts span BOTH
 // books and are computed from the UNFILTERED list so they stay stable while
-// filtering. Pills are clickable where a matching filter exists (people →
+// filtering (the page pre-excludes inactive/archived clients — they never
+// count toward any group). Pills are clickable where a matching filter exists (people →
 // team filter; platforms/services/stages/health → toggle that filter value);
 // multi-select counts can sum to more than the client total by design.
 // ---------------------------------------------------------------------------

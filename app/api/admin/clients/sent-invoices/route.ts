@@ -24,7 +24,14 @@ export async function GET() {
   const rows = await buildClientDirectory();
 
   const invoices = rows
-    .filter((r) => r.activeSentInvoice !== null)
+    // Inactive/archived clients drop out of the awaiting-payment count/panel
+    // (mirrors the rebill-alerts exclusion) — their row keeps the invoice.
+    .filter(
+      (r) =>
+        r.activeSentInvoice !== null &&
+        r.status !== "inactive" &&
+        r.status !== "archived"
+    )
     .map((r) => {
       const inv = r.activeSentInvoice!;
       return {

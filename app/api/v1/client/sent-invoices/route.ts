@@ -22,7 +22,12 @@ export async function GET(request: Request) {
     const invoices = rows
       .filter(
         (r) =>
-          (!allowed || allowed.includes(r.id)) && r.activeSentInvoice !== null
+          (!allowed || allowed.includes(r.id)) &&
+          r.activeSentInvoice !== null &&
+          // Mirrors the admin sent-invoices route: inactive/archived clients
+          // drop out of the awaiting-payment list.
+          r.status !== "inactive" &&
+          r.status !== "archived"
       )
       .map((r) => ({
         userId: r.id,

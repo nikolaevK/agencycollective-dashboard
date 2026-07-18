@@ -200,6 +200,14 @@ export default function UsersPage() {
 
   const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
 
+  // Inactive/archived clients keep their table row (with its own values) but
+  // drop out of every aggregate on the page: roster count groups, per-person
+  // team cards, and the summary totals below.
+  const countable = useMemo(
+    () => clients.filter((c) => c.status !== "inactive" && c.status !== "archived"),
+    [clients]
+  );
+
   // Monthly MRR reflects ACTIVE clients only (same definition as the "Active"
   // card below) — paused/onboarding/inactive/archived clients don't count
   // toward recurring revenue even though their row still shows its own MRR.
@@ -308,13 +316,13 @@ export default function UsersPage() {
             />
 
             <RosterDashboard
-              clients={clients}
+              clients={countable}
               filters={filters}
               onFiltersChange={setFilters}
             />
 
             <TeamFilterCards
-              clients={clients}
+              clients={countable}
               selected={filters.team}
               onSelect={(team) => setFilters((f) => ({ ...f, team }))}
             />

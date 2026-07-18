@@ -33,7 +33,8 @@ const ROLE_RANK: Record<TeamRole, number> = { media_buyer: 0, lead: 1, csm: 2 };
  * Clickable per-person filter cards (one per assigned admin × role across the
  * whole roster): client count + running/paused split. Clicking filters the
  * directory to that person; clicking again (or "All") clears. Computed from
- * the UNFILTERED list so counts stay stable while filtering.
+ * the UNFILTERED list so counts stay stable while filtering (the page
+ * pre-excludes inactive/archived clients — they never count).
  */
 export function TeamFilterCards({
   clients,
