@@ -26,6 +26,7 @@ function readInput(body: Record<string, unknown>): MetaAccountInput {
     twofaLink: s("twofaLink"),
     mailPassword: s("mailPassword"),
     recoveryEmail: s("recoveryEmail"),
+    profileName: s("profileName"),
     profileLink: s("profileLink"),
     bmId: s("bmId"),
     loginOk: b("loginOk"),

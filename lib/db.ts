@@ -240,6 +240,7 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       twofa_link       TEXT,
       mail_password    TEXT,
       recovery_email   TEXT,
+      profile_name     TEXT,
       profile_link     TEXT,
       bm_id            TEXT,
       login_ok         INTEGER NOT NULL DEFAULT 0,
@@ -498,6 +499,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // CRITICAL_TABLE_DDL (created inline with these columns on a fresh DB).
     { table: "team_members",           column: "split_share_percent",  defn: "INTEGER" },
     { table: "team_task_comments",     column: "kind",                 defn: "TEXT NOT NULL DEFAULT 'comment'" },
+    // Meta Accounts Directory — FB profile display name (not a credential;
+    // returned by API reads). meta_accounts lives in CRITICAL_TABLE_DDL, so a
+    // fresh DB creates it with the column inline; existing DBs self-heal here.
+    { table: "meta_accounts",          column: "profile_name",         defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),

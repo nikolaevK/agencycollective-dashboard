@@ -141,6 +141,7 @@ const metaAccountBody = (required?: string[]): OpenApiSchema =>
       twofaLink: str("WRITE-ONLY credential (2FA code generator link) — never returned"),
       mailPassword: str("WRITE-ONLY credential — never returned"),
       recoveryEmail: str("WRITE-ONLY credential — never returned"),
+      profileName: str("FB profile display name"),
       profileLink: str("FB profile URL"),
       bmId: str("Business Manager id"),
       loginOk: bool("Setup checklist: login verified"),

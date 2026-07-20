@@ -13,6 +13,7 @@ interface FormState {
   twofaLink: string;
   mailPassword: string;
   recoveryEmail: string;
+  profileName: string;
   profileLink: string;
   bmId: string;
   loginOk: boolean;
@@ -36,6 +37,7 @@ function initial(account?: MetaAccountDirectoryRow): FormState {
     twofaLink: account?.twofaLink ?? "",
     mailPassword: account?.mailPassword ?? "",
     recoveryEmail: account?.recoveryEmail ?? "",
+    profileName: account?.profileName ?? "",
     profileLink: account?.profileLink ?? "",
     bmId: account?.bmId ?? "",
     loginOk: account?.loginOk ?? false,
@@ -145,6 +147,9 @@ export function MetaAccountFormModal({
             </Field>
             <Field label="Recovery email">
               <input className={inputCls} value={form.recoveryEmail} onChange={(e) => set("recoveryEmail", e.target.value)} />
+            </Field>
+            <Field label="Profile name">
+              <input className={inputCls} value={form.profileName} onChange={(e) => set("profileName", e.target.value)} />
             </Field>
             <Field label="Profile link">
               <input className={inputCls} value={form.profileLink} onChange={(e) => set("profileLink", e.target.value)} />

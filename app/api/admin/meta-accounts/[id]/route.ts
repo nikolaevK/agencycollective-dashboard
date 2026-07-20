@@ -29,6 +29,7 @@ const STRING_FIELDS = [
   "twofaLink",
   "mailPassword",
   "recoveryEmail",
+  "profileName",
   "profileLink",
   "bmId",
   "stage",

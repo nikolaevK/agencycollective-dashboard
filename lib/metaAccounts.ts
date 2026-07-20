@@ -20,6 +20,7 @@ export interface MetaAccount {
   twofaLink: string | null;
   mailPassword: string | null;
   recoveryEmail: string | null;
+  profileName: string | null;
   profileLink: string | null;
   bmId: string | null;
   loginOk: boolean;
@@ -45,6 +46,7 @@ export interface MetaAccountInput {
   twofaLink?: string | null;
   mailPassword?: string | null;
   recoveryEmail?: string | null;
+  profileName?: string | null;
   profileLink?: string | null;
   bmId?: string | null;
   loginOk?: boolean;
@@ -114,6 +116,7 @@ function rowToMetaAccount(row: Row): MetaAccount {
     twofaLink: row.twofa_link != null ? String(row.twofa_link) : null,
     mailPassword: row.mail_password != null ? String(row.mail_password) : null,
     recoveryEmail: row.recovery_email != null ? String(row.recovery_email) : null,
+    profileName: row.profile_name != null ? String(row.profile_name) : null,
     profileLink: row.profile_link != null ? String(row.profile_link) : null,
     bmId: row.bm_id != null ? String(row.bm_id) : null,
     loginOk: bool(row.login_ok),
@@ -166,6 +169,7 @@ const INSERT_COLUMNS = [
   "twofa_link",
   "mail_password",
   "recovery_email",
+  "profile_name",
   "profile_link",
   "bm_id",
   "login_ok",
@@ -193,6 +197,7 @@ function buildMetaAccount(input: MetaAccountInput, now: string): MetaAccount {
     twofaLink: str(input.twofaLink),
     mailPassword: str(input.mailPassword),
     recoveryEmail: str(input.recoveryEmail),
+    profileName: str(input.profileName),
     profileLink: str(input.profileLink),
     bmId: str(input.bmId),
     loginOk: !!input.loginOk,
@@ -220,6 +225,7 @@ function insertArgs(account: MetaAccount): (string | number | null)[] {
     account.twofaLink,
     account.mailPassword,
     account.recoveryEmail,
+    account.profileName,
     account.profileLink,
     account.bmId,
     account.loginOk ? 1 : 0,
@@ -352,6 +358,7 @@ const COLUMN_BY_FIELD: Record<keyof MetaAccountInput, string> = {
   twofaLink: "twofa_link",
   mailPassword: "mail_password",
   recoveryEmail: "recovery_email",
+  profileName: "profile_name",
   profileLink: "profile_link",
   bmId: "bm_id",
   loginOk: "login_ok",

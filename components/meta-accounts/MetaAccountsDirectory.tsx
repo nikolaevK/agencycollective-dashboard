@@ -160,7 +160,7 @@ export function MetaAccountsDirectory() {
       new Map(
         rows.map((r) => [
           r.id,
-          `${r.fbEmail} ${r.profileLink ?? ""} ${r.assignee ?? ""} ${r.bmId ?? ""} ${r.clientName ?? ""} ${r.notes ?? ""}`.toLowerCase(),
+          `${r.fbEmail} ${r.profileName ?? ""} ${r.profileLink ?? ""} ${r.assignee ?? ""} ${r.bmId ?? ""} ${r.clientName ?? ""} ${r.notes ?? ""}`.toLowerCase(),
         ])
       ),
     [rows]
@@ -351,6 +351,9 @@ export function MetaAccountsDirectory() {
                       </a>
                     )}
                   </div>
+                  {row.profileName && (
+                    <p className="text-xs text-foreground/80">{row.profileName}</p>
+                  )}
                   {row.recoveryEmail && (
                     <p className="text-xs text-muted-foreground break-all">↳ {row.recoveryEmail}</p>
                   )}
@@ -440,10 +443,11 @@ export function MetaAccountsDirectory() {
       {/* Table */}
       <div className="hidden md:block rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[1500px]">
+          <table className="w-full text-left min-w-[1600px]">
             <thead>
               <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
                 <Th className="pl-4 sticky left-0 z-20 bg-muted/30 dark:bg-white/[0.03]">Account</Th>
+                <Th>Profile name</Th>
                 <Th>Password</Th>
                 <Th>2FA secret</Th>
                 <Th>Mail pw</Th>
@@ -460,14 +464,14 @@ export function MetaAccountsDirectory() {
               {isLoading ? (
                 [1, 2, 3, 4, 5].map((i) => (
                   <tr key={i} className="border-b border-border/50">
-                    <td colSpan={11} className="px-4 py-3">
+                    <td colSpan={12} className="px-4 py-3">
                       <div className="h-8 w-full animate-pulse rounded-lg bg-muted/60" />
                     </td>
                   </tr>
                 ))
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     {rows.length === 0
                       ? "No accounts yet. Import a sheet or click “Add account”."
                       : "No accounts match your filters."}
@@ -501,6 +505,13 @@ export function MetaAccountsDirectory() {
                         <p className="text-[11px] text-amber-600 dark:text-amber-400 truncate max-w-[220px]" title={row.notes}>
                           {row.notes}
                         </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.profileName ? (
+                        <span className="text-sm text-foreground whitespace-nowrap">{row.profileName}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">

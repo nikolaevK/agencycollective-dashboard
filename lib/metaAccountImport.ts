@@ -16,6 +16,7 @@ type Target =
   | "twofaLink"
   | "mailPassword"
   | "recoveryEmail"
+  | "profileName"
   | "profileLink"
   | "bmId"
   | "bmMade"
@@ -40,6 +41,7 @@ function resolveTarget(header: string): Target {
   if (h.includes("2fa")) return "twofaSecret";
   if (h.includes("mail password")) return "mailPassword";
   if (h.includes("recov")) return "recoveryEmail"; // recovary / recovery
+  if (h.includes("profile") && h.includes("name")) return "profileName"; // before generic "profile"
   if (h.includes("profile")) return "profileLink";
   if (h.includes("bm id")) return "bmId";
   if (h.includes("bm") && h.includes("made")) return "bmMade";
@@ -150,6 +152,9 @@ export function mapSpreadsheetToAccounts(
           break;
         case "recoveryEmail":
           input.recoveryEmail = raw;
+          break;
+        case "profileName":
+          input.profileName = raw;
           break;
         case "profileLink":
           input.profileLink = raw;
