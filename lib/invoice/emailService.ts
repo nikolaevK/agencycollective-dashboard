@@ -87,6 +87,15 @@ export async function sendInvoiceEmail(
      *  subject + body + sign-off, no Agency Collective footer). */
     variant?: "onboarding" | "rebill" | "adaccount" | "pepads";
     /**
+     * Brand the email as another agency identity (an Invoice-page Agency
+     * Profile chosen as the drawer's invoice style, e.g. PepAds): its name in
+     * the subject, a self-contained branded body + sign-off with the given
+     * contact email/website, and no Agency Collective footer. Overrides the
+     * rebill/adaccount body copy; the subject noun still follows `variant`.
+     * Callers must resolve these fields server-side (never from request text).
+     */
+    brand?: { name: string; email?: string; website?: string };
+    /**
      * Free-form files to include in the email alongside the invoice PDF —
      * receipts, contract addendums, supporting docs. Distinct from
      * `additionalPdfs` (which renders them as additional INVOICES with the
@@ -129,9 +138,11 @@ export async function sendInvoiceEmail(
   // Ad-account invoices get an "Ad Account Invoice" subject; everything else
   // (onboarding / client re-bill) keeps the plain "Invoice" subject.
   const subjectNoun = options?.variant === "adaccount" ? "Ad Account Invoice" : "Invoice";
-  // PepAds invoices (secondary account) carry PepAds branding; everything else
-  // is Agency Collective.
-  const brandName = options?.variant === "pepads" ? "PepAds" : "Agency Collective";
+  // A brand override (or the PepAds variant) carries that identity's branding;
+  // everything else is Agency Collective. Header-sanitised for the subject.
+  const brandName =
+    (options?.brand?.name ?? "").replace(/[\r\n\x00-\x1f]/g, "").trim().slice(0, 100) ||
+    (options?.variant === "pepads" ? "PepAds" : "Agency Collective");
   const subject = hasMultiple
     ? `${subjectNoun}s ${allNumbers.map((n) => `#${n}`).join(", ")} — ${brandName}`
     : `${subjectNoun} #${safeNumber} — ${brandName}`;
@@ -195,31 +206,61 @@ export async function sendInvoiceEmail(
           <p style="line-height: 1.7; margin: 0 0 16px;">We appreciate your business!</p>
           <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
 
-  const pepadsBody = `
+  // Branded (non-AC) billing email: PepAds via the standalone Invoice page's
+  // secondary-account variant, or any Agency Profile passed as `brand` by the
+  // drawer send routes. Self-contained sign-off with the brand's contact
+  // email/website. Fields are admin-authored but HTML-escaped regardless.
+  const escapeHtml = (s: string): string =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const brandedBody = (b: { name: string; email?: string; website?: string }) => {
+    const name = escapeHtml(b.name);
+    const website = b.website?.trim();
+    const websiteHref = website
+      ? /^https?:\/\//i.test(website)
+        ? website
+        : `https://${website}`
+      : "";
+    const contactLines = [
+      b.email
+        ? `<a href="mailto:${escapeHtml(b.email)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(b.email)}</a>`
+        : "",
+      website
+        ? `<a href="${escapeHtml(websiteHref)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(website)}</a>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("<br>");
+    return `
           <p style="line-height: 1.7; margin: 0 0 16px;">
-            Your latest PepAds invoice is now available and ready for payment. A copy of the invoice is attached for your records.
+            Your latest ${name} invoice is now available and ready for payment. A copy of the invoice is attached for your records.
           </p>
           <p style="line-height: 1.7; margin: 0 0 16px;">
             If you have any questions regarding the invoice, billing period, or services provided, please don't hesitate to reach out.
           </p>
           <p style="line-height: 1.7; margin: 0 0 16px;">
-            Thank you for your partnership and trust in PepAds. We appreciate the opportunity to support your growth and look forward to the month ahead.
+            Thank you for your partnership and trust in ${name}. We appreciate the opportunity to support your growth and look forward to the month ahead.
           </p>
-          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>PepAds Billing Team</strong><br><a href="mailto:billing@pepads.com" style="color: #2563eb; text-decoration: none;">billing@pepads.com</a></p>`;
+          <p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>${name} Billing Team</strong>${contactLines ? `<br>${contactLines}` : ""}</p>`;
+  };
 
-  const bodyHtml =
-    variant === "rebill"
-      ? rebillBody
-      : variant === "adaccount"
-      ? adAccountBody
-      : variant === "pepads"
-      ? pepadsBody
-      : onboardingBody;
+  const bodyHtml = options?.brand
+    ? brandedBody(options.brand)
+    : variant === "rebill"
+    ? rebillBody
+    : variant === "adaccount"
+    ? adAccountBody
+    : variant === "pepads"
+    ? brandedBody({ name: "PepAds", email: "billing@pepads.com" })
+    : onboardingBody;
 
-  // PepAds emails are self-contained (their own sign-off + contact), so they
+  // Branded emails are self-contained (their own sign-off + contact), so they
   // omit the Agency Collective footer; every other variant keeps it.
   const footerHtml =
-    variant === "pepads"
+    variant === "pepads" || options?.brand
       ? ""
       : `
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">

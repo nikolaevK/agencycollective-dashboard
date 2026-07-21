@@ -62,11 +62,18 @@ function coerceInput(body: Record<string, unknown>): { input: AgencyProfileInput
 
   const themeColor = str(body.themeColor) || "#2563eb";
 
+  // Store a usable URL — a bare domain gets an https:// scheme so every
+  // consumer (email links today, others later) can use the value as-is.
+  let website = str(body.website).trim();
+  if (website && !/^https?:\/\//i.test(website)) website = `https://${website}`;
+  if (website.length > 200) return { error: "Website too long", status: 400 };
+
   return {
     input: {
       name,
       logo,
       themeColor,
+      website,
       sender: coerceSender(body.sender),
       paymentLocal: coercePayment(body.paymentLocal, "local"),
       paymentInternational: coercePayment(body.paymentInternational, "international"),

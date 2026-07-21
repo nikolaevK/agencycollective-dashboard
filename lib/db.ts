@@ -503,6 +503,11 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // returned by API reads). meta_accounts lives in CRITICAL_TABLE_DDL, so a
     // fresh DB creates it with the column inline; existing DBs self-heal here.
     { table: "meta_accounts",          column: "profile_name",         defn: "TEXT" },
+    // Agency-profile website — rendered in branded invoice emails when a
+    // drawer send uses that profile as its invoice style. The table's CREATE
+    // is gated by the version body, so "no such table" here is benign on a
+    // fresh DB (created with the column inline).
+    { table: "invoice_agency_profiles", column: "website",             defn: "TEXT NOT NULL DEFAULT ''" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -1537,6 +1542,7 @@ export async function migrate(): Promise<void> {
       sender                TEXT NOT NULL DEFAULT '{}',
       logo                  TEXT NOT NULL DEFAULT '',
       theme_color           TEXT NOT NULL DEFAULT '#2563eb',
+      website               TEXT NOT NULL DEFAULT '',
       payment_local         TEXT NOT NULL DEFAULT '{}',
       payment_international  TEXT NOT NULL DEFAULT '{}',
       sort_order            INTEGER NOT NULL DEFAULT 0,

@@ -167,6 +167,7 @@ interface ProfileInputData {
   sender: { name: string; address: string; city: string; zipCode: string; country: string; email: string; phone: string };
   logo: string;
   themeColor: string;
+  website: string;
   paymentLocal: PaymentInfo;
   paymentInternational: PaymentInfo;
 }
@@ -190,6 +191,7 @@ function ProfileForm({
   const [senderPhone, setSenderPhone] = useState(initial?.sender.phone ?? "");
   const [logo, setLogo] = useState(initial?.logo ?? "");
   const [themeColor, setThemeColor] = useState(initial?.themeColor ?? "#2563eb");
+  const [website, setWebsite] = useState(initial?.website ?? "");
   const [localTemplate, setLocalTemplate] = useState<PaymentInfo>(initial?.paymentLocal ?? emptyPaymentInfo("local"));
   const [intlTemplate, setIntlTemplate] = useState<PaymentInfo>(initial?.paymentInternational ?? emptyPaymentInfo("international"));
   const [saving, setSaving] = useState(false);
@@ -210,6 +212,7 @@ function ProfileForm({
         },
         logo,
         themeColor,
+        website: website.trim(),
         paymentLocal: { ...localTemplate, paymentType: "local" },
         paymentInternational: { ...intlTemplate, paymentType: "international" },
       });
@@ -232,6 +235,19 @@ function ProfileForm({
           placeholder="e.g. Agency Collective, PepAds"
           className={cn(INPUT_CLS, "font-medium")}
           required
+        />
+      </div>
+
+      {/* Website — shown in the invoice email when this profile is used as an
+          invoice style from the Client Directory / Ad Accounts drawers. */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">Website</label>
+        <input
+          type="text"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+          placeholder="e.g. https://www.peptiscale.com"
+          className={INPUT_CLS}
         />
       </div>
 

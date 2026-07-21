@@ -16,11 +16,22 @@ import {
 import { cn } from "@/lib/utils";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import {
+  InvoiceStyleSelect,
+  profilePaymentBlock,
+} from "@/components/invoice/InvoiceStyleSelect";
+import {
   calculateTotals,
   createEmptyItem,
   formatCurrencyValue,
 } from "@/lib/invoice/validation";
-import type { InvoiceData, InvoiceItem, PaymentType, PaymentInfo } from "@/types/invoice";
+import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
+import type {
+  InvoiceData,
+  InvoiceItem,
+  InvoiceSender,
+  PaymentType,
+  PaymentInfo,
+} from "@/types/invoice";
 import { buildAdAccountLineItems } from "@/lib/adAccountLineItem";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -110,6 +121,17 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
   if (retainerIdRef.current === null) retainerIdRef.current = createEmptyItem().id;
   if (adSpendIdRef.current === null) adSpendIdRef.current = createEmptyItem().id;
   const providerRef = useRef<string>("Agency Collective");
+  // Invoice style — null = default Agency Collective, otherwise a saved
+  // agency profile (e.g. PepAds) whose shell is applied to the PDF.
+  const [styleProfile, setStyleProfile] = useState<AgencyProfileRecord | null>(null);
+  // Default AC shell + provider captured from the prefill, so switching back
+  // from a profile restores them (payment blocks live in paymentInfoCacheRef).
+  const defaultStyleRef = useRef<{
+    sender: InvoiceSender;
+    logo: string;
+    themeColor: string;
+  } | null>(null);
+  const defaultProviderRef = useRef<string>("Agency Collective");
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
 
@@ -160,6 +182,12 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
         if (!active) return;
         const d = localJson.data.invoiceData as InvoiceData;
         if (d.sender?.name) providerRef.current = d.sender.name;
+        defaultProviderRef.current = providerRef.current;
+        defaultStyleRef.current = {
+          sender: d.sender,
+          logo: d.details.invoiceLogo,
+          themeColor: d.details.themeColor,
+        };
         // Cache both payment blocks for instant, fail-proof switching.
         if (d.details.paymentInfo) paymentInfoCacheRef.current.local = d.details.paymentInfo;
         const intl = (intlJson?.data?.invoiceData as InvoiceData | undefined)?.details
@@ -270,30 +298,89 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
     setItems(data.details.items.filter((it) => it.id !== id));
   }
 
+  // Lazily fetch a default payment block that wasn't prefetched (e.g. the
+  // initial international prefetch failed), cache it and patch it in.
+  async function fetchDefaultPayment(type: PaymentType) {
+    const reqId = ++paymentReqRef.current;
+    try {
+      const res = await fetch(prefillUrl(type));
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!mounted.current || reqId !== paymentReqRef.current) return;
+      const pi = (json.data.invoiceData as InvoiceData).details.paymentInfo;
+      if (pi) {
+        paymentInfoCacheRef.current[type] = pi;
+        patchDetails({ paymentInfo: pi });
+      }
+    } catch {
+      /* keep existing */
+    }
+  }
+
+  // Switch the invoice shell (sender / logo / theme / payment block / the
+  // "Service provider" label in the canonical lines) between the default
+  // Agency Collective identity and a saved agency profile. Recipient, amounts
+  // and extra line items are untouched; email sending is unchanged.
+  function applyStyle(profile: AgencyProfileRecord | null) {
+    const defaults = defaultStyleRef.current;
+    if (!defaults) return;
+    setStyleProfile(profile);
+    // Invalidate any in-flight payment-block fetch so it can't overwrite us.
+    paymentReqRef.current++;
+    providerRef.current = profile
+      ? profile.sender.name || profile.name
+      : defaultProviderRef.current;
+    const desired = makeCanonicalItems();
+    const sender = profile ? profile.sender : defaults.sender;
+    const logo = profile ? profile.logo || defaults.logo : defaults.logo;
+    const themeColor = profile
+      ? profile.themeColor || defaults.themeColor
+      : defaults.themeColor;
+    // A blank profile template keeps the current block (mirrors the Invoice
+    // page's applyProfile).
+    const block = profile
+      ? profilePaymentBlock(profile, paymentType)
+      : paymentInfoCacheRef.current[paymentType] ?? null;
+    setData((d) => {
+      if (!d) return d;
+      const extras = d.details.items.filter(
+        (it) => it.id !== retainerIdRef.current && it.id !== adSpendIdRef.current
+      );
+      const items = [...desired, ...extras];
+      const { subTotal, totalAmount } = calculateTotals(items, null, null, null);
+      return {
+        ...d,
+        sender: { ...sender, customInputs: d.sender.customInputs },
+        details: {
+          ...d.details,
+          invoiceLogo: logo,
+          themeColor,
+          items,
+          subTotal,
+          totalAmount,
+          ...(block ? { paymentInfo: block } : {}),
+        },
+      };
+    });
+    if (!profile && !block) void fetchDefaultPayment(paymentType);
+  }
+
   async function changePaymentType(next: PaymentType) {
     setPaymentType(next);
+    // Under a profile style the block comes from the profile's template.
+    if (styleProfile) {
+      paymentReqRef.current++;
+      const block = profilePaymentBlock(styleProfile, next);
+      if (block) patchDetails({ paymentInfo: block });
+      return;
+    }
     // Prefer the cached block — instant and reliable.
     const cached = paymentInfoCacheRef.current[next];
     if (cached) {
       patchDetails({ paymentInfo: cached });
       return;
     }
-    // Fallback: only hit the network if this variant wasn't prefetched (e.g.
-    // the initial international prefetch failed).
-    const reqId = ++paymentReqRef.current;
-    try {
-      const res = await fetch(prefillUrl(next));
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!mounted.current || reqId !== paymentReqRef.current) return;
-      const pi = (json.data.invoiceData as InvoiceData).details.paymentInfo;
-      if (pi) {
-        paymentInfoCacheRef.current[next] = pi;
-        patchDetails({ paymentInfo: pi });
-      }
-    } catch {
-      /* keep existing */
-    }
+    await fetchDefaultPayment(next);
   }
 
   function commitCc(raw: string) {
@@ -390,6 +477,9 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
       if (accountName) fd.set("brand", accountName);
       fd.set("recipientName", data.receiver.name);
       fd.set("pdf", new File([blob], `invoice-${data.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+      // Brand the email like the PDF (subject/body/sign-off) — the server
+      // resolves the profile itself; only the id crosses the wire.
+      if (styleProfile) fd.set("styleProfileId", styleProfile.id);
       for (const cc of finalCcs) fd.append("cc", cc);
       for (const file of attachments) fd.append("attachments", file);
 
@@ -630,6 +720,13 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
               </div>
               {attachError && <p className="mt-1.5 text-[11px] text-destructive">{attachError}</p>}
             </div>
+
+            {/* Invoice style — default AC or a saved agency profile (e.g. PepAds) */}
+            <InvoiceStyleSelect
+              selectedId={styleProfile?.id ?? null}
+              onSelect={applyStyle}
+              paymentType={paymentType}
+            />
 
             {/* Dates + payment type */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">

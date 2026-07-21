@@ -17,11 +17,22 @@ import { cn } from "@/lib/utils";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
 import {
+  InvoiceStyleSelect,
+  profilePaymentBlock,
+} from "@/components/invoice/InvoiceStyleSelect";
+import {
   calculateTotals,
   createEmptyItem,
   formatCurrencyValue,
 } from "@/lib/invoice/validation";
-import type { InvoiceData, InvoiceItem, PaymentType } from "@/types/invoice";
+import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
+import type {
+  InvoiceData,
+  InvoiceItem,
+  InvoiceSender,
+  PaymentInfo,
+  PaymentType,
+} from "@/types/invoice";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FIELD =
@@ -72,6 +83,17 @@ async function fetchPrefill(
 export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Props) {
   const [data, setData] = useState<InvoiceData | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("local");
+  // Invoice style — null = default Agency Collective, otherwise a saved
+  // agency profile (e.g. PepAds) whose shell is applied to the PDF.
+  const [styleProfile, setStyleProfile] = useState<AgencyProfileRecord | null>(null);
+  // Default AC shell + payment blocks captured from the prefill, so switching
+  // back from a profile restores them without guessing.
+  const defaultStyleRef = useRef<{
+    sender: InvoiceSender;
+    logo: string;
+    themeColor: string;
+  } | null>(null);
+  const defaultPaymentRef = useRef<Partial<Record<PaymentType, PaymentInfo>>>({});
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -139,6 +161,14 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
     fetchPrefill(userId, "local")
       .then((d) => {
         if (!active) return;
+        defaultStyleRef.current = {
+          sender: d.invoiceData.sender,
+          logo: d.invoiceData.details.invoiceLogo,
+          themeColor: d.invoiceData.details.themeColor,
+        };
+        if (d.invoiceData.details.paymentInfo) {
+          defaultPaymentRef.current.local = d.invoiceData.details.paymentInfo;
+        }
         // Server runs in UTC; default the invoice date to the admin's LOCAL
         // date so an evening send doesn't print tomorrow's date.
         const t = new Date();
@@ -186,14 +216,84 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
     setItems(data.details.items.filter((it) => it.id !== id));
   }
 
+  // Switch the invoice shell (sender / logo / theme / payment block) between
+  // the default Agency Collective identity and a saved agency profile.
+  // Recipient, dates and line items are untouched; email sending is unchanged.
+  async function applyStyle(profile: AgencyProfileRecord | null) {
+    setStyleProfile(profile);
+    // Invalidate any in-flight payment-block fetch so it can't overwrite us.
+    const reqId = ++paymentReq.current;
+    if (profile) {
+      const block = profilePaymentBlock(profile, paymentType);
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              sender: { ...profile.sender, customInputs: d.sender.customInputs },
+              details: {
+                ...d.details,
+                invoiceLogo: profile.logo || d.details.invoiceLogo,
+                themeColor: profile.themeColor || d.details.themeColor,
+                // A blank profile template keeps the current block (mirrors
+                // the Invoice page's applyProfile).
+                ...(block ? { paymentInfo: block } : {}),
+              },
+            }
+          : d
+      );
+      return;
+    }
+    const defaults = defaultStyleRef.current;
+    if (!defaults) return;
+    const cached = defaultPaymentRef.current[paymentType];
+    setData((d) =>
+      d
+        ? {
+            ...d,
+            sender: { ...defaults.sender, customInputs: d.sender.customInputs },
+            details: {
+              ...d.details,
+              invoiceLogo: defaults.logo,
+              themeColor: defaults.themeColor,
+              ...(cached ? { paymentInfo: cached } : {}),
+            },
+          }
+        : d
+    );
+    if (!cached) {
+      // The default block for this payment type was never fetched (the drawer
+      // only prefetches local) — pull it now.
+      try {
+        const d = await fetchPrefill(userId, paymentType);
+        if (!mounted.current || reqId !== paymentReq.current) return;
+        const block = d.invoiceData.details.paymentInfo;
+        if (block) {
+          defaultPaymentRef.current[paymentType] = block;
+          patchDetails({ paymentInfo: block });
+        }
+      } catch {
+        /* keep existing payment info */
+      }
+    }
+  }
+
   // Switching payment type re-pulls just the payment-instructions block,
-  // preserving the admin's line-item / recipient edits.
+  // preserving the admin's line-item / recipient edits. Under a profile style
+  // the block comes from the profile's template instead.
   async function changePaymentType(next: PaymentType) {
     setPaymentType(next);
     const reqId = ++paymentReq.current;
+    if (styleProfile) {
+      const block = profilePaymentBlock(styleProfile, next);
+      if (block) patchDetails({ paymentInfo: block });
+      return;
+    }
     try {
       const d = await fetchPrefill(userId, next);
       if (!mounted.current || reqId !== paymentReq.current) return; // unmounted, or a newer toggle won
+      if (d.invoiceData.details.paymentInfo) {
+        defaultPaymentRef.current[next] = d.invoiceData.details.paymentInfo;
+      }
       patchDetails({ paymentInfo: d.invoiceData.details.paymentInfo });
     } catch {
       /* keep existing payment info */
@@ -300,6 +400,9 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
         String(Math.max(0, Math.round((data.details.totalAmount ?? 0) * 100)))
       );
       fd.set("pdf", new File([blob], `invoice-${data.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
+      // Brand the email like the PDF (subject/body/sign-off) — the server
+      // resolves the profile itself; only the id crosses the wire.
+      if (styleProfile) fd.set("styleProfileId", styleProfile.id);
       for (const cc of finalCcs) fd.append("cc", cc);
       // Additional email attachments (transient — not filed in Documents).
       // Server re-validates count/size/extension; this is just the wire format.
@@ -497,6 +600,13 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
                 <p className="mt-1.5 text-[11px] text-destructive">{attachError}</p>
               )}
             </div>
+
+            {/* Invoice style — default AC or a saved agency profile (e.g. PepAds) */}
+            <InvoiceStyleSelect
+              selectedId={styleProfile?.id ?? null}
+              onSelect={applyStyle}
+              paymentType={paymentType}
+            />
 
             {/* Dates + payment type */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

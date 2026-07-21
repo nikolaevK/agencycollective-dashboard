@@ -18,6 +18,8 @@ export interface AgencyProfileRecord {
   sender: InvoiceSender;
   logo: string;
   themeColor: string;
+  /** Public website URL, shown in branded invoice emails (may be ""). */
+  website: string;
   paymentLocal: PaymentInfo;
   paymentInternational: PaymentInfo;
   sortOrder: number;
@@ -31,6 +33,7 @@ export interface AgencyProfileInput {
   sender: InvoiceSender;
   logo: string;
   themeColor: string;
+  website: string;
   paymentLocal: PaymentInfo;
   paymentInternational: PaymentInfo;
 }
@@ -97,6 +100,7 @@ function rowToProfile(row: Row): AgencyProfileRecord {
     sender: parseSender(row.sender),
     logo: String(row.logo ?? ""),
     themeColor: String(row.theme_color ?? "#2563eb"),
+    website: String(row.website ?? ""),
     paymentLocal: parsePayment(row.payment_local, "local"),
     paymentInternational: parsePayment(row.payment_international, "international"),
     sortOrder: Number(row.sort_order ?? 0),
@@ -112,19 +116,53 @@ export async function readAgencyProfiles(): Promise<AgencyProfileRecord[]> {
   return result.rows.map(rowToProfile);
 }
 
+/**
+ * The identity a profile-styled invoice email carries (subject / body /
+ * sign-off). Name precedence is sender.name first — the same name the PDF
+ * prints — so the email always matches its attachment. Single-row lookup by
+ * design: the send routes call this per send, and pulling the whole table
+ * would drag every profile's base64 logo (~700 KB each) along.
+ */
+export interface AgencyProfileEmailBrand {
+  name: string;
+  email?: string;
+  website?: string;
+}
+
+export async function getAgencyProfileEmailBrand(
+  id: string
+): Promise<AgencyProfileEmailBrand | null> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT name, sender, website FROM invoice_agency_profiles WHERE id = ?",
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return null;
+  const sender = parseSender(row.sender);
+  const website = String(row.website ?? "");
+  return {
+    name: sender.name || String(row.name ?? ""),
+    email: sender.email || undefined,
+    website: website || undefined,
+  };
+}
+
 export async function insertAgencyProfile(id: string, input: AgencyProfileInput): Promise<void> {
   await ensureMigrated();
   const db = getDb();
   await db.execute({
     sql: `INSERT INTO invoice_agency_profiles
-            (id, name, sender, logo, theme_color, payment_local, payment_international)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            (id, name, sender, logo, theme_color, website, payment_local, payment_international)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       input.name,
       serializeSender(input.sender),
       input.logo,
       input.themeColor,
+      input.website,
       serializePayment(input.paymentLocal, "local"),
       serializePayment(input.paymentInternational, "international"),
     ],
@@ -136,7 +174,7 @@ export async function updateAgencyProfile(id: string, input: AgencyProfileInput)
   const db = getDb();
   const result = await db.execute({
     sql: `UPDATE invoice_agency_profiles
-          SET name = ?, sender = ?, logo = ?, theme_color = ?,
+          SET name = ?, sender = ?, logo = ?, theme_color = ?, website = ?,
               payment_local = ?, payment_international = ?, updated_at = datetime('now')
           WHERE id = ?`,
     args: [
@@ -144,6 +182,7 @@ export async function updateAgencyProfile(id: string, input: AgencyProfileInput)
       serializeSender(input.sender),
       input.logo,
       input.themeColor,
+      input.website,
       serializePayment(input.paymentLocal, "local"),
       serializePayment(input.paymentInternational, "international"),
       id,

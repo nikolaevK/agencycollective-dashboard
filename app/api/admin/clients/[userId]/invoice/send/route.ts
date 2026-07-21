@@ -7,6 +7,10 @@ import { getAdminSession } from "@/lib/adminSession";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import {
+  getAgencyProfileEmailBrand,
+  type AgencyProfileEmailBrand,
+} from "@/lib/invoiceAgencyProfiles";
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import { normalizeBrandName } from "@/lib/payouts";
 import { createRebillInvoice } from "@/lib/clientRebillInvoices";
@@ -103,6 +107,21 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const safeNumber =
       invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100) || "Invoice";
 
+    // Invoice style — when the drawer used a saved Agency Profile (e.g.
+    // PepAds), brand the email to match the PDF. Resolved server-side from
+    // the profile id so no free-form branding text enters the email.
+    const styleProfileId = String(formData.get("styleProfileId") ?? "").trim();
+    let emailBrand: AgencyProfileEmailBrand | undefined;
+    if (styleProfileId) {
+      const brand = await getAgencyProfileEmailBrand(styleProfileId);
+      if (!brand)
+        return NextResponse.json(
+          { error: "Invoice style profile not found" },
+          { status: 400 }
+        );
+      emailBrand = brand;
+    }
+
     // Free-form attachments (receipts, addendums, supporting docs). Validated
     // here so a bad upload errors before we even open the SMTP connection;
     // each file is materialised to a Buffer for nodemailer. The PDF itself
@@ -154,6 +173,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       cc: ccEmails.length > 0 ? ccEmails : undefined,
       variant: "rebill",
+      brand: emailBrand,
       additionalAttachments:
         additionalAttachments.length > 0 ? additionalAttachments : undefined,
     });
