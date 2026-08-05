@@ -14,6 +14,8 @@ import {
 } from "@/lib/teamMembers";
 import { businessTodayYmd } from "@/lib/businessTime";
 import { logAuditEvent } from "@/lib/auditLog";
+import { readAdmins } from "@/lib/admins";
+import { workspaceMembershipOf, scopesOverlap } from "@/lib/workspaces";
 
 /**
  * Slim roster list — powers assignee/forward pickers (task + action-item
@@ -26,7 +28,17 @@ export async function GET() {
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await ensureMigrated();
   try {
-    const members = await listTeamMembers();
+    let members = await listTeamMembers();
+    // Workspace scoping: scoped actors only see (and can target) members who
+    // BELONG to one of their books — explicit membership, not privilege, so
+    // internal admins never appear in a partner book's pickers.
+    if (actor.scope !== null) {
+      const adminById = new Map((await readAdmins()).map((a) => [a.id, a] as const));
+      members = members.filter((m) => {
+        const admin = adminById.get(m.adminId);
+        return admin ? scopesOverlap(actor.scope, workspaceMembershipOf(admin)) : false;
+      });
+    }
     return NextResponse.json({
       data: {
         members: members.map((m) => ({

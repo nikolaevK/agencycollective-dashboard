@@ -69,6 +69,8 @@ export async function uploadPayoutDocumentAction(
     payoutMonth,
     payoutYear,
     uploadedBy: auth.session.adminId,
+    // Payout Tracker uploads are an internal surface — always the main book.
+    workspace: "main",
     createdAt: new Date().toISOString(),
   };
 

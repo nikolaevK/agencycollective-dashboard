@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
+import { getScopeForAdminId, clientVisibleToScope } from "@/lib/api/supportScope";
 import {
   deleteFeedback,
   findFeedback,
@@ -19,6 +20,12 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const existing = await findFeedback(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Workspace scoping: feedback of out-of-book clients reads as not-found.
+  const scope = await getScopeForAdminId(session.adminId);
+  if (scope === undefined) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await clientVisibleToScope(scope, existing.userId)))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let payload: Record<string, unknown>;
   try {
@@ -51,6 +58,12 @@ export async function DELETE(_request: Request, { params }: Params) {
 
   const existing = await findFeedback(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Workspace scoping: feedback of out-of-book clients reads as not-found.
+  const scope = await getScopeForAdminId(session.adminId);
+  if (scope === undefined) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await clientVisibleToScope(scope, existing.userId)))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { deleted, repliesDeleted } = await deleteFeedback(params.id);
   if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });

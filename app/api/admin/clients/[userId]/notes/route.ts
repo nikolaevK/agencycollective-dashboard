@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { findUser } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
 import {
 
@@ -11,7 +10,7 @@ import {
   deleteClientNote,
   findClientNote,
 } from "@/lib/clientNotes";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 
 interface RouteContext {
@@ -19,26 +18,21 @@ interface RouteContext {
 }
 
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
+
   const notes = await listClientNotes(params.userId);
   return NextResponse.json({ data: notes });
 }
 
 export async function POST(request: Request, { params }: RouteContext) {
-  const admin = await requireAdminSession();
-  if (!admin)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
+  const admin = guard.actor.admin;
 
   try {
-    const user = await findUser(params.userId);
-    if (!user)
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-
     const body = (await request.json()) as {
       body?: string;
       remindAt?: string | null;
@@ -62,10 +56,9 @@ export async function POST(request: Request, { params }: RouteContext) {
 }
 
 export async function PATCH(request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   try {
     const body = (await request.json()) as {
@@ -96,10 +89,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 }
 
 export async function DELETE(request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   try {
     const { searchParams } = new URL(request.url);

@@ -4,7 +4,8 @@ export const runtime = "nodejs";
 import crypto from "crypto";
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, okList, fail, corsPreflight, parsePagination, paginate, readJsonBody } from "@/lib/api/respond";
-import { allowedResourceIds } from "@/lib/apiScopes";
+import { allowedResourceIds, tokenWorkspaceScope, tokenIsExternal } from "@/lib/apiScopes";
+import { listWorkspaceValues } from "@/lib/workspaces";
 import { buildClientDirectory } from "@/lib/clientDirectory";
 import {
   insertUser,
@@ -60,6 +61,28 @@ export async function GET(request: Request) {
   }
 }
 
+
+/**
+ * Workspace (book) a token-created client lands in. Optional body value is
+ * honored when the token may touch that book AND it's a known slug (or one
+ * of the token's own restricted books — those stay valid even if the
+ * registry row was deleted, mirroring scoped admins). Default: a restricted
+ * token's first book, else 'main'. Returns null for a disallowed value.
+ */
+async function resolveCreateWorkspace(
+  token: { workspaces?: string[] | null },
+  raw: unknown
+): Promise<string | null> {
+  const restriction = tokenWorkspaceScope(token as Parameters<typeof tokenWorkspaceScope>[0]);
+  const requested = typeof raw === "string" ? raw.trim() : "";
+  if (!requested) return restriction ? restriction[0] : "main";
+  if (restriction) {
+    return restriction.includes(requested) ? requested : null;
+  }
+  const valid = await listWorkspaceValues();
+  return valid.has(requested) ? requested : null;
+}
+
 /**
  * Create a client. Body: { displayName, email, status?, mrrCents?,
  * category?, accountId?, joinedAt?, payoutBrand?, analystEnabled?,
@@ -83,6 +106,27 @@ export async function POST(request: Request) {
     }
     if (await findUserByEmail(email)) {
       return fail("conflict", "A client with this email already exists", 409);
+    }
+
+    const workspace = await resolveCreateWorkspace(auth.token, body.workspace);
+    if (!workspace) {
+      return fail(
+        "invalid_request",
+        "Unknown workspace, or this token is not allowed to create clients in it",
+        400
+      );
+    }
+
+    // The payout-brand link is internally managed: for non-main clients it is
+    // the ONLY (exact) key into payout history, so an external-restricted
+    // token must never point it at an internal brand (mirrors the admin-side
+    // rule for external partner admins).
+    if (tokenIsExternal(auth.token) && body.payoutBrand) {
+      return fail(
+        "resource_forbidden",
+        "The payout brand link is managed by the agency for workspace-restricted tokens",
+        403
+      );
     }
 
     const status = body.status != null ? (String(body.status) as UserStatus) : "active";
@@ -117,6 +161,7 @@ export async function POST(request: Request) {
       designBoardUrl: null,
       joinedAt: null,
       payoutBrand: null,
+      workspace,
     };
     await insertUser(user);
     // insertUser ignores joinedAt/payoutBrand — follow with updateUser

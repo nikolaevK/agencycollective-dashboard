@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { AdminAvatarUpload } from "./AdminAvatarUpload";
 import { PermissionToggleList } from "./PermissionToggleList";
@@ -20,9 +21,16 @@ interface AddEditAdminModalProps {
     email: string;
     role: string;
     permissions: AdminPermissions;
+    workspaces?: string[] | null;
     avatarFile?: File;
   }) => void;
   isPending: boolean;
+}
+
+interface WorkspaceRegistryEntry {
+  value: string;
+  label: string;
+  builtIn?: boolean;
 }
 
 export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: AddEditAdminModalProps) {
@@ -35,6 +43,21 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
   const [permissions, setPermissions] = useState<AdminPermissions>(allPermissionsFalse());
   const [avatarFile, setAvatarFile] = useState<File | undefined>(undefined);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // Workspace (book) allow-list. Empty selection = legacy default (main book
+  // only). Supers and Admin Management see every book regardless.
+  const [workspaceSel, setWorkspaceSel] = useState<string[]>([]);
+
+  const { data: registry = [] } = useQuery<WorkspaceRegistryEntry[]>({
+    queryKey: ["workspace-registry"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/admins/workspaces");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return Array.isArray(json.data) ? json.data : [];
+    },
+    enabled: open,
+    staleTime: 300_000,
+  });
 
   useEffect(() => {
     if (open) {
@@ -44,12 +67,14 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
         setEmail(admin.email ?? "");
         setRole(admin.role);
         setPermissions({ ...admin.permissions });
+        setWorkspaceSel(admin.workspaces ?? []);
       } else {
         setUsername("");
         setDisplayName("");
         setEmail("");
         setRole("admin");
         setPermissions(allPermissionsFalse());
+        setWorkspaceSel([]);
       }
       setAvatarFile(undefined);
       setAvatarPreview(null);
@@ -77,6 +102,7 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
       email: email.trim(),
       role,
       permissions,
+      workspaces: workspaceSel.length > 0 ? workspaceSel : null,
       avatarFile,
     });
   }
@@ -173,6 +199,43 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
               </select>
               <p className="text-xs text-muted-foreground">
                 A label shown across the dashboard — module permissions are set below.
+              </p>
+            </div>
+          )}
+
+          {/* Workspaces (books) — which Client Directory / Team books this
+              admin sees. Only shown when partner workspaces exist. */}
+          {!admin?.isSuper && registry.length > 1 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Client Directory Workspaces</label>
+              <div className="space-y-1.5 rounded-lg border border-border p-3">
+                {registry.map((w) => (
+                  <label key={w.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={workspaceSel.includes(w.value)}
+                      onChange={(e) =>
+                        setWorkspaceSel((prev) =>
+                          e.target.checked
+                            ? [...prev, w.value]
+                            : prev.filter((v) => v !== w.value)
+                        )
+                      }
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    <span>{w.label}</span>
+                    {w.builtIn && (
+                      <span className="text-xs text-muted-foreground">(main book)</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Which books this admin sees in the Client Directory, Ad Accounts and
+                Team pages. Nothing selected = the main book (default). Admins with
+                the Admin Management permission and supers always see every book.
+                A selection WITHOUT the main book makes this an external partner
+                account — Payout DB, Welcome Kit and SOPs are hidden.
               </p>
             </div>
           )}

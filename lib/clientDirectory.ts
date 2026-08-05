@@ -41,6 +41,21 @@ import {
   type ClientTeamMember,
 } from "./clientProfile";
 import { listAdAccounts, listAdAccountsForUser, type AdAccount } from "./adAccounts";
+import { inWorkspaceScope, type WorkspaceScope } from "./workspaces";
+
+/**
+ * Filter directory (or any workspace-carrying) rows down to an actor's
+ * workspace scope. Every admin-facing list route MUST pass its actor's scope
+ * through here (or check inWorkspaceScope per row) — the build itself is
+ * unscoped so unscoped callers (team hub, alerts for supers) share one build.
+ */
+export function filterRowsByWorkspace<T extends { workspace: string }>(
+  rows: T[],
+  scope: WorkspaceScope
+): T[] {
+  if (scope === null) return rows;
+  return rows.filter((r) => inWorkspaceScope(scope, r.workspace));
+}
 
 // ---------------------------------------------------------------------------
 // Aggregated row — superset of the legacy ClientPublic shape. Every field the
@@ -59,6 +74,8 @@ export interface ClientDirectoryRow {
   mrr: number; // legacy users.mrr (cents) — manual fallback
   category: string | null;
   createdAt: string;
+  /** Workspace (book) slug — 'main' is the original Agency Collective book. */
+  workspace: string;
   hasPassword: boolean;
   analystEnabled: boolean;
   designBoardEnabled: boolean;
@@ -105,12 +122,23 @@ function datePart(value: string | null): string | null {
  * Resolve the payout brand histories that belong to a client. Prefers the
  * explicit link (exact normalized match on users.payout_brand); falls back to
  * fuzzy brand matching on the display name for unlinked clients.
+ *
+ * SECURITY: clients OUTSIDE the main book match ONLY via the explicit link,
+ * exact — no fuzzy fallback, no display-name matching. brandsMatch is
+ * substring-based, so a partner-book client named "Glow" would otherwise
+ * pull the internal brand "Inner Glow"'s payment history (and MRR/LTV) into
+ * a view an external admin can read. The link itself is internally managed
+ * (updateUserAction rejects payout-brand edits from external actors).
  */
 function matchHistories(
   user: UserRecord,
   histories: BrandHistory[]
 ): BrandHistory[] {
   const linkNorm = user.payoutBrand ? normalizeBrandName(user.payoutBrand) : "";
+  if (user.workspace !== "main") {
+    if (!linkNorm) return [];
+    return histories.filter((h) => h.normalizedName === linkNorm);
+  }
   if (linkNorm) {
     const exact = histories.filter((h) => h.normalizedName === linkNorm);
     if (exact.length > 0) return exact;
@@ -262,6 +290,7 @@ function buildRow(
     mrr: user.mrr,
     category: user.category,
     createdAt: user.createdAt,
+    workspace: user.workspace,
     hasPassword: Boolean(user.passwordHash),
     analystEnabled: user.analystEnabled,
     designBoardEnabled: user.designBoardEnabled,

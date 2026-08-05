@@ -10,6 +10,8 @@ export interface AdminPublic {
   avatarPath: string | null;
   role: string;
   permissions: AdminPermissions;
+  /** Workspace (book) allow-list — null = legacy default (main book only). */
+  workspaces: string[] | null;
 }
 
 /**
@@ -22,6 +24,7 @@ export const ADMIN_ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "media_buyer", label: "Media Buyer" },
   { value: "csm", label: "Client Success Manager" },
+  { value: "partner", label: "External Team / Partner" },
 ] as const;
 
 export function adminRoleLabel(role: string): string {

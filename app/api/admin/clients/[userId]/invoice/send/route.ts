@@ -3,7 +3,7 @@ export const maxDuration = 30;
 
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
@@ -61,14 +61,14 @@ function shortName(name: string): string {
  * separate (the Payout page still drives the next re-bill).
  */
 export async function POST(req: NextRequest, { params }: RouteContext) {
-  const session = getAdminSession();
-  if (!session)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   if (!isEmailConfigured())
     return NextResponse.json({ error: "Email not configured" }, { status: 503 });
 
   await ensureMigrated();
+
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
+  const session = { adminId: guard.actor.admin.id };
 
   try {
     const detail = await getClientDetail(params.userId);
@@ -202,6 +202,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       id: crypto.randomUUID(),
       normalizedBrand: normalizeBrandName(brand),
       brandName: brand,
+      workspace: guard.user.workspace,
       docType: "invoice",
       fileName: `invoice-${safeNumber}.pdf`,
       fileSize: buffer.length,

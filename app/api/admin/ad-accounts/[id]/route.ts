@@ -3,8 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { getAdAccount, updateAdAccount, deleteAdAccount } from "@/lib/adAccounts";
-import { findUser } from "@/lib/users";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
+import { inWorkspaceScope } from "@/lib/workspaces";
 
 
 interface RouteContext {
@@ -14,13 +14,15 @@ interface RouteContext {
 
 /** Edit an ad account (client link, vendor, fee, retainer, status, notes). */
 export async function PATCH(req: NextRequest, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
 
   const existing = await getAdAccount(params.id);
-  if (!existing)
+  // Out-of-scope accounts read as not-found (no cross-book id probing).
+  if (!existing || !inWorkspaceScope(actor.scope, existing.workspace))
     return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
 
   let body: Record<string, unknown>;
@@ -36,10 +38,12 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     if (body.userId === null || body.userId === "") {
       changes.userId = null;
     } else if (typeof body.userId === "string") {
-      const user = await findUser(body.userId);
+      const user = await findClientInScope(actor.scope, body.userId);
       if (!user)
         return NextResponse.json({ error: "Client not found" }, { status: 400 });
       changes.userId = user.id;
+      // Keep the account in its client's book — assignment moves it.
+      if (user.workspace !== existing.workspace) changes.workspace = user.workspace;
     }
   }
   if (typeof body.accountName === "string") {
@@ -73,10 +77,15 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
 
 /** Remove an ad account. */
 export async function DELETE(_req: NextRequest, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
+  const existing = await getAdAccount(params.id);
+  if (!existing || !inWorkspaceScope(actor.scope, existing.workspace))
+    return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
+
   const deleted = await deleteAdAccount(params.id);
   if (!deleted)
     return NextResponse.json({ error: "Ad account not found" }, { status: 404 });

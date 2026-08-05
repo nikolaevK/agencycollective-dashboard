@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { tokenIsExternal } from "@/lib/apiScopes";
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import {
@@ -44,6 +45,12 @@ export function OPTIONS() {
 export async function GET(request: Request) {
   const auth = await authenticateApiRequest(request, "client:read");
   if (!auth.ok) return auth.response;
+
+  // Internal-only surface — denied for workspace-restricted tokens whose
+  // books exclude main (mirrors the admin-side external 403).
+  if (tokenIsExternal(auth.token)) {
+    return fail("resource_forbidden", "This endpoint is internal-only for workspace-restricted tokens", 403);
+  }
   const data = await getAdAccountPaymentTemplates();
   return ok(data);
 }
@@ -52,6 +59,12 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const auth = await authenticateApiRequest(request, "client:write");
   if (!auth.ok) return auth.response;
+
+  // Internal-only surface — denied for workspace-restricted tokens whose
+  // books exclude main (mirrors the admin-side external 403).
+  if (tokenIsExternal(auth.token)) {
+    return fail("resource_forbidden", "This endpoint is internal-only for workspace-restricted tokens", 403);
+  }
 
   try {
     const body = await readJsonBody(request);
@@ -94,6 +107,12 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   const auth = await authenticateApiRequest(request, "client:delete");
   if (!auth.ok) return auth.response;
+
+  // Internal-only surface — denied for workspace-restricted tokens whose
+  // books exclude main (mirrors the admin-side external 403).
+  if (tokenIsExternal(auth.token)) {
+    return fail("resource_forbidden", "This endpoint is internal-only for workspace-restricted tokens", 403);
+  }
 
   try {
     const type = new URL(request.url).searchParams.get("type");

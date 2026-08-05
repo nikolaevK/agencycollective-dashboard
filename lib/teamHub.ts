@@ -1,7 +1,15 @@
 import {
   buildClientDirectory,
+  filterRowsByWorkspace,
   type ClientDirectoryRow,
 } from "./clientDirectory";
+import { readAdmins, findAdmin } from "./admins";
+import {
+  workspaceMembershipOf,
+  scopesOverlap,
+  isExternalScope,
+  type WorkspaceScope,
+} from "./workspaces";
 import { effectiveMrrCents } from "./clientProfile";
 import { getDb, ensureMigrated } from "./db";
 import { randomUUID } from "crypto";
@@ -341,22 +349,29 @@ export function invalidateTeamDirectoryMemo(): void {
 }
 
 export async function buildTeamDirectory(
-  timeframe: TeamTimeframe
+  timeframe: TeamTimeframe,
+  /** Viewer's workspace scope — null = every book. Members, client rollups
+   *  and slices are filtered through it (lib/workspaces.ts). */
+  viewerScope: WorkspaceScope = null
 ): Promise<TeamDirectory> {
   const today = businessTodayYmd();
   const window = timeframeWindow(timeframe, today);
 
-  const rows = await getDirectoryRowsMemo();
+  const allRows = await getDirectoryRowsMemo();
 
   // The sweep reads the fresh rows and may create/solve system items.
   // Fire-and-forget: a read path must never wait on (or fail because of) it —
   // its output simply shows on the NEXT load. Idempotent via dedup_key.
-  void runTeamSystemSweep(rows).catch((err) => {
+  // ALWAYS fed the UNSCOPED rows — a scoped row set would make the
+  // auto-resolve pass believe out-of-scope conditions cleared.
+  void runTeamSystemSweep(allRows).catch((err) => {
     console.error("[teamHub] system sweep failed", err);
   });
 
+  const rows = filterRowsByWorkspace(allRows, viewerScope);
+
   const month = today.slice(0, 7);
-  const [members, taskStats, unsolvedCounts, goals, unrostered, monthRebilledCents] =
+  const [allMembers, taskStats, unsolvedCounts, goals, allUnrostered, wholeBookRebilledCents] =
     await Promise.all([
       listTeamMembers(),
       taskStatsByAdmin(today, window.end),
@@ -371,6 +386,27 @@ export async function buildTeamDirectory(
         Number(month.slice(0, 4))
       ),
     ]);
+
+  // The Payout-DB aggregate is main-book money — never surfaced to an
+  // external (partner) scope.
+  const monthRebilledCents = isExternalScope(viewerScope)
+    ? null
+    : wholeBookRebilledCents;
+
+  // Scoped viewers only see members (and unrostered assignees) who BELONG to
+  // one of their books — explicit membership, not visibility privilege, so a
+  // privileged internal admin never appears inside a partner book's team.
+  let members = allMembers;
+  let unrostered = allUnrostered;
+  if (viewerScope !== null) {
+    const adminById = new Map((await readAdmins()).map((a) => [a.id, a] as const));
+    const belongs = (adminId: string) => {
+      const admin = adminById.get(adminId);
+      return admin ? scopesOverlap(viewerScope, workspaceMembershipOf(admin)) : false;
+    };
+    members = allMembers.filter((m) => belongs(m.adminId));
+    unrostered = allUnrostered.filter((u) => belongs(u.adminId));
+  }
 
   const active = rows.filter((r) => r.status === "active");
 
@@ -401,6 +437,7 @@ export async function buildTeamDirectory(
   }
 
   const totalsMonthly = monthlyProgress(active, month, monthRebilledCents);
+
 
   return {
     timeframe,
@@ -441,16 +478,28 @@ export interface TeamMemberHub {
 
 export async function buildMemberHub(
   adminId: string,
-  timeframe: TeamTimeframe
+  timeframe: TeamTimeframe,
+  /** Viewer's workspace scope — null = every book. */
+  viewerScope: WorkspaceScope = null
 ): Promise<TeamMemberHub | null> {
   const member = await getTeamMember(adminId);
   if (!member) return null;
+
+  // A scoped viewer can only open hubs of members BELONGING to one of their
+  // books (out-of-scope hubs read as not-found, like everything else
+  // workspace-y). Membership, not privilege — see workspaceMembershipOf.
+  if (viewerScope !== null) {
+    const memberAdmin = await findAdmin(adminId);
+    if (!memberAdmin || !scopesOverlap(viewerScope, workspaceMembershipOf(memberAdmin))) {
+      return null;
+    }
+  }
 
   const today = businessTodayYmd();
   const window = timeframeWindow(timeframe, today);
   const goalMonth = today.slice(0, 7);
 
-  const rows = await getDirectoryRowsMemo();
+  const rows = filterRowsByWorkspace(await getDirectoryRowsMemo(), viewerScope);
   const clients = attributedClients(member, rows);
 
   const [taskStats, unsolvedCounts, goalCents, goalHistory, monthRebilledCents] =
@@ -459,8 +508,9 @@ export async function buildMemberHub(
       unsolvedCountsByAdmin(adminId),
       getGoalCents(adminId, goalMonth),
       listGoalHistory(adminId),
-      // Only whole-book members surface the Payout-DB month aggregate.
-      member.attribution === "book"
+      // Only whole-book members surface the Payout-DB month aggregate —
+      // and never to an external (partner) scope.
+      member.attribution === "book" && !isExternalScope(viewerScope)
         ? getMonthRebillRevenueCents(
             Number(goalMonth.slice(5, 7)),
             Number(goalMonth.slice(0, 4))

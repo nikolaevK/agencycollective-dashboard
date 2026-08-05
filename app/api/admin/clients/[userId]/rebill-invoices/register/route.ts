@@ -1,11 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-import { findUser } from "@/lib/users";
 import { createRebillInvoice } from "@/lib/clientRebillInvoices";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string };
@@ -14,13 +12,6 @@ interface RouteContext {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_LIKE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/;
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  const admin = await findAdmin(session.adminId);
-  return admin ? { admin, session } : null;
-}
 
 /**
  * Backfill action: register an invoice that was sent OUTSIDE this UI (e.g.
@@ -35,17 +26,13 @@ async function requireAdminSession() {
  * without the email + PDF-file plumbing.
  */
 export async function POST(req: NextRequest, { params }: RouteContext) {
-  const auth = await requireAdminSession();
-  if (!auth)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
   // libSQL FK enforcement isn't guaranteed (per the codebase notes), so
-  // refuse to create an orphan invoice for a missing client.
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  // refuse to create an orphan invoice for a missing client; out-of-scope
+  // clients read as not-found.
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   let body: {
     invoiceNumber?: unknown;
@@ -152,7 +139,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       cycleAnchor,
       amountCents,
       recipientEmail,
-      sentByAdminId: auth.session.adminId,
+      sentByAdminId: guard.actor.admin.id,
       sentAt,
     });
     return NextResponse.json({ data: invoice });

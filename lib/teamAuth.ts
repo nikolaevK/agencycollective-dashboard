@@ -1,5 +1,6 @@
 import { getAdminSession } from "./adminSession";
 import { findAdmin, type AdminRecord } from "./admins";
+import { workspaceScopeOf, type WorkspaceScope } from "./workspaces";
 
 // ---------------------------------------------------------------------------
 // Team hub access rules (shared by all /api/admin/team routes):
@@ -22,6 +23,13 @@ import { findAdmin, type AdminRecord } from "./admins";
 export interface TeamActor {
   admin: AdminRecord;
   privileged: boolean;
+  /**
+   * Workspace (book) scope — null for privileged actors (they see every
+   * book), else the admin's allow-list (default ['main']). Team surfaces
+   * filter members + client rollups through it so a partner-book admin never
+   * sees the internal team or its clients (lib/workspaces.ts).
+   */
+  scope: WorkspaceScope;
 }
 
 export async function getTeamActor(): Promise<TeamActor | null> {
@@ -29,7 +37,11 @@ export async function getTeamActor(): Promise<TeamActor | null> {
   if (!session) return null;
   const admin = await findAdmin(session.adminId);
   if (!admin) return null;
-  return { admin, privileged: admin.isSuper || admin.permissions.admin };
+  return {
+    admin,
+    privileged: admin.isSuper || admin.permissions.admin,
+    scope: workspaceScopeOf(admin),
+  };
 }
 
 /** May this actor view/manage the hub (tasks, items) of `targetAdminId`? */

@@ -248,6 +248,8 @@ export async function POST(request: Request) {
         docType,
         fileName,
         fileSize: bytes.length,
+        // Deal imports are an internal (main-book) flow.
+        workspace: "main",
         createdAt: new Date().toISOString(),
       };
       await insertDocument(doc, bytes);

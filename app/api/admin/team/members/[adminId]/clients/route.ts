@@ -6,7 +6,7 @@ import { getTeamActor } from "@/lib/teamAuth";
 import { getTeamMember } from "@/lib/teamMembers";
 import { getClientTeam, setClientTeam } from "@/lib/clientProfile";
 import { invalidateTeamDirectoryMemo } from "@/lib/teamHub";
-import { findUser } from "@/lib/users";
+import { clientVisibleToScope } from "@/lib/api/supportScope";
 import { logAuditEvent } from "@/lib/auditLog";
 
 interface RouteContext {
@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   if (typeof body.assigned !== "boolean") {
     return NextResponse.json({ error: "assigned must be a boolean" }, { status: 400 });
   }
-  if (!(await findUser(clientId))) {
+  if (!(await clientVisibleToScope(actor.scope, clientId))) {
     return NextResponse.json({ error: "Unknown clientId" }, { status: 400 });
   }
 

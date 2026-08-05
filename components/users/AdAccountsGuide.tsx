@@ -303,6 +303,31 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
             </ul>
           </Section>
 
+          <Section icon={Link2} title="Workspaces (separate books for outside teams)">
+            <ul className="space-y-3">
+              <li>
+                Every ad account belongs to a <strong>workspace</strong> (book). Accounts
+                created here land in your book; assigning a client moves the account into
+                that client&rsquo;s book. Admins only see the accounts — and the summary
+                cards, alerts and sent-invoice panels — of the book(s) they&rsquo;re
+                assigned to; super admins and Admin Management see every book.
+              </li>
+              <li>
+                <strong>Partner-book accounts match payouts by the explicit link only.</strong>{" "}
+                For accounts outside the main book, the schedule and the auto-Paid
+                reconciliation use the client&rsquo;s agency-managed <em>Payout brand</em>{" "}
+                link with an exact match — never the fuzzy name match — so a name collision
+                with another book&rsquo;s brand can&rsquo;t move their billing.
+              </li>
+              <li>
+                <strong>External partner admins</strong> can send and register invoices for
+                their own accounts, but not free invoices (no account), and the Payment
+                settings (bank details) stay internal — invoices still carry the standard
+                payment block automatically.
+              </li>
+            </ul>
+          </Section>
+
           <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
             Tip: the same retainer + ad-spend logic and the same &ldquo;cycle vs sent
             date&rdquo; rules apply to client re-bills on the Directory tab.

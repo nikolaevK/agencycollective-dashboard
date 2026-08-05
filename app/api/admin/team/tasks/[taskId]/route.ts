@@ -20,7 +20,7 @@ import {
 } from "@/lib/teamTasks";
 import { syncActionItemForTask } from "@/lib/teamActionItems";
 import { getTeamMember } from "@/lib/teamMembers";
-import { findUser } from "@/lib/users";
+import { clientVisibleToScope } from "@/lib/api/supportScope";
 import { logAuditEvent } from "@/lib/auditLog";
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -236,7 +236,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     if (body.clientId !== undefined) {
       const clientId =
         typeof body.clientId === "string" && body.clientId ? body.clientId : null;
-      if (clientId && !(await findUser(clientId))) {
+      if (clientId && !(await clientVisibleToScope(actor.scope, clientId))) {
         return NextResponse.json({ error: "Unknown clientId" }, { status: 400 });
       }
       changes.clientId = clientId;

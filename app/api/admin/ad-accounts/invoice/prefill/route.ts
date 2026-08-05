@@ -2,11 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getAdAccount, normalizeFeeBps } from "@/lib/adAccounts";
+import { normalizeFeeBps } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import { generateClientInvoiceNumber } from "@/lib/clientInvoice";
 import { generateAdAccountInvoiceData } from "@/lib/adAccountInvoice";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
 
 /**
  * Prefilled ad-account invoice. With `adAccountId`, infers the recipient
@@ -17,7 +17,8 @@ import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmi
  * ad-spend fee math; `paymentType` swaps the payment-instructions block.
  */
 export async function GET(request: Request) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
   let brand: string | null = null;
 
   if (adAccountId) {
-    const account = await getAdAccount(adAccountId);
+    const account = await findAdAccountInScope(actor.scope, adAccountId);
     if (!account)
       return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
     accountName = account.accountName;

@@ -2,10 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { buildClientDirectory } from "@/lib/clientDirectory";
+import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
 import { isRebillAlertStatus } from "@/lib/clientBilling";
 import { listDueReminders } from "@/lib/clientNotes";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor } from "@/lib/api/requireAdmin";
+import { inWorkspaceScope } from "@/lib/workspaces";
 
 /**
  * Live-computed re-bill alerts: ACTIVE clients whose next bill is due/overdue
@@ -19,15 +20,19 @@ import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmi
  * (an inactive client doesn't need a separate billing pause to go quiet).
  */
 export async function GET() {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
 
-  const [rows, dueReminders] = await Promise.all([
+  const [allRows, dueReminders] = await Promise.all([
     buildClientDirectory(),
     listDueReminders(),
   ]);
+  // Workspace scoping: alerts (and reminders) only for the actor's book(s).
+  const rows = filterRowsByWorkspace(allRows, actor.scope);
+  const workspaceByUser = new Map(allRows.map((r) => [r.id, r.workspace] as const));
 
   // PepAds-book clients are excluded: their billing status is maintained
   // manually (profile.manualBilling / manualNextRebill), so the computed
@@ -52,14 +57,18 @@ export async function GET() {
     }))
     .sort((a, b) => (a.daysUntilDue ?? 0) - (b.daysUntilDue ?? 0));
 
-  const reminders = dueReminders.map((n) => ({
-    id: n.id,
-    userId: n.userId,
-    clientName: n.clientName,
-    clientSlug: n.clientSlug,
-    body: n.body,
-    remindAt: n.remindAt,
-  }));
+  const reminders = dueReminders
+    .filter((n) =>
+      inWorkspaceScope(actor.scope, workspaceByUser.get(n.userId) ?? "main")
+    )
+    .map((n) => ({
+      id: n.id,
+      userId: n.userId,
+      clientName: n.clientName,
+      clientSlug: n.clientSlug,
+      body: n.body,
+      remindAt: n.remindAt,
+    }));
 
   return NextResponse.json({
     data: {

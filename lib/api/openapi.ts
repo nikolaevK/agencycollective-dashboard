@@ -284,6 +284,9 @@ const clientBody = obj(
     payoutBrand: str(),
     analystEnabled: bool(),
     designBoardEnabled: bool(),
+    workspace: str(
+      "Workspace (book) slug — defaults to the token's restricted book, else 'main'"
+    ),
   },
   ["displayName", "email"]
 );
@@ -685,6 +688,9 @@ export const openApiSpec: OpenApiSpec = {
               monthlyMrrCents: num("Integer CENTS"),
               category: str(),
               email: str(),
+              workspace: str(
+                "Workspace (book) slug — defaults to the token's restricted book, else 'main'"
+              ),
             },
             ["brandName"]
           ),

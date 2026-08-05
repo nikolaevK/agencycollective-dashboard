@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { generateClientInvoiceData, generateClientInvoiceNumber } from "@/lib/clientInvoice";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string };
@@ -17,10 +17,10 @@ interface RouteContext {
  * payment-instructions block (local | international).
  */
 export async function GET(request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   const detail = await getClientDetail(params.userId);
   if (!detail)

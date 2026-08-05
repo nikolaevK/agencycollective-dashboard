@@ -10,13 +10,13 @@ import {
   setWelcomeKitPdf,
   MAX_WELCOME_KIT_PDF_BYTES,
 } from "@/lib/welcomeKit";
-import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+import { requireInternalActor } from "@/lib/api/requireAdmin";
 
 
 /** Upload (or replace) the Welcome Kit's downloadable PDF (multipart `file`). */
 export async function POST(request: Request) {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
 
   await ensureMigrated();
   try {
@@ -62,8 +62,8 @@ export async function POST(request: Request) {
 
 /** Remove the uploaded PDF. */
 export async function DELETE() {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
 
   await ensureMigrated();
   try {

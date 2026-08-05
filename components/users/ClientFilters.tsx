@@ -8,6 +8,7 @@ import type { UserStatus } from "@/lib/users";
 import type { RebillStatus } from "@/lib/clientBilling";
 import type { ClientBook } from "@/lib/clientProfile";
 import type { TeamFilterSelection } from "./TeamFilterCards";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 export type RebillFilter = "all" | RebillStatus;
 
@@ -22,6 +23,7 @@ export interface ClientFilterState {
   lastRebill: DateRangeValue;
   // Roster filters (toggled from the RosterDashboard pills + person cards)
   book: "all" | ClientBook;
+  workspace: string; // "all" = every visible workspace (book scope)
   stages: string[]; // any-match
   health: string[];
   services: string[];
@@ -39,6 +41,7 @@ export const DEFAULT_FILTERS: ClientFilterState = {
   joined: { from: "", to: "" },
   lastRebill: { from: "", to: "" },
   book: "all",
+  workspace: "all",
   stages: [],
   health: [],
   services: [],
@@ -48,6 +51,7 @@ export const DEFAULT_FILTERS: ClientFilterState = {
 
 export function filtersActive(f: ClientFilterState): boolean {
   return (
+    f.workspace !== "all" ||
     f.search.trim() !== "" ||
     f.status !== "all" ||
     f.category !== "" ||
@@ -75,6 +79,7 @@ export function ClientFilters({
   value: ClientFilterState;
   onChange: (next: ClientFilterState) => void;
 }) {
+  const { workspaces } = useWorkspaces();
   const set = <K extends keyof ClientFilterState>(
     key: K,
     v: ClientFilterState[K]
@@ -107,6 +112,20 @@ export function ClientFilters({
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
         </select>
+
+        {/* Workspace (separate directories for outside teams) */}
+        {workspaces.length > 1 && (
+          <select
+            value={value.workspace}
+            onChange={(e) => set("workspace", e.target.value)}
+            className={SELECT_CLS}
+          >
+            <option value="all">All workspaces</option>
+            {workspaces.map((w) => (
+              <option key={w.value} value={w.value}>{w.label}</option>
+            ))}
+          </select>
+        )}
 
         {/* Book */}
         <select

@@ -132,6 +132,35 @@ function hasPerm(perms: Record<string, boolean>, key: PermKey): boolean {
   return false;
 }
 
+/**
+ * Best landing page for an admin WITHOUT the `dashboard` permission (e.g. an
+ * external partner admin holding only `users`). Login always sends to
+ * /dashboard; bouncing such an admin to "Access Denied" as their FIRST screen
+ * is technically correct but reads like a broken account — forward them to
+ * the first page they can actually use instead. /dashboard/team is the final
+ * fallback (visible to every admin).
+ */
+const LANDING_FALLBACKS: { perm: PermKey; path: string }[] = [
+  { perm: "users", path: "/dashboard/users" },
+  { perm: "closers", path: "/dashboard/closers" },
+  { perm: "media", path: "/dashboard/media-buyers" },
+  { perm: "analyst", path: "/dashboard/chat" },
+  { perm: "invoice", path: "/dashboard/invoice" },
+  { perm: "meta_accounts", path: "/dashboard/meta-accounts" },
+  { perm: "studio", path: "/dashboard/generate" },
+  { perm: "adcopy", path: "/dashboard/ad-copy" },
+  { perm: "jsoneditor", path: "/dashboard/json-editor" },
+  { perm: "admin", path: "/dashboard/admins" },
+  { perm: "apitokens", path: "/dashboard/api-tokens" },
+];
+
+function fallbackLanding(perms: Record<string, boolean>): string {
+  for (const { perm, path } of LANDING_FALLBACKS) {
+    if (hasPerm(perms, perm)) return path;
+  }
+  return "/dashboard/team";
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const secret = process.env.SESSION_SECRET ?? "";
@@ -170,6 +199,13 @@ export async function middleware(request: NextRequest) {
         const perms = (data.permissions ?? {}) as Record<string, boolean>;
         for (const route of ROUTE_PERMISSIONS) {
           if (route.match(pathname) && !hasPerm(perms, route.perm)) {
+            // The bare /dashboard is where login (and the sidebar logo) always
+            // lands — an admin without the `dashboard` perm gets forwarded to
+            // their first permitted page instead of an Access Denied screen.
+            // Deep links to other denied pages still get the explicit denial.
+            if (pathname === "/dashboard") {
+              return NextResponse.redirect(new URL(fallbackLanding(perms), request.url));
+            }
             return NextResponse.redirect(new URL("/dashboard/unauthorized", request.url));
           }
         }

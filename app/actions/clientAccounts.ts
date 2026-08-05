@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { ensureMigrated } from "@/lib/db";
-import { findUser } from "@/lib/users";
 import { getAdminSession } from "@/lib/adminSession";
+import { getScopeForAdminId, clientVisibleToScope } from "@/lib/api/supportScope";
 import {
   addAccountToUser,
   removeAccountFromUser,
@@ -24,8 +24,12 @@ export async function addClientAccountAction(
     return { error: "User ID and Account ID are required" };
   }
 
-  const user = await findUser(userId);
-  if (!user) return { error: "User not found" };
+  // Workspace scoping: out-of-book clients read as not-found.
+  const scope = await getScopeForAdminId(admin.adminId);
+  if (scope === undefined) return { error: "Unauthorized" };
+  if (!(await clientVisibleToScope(scope, userId))) {
+    return { error: "User not found" };
+  }
 
   await addAccountToUser(userId, accountId.trim(), label?.trim());
   revalidatePath("/dashboard/users");
@@ -43,6 +47,13 @@ export async function removeClientAccountAction(
 
   if (!userId || !accountId) {
     return { error: "User ID and Account ID are required" };
+  }
+
+  // Workspace scoping: out-of-book clients read as not-found.
+  const scope = await getScopeForAdminId(admin.adminId);
+  if (scope === undefined) return { error: "Unauthorized" };
+  if (!(await clientVisibleToScope(scope, userId))) {
+    return { error: "User not found" };
   }
 
   const deleted = await removeAccountFromUser(userId, accountId);
@@ -64,6 +75,13 @@ export async function toggleClientAccountAction(
 
   if (!userId || !accountId) {
     return { error: "User ID and Account ID are required" };
+  }
+
+  // Workspace scoping: out-of-book clients read as not-found.
+  const scope = await getScopeForAdminId(admin.adminId);
+  if (scope === undefined) return { error: "Unauthorized" };
+  if (!(await clientVisibleToScope(scope, userId))) {
+    return { error: "User not found" };
   }
 
   await toggleAccountActive(userId, accountId, isActive);

@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { readAdmins } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor } from "@/lib/api/requireAdmin";
+import { workspaceMembershipOf, scopesOverlap } from "@/lib/workspaces";
 
 /**
  * Assignable people for the roster Lead / Media Buyer pickers — the admins
@@ -13,12 +14,19 @@ import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmi
  * which directory admins don't necessarily hold).
  */
 export async function GET() {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
 
-  const admins = await readAdmins();
+  // Workspace scoping: a scoped actor only sees admins who BELONG to one of
+  // their books (explicit membership — privilege grants visibility, not
+  // membership) — partner pickers never list the internal team, and vice
+  // versa. Unscoped actors see everyone.
+  const admins = (await readAdmins()).filter((a) =>
+    scopesOverlap(actor.scope, workspaceMembershipOf(a))
+  );
   return NextResponse.json({
     data: admins.map((a) => ({
       id: a.id,

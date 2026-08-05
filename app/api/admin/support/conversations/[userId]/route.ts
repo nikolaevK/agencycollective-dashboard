@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
-import { findUser } from "@/lib/users";
+import { getScopeForAdminId, clientVisibleToScope } from "@/lib/api/supportScope";
 import {
   findConversationByUserId,
   listRecentMessages,
@@ -25,7 +25,9 @@ export async function GET(_request: Request, { params }: Params) {
   const limited = rateLimitedResponse(`support-read:admin:${session.adminId}`, 180);
   if (limited) return limited;
 
-  const user = await findUser(params.userId);
+  const scope = await getScopeForAdminId(session.adminId);
+  if (scope === undefined) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await clientVisibleToScope(scope, params.userId);
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const conversation = await findConversationByUserId(params.userId);

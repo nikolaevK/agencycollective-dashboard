@@ -1,11 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { findUser } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
 import { findDocumentWithData } from "@/lib/payoutDocuments";
 import { normalizeBrandName, brandsMatch } from "@/lib/payouts";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string; docId: string };
@@ -19,14 +18,11 @@ interface RouteContext {
  * so an arbitrary doc id can't be funnelled through this client's route.
  */
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
+  const user = guard.user;
 
   const result = await findDocumentWithData(params.docId);
   if (!result)
@@ -39,6 +35,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const clientNorm = normalizeBrandName(user.payoutBrand ?? user.displayName);
   if (!clientNorm || !brandsMatch(clientNorm, doc.normalizedBrand)) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
+  }
+
+  // Cross-book isolation (mirrors the list route): a non-main client serves
+  // documents filed under its own book, or whose brand EXACTLY matches the
+  // internally-managed payout-brand link (deal imports / Payout Tracker
+  // uploads land under 'main'). Fuzzy display-name matches never cross books.
+  if (user.workspace !== "main") {
+    const linkNorm = user.payoutBrand ? normalizeBrandName(user.payoutBrand) : "";
+    const exactLinked = linkNorm !== "" && doc.normalizedBrand === linkNorm;
+    if (!exactLinked && doc.workspace !== user.workspace) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
   }
 
   // RFC 5987 encoding for non-ASCII filenames

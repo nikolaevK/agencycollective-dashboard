@@ -9,7 +9,7 @@ import { useAdmin } from "@/components/providers/AdminProvider";
 import { AddEditTokenModal, type TokenFormData } from "./AddEditTokenModal";
 import { TokenCard } from "./TokenCard";
 import { TokenSecretReveal } from "./TokenSecretReveal";
-import type { ApiTokenPublic, ResourceOption } from "./types";
+import type { ApiTokenPublic, ResourceOption, WorkspaceOption } from "./types";
 
 async function fetchTokens(): Promise<ApiTokenPublic[]> {
   const res = await fetch("/api/admin/api-tokens");
@@ -21,13 +21,15 @@ async function fetchTokens(): Promise<ApiTokenPublic[]> {
 async function fetchOptions(): Promise<{
   clients: ResourceOption[];
   closers: ResourceOption[];
+  workspaces: WorkspaceOption[];
 }> {
   const res = await fetch("/api/admin/api-tokens/options");
-  if (!res.ok) return { clients: [], closers: [] };
+  if (!res.ok) return { clients: [], closers: [], workspaces: [] };
   const json = await res.json();
   return {
     clients: json.data?.clients ?? [],
     closers: json.data?.closers ?? [],
+    workspaces: json.data?.workspaces ?? [],
   };
 }
 
@@ -44,7 +46,7 @@ export function ApiTokensPanel() {
     queryKey: ["api-tokens"],
     queryFn: fetchTokens,
   });
-  const { data: options = { clients: [], closers: [] } } = useQuery({
+  const { data: options = { clients: [], closers: [], workspaces: [] } } = useQuery({
     queryKey: ["api-token-options"],
     queryFn: fetchOptions,
     staleTime: 60_000,
@@ -225,6 +227,7 @@ export function ApiTokensPanel() {
         token={editing}
         clients={options.clients}
         closers={options.closers}
+        workspaces={options.workspaces}
         onClose={() => {
           setModalOpen(false);
           setEditing(null);

@@ -12,12 +12,19 @@ export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 /** Metadata columns (excludes file_data BLOB) */
 const META_COLUMNS = `id, normalized_brand, brand_name, doc_type, file_name,
-  file_size, payout_month, payout_year, uploaded_by, created_at`;
+  file_size, payout_month, payout_year, uploaded_by, created_at, workspace`;
 
 export interface PayoutDocument {
   id: string;
   normalizedBrand: string;
   brandName: string;
+  /**
+   * Workspace (book) the document belongs to — 'main' for everything the
+   * internal team files; partner invoice sends stamp their book so a
+   * cross-book brand-name collision can never leak an internal PDF into a
+   * partner client's Documents tab (or vice versa).
+   */
+  workspace: string;
   docType: DocType;
   fileName: string;
   fileSize: number;
@@ -36,6 +43,8 @@ function rowToDocument(row: Row): PayoutDocument {
     id: String(row.id),
     normalizedBrand: String(row.normalized_brand),
     brandName: String(row.brand_name),
+    workspace:
+      row.workspace != null && String(row.workspace) !== "" ? String(row.workspace) : "main",
     docType: String(row.doc_type) as DocType,
     fileName: String(row.file_name),
     fileSize: Number(row.file_size ?? 0),
@@ -68,8 +77,8 @@ export async function insertDocument(
   await db.execute({
     sql: `INSERT INTO payout_documents
             (id, normalized_brand, brand_name, doc_type, file_name, file_path,
-             file_size, payout_month, payout_year, uploaded_by, file_data)
-          VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
+             file_size, payout_month, payout_year, uploaded_by, workspace, file_data)
+          VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?)`,
     args: [
       doc.id,
       doc.normalizedBrand,
@@ -80,6 +89,7 @@ export async function insertDocument(
       doc.payoutMonth,
       doc.payoutYear,
       doc.uploadedBy,
+      doc.workspace || "main",
       fileData,
     ],
   });

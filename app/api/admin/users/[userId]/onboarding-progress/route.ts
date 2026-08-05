@@ -1,33 +1,25 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { hasPermission } from "@/lib/permissions";
 import { ensureMigrated } from "@/lib/db";
 import { getOnboardingProgress } from "@/lib/onboarding";
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 export async function GET(
   _request: Request,
   { params }: { params: { userId: string } }
 ) {
-  const session = getAdminSession();
-  if (!session) return unauthorized();
+  await ensureMigrated();
 
-  const admin = await findAdmin(session.adminId);
-  if (!admin) return unauthorized();
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
-  if (!hasPermission(admin, "users")) {
+  if (!hasPermission(guard.actor.admin, "users")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {
-    await ensureMigrated();
-
     const steps = await getOnboardingProgress(params.userId);
 
     const completedSteps: Record<string, { completedAt: string | null }> = {};

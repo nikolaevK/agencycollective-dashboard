@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateUserAction } from "@/app/actions/users";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { TeamPicker } from "./TeamPicker";
 import {
@@ -55,6 +57,11 @@ export function ClientSettingsTab({
   const queryClient = useQueryClient();
   const [payoutBrand, setPayoutBrand] = useState(client.payoutBrand ?? "");
   const [joinedAt, setJoinedAt] = useState(client.joinedAt ?? "");
+  // Workspace (book) move — unscoped admins only (the server rejects it
+  // otherwise); single-workspace setups never render the select.
+  const { workspaces, canManage } = useWorkspaces();
+  const [workspace, setWorkspace] = useState(client.workspace);
+  const admin = useAdmin();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +196,9 @@ export function ClientSettingsTab({
     fd.set("id", client.id);
     fd.set("payoutBrand", payoutBrand.trim());
     fd.set("joinedAt", joinedAt.trim());
+    if (canManage && workspace && workspace !== client.workspace) {
+      fd.set("workspace", workspace);
+    }
     startTransition(async () => {
       const res = await updateUserAction(fd);
       if (res.error) {
@@ -278,13 +288,23 @@ export function ClientSettingsTab({
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
               Payout brand name
             </label>
-            <input
-              type="text"
-              value={payoutBrand}
-              onChange={(e) => setPayoutBrand(e.target.value)}
-              placeholder="e.g. Inner Glow"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
+            {admin.isExternal ? (
+              // The payout link is internally managed (it's the only thing
+              // that matches billing history for partner-book clients) —
+              // read-only for external partner admins; the server rejects
+              // edits too.
+              <p className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {payoutBrand || "Managed by the agency"}
+              </p>
+            ) : (
+              <input
+                type="text"
+                value={payoutBrand}
+                onChange={(e) => setPayoutBrand(e.target.value)}
+                placeholder="e.g. Inner Glow"
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            )}
           </div>
           <div>
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
@@ -297,6 +317,25 @@ export function ClientSettingsTab({
               className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
+          {canManage && workspaces.length > 1 && (
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                Workspace
+              </label>
+              <select
+                value={workspace}
+                onChange={(e) => setWorkspace(e.target.value)}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {workspaces.map((w) => (
+                  <option key={w.value} value={w.value}>{w.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Moving a client changes which team&apos;s Client Directory it appears in.
+              </p>
+            </div>
+          )}
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

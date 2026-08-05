@@ -71,6 +71,15 @@ export function TeamGuide() {
             Every member can <strong>forward their own</strong> tasks and action items to
             another roster member — see <em>Reassignment</em> below.
           </li>
+          <li>
+            <strong>Workspaces (books).</strong> Admins assigned to a separate Client
+            Directory workspace only see the team members, client rollups, and pickers of
+            their own book(s); the whole-book re-billed headline is suppressed for
+            external partner scopes. Supers and Admin Management see every book. An
+            internal admin serving a partner book needs BOTH books in their workspace
+            list (Admins page → Edit Admin) — otherwise assigned partner clients won&rsquo;t
+            appear in their own hub view.
+          </li>
         </ul>
       </Section>
 

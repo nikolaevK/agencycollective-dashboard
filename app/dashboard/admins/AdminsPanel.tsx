@@ -11,6 +11,7 @@ import { AdminCardList } from "@/components/admins/AdminCardList";
 import { AdminSearchFilter, type AdminFilter } from "@/components/admins/AdminSearchFilter";
 import { AdminPagination } from "@/components/admins/AdminPagination";
 import { AddEditAdminModal } from "@/components/admins/AddEditAdminModal";
+import { WorkspaceManagerModal } from "@/components/admins/WorkspaceManagerModal";
 import { AddEditAdminMobile } from "@/components/admins/AddEditAdminMobile";
 import { AuditLogCard } from "@/components/admins/AuditLogCard";
 import { AccessPolicyCard } from "@/components/admins/AccessPolicyCard";
@@ -78,6 +79,8 @@ export function AdminsPanel() {
     setSelectedAdmin(null);
   }
 
+  const [workspacesOpen, setWorkspacesOpen] = useState(false);
+
   function handleSave(data: {
     id?: string;
     username?: string;
@@ -85,6 +88,7 @@ export function AdminsPanel() {
     email: string;
     role: string;
     permissions: AdminPermissions;
+    workspaces?: string[] | null;
     avatarFile?: File;
   }) {
     startTransition(async () => {
@@ -97,6 +101,7 @@ export function AdminsPanel() {
           role: data.role,
           permissions: data.permissions,
         };
+        if (data.workspaces !== undefined) body.workspaces = data.workspaces;
         if (isEdit) body.id = data.id;
         else body.username = data.username;
 
@@ -143,11 +148,21 @@ export function AdminsPanel() {
     <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold">Admin Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage admin accounts, permissions, and monitor activity.
-          </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Management</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage admin accounts, permissions, and monitor activity.
+            </p>
+          </div>
+          {canMutate && (
+            <button
+              onClick={() => setWorkspacesOpen(true)}
+              className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              Workspaces
+            </button>
+          )}
         </div>
 
         {/* Stats row (desktop) */}
@@ -223,6 +238,8 @@ export function AdminsPanel() {
       )}
 
       {/* Desktop modal */}
+      {workspacesOpen && <WorkspaceManagerModal onClose={() => setWorkspacesOpen(false)} />}
+
       <AddEditAdminModal
         open={modalOpen}
         admin={selectedAdmin}

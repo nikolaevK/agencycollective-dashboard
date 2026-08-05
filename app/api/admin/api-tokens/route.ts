@@ -6,6 +6,20 @@ import { findAdmin } from "@/lib/admins";
 import { logAuditEvent } from "@/lib/auditLog";
 import { createApiToken, listApiTokens } from "@/lib/apiTokens";
 import { sanitizeScopes, sanitizeResourceIds } from "@/lib/apiScopes";
+import { listWorkspaceValues } from "@/lib/workspaces";
+
+/**
+ * Workspace restriction input: array of registry slugs; unknown slugs are
+ * dropped; empty/none → null = all workspaces (today's behavior).
+ */
+async function sanitizeTokenWorkspaces(raw: unknown): Promise<string[] | null> {
+  if (!Array.isArray(raw)) return null;
+  const valid = await listWorkspaceValues();
+  const list = [
+    ...new Set(raw.map((v) => String(v).trim()).filter((v) => valid.has(v))),
+  ];
+  return list.length > 0 ? list : null;
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,6 +81,8 @@ export async function POST(request: Request) {
       scopes,
       clientIds: sanitizeResourceIds(body.clientIds),
       closerIds: sanitizeResourceIds(body.closerIds),
+      workspaces:
+        body.workspaces !== undefined ? await sanitizeTokenWorkspaces(body.workspaces) : null,
       expiresAt,
       createdBy: admin.id,
       createdByName: admin.displayName ?? admin.username,
@@ -84,6 +100,7 @@ export async function POST(request: Request) {
         scopes,
         clientIds: record.clientIds,
         closerIds: record.closerIds,
+        workspaces: record.workspaces,
         expiresAt,
       }),
     }).catch(() => {});

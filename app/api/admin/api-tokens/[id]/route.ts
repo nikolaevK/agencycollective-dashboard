@@ -74,6 +74,23 @@ export async function PATCH(
     }
     if (body.clientIds !== undefined) changes.clientIds = sanitizeResourceIds(body.clientIds);
     if (body.closerIds !== undefined) changes.closerIds = sanitizeResourceIds(body.closerIds);
+    if (body.workspaces !== undefined) {
+      // Array of registry slugs; empty/none → null = all workspaces.
+      if (body.workspaces === null || (Array.isArray(body.workspaces) && body.workspaces.length === 0)) {
+        changes.workspaces = null;
+      } else if (Array.isArray(body.workspaces)) {
+        const { listWorkspaceValues } = await import("@/lib/workspaces");
+        const valid = await listWorkspaceValues();
+        const list: string[] = [
+          ...new Set(
+            (body.workspaces as unknown[])
+              .map((v) => String(v).trim())
+              .filter((v) => valid.has(v))
+          ),
+        ];
+        changes.workspaces = list.length > 0 ? list : null;
+      }
+    }
     if (body.expiresAt !== undefined) {
       const expiresAt =
         body.expiresAt != null && String(body.expiresAt).trim() !== ""

@@ -51,6 +51,11 @@ export function TokenCard({
   const [showUsage, setShowUsage] = useState(false);
   const status = tokenStatus(token);
   const restrictions: string[] = [];
+  if (token.workspaces && token.workspaces.length > 0) {
+    restrictions.push(
+      `${token.workspaces.length} workspace${token.workspaces.length > 1 ? "s" : ""}`
+    );
+  }
   if (token.clientIds && token.clientIds.length > 0) {
     restrictions.push(`${token.clientIds.length} client${token.clientIds.length > 1 ? "s" : ""}`);
   }

@@ -3,7 +3,8 @@ export const maxDuration = 30;
 
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
+import { isExternalScope } from "@/lib/workspaces";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
 import {
@@ -59,9 +60,10 @@ function datePart(value: string | null): string | null {
  * sent and recorded with no account/brand link (no auto-reconciliation).
  */
 export async function POST(req: NextRequest) {
-  const session = getAdminSession();
-  if (!session)
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = { adminId: actor.admin.id };
 
   if (!isEmailConfigured())
     return NextResponse.json({ error: "Email not configured" }, { status: 503 });
@@ -79,6 +81,10 @@ export async function POST(req: NextRequest) {
 
     if (!email || !pdfFile)
       return NextResponse.json({ error: "email and pdf are required" }, { status: 400 });
+    // Free invoices (no account) file under a free-form brand — internal only;
+    // external (partner) scopes must invoice through one of their accounts.
+    if (!adAccountId && isExternalScope(actor.scope))
+      return NextResponse.json({ error: "adAccountId is required" }, { status: 400 });
     if (!EMAIL_RE.test(email) || email.length > 254)
       return NextResponse.json({ error: "Invalid email" }, { status: 400 });
     if (pdfFile.size > 10 * 1024 * 1024)
@@ -89,13 +95,22 @@ export async function POST(req: NextRequest) {
     let brand: string | null = null;
     let userId: string | null = null;
     if (adAccountId) {
-      account = await getAdAccount(adAccountId);
+      account = await findAdAccountInScope(actor.scope, adAccountId);
       if (!account)
         return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
       if (account.userId) {
         userId = account.userId;
         const user = await findUser(account.userId);
-        if (user) brand = user.payoutBrand ?? user.displayName;
+        if (user) {
+        // Non-main (partner-book) accounts match payouts ONLY via the
+        // internally-managed explicit link — no display-name fallback, and
+        // exact equality below — so a name collision with an internal brand
+        // can't feed internal payments into a partner schedule.
+        brand =
+          account.workspace !== "main"
+            ? user.payoutBrand
+            : user.payoutBrand ?? user.displayName;
+      }
       }
     }
     // Fall back for filing: client brand → account name → recipient name.
@@ -208,6 +223,8 @@ export async function POST(req: NextRequest) {
       id: crypto.randomUUID(),
       normalizedBrand: normalizeBrandName(fileBrand),
       brandName: fileBrand,
+      // Free invoices (no account) are internal-only (guarded above) → main.
+      workspace: account?.workspace ?? "main",
       docType: "invoice",
       fileName: `invoice-${safeNumber}.pdf`,
       fileSize: buffer.length,
@@ -239,7 +256,11 @@ export async function POST(req: NextRequest) {
         const norm = normalizeBrandName(brand);
         const months: Array<{ year: number; month: number }> = [];
         for (const [key, arr] of byBrand) {
-          if (key === norm || brandsMatch(norm, key)) months.push(...arr);
+          if (
+            key === norm ||
+            (account.workspace === "main" && brandsMatch(norm, key))
+          )
+            months.push(...arr);
         }
         // Feed the engine the SAME billing controls the directory uses (billing
         // day, last-billed override, pause, extend, lead). Passing `billing: null`

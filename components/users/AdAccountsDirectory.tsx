@@ -36,6 +36,7 @@ import { AdAccountInvoicesDrawer } from "./AdAccountInvoicesDrawer";
 import { AdAccountsGuide } from "./AdAccountsGuide";
 import { AdAccountPaymentSettingsModal } from "./AdAccountPaymentSettingsModal";
 import { formatMoney, formatDate } from "./format";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import type { AdAccountDirectoryRow, AdAccountSummary } from "@/lib/adAccountDirectory";
 
 const PAGE_SIZE = 20;
@@ -81,6 +82,7 @@ export function AdAccountsDirectory() {
   const [sentOpen, setSentOpen] = useState(false);
   const [invoicesRow, setInvoicesRow] = useState<AdAccountDirectoryRow | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const admin = useAdmin();
   const [paymentSettingsOpen, setPaymentSettingsOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
@@ -277,14 +279,16 @@ export function AdAccountsDirectory() {
             <HelpCircle className="h-4 w-4" />
             <span className="whitespace-nowrap">Guide</span>
           </button>
-          <button
-            onClick={() => setPaymentSettingsOpen(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-            title="Edit the bank details on ad-account invoices"
-          >
-            <CreditCard className="h-4 w-4" />
-            <span className="whitespace-nowrap">Payment settings</span>
-          </button>
+          {!admin.isExternal && (
+            <button
+              onClick={() => setPaymentSettingsOpen(true)}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              title="Edit the bank details on ad-account invoices"
+            >
+              <CreditCard className="h-4 w-4" />
+              <span className="whitespace-nowrap">Payment settings</span>
+            </button>
+          )}
           <button
             onClick={() => setInvoiceTarget(null)}
             className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"

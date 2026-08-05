@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { findAdAccountInvoice } from "@/lib/adAccountInvoices";
 import { findDocumentWithData } from "@/lib/payoutDocuments";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
+import { isExternalScope } from "@/lib/workspaces";
 
 
 interface RouteContext {
@@ -19,7 +20,8 @@ interface RouteContext {
  * middleware, like the rest of /api/admin/ad-accounts).
  */
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -27,6 +29,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const invoice = await findAdAccountInvoice(params.invoiceId);
   if (!invoice)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  // Workspace scoping: invoices of out-of-book accounts read as not-found;
+  // free invoices (no account) are internal-only.
+  if (invoice.adAccountId) {
+    if (!(await findAdAccountInScope(actor.scope, invoice.adAccountId)))
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  } else if (isExternalScope(actor.scope)) {
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  }
   if (!invoice.payoutDocumentId)
     return NextResponse.json({ error: "No stored PDF for this invoice" }, { status: 404 });
 

@@ -16,9 +16,16 @@ export async function GET(request: Request) {
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await ensureMigrated();
 
-  const timeframe = parseTimeframe(new URL(request.url).searchParams.get("timeframe"));
+  const url = new URL(request.url);
+  const timeframe = parseTimeframe(url.searchParams.get("timeframe"));
+  // Unscoped (super / Admin Management) viewers can pin the overview to one
+  // book via ?workspace= — it simply becomes the viewer scope for this build.
+  // Scoped actors always get their own scope (the param is ignored).
+  const wsParam = url.searchParams.get("workspace")?.trim() || null;
+  const viewerScope =
+    actor.scope !== null ? actor.scope : wsParam ? [wsParam] : null;
   try {
-    const directory = await buildTeamDirectory(timeframe);
+    const directory = await buildTeamDirectory(timeframe, viewerScope);
     return NextResponse.json({
       data: { ...directory, viewer: { adminId: actor.admin.id, privileged: actor.privileged } },
     });

@@ -68,13 +68,18 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
     refetchIntervalInBackground: false,
   });
 
-  // Filter nav items by permissions (superOnly items only visible to super admins)
+  // Filter nav items by permissions (superOnly items only visible to super admins).
+  // External partner admins (workspace scope without the main book) also lose
+  // the internal-only alwaysShow entries (SOPs) — Team stays (scoped in-route).
   const visibleItems = navItems.filter(
-    (item) => item.alwaysShow
-      ? true
-      : item.superOnly
-        ? admin.isSuper
-        : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage))
+    (item) => {
+      if (admin.isExternal && item.href === "/dashboard/sops") return false;
+      return item.alwaysShow
+        ? true
+        : item.superOnly
+          ? admin.isSuper
+          : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage));
+    }
   );
 
   async function handleLogout() {

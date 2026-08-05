@@ -4,23 +4,25 @@ import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { buildAdAccountDirectory } from "@/lib/adAccountDirectory";
 import { createAdAccount } from "@/lib/adAccounts";
-import { findUser } from "@/lib/users";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
+import { DEFAULT_WORKSPACE } from "@/lib/workspaces";
 
 /** Ad Accounts directory: enriched rows (client, fee, retainer, schedule,
  *  reconciled latest invoice) + summary counts. Mirrors /api/admin/users. */
 export async function GET() {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
-  const { rows, summary } = await buildAdAccountDirectory();
+  const { rows, summary } = await buildAdAccountDirectory(undefined, actor.scope);
   return NextResponse.json({ data: { rows, summary } });
 }
 
 /** Create an ad account, optionally attached to a client. */
 export async function POST(request: Request) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -36,17 +38,25 @@ export async function POST(request: Request) {
   if (!accountName)
     return NextResponse.json({ error: "accountName is required" }, { status: 400 });
 
-  // Validate optional client link.
+  // Validate optional client link (out-of-scope clients read as not-found).
   let userId: string | null = null;
+  let clientWorkspace: string | null = null;
   if (typeof body.userId === "string" && body.userId) {
-    const user = await findUser(body.userId);
+    const user = await findClientInScope(actor.scope, body.userId);
     if (!user)
       return NextResponse.json({ error: "Client not found" }, { status: 400 });
     userId = user.id;
+    clientWorkspace = user.workspace;
   }
+
+  // The account lands in the linked client's book, else the actor's first
+  // book (scoped admins), else the main book.
+  const workspace =
+    clientWorkspace ?? (actor.scope ? actor.scope[0] : DEFAULT_WORKSPACE);
 
   const account = await createAdAccount({
     userId,
+    workspace,
     accountName,
     vendor: typeof body.vendor === "string" ? body.vendor : null,
     platform: typeof body.platform === "string" ? body.platform : null,

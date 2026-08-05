@@ -8,6 +8,8 @@ export interface ApiTokenPublic {
   scopes: TokenScopes;
   clientIds: string[] | null;
   closerIds: string[] | null;
+  /** Workspace (book) restriction — null = all workspaces. */
+  workspaces: string[] | null;
   expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
@@ -22,4 +24,9 @@ export interface ResourceOption {
   id: string;
   name: string;
   role?: string;
+}
+
+export interface WorkspaceOption {
+  value: string;
+  label: string;
 }

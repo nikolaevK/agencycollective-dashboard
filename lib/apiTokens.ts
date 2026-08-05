@@ -27,6 +27,8 @@ export interface ApiTokenRecord {
   scopes: TokenScopes;
   clientIds: string[] | null;
   closerIds: string[] | null;
+  /** Workspace (book) restriction — null/[] = every book. */
+  workspaces: string[] | null;
   expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
@@ -80,6 +82,7 @@ function rowToRecord(row: Record<string, unknown>): ApiTokenRecord {
     scopes,
     clientIds: parseJsonArray(row.client_ids),
     closerIds: parseJsonArray(row.closer_ids),
+    workspaces: parseJsonArray(row.workspaces),
     expiresAt: row.expires_at != null ? String(row.expires_at) : null,
     revokedAt: row.revoked_at != null ? String(row.revoked_at) : null,
     lastUsedAt: row.last_used_at != null ? String(row.last_used_at) : null,
@@ -96,6 +99,8 @@ export interface CreateApiTokenInput {
   scopes: TokenScopes;
   clientIds?: string[] | null;
   closerIds?: string[] | null;
+  /** Workspace (book) restriction — null/[] = every book. */
+  workspaces?: string[] | null;
   /** ISO date/datetime string, or null for no expiry. */
   expiresAt?: string | null;
   createdBy?: string | null;
@@ -113,8 +118,8 @@ export async function createApiToken(
   await db.execute({
     sql: `INSERT INTO api_tokens
             (id, name, prefix, token_hash, scopes, client_ids, closer_ids,
-             expires_at, created_by, created_by_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             workspaces, expires_at, created_by, created_by_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       input.name,
@@ -123,6 +128,7 @@ export async function createApiToken(
       JSON.stringify(sanitizeScopes(input.scopes)),
       input.clientIds && input.clientIds.length > 0 ? JSON.stringify(input.clientIds) : null,
       input.closerIds && input.closerIds.length > 0 ? JSON.stringify(input.closerIds) : null,
+      input.workspaces && input.workspaces.length > 0 ? JSON.stringify(input.workspaces) : null,
       input.expiresAt ?? null,
       input.createdBy ?? null,
       input.createdByName ?? null,
@@ -248,6 +254,7 @@ export interface UpdateApiTokenInput {
   scopes?: TokenScopes;
   clientIds?: string[] | null;
   closerIds?: string[] | null;
+  workspaces?: string[] | null;
   expiresAt?: string | null;
 }
 
@@ -281,6 +288,14 @@ export async function updateApiToken(
     args.push(
       input.closerIds && input.closerIds.length > 0
         ? JSON.stringify(input.closerIds)
+        : null
+    );
+  }
+  if (input.workspaces !== undefined) {
+    sets.push("workspaces = ?");
+    args.push(
+      input.workspaces && input.workspaces.length > 0
+        ? JSON.stringify(input.workspaces)
         : null
     );
   }

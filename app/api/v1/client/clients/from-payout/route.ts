@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import crypto from "crypto";
+import { tokenWorkspaceScope, tokenIsExternal } from "@/lib/apiScopes";
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import {
@@ -13,6 +14,7 @@ import {
   generateUniqueSlug,
   type UserRecord,
 } from "@/lib/users";
+import { listWorkspaceValues } from "@/lib/workspaces";
 import { normalizeBrandName, findLatestSourceDealIdForBrand } from "@/lib/payouts";
 import { findDeal } from "@/lib/deals";
 import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
@@ -31,9 +33,41 @@ export function OPTIONS() {
  * category?, email? }. Auto-fills the roster profile from the brand's latest
  * imported deal (fill-only-when-empty, non-blocking warnings).
  */
+
+/**
+ * Workspace (book) a token-created client lands in. Optional body value is
+ * honored when the token may touch that book AND it's a known slug (or one
+ * of the token's own restricted books — those stay valid even if the
+ * registry row was deleted, mirroring scoped admins). Default: a restricted
+ * token's first book, else 'main'. Returns null for a disallowed value.
+ */
+async function resolveCreateWorkspace(
+  token: { workspaces?: string[] | null },
+  raw: unknown
+): Promise<string | null> {
+  const restriction = tokenWorkspaceScope(token as Parameters<typeof tokenWorkspaceScope>[0]);
+  const requested = typeof raw === "string" ? raw.trim() : "";
+  if (!requested) return restriction ? restriction[0] : "main";
+  if (restriction) {
+    return restriction.includes(requested) ? requested : null;
+  }
+  const valid = await listWorkspaceValues();
+  return valid.has(requested) ? requested : null;
+}
+
 export async function POST(request: Request) {
   const auth = await authenticateApiRequest(request, "client:write");
   if (!auth.ok) return auth.response;
+
+  // Payout-DB flow (reads brand deals, stamps payout_brand) — internal only,
+  // mirroring the payout-pool denial and the admin-side external 403.
+  if (tokenIsExternal(auth.token)) {
+    return fail(
+      "resource_forbidden",
+      "Workspace-restricted tokens cannot create clients from the Payout DB",
+      403
+    );
+  }
 
   try {
     const body = await readJsonBody(request);
@@ -70,6 +104,15 @@ export async function POST(request: Request) {
       return fail("invalid_request", "monthlyMrrCents must be a non-negative integer", 400);
     }
 
+    const workspace = await resolveCreateWorkspace(auth.token, body.workspace);
+    if (!workspace) {
+      return fail(
+        "invalid_request",
+        "Unknown workspace, or this token is not allowed to create clients in it",
+        400
+      );
+    }
+
     const baseSlug = slugify(brandName);
     const user: UserRecord = {
       id: `${baseSlug}-${crypto.randomBytes(4).toString("hex")}`,
@@ -88,6 +131,7 @@ export async function POST(request: Request) {
       designBoardUrl: null,
       joinedAt: null,
       payoutBrand: null,
+      workspace,
     };
     await insertUser(user);
     await updateUser(user.id, { joinedAt: dateJoined, payoutBrand: brandName });

@@ -3,9 +3,9 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { readAdmins } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-import { findUser } from "@/lib/users";
 import { getClientTeam, setClientTeam, type TeamRole } from "@/lib/clientProfile";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
+import { workspaceMembershipOf, scopesOverlap } from "@/lib/workspaces";
 
 interface RouteContext {
   params: { userId: string };
@@ -17,15 +17,11 @@ interface RouteContext {
  * admin ids are dropped silently; the other roles' assignments are untouched.
  */
 export async function PUT(request: Request, { params }: RouteContext) {
-  const admin = await requireAdminSession();
-  if (!admin)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
+  const admin = guard.actor.admin;
 
   try {
     const body = (await request.json()) as {
@@ -41,7 +37,14 @@ export async function PUT(request: Request, { params }: RouteContext) {
     if (!Array.isArray(body.adminIds))
       return NextResponse.json({ error: "adminIds must be an array" }, { status: 400 });
 
-    const known = new Set((await readAdmins()).map((a) => a.id));
+    // Assignable admins: for a scoped actor, only admins who BELONG to one of
+    // their books (explicit membership) — a partner book can't attach an
+    // internal admin, and vice versa. Unscoped actors can assign anyone.
+    const known = new Set(
+      (await readAdmins())
+        .filter((a) => scopesOverlap(guard.actor.scope, workspaceMembershipOf(a)))
+        .map((a) => a.id)
+    );
     const adminIds = body.adminIds
       .map((id) => String(id))
       .filter((id) => known.has(id));

@@ -103,6 +103,38 @@ export interface ScopedTokenLike {
   clientIds: string[] | null;
   /** null or [] = all closers allowed. */
   closerIds: string[] | null;
+  /** null or [] = all workspaces (books) allowed. */
+  workspaces?: string[] | null;
+}
+
+/**
+ * Workspace (book) restriction as a WorkspaceScope-shaped value:
+ * null = the token may see every book, else the allow-list. Mirrors the
+ * admin-side workspaceScopeOf so v1 routes reuse the SAME filter helpers
+ * (filterRowsByWorkspace / inWorkspaceScope / scopesOverlap).
+ */
+export function tokenWorkspaceScope(token: ScopedTokenLike): string[] | null {
+  const list = token.workspaces ?? null;
+  if (!list || list.length === 0) return null;
+  return list;
+}
+
+/** Is the token allowed to touch rows in this workspace? */
+export function tokenAllowsWorkspace(token: ScopedTokenLike, workspace: string): boolean {
+  const scope = tokenWorkspaceScope(token);
+  if (scope === null) return true;
+  return scope.includes(workspace || "main");
+}
+
+/**
+ * External-style token = restricted to books that do NOT include main.
+ * Such tokens are cut off from internal-only surfaces (payout pool,
+ * Welcome Kit, maintenance, free ad-account invoices) exactly like an
+ * external partner admin.
+ */
+export function tokenIsExternal(token: ScopedTokenLike): boolean {
+  const scope = tokenWorkspaceScope(token);
+  return scope !== null && !scope.includes("main");
 }
 
 export function tokenHasScope(token: ScopedTokenLike, scope: ScopeKey): boolean {

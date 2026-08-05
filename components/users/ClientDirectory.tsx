@@ -10,6 +10,8 @@ import { ClientActionsMenu } from "./ClientActionsMenu";
 import { ManageAccountsModal } from "./ManageAccountsModal";
 import { EditClientModal } from "./EditClientModal";
 import { MrrDetailModal } from "./MrrDetailModal";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { TeamPicker } from "./TeamPicker";
@@ -64,6 +66,14 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   const [editingId, setEditingId] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [mrrClientId, setMrrClientId] = useState<string | null>(null);
+  // External partner admins never open the MRR payout drill — it reads the
+  // internal Payout DB (the API would 403 them anyway).
+  const { isExternal } = useAdmin();
+  // Workspace labels for the badge on partner-book rows (multi-book viewers).
+  const { workspaces: workspaceOptions } = useWorkspaces();
+  const workspaceLabel = (slug: string) =>
+    workspaceOptions.find((w) => w.value === slug)?.label ?? slug;
+  const showWorkspaceBadges = workspaceOptions.length > 1;
   const [taskClientId, setTaskClientId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { patchProfile, putTeam } = useClientProfileMutations();
@@ -217,6 +227,11 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 >
                   {client.displayName}
                   {isPepads && <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>}
+                  {showWorkspaceBadges && client.workspace !== "main" && (
+                    <span className="ml-1.5 inline-flex items-center rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                      {workspaceLabel(client.workspace)}
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {client.category || client.email || "—"}
@@ -381,7 +396,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               onSave={(v) => patchMoney(client, "manualMrrCents", v)}
               className="font-semibold"
             />
-          ) : client.payoutMrr > 0 ? (
+          ) : client.payoutMrr > 0 && !isExternal ? (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -667,6 +682,11 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                         {isPepads && (
                           <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>
                         )}
+                        {showWorkspaceBadges && client.workspace !== "main" && (
+                          <span className="ml-1.5 inline-flex items-center rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                            {workspaceLabel(client.workspace)}
+                          </span>
+                        )}
                       </p>
                       <StatusBadge status={client.status} />
                     </div>
@@ -737,7 +757,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     label="Monthly MRR"
                     value={formatMoney(effectiveMrrCents(client))}
                     onClick={
-                      !isPepads && client.payoutMrr > 0
+                      !isPepads && client.payoutMrr > 0 && !isExternal
                         ? () => setMrrClientId(client.id)
                         : undefined
                     }

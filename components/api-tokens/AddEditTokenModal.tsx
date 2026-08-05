@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { X, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopeSelector } from "./ScopeSelector";
-import type { ApiTokenPublic, ResourceOption } from "./types";
+import type { ApiTokenPublic, ResourceOption, WorkspaceOption } from "./types";
 import type { AccessLevel, ResourceKey, TokenScopes } from "@/lib/apiScopes";
 
 export interface TokenFormData {
@@ -13,6 +13,8 @@ export interface TokenFormData {
   scopes: TokenScopes;
   clientIds: string[] | null;
   closerIds: string[] | null;
+  /** Workspace (book) restriction — null = all workspaces. */
+  workspaces: string[] | null;
   expiresAt: string | null;
 }
 
@@ -21,6 +23,7 @@ interface AddEditTokenModalProps {
   token: ApiTokenPublic | null; // null = add mode
   clients: ResourceOption[];
   closers: ResourceOption[];
+  workspaces: WorkspaceOption[];
   onClose: () => void;
   onSave: (data: TokenFormData) => void;
   isPending: boolean;
@@ -139,6 +142,7 @@ export function AddEditTokenModal({
   token,
   clients,
   closers,
+  workspaces,
   onClose,
   onSave,
   isPending,
@@ -149,6 +153,7 @@ export function AddEditTokenModal({
   const [scopes, setScopes] = useState<TokenScopes>({});
   const [clientIds, setClientIds] = useState<string[]>([]);
   const [closerIds, setCloserIds] = useState<string[]>([]);
+  const [tokenWorkspaces, setTokenWorkspaces] = useState<string[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
 
   useEffect(() => {
@@ -158,12 +163,14 @@ export function AddEditTokenModal({
         setScopes({ ...token.scopes });
         setClientIds(token.clientIds ?? []);
         setCloserIds(token.closerIds ?? []);
+        setTokenWorkspaces(token.workspaces ?? []);
         setExpiresAt(token.expiresAt ? token.expiresAt.slice(0, 10) : "");
       } else {
         setName("");
         setScopes({});
         setClientIds([]);
         setCloserIds([]);
+        setTokenWorkspaces([]);
         setExpiresAt("");
       }
     }
@@ -190,6 +197,7 @@ export function AddEditTokenModal({
       scopes,
       clientIds: clientIds.length > 0 ? clientIds : null,
       closerIds: closerIds.length > 0 ? closerIds : null,
+      workspaces: tokenWorkspaces.length > 0 ? tokenWorkspaces : null,
       expiresAt: expiresAt || null,
     });
   }
@@ -243,6 +251,46 @@ export function AddEditTokenModal({
             </p>
             <ScopeSelector scopes={scopes} onChange={handleScopeChange} />
           </div>
+
+          {/* Workspace (book) restriction — only offered once partner
+              workspaces exist. None selected = all workspaces (the exact
+              behavior every existing token has). Enforced by translating the
+              restriction into the client_ids machinery at auth time — no
+              endpoint behaves differently for unrestricted tokens. */}
+          {workspaces.length > 1 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Workspace access</label>
+              <p className="text-xs text-muted-foreground">
+                Restrict this token to specific workspaces (books) — it will only
+                see those books&apos; clients, ad accounts, billing and documents.
+                None selected = all workspaces.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {workspaces.map((w) => {
+                  const checked = tokenWorkspaces.includes(w.value);
+                  return (
+                    <button
+                      key={w.value}
+                      type="button"
+                      onClick={() =>
+                        setTokenWorkspaces((prev) =>
+                          checked ? prev.filter((v) => v !== w.value) : [...prev, w.value]
+                        )
+                      }
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                        checked
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {w.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ResourcePicker

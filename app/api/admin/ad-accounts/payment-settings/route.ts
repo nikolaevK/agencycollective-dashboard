@@ -7,7 +7,7 @@ import {
   resetAdAccountPaymentTemplate,
 } from "@/lib/agencyConfig";
 import type { PaymentInfo, PaymentType } from "@/types/invoice";
-import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+import { requireInternalActor } from "@/lib/api/requireAdmin";
 
 // Every editable PaymentInfo field. `paymentType` is set server-side, not trusted.
 const STRING_FIELDS = [
@@ -37,16 +37,16 @@ function sanitizePaymentInfo(raw: unknown, type: PaymentType): PaymentInfo {
 
 /** Load the effective ad-account payment blocks (custom or default) for both types. */
 export async function GET() {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
   const data = await getAdAccountPaymentTemplates();
   return NextResponse.json({ data });
 }
 
 /** Save a custom template for one or both types. Body: { local?, international? }. */
 export async function PUT(req: NextRequest) {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
 
   let body: { local?: unknown; international?: unknown };
   try {
@@ -77,8 +77,8 @@ export async function PUT(req: NextRequest) {
 
 /** Reset to the shared default. `?type=local|international` resets one, else both. */
 export async function DELETE(req: NextRequest) {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
 
   const type = new URL(req.url).searchParams.get("type");
   // Reset one type when explicitly named; only an ABSENT param resets both. A

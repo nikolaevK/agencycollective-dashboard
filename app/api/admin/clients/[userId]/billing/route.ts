@@ -2,10 +2,9 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { findUser } from "@/lib/users";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { upsertClientBilling, type ClientBillingInput } from "@/lib/clientBilling";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string };
@@ -13,10 +12,10 @@ interface RouteContext {
 
 /** Billing config + computed schedule + payment history for one client. */
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   const detail = await getClientDetail(params.userId);
   if (!detail)
@@ -40,16 +39,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
 }
 
 export async function PATCH(request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
   // Don't create an orphan billing row for a non-existent client (libSQL FK
-  // enforcement isn't guaranteed).
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  // enforcement isn't guaranteed); out-of-scope clients read as not-found.
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   try {
     const body = (await request.json()) as Partial<ClientBillingInput>;

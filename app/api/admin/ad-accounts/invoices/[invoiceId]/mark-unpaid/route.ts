@@ -1,26 +1,20 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
+
 import { ensureMigrated } from "@/lib/db";
 import { findAdAccountInvoice, markInvoiceUnpaid } from "@/lib/adAccountInvoices";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
+import { isExternalScope } from "@/lib/workspaces";
 
 interface RouteContext {
   params: { invoiceId: string };
 }
 
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  const admin = await findAdmin(session.adminId);
-  return admin ? { admin, session } : null;
-}
-
 /** Admin marks a sent ad-account invoice as unpaid (historical marker only). */
 export async function POST(req: NextRequest, { params }: RouteContext) {
-  const auth = await requireAdminSession();
-  if (!auth)
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -28,6 +22,14 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   const invoice = await findAdAccountInvoice(params.invoiceId);
   if (!invoice)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  // Workspace scoping: invoices of out-of-book accounts read as not-found;
+  // free invoices (no account) are internal-only.
+  if (invoice.adAccountId) {
+    if (!(await findAdAccountInScope(actor.scope, invoice.adAccountId)))
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  } else if (isExternalScope(actor.scope)) {
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  }
   if (invoice.status !== "sent")
     return NextResponse.json(
       { error: `Cannot mark unpaid — invoice is ${invoice.status}` },
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
   let updated = false;
   try {
-    updated = await markInvoiceUnpaid(params.invoiceId, auth.session.adminId, reason);
+    updated = await markInvoiceUnpaid(params.invoiceId, actor.admin.id, reason);
   } catch (err) {
     console.error("[ad-account-invoice/mark-unpaid]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

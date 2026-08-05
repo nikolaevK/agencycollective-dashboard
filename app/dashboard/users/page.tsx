@@ -35,6 +35,7 @@ const WelcomeKitBuilder = dynamic(
 );
 import { MaintenanceToggle } from "@/components/users/MaintenanceToggle";
 import { cn } from "@/lib/utils";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import type { ClientPublic } from "@/components/users/types";
 
 type TabId = "clients" | "adAccounts" | "support" | "welcomeKit";
@@ -58,6 +59,7 @@ function applyFilters(clients: ClientPublic[], f: ClientFilterState): ClientPubl
 
     // Roster filters
     if (f.book !== "all" && c.profile.book !== f.book) return false;
+    if (f.workspace !== "all" && c.workspace !== f.workspace) return false;
     if (f.stages.length > 0 && !f.stages.some((v) => c.profile.stages.includes(v)))
       return false;
     if (f.health.length > 0 && !f.health.some((v) => c.profile.health.includes(v)))
@@ -154,6 +156,7 @@ function buildRosterCsv(
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const admin = useAdmin();
   const [tab, setTab] = useState<TabId>("clients");
   const [filters, setFilters] = useState<ClientFilterState>(DEFAULT_FILTERS);
   const [showAdd, setShowAdd] = useState(false);
@@ -200,12 +203,34 @@ export default function UsersPage() {
 
   const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
 
+  // Workspace CONTEXT (not just a row filter): when a workspace is selected,
+  // every number on the page — summary cards, roster count groups, per-person
+  // team cards, alert/sent-invoice counts and panels — computes from that
+  // book's subset, so the page reads as that workspace's directory.
+  const workspaceClients = useMemo(
+    () =>
+      filters.workspace === "all"
+        ? clients
+        : clients.filter((c) => c.workspace === filters.workspace),
+    [clients, filters.workspace]
+  );
+  const workspaceClientIds = useMemo(
+    () =>
+      filters.workspace === "all"
+        ? null
+        : new Set(workspaceClients.map((c) => c.id)),
+    [workspaceClients, filters.workspace]
+  );
+
   // Inactive/archived clients keep their table row (with its own values) but
   // drop out of every aggregate on the page: roster count groups, per-person
   // team cards, and the summary totals below.
   const countable = useMemo(
-    () => clients.filter((c) => c.status !== "inactive" && c.status !== "archived"),
-    [clients]
+    () =>
+      workspaceClients.filter(
+        (c) => c.status !== "inactive" && c.status !== "archived"
+      ),
+    [workspaceClients]
   );
 
   // Monthly MRR reflects ACTIVE clients only (same definition as the "Active"
@@ -213,11 +238,21 @@ export default function UsersPage() {
   // toward recurring revenue even though their row still shows its own MRR.
   // PepAds clients contribute their manual MRR (their book has no payout-
   // derived recurring revenue).
-  const totalMrr = clients.reduce(
+  const totalMrr = workspaceClients.reduce(
     (s, c) => s + (c.status === "active" ? effectiveMrrCents(c) : 0),
     0
   );
-  const activeClients = clients.filter((c) => c.status === "active").length;
+  const activeClients = workspaceClients.filter((c) => c.status === "active").length;
+
+  // Alert / sent-invoice counts scoped to the workspace context (the shared
+  // queries are actor-scoped server-side, which for an unscoped admin means
+  // ALL books — the page trims them to the selected one).
+  const visibleRebills = (alerts?.rebills ?? []).filter(
+    (r) => !workspaceClientIds || workspaceClientIds.has(r.id)
+  );
+  const visibleSentInvoices = (sentInvoices?.invoices ?? []).filter(
+    (i) => !workspaceClientIds || workspaceClientIds.has(i.userId)
+  );
 
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["admin-users"] });
@@ -228,7 +263,7 @@ export default function UsersPage() {
   async function handleCopyCsv() {
     try {
       await navigator.clipboard.writeText(
-        buildRosterCsv(clients, platformLabels, stageLabels, healthLabels)
+        buildRosterCsv(workspaceClients, platformLabels, stageLabels, healthLabels)
       );
       setCsvCopied(true);
       setTimeout(() => setCsvCopied(false), 2000);
@@ -263,18 +298,20 @@ export default function UsersPage() {
               >
                 Support
               </TabButton>
-              <TabButton active={tab === "welcomeKit"} onClick={() => setTab("welcomeKit")}>
-                Welcome Kit
-              </TabButton>
+              {!admin.isExternal && (
+                <TabButton active={tab === "welcomeKit"} onClick={() => setTab("welcomeKit")}>
+                  Welcome Kit
+                </TabButton>
+              )}
             </div>
-            <MaintenanceToggle />
+            {!admin.isExternal && <MaintenanceToggle />}
             {tab === "clients" && (
               <>
                 <button
                   onClick={handleCopyCsv}
-                  disabled={clients.length === 0}
+                  disabled={workspaceClients.length === 0}
                   className="hidden md:flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 transition-colors"
-                  title="Copy the full roster (all columns, both books) as CSV"
+                  title="Copy the roster (all columns, current workspace, ignoring other filters) as CSV"
                 >
                   {csvCopied ? (
                     <Check className="h-4 w-4 text-emerald-500" />
@@ -298,21 +335,26 @@ export default function UsersPage() {
         {tab === "clients" && (
           <>
             <ClientSummaryCards
-              totalClients={clients.length}
+              totalClients={workspaceClients.length}
               activeClients={activeClients}
               totalMrr={totalMrr}
-              rebillsDue={alerts?.rebills.length ?? 0}
-              overdueCount={alerts?.overdueCount ?? 0}
-              sentInvoices={sentInvoices?.count ?? 0}
+              rebillsDue={visibleRebills.length}
+              overdueCount={visibleRebills.filter((r) => r.status === "overdue").length}
+              sentInvoices={visibleSentInvoices.length}
               onRebillsClick={() => setAlertsOpen(true)}
               onSentInvoicesClick={() => setSentInvoicesOpen(true)}
               isLoading={isLoading}
             />
 
-            <RebillAlertsPanel open={alertsOpen} onOpenChange={setAlertsOpen} />
+            <RebillAlertsPanel
+              open={alertsOpen}
+              onOpenChange={setAlertsOpen}
+              restrictToUserIds={workspaceClientIds}
+            />
             <SentInvoicesPanel
               open={sentInvoicesOpen}
               onOpenChange={setSentInvoicesOpen}
+              restrictToUserIds={workspaceClientIds}
             />
 
             <RosterDashboard
@@ -356,7 +398,7 @@ export default function UsersPage() {
 
         {tab === "support" && <UsersSupportTab />}
 
-        {tab === "welcomeKit" && <WelcomeKitBuilder />}
+        {tab === "welcomeKit" && !admin.isExternal && <WelcomeKitBuilder />}
       </div>
 
       {/* Mobile FAB */}

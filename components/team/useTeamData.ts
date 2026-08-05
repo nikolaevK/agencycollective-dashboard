@@ -40,10 +40,16 @@ async function mutateJson<T>(
   return json.data as T;
 }
 
-export function useTeamDirectory(timeframe: TeamTimeframeValue) {
+export function useTeamDirectory(timeframe: TeamTimeframeValue, workspace?: string) {
+  // `workspace` pins the overview to one book — honored server-side only for
+  // unscoped (super / Admin Management) viewers; "" / undefined = all books.
+  const ws = workspace || "";
   return useQuery<TeamDirectoryPayload>({
-    queryKey: ["team-directory", timeframe],
-    queryFn: () => fetchJson(`/api/admin/team?timeframe=${timeframe}`),
+    queryKey: ["team-directory", timeframe, ws || "all"],
+    queryFn: () =>
+      fetchJson(
+        `/api/admin/team?timeframe=${timeframe}${ws ? `&workspace=${encodeURIComponent(ws)}` : ""}`
+      ),
     staleTime: 60_000,
   });
 }

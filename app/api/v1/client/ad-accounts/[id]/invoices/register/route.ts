@@ -55,7 +55,16 @@ export async function POST(
     const userId: string | null = account.userId;
     if (account.userId) {
       const user = await findUser(account.userId);
-      if (user) brand = user.payoutBrand ?? user.displayName;
+      if (user) {
+        // Non-main (partner-book) accounts match payouts ONLY via the
+        // internally-managed explicit link — no display-name fallback, and
+        // exact equality below — so a name collision with an internal brand
+        // can't feed internal payments into a partner schedule.
+        brand =
+          account.workspace !== "main"
+            ? user.payoutBrand
+            : user.payoutBrand ?? user.displayName;
+      }
     }
 
     const payload = await readUpload(request, { fileField: "pdf" });
@@ -146,6 +155,9 @@ export async function POST(
         id: crypto.randomUUID(),
         normalizedBrand: normalizeBrandName(fileBrand),
         brandName: fileBrand,
+        // v1 tokens are internal tooling, but the account may live in a
+        // partner book — file the PDF under the account's book.
+        workspace: account.workspace,
         docType: "invoice",
         fileName: `invoice-${invoiceNumber}.pdf`,
         fileSize: buffer.length,
@@ -188,7 +200,11 @@ export async function POST(
         const norm = normalizeBrandName(brand);
         const months: Array<{ year: number; month: number }> = [];
         for (const [key, arr] of byBrand) {
-          if (key === norm || brandsMatch(norm, key)) months.push(...arr);
+          if (
+            key === norm ||
+            (account.workspace === "main" && brandsMatch(norm, key))
+          )
+            months.push(...arr);
         }
         await reconcileInvoiceForAdAccount(invoice, months);
       } catch {

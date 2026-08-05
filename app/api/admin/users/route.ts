@@ -3,11 +3,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { deleteUser } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
-import { buildClientDirectory } from "@/lib/clientDirectory";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
+import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
 
 export async function GET(request: Request) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -20,7 +21,9 @@ export async function GET(request: Request) {
   // schedule. passwordHash is never included (only the hasPassword boolean),
   // and the accounts array still comes straight from client_accounts — the
   // portal/account linkage is unchanged; this response only gained fields.
-  let rows = await buildClientDirectory();
+  // Workspace scoping happens HERE (the build is shared/unscoped): a scoped
+  // admin only ever receives rows from their own book(s).
+  let rows = filterRowsByWorkspace(await buildClientDirectory(), actor.scope);
 
   if (statusFilter && statusFilter !== "all") {
     rows = rows.filter((r) => r.status === statusFilter);
@@ -40,7 +43,8 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
@@ -51,6 +55,11 @@ export async function DELETE(request: Request) {
 
     if (!id) {
       return NextResponse.json({ error: "id query param is required" }, { status: 400 });
+    }
+
+    // Out-of-scope clients read as not-found (no cross-book id probing).
+    if (!(await findClientInScope(actor.scope, id))) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     const deleted = await deleteUser(id);

@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { readUsers } from "@/lib/users";
 import { readClosers } from "@/lib/closers";
+import { listWorkspaces } from "@/lib/workspaces";
 
 /**
  * Lightweight client/closer pickers for the token resource-scoping UI.
@@ -19,7 +20,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [users, closers] = await Promise.all([readUsers(), readClosers()]);
+  const [users, closers, workspaces] = await Promise.all([
+    readUsers(),
+    readClosers(),
+    listWorkspaces(),
+  ]);
   return NextResponse.json({
     data: {
       clients: users.map((u) => ({ id: u.id, name: u.displayName })),
@@ -28,6 +33,9 @@ export async function GET() {
         name: c.displayName,
         role: c.role,
       })),
+      // Workspace (book) picker for the token restriction — none selected =
+      // all workspaces (existing behavior).
+      workspaces,
     },
   });
 }

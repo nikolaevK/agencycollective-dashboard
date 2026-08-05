@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { findUser } from "@/lib/users";
 import {
   getClientProfile,
   getClientTeam,
@@ -12,7 +11,7 @@ import {
   deriveAdSpendFeeLabel,
 } from "@/lib/clientProfile";
 import { listAdAccountsForUser } from "@/lib/adAccounts";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string };
@@ -20,14 +19,10 @@ interface RouteContext {
 
 /** Roster profile + team assignments for one client. */
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   const [profile, team, adAccounts] = await Promise.all([
     getClientProfile(params.userId),
@@ -46,16 +41,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
 /** Partial update of the roster profile (only provided fields are written). */
 export async function PATCH(request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
 
   // Don't create an orphan profile row for a non-existent client (libSQL FK
-  // enforcement isn't guaranteed).
-  const user = await findUser(params.userId);
-  if (!user)
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  // enforcement isn't guaranteed); out-of-scope clients read as not-found.
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   try {
     const body = (await request.json()) as Record<string, unknown>;

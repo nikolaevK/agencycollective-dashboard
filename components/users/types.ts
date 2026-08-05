@@ -17,6 +17,8 @@ export interface ClientPublic {
   totalRevenue: number;
   category: string | null;
   createdAt: string;
+  /** Workspace (book) slug — 'main' is the original Agency Collective book. */
+  workspace: string;
   hasPassword: boolean;
   analystEnabled: boolean;
   designBoardEnabled: boolean;

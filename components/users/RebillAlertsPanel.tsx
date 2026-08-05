@@ -67,17 +67,27 @@ export function useRebillAlerts() {
 export function RebillAlertsPanel({
   open,
   onOpenChange,
+  restrictToUserIds = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Workspace context: when set, only alerts for these client ids render
+   *  (the page's workspace selector scopes every number on the page). */
+  restrictToUserIds?: Set<string> | null;
 }) {
   const router = useRouter();
   const { data } = useRebillAlerts();
 
-  const count = data?.count ?? 0;
+  const rebills = (data?.rebills ?? []).filter(
+    (r) => !restrictToUserIds || restrictToUserIds.has(r.id)
+  );
+  const reminders = (data?.reminders ?? []).filter(
+    (rem) => !restrictToUserIds || restrictToUserIds.has(rem.userId)
+  );
+  const count = rebills.length + reminders.length;
   if (count === 0) return null;
 
-  const overdue = data?.overdueCount ?? 0;
+  const overdue = rebills.filter((r) => r.status === "overdue").length;
 
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] dark:bg-amber-500/[0.06] overflow-hidden">
@@ -112,7 +122,7 @@ export function RebillAlertsPanel({
 
       {open && (
         <div className="border-t border-amber-500/20 p-3 space-y-2 max-h-[40vh] overflow-y-auto">
-          {data?.rebills.map((r) => (
+          {rebills.map((r) => (
             <button
               key={r.id}
               onClick={() => router.push(`/dashboard/users/${r.id}`)}
@@ -156,7 +166,7 @@ export function RebillAlertsPanel({
             </button>
           ))}
 
-          {data?.reminders.map((rem) => (
+          {reminders.map((rem) => (
             <button
               key={rem.id}
               onClick={() => router.push(`/dashboard/users/${rem.userId}`)}

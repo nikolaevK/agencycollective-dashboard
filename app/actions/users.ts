@@ -19,6 +19,24 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { logAuditEvent } from "@/lib/auditLog";
 import { isFigmaUrl } from "@/lib/figma";
+import {
+  workspaceScopeOf,
+  inWorkspaceScope,
+  isExternalScope,
+  listWorkspaceValues,
+  DEFAULT_WORKSPACE,
+  type WorkspaceScope,
+} from "@/lib/workspaces";
+
+/**
+ * Resolve the acting admin's workspace scope (DB-fresh — the token snapshot
+ * carries no workspace data). Null result = no session / deleted admin.
+ */
+async function getActorScope(adminId: string): Promise<{ scope: WorkspaceScope } | null> {
+  const record = await findAdmin(adminId);
+  if (!record) return null;
+  return { scope: workspaceScopeOf(record) };
+}
 
 // ---------------------------------------------------------------------------
 // Logo file handling (server-side only)
@@ -68,6 +86,29 @@ export async function createUserAction(
   if (!admin) return { error: "Unauthorized" };
 
   await ensureMigrated();
+
+  const actor = await getActorScope(admin.adminId);
+  if (!actor) return { error: "Unauthorized" };
+
+  // Workspace (book) the client lands in. Default: a scoped admin's first
+  // book, else the main book. Validated against the registry AND the actor's
+  // scope — a scoped admin can only create inside their own book(s).
+  const workspaceRaw = String(formData.get("workspace") ?? "").trim();
+  const workspace =
+    workspaceRaw || (actor.scope ? actor.scope[0] : DEFAULT_WORKSPACE);
+  if (!inWorkspaceScope(actor.scope, workspace)) {
+    return { error: "You don't have access to that workspace" };
+  }
+  // Registry membership is required only for unscoped actors picking an
+  // arbitrary book. A scoped admin's own scope is authoritative — their book
+  // must keep working even if its registry row was deleted (the options
+  // endpoint serves scope slugs for the same reason).
+  if (actor.scope === null) {
+    const validWorkspaces = await listWorkspaceValues();
+    if (!validWorkspaces.has(workspace)) {
+      return { error: "Unknown workspace" };
+    }
+  }
 
   const displayName = String(formData.get("displayName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -123,6 +164,7 @@ export async function createUserAction(
     designBoardUrl: null,
     joinedAt: null,
     payoutBrand: null,
+    workspace,
   });
 
   // Logo blob is written after the row exists.
@@ -151,7 +193,27 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
   const user = await findUser(id);
   if (!user) return { error: "User not found" };
 
+  // Out-of-scope clients read as not-found (no cross-book id probing).
+  const actor = await getActorScope(admin.adminId);
+  if (!actor) return { error: "Unauthorized" };
+  if (!inWorkspaceScope(actor.scope, user.workspace)) {
+    return { error: "User not found" };
+  }
+
   const changes: Parameters<typeof updateUser>[1] = {};
+
+  // Moving a client between workspaces (books) is reserved for unscoped
+  // admins (super / Admin Management) — a scoped admin could otherwise push
+  // a client out of (or pull one into) their own book.
+  const workspaceRaw = formData.get("workspace");
+  if (typeof workspaceRaw === "string" && workspaceRaw.trim() && actor.scope === null) {
+    const nextWorkspace = workspaceRaw.trim();
+    if (nextWorkspace !== user.workspace) {
+      const validWorkspaces = await listWorkspaceValues();
+      if (!validWorkspaces.has(nextWorkspace)) return { error: "Unknown workspace" };
+      changes.workspace = nextWorkspace;
+    }
+  }
 
   const displayName = formData.get("displayName") as string | null;
   if (displayName && displayName.trim()) {
@@ -243,9 +305,19 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
 
   // Client Directory: explicit payout-brand link + join date (additive). Empty
   // string clears the field. Does not touch slug/account_id/portal linkage.
+  // SECURITY: the payout-brand link is internally managed — for non-main
+  // clients it is the ONLY thing that matches payout history/documents
+  // (exact, no fuzzy), so an external actor must never be able to point it
+  // at an internal brand.
   const payoutBrand = formData.get("payoutBrand");
   if (typeof payoutBrand === "string") {
-    changes.payoutBrand = payoutBrand.trim() || null;
+    const next = payoutBrand.trim() || null;
+    if (next !== (user.payoutBrand ?? null)) {
+      if (isExternalScope(actor.scope)) {
+        return { error: "The payout brand link is managed by the agency" };
+      }
+      changes.payoutBrand = next;
+    }
   }
   const joinedAt = formData.get("joinedAt");
   if (typeof joinedAt === "string") {
@@ -253,6 +325,28 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
   }
 
   await updateUser(id, changes);
+
+  // Audit-log workspace (book) moves — they change which team can see the
+  // client, so the trail matters more than for ordinary field edits.
+  if (changes.workspace !== undefined) {
+    try {
+      const adminRecord = await findAdmin(admin.adminId);
+      await logAuditEvent({
+        adminId: admin.adminId,
+        adminUsername: adminRecord?.username ?? admin.adminId,
+        action: "client.workspace_change",
+        targetType: "user",
+        targetId: id,
+        details: JSON.stringify({
+          displayName: user.displayName,
+          from: user.workspace,
+          to: changes.workspace,
+        }),
+      });
+    } catch {
+      // Audit logging is fire-and-forget elsewhere; preserve that semantics.
+    }
+  }
 
   // Audit-log analyst-access changes specifically — they're a moderation lever.
   if (changes.analystEnabled !== undefined) {
@@ -287,6 +381,12 @@ export async function removeUserLogoAction(id: string): Promise<{ error?: string
   const user = await findUser(id);
   if (!user) return { error: "User not found" };
 
+  const actor = await getActorScope(admin.adminId);
+  if (!actor) return { error: "Unauthorized" };
+  if (!inWorkspaceScope(actor.scope, user.workspace)) {
+    return { error: "User not found" };
+  }
+
   await clearUserLogo(id);
   revalidatePath("/dashboard/users");
   return {};
@@ -301,6 +401,15 @@ export async function deleteUserAction(id: string): Promise<{ error?: string }> 
   if (!admin) return { error: "Unauthorized" };
 
   await ensureMigrated();
+
+  const user = await findUser(id);
+  if (!user) return { error: "User not found" };
+  const actor = await getActorScope(admin.adminId);
+  if (!actor) return { error: "Unauthorized" };
+  if (!inWorkspaceScope(actor.scope, user.workspace)) {
+    return { error: "User not found" };
+  }
+
   const deleted = await deleteUser(id);
   if (!deleted) return { error: "User not found" };
 

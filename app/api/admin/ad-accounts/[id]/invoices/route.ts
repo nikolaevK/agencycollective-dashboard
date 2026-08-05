@@ -2,9 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getAdAccount } from "@/lib/adAccounts";
 import { listInvoicesForAdAccount } from "@/lib/adAccountInvoices";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
 
 
 interface RouteContext {
@@ -14,12 +13,13 @@ interface RouteContext {
 
 /** Every invoice (all statuses, newest first) stored under one ad account. */
 export async function GET(_request: Request, { params }: RouteContext) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
 
-  const account = await getAdAccount(params.id);
+  const account = await findAdAccountInScope(actor.scope, params.id);
   if (!account)
     return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
 

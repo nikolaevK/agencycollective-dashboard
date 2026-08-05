@@ -1,8 +1,22 @@
 import { NextResponse } from "next/server";
 import { checkRate } from "@/lib/rateLimit";
 import { verifyApiToken, bumpTokenUsage, ApiTokenRecord } from "@/lib/apiTokens";
-import { tokenHasScope, tokenHasResource, ScopeKey } from "@/lib/apiScopes";
+import {
+  tokenHasScope,
+  tokenHasResource,
+  tokenWorkspaceScope,
+  ScopeKey,
+} from "@/lib/apiScopes";
+import { readUsers } from "@/lib/users";
 import { fail } from "./respond";
+
+/**
+ * Sentinel client-id for a workspace-restricted token whose book currently
+ * has no clients. clientIds semantics treat null/[] as "all", so an empty
+ * derived list must NOT be stored as [] — this impossible id makes every
+ * resource check deny and every list filter to zero rows instead.
+ */
+const NO_CLIENTS_SENTINEL = "__workspace_has_no_clients__";
 
 /**
  * The single authoritative guard for the external API. Every `/api/v1/*`
@@ -41,12 +55,38 @@ export async function authenticateApiRequest(
     };
   }
 
-  const token = await verifyApiToken(match[1]);
+  let token = await verifyApiToken(match[1]);
   if (!token) {
     // Never log or echo the presented secret.
     return {
       ok: false,
       response: fail("invalid_token", "Invalid, expired, or revoked API token.", 401),
+    };
+  }
+
+  // Workspace (book) restriction — translated into the EXISTING client_ids
+  // resource-scoping machinery so no route or MCP tool changes behavior:
+  // the token's effective clientIds become "clients in the allowed book(s)"
+  // (intersected with an explicit clientIds allow-list when both are set).
+  // Every existing enforcement point then just works — single-item lookups
+  // 403 via tokenHasResource, list routes pre-filter via allowedResourceIds,
+  // and the cross-brand payout pool already denies any client-restricted
+  // token. Tokens without a workspace restriction skip this entirely
+  // (identical behavior to before the feature existed).
+  const wsScope = tokenWorkspaceScope(token);
+  if (wsScope !== null) {
+    const users = await readUsers();
+    const wsIds = users
+      .filter((u) => wsScope.includes(u.workspace || "main"))
+      .map((u) => u.id);
+    const explicit = token.clientIds;
+    const merged =
+      explicit && explicit.length > 0
+        ? wsIds.filter((id) => explicit.includes(id))
+        : wsIds;
+    token = {
+      ...token,
+      clientIds: merged.length > 0 ? merged : [NO_CLIENTS_SENTINEL],
     };
   }
 

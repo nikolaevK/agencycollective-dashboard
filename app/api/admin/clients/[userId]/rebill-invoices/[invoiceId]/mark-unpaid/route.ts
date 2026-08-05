@@ -1,23 +1,15 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { findAdmin } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
 import {
   findRebillInvoice,
   markInvoiceUnpaid,
 } from "@/lib/clientRebillInvoices";
+import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { userId: string; invoiceId: string };
-}
-
-async function requireAdminSession() {
-  const session = getAdminSession();
-  if (!session) return null;
-  const admin = await findAdmin(session.adminId);
-  return admin ? { admin, session } : null;
 }
 
 /**
@@ -32,11 +24,10 @@ async function requireAdminSession() {
  * unpaid invoice is a no-op (UPDATE … WHERE status='sent' in the lib).
  */
 export async function POST(req: NextRequest, { params }: RouteContext) {
-  const auth = await requireAdminSession();
-  if (!auth)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   await ensureMigrated();
+
+  const guard = await requireClientRouteActor(params.userId);
+  if (guard.response) return guard.response;
 
   const invoice = await findRebillInvoice(params.invoiceId);
   if (!invoice)
@@ -67,7 +58,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
   let updated = false;
   try {
-    updated = await markInvoiceUnpaid(params.invoiceId, auth.session.adminId, reason);
+    updated = await markInvoiceUnpaid(params.invoiceId, guard.actor.admin.id, reason);
   } catch (err) {
     console.error("[rebill-invoice/mark-unpaid]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

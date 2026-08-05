@@ -186,6 +186,7 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       scopes           TEXT NOT NULL DEFAULT '{}',
       client_ids       TEXT,
       closer_ids       TEXT,
+      workspaces       TEXT,
       expires_at       TEXT,
       revoked_at       TEXT,
       last_used_at     TEXT,
@@ -508,6 +509,23 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // is gated by the version body, so "no such table" here is benign on a
     // fresh DB (created with the column inline).
     { table: "invoice_agency_profiles", column: "website",             defn: "TEXT NOT NULL DEFAULT ''" },
+    // Workspaces ("books") — separate Client Directory + Team scopes for
+    // outside teams (lib/workspaces.ts). users/ad_accounts rows belong to one
+    // workspace (existing rows default to 'main' — the current book, data
+    // untouched); admins carry an allow-list JSON (NULL = legacy default
+    // ['main']; supers/admin-perm are unscoped). Read on every directory
+    // build and admin resolve, so they must self-heal here.
+    { table: "admins",                  column: "workspaces",          defn: "TEXT" },
+    { table: "users",                   column: "workspace",           defn: "TEXT NOT NULL DEFAULT 'main'" },
+    { table: "ad_accounts",             column: "workspace",           defn: "TEXT NOT NULL DEFAULT 'main'" },
+    // Filed PDFs carry the book they were filed under (partner invoice sends
+    // stamp their workspace) so cross-book brand collisions can't leak files.
+    // Read on every client Documents tab load, so it must self-heal here.
+    { table: "payout_documents",        column: "workspace",           defn: "TEXT NOT NULL DEFAULT 'main'" },
+    // API-token workspace restriction (NULL = every book) — read by
+    // verifyApiToken on EVERY /api/v1 + /api/mcp request, so it must
+    // self-heal (the CREATE above includes it inline for fresh DBs).
+    { table: "api_tokens",              column: "workspaces",          defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -656,6 +674,18 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
          design_board_enabled, design_board_url)`
     );
   }
+  // v2 covering index adds `workspace` (book scoping) so directory reads stay
+  // BLOB-free. Gated on the probe, so it lands one startup AFTER the ALTER
+  // above adds the column; selectUserRows falls back to the v1 index (then
+  // SELECT *) until then.
+  if (colsByTable.get("users")?.has("workspace")) {
+    writes.push(
+      `CREATE INDEX IF NOT EXISTS idx_users_directory_cover2
+       ON users(id, slug, account_id, display_name, logo_path, password_hash,
+         email, status, mrr, category, analyst_enabled, joined_at, payout_brand,
+         design_board_enabled, design_board_url, workspace)`
+    );
+  }
   try {
     await db.batch(writes, "write");
   } catch (err) {
@@ -697,7 +727,8 @@ export async function migrate(): Promise<void> {
       logo_path    TEXT,
       logo_data    BLOB,
       logo_type    TEXT,
-      password_hash TEXT
+      password_hash TEXT,
+      workspace    TEXT NOT NULL DEFAULT 'main'
     )
   `);
 
@@ -724,7 +755,8 @@ export async function migrate(): Promise<void> {
       perm_media_manage INTEGER NOT NULL DEFAULT 0,
       perm_admin     INTEGER NOT NULL DEFAULT 0,
       perm_apitokens INTEGER NOT NULL DEFAULT 0,
-      perm_meta_accounts INTEGER NOT NULL DEFAULT 0
+      perm_meta_accounts INTEGER NOT NULL DEFAULT 0,
+      workspaces     TEXT
     )
   `);
 
@@ -778,7 +810,8 @@ export async function migrate(): Promise<void> {
         perm_media_manage INTEGER NOT NULL DEFAULT 0,
         perm_admin     INTEGER NOT NULL DEFAULT 0,
         perm_apitokens INTEGER NOT NULL DEFAULT 0,
-        perm_meta_accounts INTEGER NOT NULL DEFAULT 0
+        perm_meta_accounts INTEGER NOT NULL DEFAULT 0,
+        workspaces     TEXT
       )
     `);
 
@@ -1311,6 +1344,7 @@ export async function migrate(): Promise<void> {
       payout_month      INTEGER,
       payout_year       INTEGER,
       uploaded_by       TEXT,
+      workspace         TEXT NOT NULL DEFAULT 'main',
       created_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
@@ -2201,6 +2235,7 @@ export async function migrate(): Promise<void> {
       lead_days              INTEGER NOT NULL DEFAULT 5,
       extend_until           TEXT,
       last_billed_override   TEXT,
+      workspace              TEXT NOT NULL DEFAULT 'main',
       created_at             TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
     )

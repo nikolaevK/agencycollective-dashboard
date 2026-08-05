@@ -3,9 +3,8 @@ export const maxDuration = 30;
 
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
+import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
 import { ensureMigrated } from "@/lib/db";
-import { getAdAccount } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import {
   normalizeBrandName,
@@ -36,13 +35,14 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * "Ad Account" payout lands as `paid`.
  */
 export async function POST(req: NextRequest, { params }: RouteContext) {
-  const session = getAdminSession();
-  if (!session)
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = { adminId: actor.admin.id };
 
   await ensureMigrated();
 
-  const account = await getAdAccount(params.id);
+  const account = await findAdAccountInScope(actor.scope, params.id);
   if (!account)
     return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
 
@@ -50,7 +50,16 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   let userId: string | null = account.userId;
   if (account.userId) {
     const user = await findUser(account.userId);
-    if (user) brand = user.payoutBrand ?? user.displayName;
+    if (user) {
+        // Non-main (partner-book) accounts match payouts ONLY via the
+        // internally-managed explicit link — no display-name fallback, and
+        // exact equality below — so a name collision with an internal brand
+        // can't feed internal payments into a partner schedule.
+        brand =
+          account.workspace !== "main"
+            ? user.payoutBrand
+            : user.payoutBrand ?? user.displayName;
+      }
   }
 
   try {
@@ -130,6 +139,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         id: crypto.randomUUID(),
         normalizedBrand: normalizeBrandName(fileBrand),
         brandName: fileBrand,
+        workspace: account.workspace,
         docType: "invoice",
         fileName: `invoice-${invoiceNumber}.pdf`,
         fileSize: buffer.length,
@@ -172,7 +182,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         const norm = normalizeBrandName(brand);
         const months: Array<{ year: number; month: number }> = [];
         for (const [key, arr] of byBrand) {
-          if (key === norm || brandsMatch(norm, key)) months.push(...arr);
+          if (
+            key === norm ||
+            (account.workspace === "main" && brandsMatch(norm, key))
+          )
+            months.push(...arr);
         }
         await reconcileInvoiceForAdAccount(invoice, months);
       } catch {

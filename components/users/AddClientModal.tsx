@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Search, Plus, Check, Database, PencilLine } from "lucide-react";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { cn } from "@/lib/utils";
 import { CreateUserForm } from "./CreateUserForm";
 import { DateRangeDropdown, type DateRangeValue } from "./DateRangeDropdown";
@@ -51,7 +53,11 @@ export function AddClientModal({
   onCreated: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("payout");
+  const admin = useAdmin();
+  // The Payout DB is internal-only — external partner admins add manually.
+  const [tab, setTab] = useState<Tab>(admin.isExternal ? "manual" : "payout");
+  const { workspaces } = useWorkspaces();
+  const [importWorkspace, setImportWorkspace] = useState<string>("main");
   const [range, setRange] = useState<DateRangeValue>(last7());
   const [search, setSearch] = useState("");
   const [addingBrands, setAddingBrands] = useState<Set<string>>(new Set());
@@ -85,6 +91,7 @@ export function AddClientModal({
           dateJoined: entry.dateJoined,
           monthlyAmount: entry.monthlyAmount,
           category: verticalToCategory(entry.vertical),
+          workspace: importWorkspace,
         }),
       });
       if (!res.ok) {
@@ -128,9 +135,11 @@ export function AddClientModal({
 
         {/* Tabs */}
         <div className="flex gap-1 p-2 bg-muted/40 dark:bg-white/5 m-5 mb-0 rounded-xl">
-          <TabBtn active={tab === "payout"} onClick={() => setTab("payout")} icon={Database}>
-            From Payout DB
-          </TabBtn>
+          {!admin.isExternal && (
+            <TabBtn active={tab === "payout"} onClick={() => setTab("payout")} icon={Database}>
+              From Payout DB
+            </TabBtn>
+          )}
           <TabBtn active={tab === "manual"} onClick={() => setTab("manual")} icon={PencilLine}>
             Manual entry
           </TabBtn>
@@ -147,6 +156,18 @@ export function AddClientModal({
 
               <div className="flex flex-wrap items-center gap-2">
                 <DateRangeDropdown label="Joined window" value={range} onChange={setRange} />
+                {workspaces.length > 1 && (
+                  <select
+                    value={importWorkspace}
+                    onChange={(e) => setImportWorkspace(e.target.value)}
+                    title="Workspace the imported client lands in"
+                    className="rounded-lg bg-muted/40 dark:bg-white/5 border border-border/50 px-2.5 py-2 text-xs font-semibold text-foreground focus:outline-none"
+                  >
+                    {workspaces.map((w) => (
+                      <option key={w.value} value={w.value}>{w.label}</option>
+                    ))}
+                  </select>
+                )}
                 <div className="relative flex-1 min-w-[180px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input

@@ -10,6 +10,10 @@ export interface AdminContextValue {
   avatarPath: string | null;
   isSuper: boolean;
   permissions: AdminPermissions;
+  /** Workspace (book) scope — null = every book (super / Admin Management). */
+  workspaces: string[] | null;
+  /** External partner scope (no access to the main book) — hides internal-only surfaces. */
+  isExternal: boolean;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);

@@ -11,6 +11,7 @@ import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
 import { useTeamDirectory } from "./useTeamData";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { RosterManageDialog } from "./RosterManageDialog";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
 import {
@@ -41,7 +42,11 @@ export function TeamHome() {
   const [drill, setDrill] = useState<DrillKind | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [managePreselect, setManagePreselect] = useState<string | null>(null);
-  const { data, isLoading, error, refetch } = useTeamDirectory(timeframe);
+  // Book filter — only rendered for admins who can see multiple workspaces
+  // (super / Admin Management); "" = all books.
+  const [workspace, setWorkspace] = useState("");
+  const { workspaces, canManage } = useWorkspaces();
+  const { data, isLoading, error, refetch } = useTeamDirectory(timeframe, workspace);
 
   if (isLoading) {
     return (
@@ -89,6 +94,19 @@ export function TeamHome() {
             </button>
           ))}
         </div>
+        {canManage && workspaces.length > 1 && (
+          <select
+            value={workspace}
+            onChange={(e) => setWorkspace(e.target.value)}
+            title="Filter the team overview to one workspace (book)"
+            className="h-9 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground focus:outline-none"
+          >
+            <option value="">All workspaces</option>
+            {workspaces.map((w) => (
+              <option key={w.value} value={w.value}>{w.label}</option>
+            ))}
+          </select>
+        )}
         {data.viewer.privileged && (
           <button
             type="button"

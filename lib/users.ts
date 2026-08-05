@@ -20,6 +20,7 @@ export interface UserRecord {
   designBoardUrl: string | null; // raw Figma share link shown on the Design Board
   joinedAt: string | null;    // client start date (seeded from payout date_joined)
   payoutBrand: string | null; // explicit link to a Payout-DB brand_name
+  workspace: string;          // Client Directory book/workspace slug ('main' = original book)
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,23 @@ async function hasDesignBoardColumns(db: Client): Promise<boolean> {
   }
 }
 
+/**
+ * Probe for the workspace (book) column. Same cache-on-success pattern — a
+ * not-yet-migrated DB skips the write until the column lands (rows then read
+ * back as the 'main' default).
+ */
+let _hasWorkspaceCol: boolean = false;
+async function hasWorkspaceColumn(db: Client): Promise<boolean> {
+  if (_hasWorkspaceCol) return true;
+  try {
+    await db.execute("SELECT workspace FROM users LIMIT 0");
+    _hasWorkspaceCol = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function rowToUser(row: Row): UserRecord {
   return {
     id: String(row.id),
@@ -156,6 +174,9 @@ function rowToUser(row: Row): UserRecord {
     designBoardUrl: row.design_board_url != null ? String(row.design_board_url) : null,
     joinedAt: row.joined_at != null ? String(row.joined_at) : null,
     payoutBrand: row.payout_brand != null ? String(row.payout_brand) : null,
+    // Default 'main' when the column is missing (pre-migration row read or
+    // the v1-covering-index fallback projection).
+    workspace: row.workspace != null && String(row.workspace) !== "" ? String(row.workspace) : "main",
   };
 }
 
@@ -173,6 +194,31 @@ const USER_META_COLUMNS = `id, slug, account_id, display_name, logo_path,
 
 async function selectUserRows(suffix: string, args: string[]): Promise<Row[]> {
   const db = getDb();
+  // Prefer the v2 covering index (includes `workspace`); fall back to the v1
+  // index (workspace missing from the projection → rowToUser defaults 'main')
+  // until the v2 index lands, then to SELECT * on a pre-index DB.
+  try {
+    const result = await db.execute({
+      sql: `SELECT ${USER_META_COLUMNS}, workspace FROM users INDEXED BY idx_users_directory_cover2 ${suffix}`,
+      args,
+    });
+    return [...result.rows];
+  } catch {
+    // fall through
+  }
+  try {
+    // Column present but v2 index not yet (it lands one startup after the
+    // ALTER) — unforced plan, still the correct workspace values. Never
+    // project workspace off the v1 index instead: rows would silently read
+    // as 'main' and mis-scope partner books.
+    const result = await db.execute({
+      sql: `SELECT ${USER_META_COLUMNS}, workspace FROM users ${suffix}`,
+      args,
+    });
+    return [...result.rows];
+  } catch {
+    // fall through — workspace column itself hasn't landed yet
+  }
   try {
     const result = await db.execute({
       sql: `SELECT ${USER_META_COLUMNS} FROM users INDEXED BY idx_users_directory_cover ${suffix}`,
@@ -240,6 +286,10 @@ export async function insertUser(user: UserRecord): Promise<void> {
   if (await hasDesignBoardColumns(db)) {
     cols.push("design_board_enabled", "design_board_url");
     args.push(user.designBoardEnabled ? 1 : 0, user.designBoardUrl);
+  }
+  if (await hasWorkspaceColumn(db)) {
+    cols.push("workspace");
+    args.push(user.workspace || "main");
   }
 
   const placeholders = cols.map(() => "?").join(", ");
@@ -317,6 +367,12 @@ export async function updateUser(
       fields.push("design_board_url = ?");
       args.push(changes.designBoardUrl);
     }
+  }
+
+  // Workspace (book) column — only emitted when the migration has landed.
+  if (changes.workspace !== undefined && (await hasWorkspaceColumn(db))) {
+    fields.push("workspace = ?");
+    args.push(changes.workspace || "main");
   }
 
   // Client Directory columns — only emitted when the migration has landed.

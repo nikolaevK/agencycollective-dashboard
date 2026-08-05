@@ -77,9 +77,12 @@ function isCurrentMonth(iso: string, ref = new Date()): boolean {
 export function SentInvoicesPanel({
   open,
   onOpenChange,
+  restrictToUserIds = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Workspace context: when set, only invoices for these client ids render. */
+  restrictToUserIds?: Set<string> | null;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -87,7 +90,10 @@ export function SentInvoicesPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null);
 
-  const count = data?.count ?? 0;
+  const visible = (data?.invoices ?? []).filter(
+    (i) => !restrictToUserIds || restrictToUserIds.has(i.userId)
+  );
+  const count = visible.length;
   if (count === 0) return null;
 
   // Split by month-of-sent_at so the panel reads as "this month + earlier
@@ -95,8 +101,8 @@ export function SentInvoicesPanel({
   // order. An older still-`sent` invoice can mean the client hasn't paid yet
   // OR a payout for the cycle hasn't been recorded in the Payout DB.
   const now = new Date();
-  const thisMonth = (data?.invoices ?? []).filter((i) => isCurrentMonth(i.sentAt, now));
-  const earlier = (data?.invoices ?? []).filter((i) => !isCurrentMonth(i.sentAt, now));
+  const thisMonth = visible.filter((i) => isCurrentMonth(i.sentAt, now));
+  const earlier = visible.filter((i) => !isCurrentMonth(i.sentAt, now));
   const monthHeader = monthLabel(now.toISOString());
 
   async function handleMarkUnpaid(inv: SentInvoice) {

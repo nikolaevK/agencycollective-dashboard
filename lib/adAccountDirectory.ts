@@ -15,8 +15,9 @@ import {
   reconcileInvoiceForAdAccount,
   type AdAccountInvoice,
 } from "./adAccountInvoices";
-import { listAdAccounts, type AdAccount, type AdAccountStatus } from "./adAccounts";
+import { listAdAccounts, type AdAccountStatus } from "./adAccounts";
 import { businessToday } from "./businessTime";
+import { inWorkspaceScope, type WorkspaceScope } from "./workspaces";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,8 @@ import { businessToday } from "./businessTime";
 
 export interface AdAccountDirectoryRow {
   id: string;
+  /** Workspace (book) slug — 'main' is the original Agency Collective book. */
+  workspace: string;
   accountName: string;
   vendor: string | null;
   platform: string | null;
@@ -74,16 +77,23 @@ function datePart(value: string | null): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
-/** Resolve a client's brand → its "Ad Account"-flagged payout months. */
+/**
+ * Resolve a client's brand → its "Ad Account"-flagged payout months.
+ * `exactOnly` (non-main/partner-book accounts) skips the fuzzy pass — the
+ * substring matcher would otherwise let a name collision with an internal
+ * brand feed internal payments into a partner account's schedule.
+ */
 function adAccountMonthsForBrand(
   brand: string | null,
-  byBrand: Map<string, Array<{ year: number; month: number }>>
+  byBrand: Map<string, Array<{ year: number; month: number }>>,
+  exactOnly = false
 ): Array<{ year: number; month: number }> {
   if (!brand) return [];
   const norm = normalizeBrandName(brand);
   if (!norm) return [];
   const exact = byBrand.get(norm);
   const months: Array<{ year: number; month: number }> = exact ? [...exact] : [];
+  if (exactOnly) return months;
   for (const [key, arr] of byBrand) {
     if (key === norm) continue;
     if (brandsMatch(norm, key)) months.push(...arr);
@@ -92,18 +102,22 @@ function adAccountMonthsForBrand(
 }
 
 export async function buildAdAccountDirectory(
-  today?: Date
+  today?: Date,
+  /** Workspace scope of the viewer — null/omitted = every book. Rows AND the
+   *  summary are computed from the scoped set only. */
+  scope: WorkspaceScope = null
 ): Promise<AdAccountDirectory> {
   // Day-granular billing math runs in the business timezone, not the UTC server
   // clock — otherwise statuses/dates flip a day early every evening (PT) and the
   // recomputed `nextRebillAt` won't match a just-sent invoice's `cycle_anchor`.
   const t = today ?? businessToday();
-  const [accounts, users, adAccountMonthsMap, sentByAccount] = await Promise.all([
+  const [allAccounts, users, adAccountMonthsMap, sentByAccount] = await Promise.all([
     listAdAccounts(),
     readUsers(),
     getAdAccountPayoutMonthsByBrand(),
     getSentInvoicesByAdAccount(),
   ]);
+  const accounts = allAccounts.filter((a) => inWorkspaceScope(scope, a.workspace));
 
   const usersById = new Map<string, UserRecord>();
   for (const u of users) usersById.set(u.id, u);
@@ -111,9 +125,18 @@ export async function buildAdAccountDirectory(
   const rows: AdAccountDirectoryRow[] = await Promise.all(
     accounts.map(async (acct) => {
       const client = acct.userId ? usersById.get(acct.userId) ?? null : null;
-      const matchedBrand =
-        client?.payoutBrand ?? client?.displayName ?? null;
-      const payoutMonths = adAccountMonthsForBrand(matchedBrand, adAccountMonthsMap);
+      // Non-main (partner-book) accounts match payouts ONLY via the
+      // internally-managed explicit link, exact — mirrors matchHistories'
+      // cross-book isolation (and the SEND/register routes' brand basis).
+      const isMainBook = acct.workspace === "main";
+      const matchedBrand = isMainBook
+        ? client?.payoutBrand ?? client?.displayName ?? null
+        : client?.payoutBrand ?? null;
+      const payoutMonths = adAccountMonthsForBrand(
+        matchedBrand,
+        adAccountMonthsMap,
+        !isMainBook
+      );
 
       // Reconcile EVERY sent invoice for this account (sent → paid) before
       // reading status — backdated/registered rows (supersede:false) coexist
@@ -167,6 +190,7 @@ export async function buildAdAccountDirectory(
 
       return {
         id: acct.id,
+        workspace: acct.workspace,
         accountName: acct.accountName,
         vendor: acct.vendor,
         platform: acct.platform,

@@ -9,13 +9,16 @@ import {
   setWelcomeKitShare,
   WelcomeKitConflictError,
 } from "@/lib/welcomeKit";
-import { requireAdminRecord as requireAdmin } from "@/lib/api/requireAdmin";
+import { requireInternalActor } from "@/lib/api/requireAdmin";
 
+
+// The Welcome Kit is a single GLOBAL document (agency onboarding content) —
+// internal-only; external (partner) scopes get 403 on every method.
 
 /** Full kit record (doc + share state) for the builder. */
 export async function GET() {
-  if (!(await requireAdmin()))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
 
   await ensureMigrated();
   const record = await getWelcomeKitRecord();
@@ -24,9 +27,9 @@ export async function GET() {
 
 /** Save the kit document (validated/normalized server-side). */
 export async function PUT(request: Request) {
-  const admin = await requireAdmin();
-  if (!admin)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
+  const admin = guard.actor.admin;
 
   await ensureMigrated();
   try {
@@ -52,9 +55,9 @@ export async function PUT(request: Request) {
 
 /** Toggle public sharing of /welcome-kit. */
 export async function PATCH(request: Request) {
-  const admin = await requireAdmin();
-  if (!admin)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireInternalActor();
+  if (guard.response) return guard.response;
+  const admin = guard.actor.admin;
 
   await ensureMigrated();
   try {

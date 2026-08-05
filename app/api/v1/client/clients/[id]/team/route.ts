@@ -1,6 +1,9 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { tokenWorkspaceScope } from "@/lib/apiScopes";
+import { workspaceMembershipOf, scopesOverlap } from "@/lib/workspaces";
+import { readAdmins } from "@/lib/admins";
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import { findUser } from "@/lib/users";
@@ -52,10 +55,24 @@ export async function PUT(
     if (!Array.isArray(body.adminIds)) {
       return fail("invalid_request", "adminIds must be an array of admin ids", 400);
     }
-    const adminIds = body.adminIds
+    let adminIds = body.adminIds
       .filter((v): v is string => typeof v === "string")
       .map((v) => v.trim())
       .filter(Boolean);
+
+    // Workspace-restricted tokens may only assign admins who BELONG to one
+    // of their books (membership, not privilege) — a partner integration
+    // can't attach the internal team. Unrestricted tokens keep today's
+    // behavior exactly.
+    const wsRestriction = tokenWorkspaceScope(auth.token);
+    if (wsRestriction && adminIds.length > 0) {
+      const allowed = new Set(
+        (await readAdmins())
+          .filter((a) => scopesOverlap(wsRestriction, workspaceMembershipOf(a)))
+          .map((a) => a.id)
+      );
+      adminIds = adminIds.filter((id) => allowed.has(id));
+    }
 
     const actor = tokenAuditActor(auth.token);
     await setClientTeam(params.id, role, adminIds, actor.adminId);

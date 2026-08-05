@@ -11,6 +11,7 @@ import {
   useClientProfileMutations,
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 interface EditClientModalProps {
   client: ClientPublic;
@@ -36,6 +37,10 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
   // Roster profile fields (saved via the profile PATCH, not updateUserAction)
   const [website, setWebsite] = useState(client.profile?.website ?? "");
   const [book, setBook] = useState<ClientBook>(client.profile?.book ?? "agency");
+  // Workspace (book) move — unscoped admins only; the server rejects it for
+  // everyone else, and the select is hidden for single-workspace setups.
+  const { workspaces, canManage } = useWorkspaces();
+  const [workspace, setWorkspace] = useState(client.workspace);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Through the shared hook so the write joins the per-client queue (an inline
   // website edit on the directory row must not race this modal's PATCH).
@@ -54,6 +59,9 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     formData.set("analystEnabled", analystEnabled ? "true" : "false");
     formData.set("designBoardEnabled", designBoardEnabled ? "true" : "false");
     formData.set("designBoardUrl", designBoardUrl);
+    if (canManage && workspace && workspace !== client.workspace) {
+      formData.set("workspace", workspace);
+    }
 
     // Append new logo file if selected
     const logoFile = fileInputRef.current?.files?.[0];
@@ -157,6 +165,26 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
               ))}
             </select>
           </div>
+
+          {canManage && workspaces.length > 1 && (
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                Workspace
+              </label>
+              <select
+                value={workspace}
+                onChange={(e) => setWorkspace(e.target.value)}
+                className={`${INPUT_CLS} appearance-none cursor-pointer`}
+              >
+                {workspaces.map((w) => (
+                  <option key={w.value} value={w.value}>{w.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Moving a client changes which team&apos;s Client Directory it appears in.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">

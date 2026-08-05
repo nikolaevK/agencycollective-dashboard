@@ -5,6 +5,7 @@ import { UserPlus, Upload, X } from "lucide-react";
 import { createUserAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import { BOOK_OPTIONS, type ClientBook } from "@/lib/clientProfile";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 interface CreateUserFormProps {
   onCreated: () => void;
@@ -17,6 +18,10 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [book, setBook] = useState<ClientBook>("agency");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Workspace (book) the client lands in — only rendered when the admin can
+  // see more than one; single-workspace admins fall through to the server
+  // default (their own book).
+  const { workspaces } = useWorkspaces();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -103,6 +108,27 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
             className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
           />
         </div>
+
+        {/* Workspace (book) — separate directory for outside teams */}
+        {workspaces.length > 1 && (
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+              Workspace
+            </label>
+            <select
+              name="workspace"
+              className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
+            >
+              {workspaces.map((w) => (
+                <option key={w.value} value={w.value}>{w.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              The Client Directory book this client belongs to — only admins
+              assigned to that workspace will see them.
+            </p>
+          </div>
+        )}
 
         {/* Category */}
         <div>

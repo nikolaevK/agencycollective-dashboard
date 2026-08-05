@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, getEffectivePermissions } from "@/lib/admins";
+import { workspaceScopeOf, isExternalScope } from "@/lib/workspaces";
 import { DashboardClientShell } from "@/components/layout/DashboardClientShell";
 
 export default async function DashboardLayout({
@@ -32,6 +33,11 @@ export default async function DashboardLayout({
     sessionPerms.closers !== permissions.closers ||
     sessionPerms.admin !== permissions.admin;
 
+  // Workspace (book) scope — DB-fresh like the permissions above; drives
+  // client-side gating of internal-only surfaces (Welcome Kit, SOPs, payout
+  // pickers) for external partner admins. Enforcement stays in-route.
+  const scope = workspaceScopeOf(admin);
+
   const adminData = {
     adminId: admin.id,
     username: admin.username,
@@ -39,6 +45,8 @@ export default async function DashboardLayout({
     avatarPath: admin.avatarPath,
     isSuper: admin.isSuper,
     permissions,
+    workspaces: scope,
+    isExternal: isExternalScope(scope),
   };
 
   return (

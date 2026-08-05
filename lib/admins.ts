@@ -1,6 +1,7 @@
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
 import { type AdminPermissions, allPermissionsTrue } from "./permissions";
+import { parseWorkspaceList, serializeWorkspaceList } from "./workspaces";
 
 export interface AdminRecord {
   id: string;
@@ -12,6 +13,13 @@ export interface AdminRecord {
   avatarPath: string | null;
   role: string;
   permissions: AdminPermissions;
+  /**
+   * Workspace ("book") allow-list — which Client Directory / Team books this
+   * admin may see. NULL = legacy default (the main book). Supers and
+   * admin-perm holders are unscoped regardless (lib/workspaces.ts
+   * workspaceScopeOf is the single resolution point — never read this raw).
+   */
+  workspaces: string[] | null;
 }
 
 function rowToAdmin(row: Row): AdminRecord {
@@ -39,6 +47,9 @@ function rowToAdmin(row: Row): AdminRecord {
       apitokens: Number(row.perm_apitokens) === 1,
       meta_accounts: Number(row.perm_meta_accounts) === 1,
     },
+    workspaces: parseWorkspaceList(
+      row.workspaces != null ? String(row.workspaces) : null
+    ),
   };
 }
 
@@ -75,10 +86,11 @@ export async function findAdminByUsername(username: string): Promise<AdminRecord
 }
 
 export async function insertAdmin(
-  admin: Omit<AdminRecord, "isSuper" | "permissions" | "role"> & {
+  admin: Omit<AdminRecord, "isSuper" | "permissions" | "role" | "workspaces"> & {
     isSuper?: boolean;
     role?: string;
     permissions?: Partial<AdminPermissions>;
+    workspaces?: string[] | null;
   }
 ): Promise<void> {
   await ensureMigrated();
@@ -91,8 +103,8 @@ export async function insertAdmin(
       perm_dashboard, perm_analyst, perm_studio, perm_jsoneditor,
       perm_adcopy, perm_invoice, perm_users, perm_closers,
       perm_media, perm_media_manage, perm_admin, perm_apitokens,
-      perm_meta_accounts
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      perm_meta_accounts, workspaces
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       admin.id,
       admin.username,
@@ -115,6 +127,7 @@ export async function insertAdmin(
       perms.admin ? 1 : 0,
       perms.apitokens ? 1 : 0,
       perms.meta_accounts ? 1 : 0,
+      serializeWorkspaceList(admin.workspaces ?? null),
     ],
   });
 }
@@ -128,6 +141,7 @@ export async function updateAdmin(
     avatarPath?: string | null;
     role?: string;
     permissions?: Partial<AdminPermissions>;
+    workspaces?: string[] | null;
   }
 ): Promise<void> {
   await ensureMigrated();
@@ -154,6 +168,10 @@ export async function updateAdmin(
   if (changes.role !== undefined) {
     fields.push("role = ?");
     args.push(changes.role);
+  }
+  if (changes.workspaces !== undefined) {
+    fields.push("workspaces = ?");
+    args.push(serializeWorkspaceList(changes.workspaces));
   }
   if (changes.permissions) {
     const p = changes.permissions;

@@ -37,7 +37,9 @@ Conventions:
 
 Domains: closer (closers, deals, contracts, invoices, payouts, attendance/show rates), client (Client Directory: clients, billing + re-bill schedule, ad accounts + invoices, welcome kit), media (media-buyer PDF library), sops (standard operating procedures), audit (read-only audit trail), metaaccounts (FB account inventory & warm-up — credential fields are write-only, never returned), team (Team hub: roster members, tasks, action items — createTeamActionItem is the agent ingest path and auto-creates a linked task).
 
-Start with getStarted to see this token's scopes and any client/closer restrictions. Use list tools to discover ids before calling item tools. Mutations are audit-logged as api:<token name>.`;
+Workspaces (books): clients and ad accounts belong to a workspace ("main" = the primary Agency Collective book; partner books exist for outside teams). A token may be restricted to specific workspaces — it then only sees those books' clients, ad accounts, billing and documents (out-of-book ids answer resource_forbidden), and cross-brand internal surfaces like the payout pool are unavailable. createClient accepts an optional workspace field (defaults to the token's book when restricted, else "main").
+
+Start with getStarted to see this token's scopes and any client/closer/workspace restrictions. Use list tools to discover ids before calling item tools. Mutations are audit-logged as api:<token name>.`;
 
 const handler = createMcpHandler(
   (server) => {
@@ -46,7 +48,7 @@ const handler = createMcpHandler(
       {
         title: "Get started",
         description:
-          "Call this first: returns the API guide (conventions, domains) plus this token's name, scopes, resource restrictions, and expiry.",
+          "Call this first: returns the API guide (conventions, domains) plus this token's name, scopes, resource/workspace restrictions, and expiry.",
         inputSchema: {},
         annotations: {
           title: "Get started",
@@ -69,6 +71,7 @@ const handler = createMcpHandler(
           scopes: record.scopes,
           clientIds: record.clientIds ?? "all clients",
           closerIds: record.closerIds ?? "all closers",
+          workspaces: record.workspaces ?? "all workspaces",
           expiresAt: record.expiresAt ?? "never",
         };
         return {

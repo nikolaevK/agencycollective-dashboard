@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 
   const timeframe = parseTimeframe(new URL(request.url).searchParams.get("timeframe"));
   try {
-    const hub = await buildMemberHub(params.adminId, timeframe);
+    const hub = await buildMemberHub(params.adminId, timeframe, actor.scope);
     if (!hub)
       return NextResponse.json({ error: "Team member not found" }, { status: 404 });
     return NextResponse.json({

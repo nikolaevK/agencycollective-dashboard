@@ -13,6 +13,7 @@ import {
   type UserStatus,
 } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
+import { tokenIsExternal } from "@/lib/apiScopes";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -99,7 +100,17 @@ export async function PATCH(
       changes.joinedAt = joinedAt;
     }
     if (body.payoutBrand !== undefined) {
-      changes.payoutBrand = body.payoutBrand ? String(body.payoutBrand).trim() : null;
+      const nextBrand = body.payoutBrand ? String(body.payoutBrand).trim() : null;
+      // Internally-managed link (see POST). Echoed-back unchanged values pass
+      // so record round-trips keep working; only an actual change is blocked.
+      if (tokenIsExternal(auth.token) && nextBrand !== (existing.payoutBrand ?? null)) {
+        return fail(
+          "resource_forbidden",
+          "The payout brand link is managed by the agency for workspace-restricted tokens",
+          403
+        );
+      }
+      changes.payoutBrand = nextBrand;
     }
     if (body.analystEnabled !== undefined) changes.analystEnabled = Boolean(body.analystEnabled);
     if (body.designBoardEnabled !== undefined) {

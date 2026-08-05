@@ -30,6 +30,16 @@ export async function GET(
     if (!result) return fail("not_found", "Document not found", 404);
 
     const clientBrand = normalizeBrandName(user.payoutBrand ?? user.displayName);
+    if (user.workspace !== "main") {
+      // Cross-book isolation (mirrors the admin docId route): own-book
+      // filings OR exact payout-brand-link matches; fuzzy never crosses books.
+      const linkNorm = user.payoutBrand ? normalizeBrandName(user.payoutBrand) : "";
+      const exactLinked =
+        linkNorm !== "" && result.doc.normalizedBrand === linkNorm;
+      if (!exactLinked && result.doc.workspace !== user.workspace) {
+        return fail("not_found", "Document not found", 404);
+      }
+    }
     if (!brandsMatch(clientBrand, result.doc.normalizedBrand)) {
       return fail("not_found", "Document not found", 404);
     }

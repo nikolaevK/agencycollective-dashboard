@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
-import { allowedResourceIds, tokenHasResource } from "@/lib/apiScopes";
+import { allowedResourceIds, tokenHasResource, tokenWorkspaceScope } from "@/lib/apiScopes";
 import { buildAdAccountDirectory } from "@/lib/adAccountDirectory";
 import { createAdAccount, type CreateAdAccountInput } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
@@ -57,19 +57,28 @@ export async function POST(request: Request) {
     if (!accountName) return fail("invalid_request", "accountName is required", 400);
 
     let userId: string | undefined;
+    let clientWorkspace: string | null = null;
     if (body.userId != null && String(body.userId).trim() !== "") {
       userId = String(body.userId).trim();
-      if (!(await findUser(userId))) {
+      const linked = await findUser(userId);
+      if (!linked) {
         return fail("invalid_request", "Unknown userId", 400);
       }
       if (!tokenHasResource(auth.token, "client", userId)) {
         return fail("resource_forbidden", "This token is not allowed to access this client", 403);
       }
+      clientWorkspace = linked.workspace;
     }
+
+    // The account lands in the linked client's book, else a restricted
+    // token's first book, else main (mirrors the admin create route).
+    const wsRestriction = tokenWorkspaceScope(auth.token);
+    const workspace = clientWorkspace ?? (wsRestriction ? wsRestriction[0] : "main");
 
     const input: CreateAdAccountInput = {
       accountName,
       userId,
+      workspace,
       vendor: body.vendor != null ? String(body.vendor).trim() || null : undefined,
       platform: body.platform != null ? String(body.platform).trim() || null : undefined,
       adSpendFeeBps: body.adSpendFeeBps !== undefined ? Number(body.adSpendFeeBps) : undefined,

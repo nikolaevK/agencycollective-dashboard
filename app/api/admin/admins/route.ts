@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, readAdmins, insertAdmin, updateAdmin, deleteAdmin } from "@/lib/admins";
 import { logAuditEvent } from "@/lib/auditLog";
 import { type PermissionKey, ALL_PERMISSION_KEYS } from "@/lib/permissions";
+import { listWorkspaceValues } from "@/lib/workspaces";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,6 +19,29 @@ async function requireAdmin(superAdminOnly = false) {
   if (!admin) return null;
   if (superAdminOnly && !admin.isSuper) return null;
   return admin;
+}
+
+/**
+ * Sanitize a workspace allow-list: strings only, validated against the
+ * registry (unknown slugs dropped). Empty/none → null = the legacy default
+ * (main book only; supers/admin-perm are unscoped regardless).
+ *
+ * `keepExtra` = slugs the target admin ALREADY holds — they stay valid even
+ * if their registry row is gone, so an unrelated edit can never silently
+ * null a dead-slug scope back to the main book (a scope-escalation edge; the
+ * registry DELETE also refuses while admins hold the slug, this is the belt).
+ */
+async function sanitizeWorkspaces(
+  raw: unknown,
+  keepExtra: string[] = []
+): Promise<string[] | null> {
+  if (!Array.isArray(raw)) return null;
+  const valid = await listWorkspaceValues();
+  for (const slug of keepExtra) valid.add(slug);
+  const list = [
+    ...new Set(raw.map((v) => String(v).trim()).filter((v) => valid.has(v))),
+  ];
+  return list.length > 0 ? list : null;
 }
 
 /** Sanitize permissions object: only allow known boolean keys. */
@@ -55,6 +79,8 @@ export async function POST(request: Request) {
     const email = body.email ? String(body.email).trim() : null;
     const role = body.role ? String(body.role).trim() : "admin";
     const permissions = sanitizePermissions(body.permissions);
+    const workspaces =
+      body.workspaces !== undefined ? await sanitizeWorkspaces(body.workspaces) : null;
 
     if (!username) {
       return NextResponse.json({ error: "username is required" }, { status: 400 });
@@ -76,6 +102,7 @@ export async function POST(request: Request) {
       role,
       isSuper: false,
       permissions,
+      workspaces,
     });
 
     // Audit log
@@ -99,6 +126,7 @@ export async function POST(request: Request) {
         avatarPath: null,
         role,
         permissions,
+        workspaces,
       },
     }, { status: 201 });
   } catch {
@@ -134,6 +162,13 @@ export async function PATCH(request: Request) {
     if (body.avatarPath !== undefined) changes.avatarPath = body.avatarPath != null ? String(body.avatarPath) : null;
     if (body.role !== undefined) changes.role = String(body.role).trim();
     if (body.permissions !== undefined) changes.permissions = sanitizePermissions(body.permissions);
+    if (body.workspaces !== undefined) {
+      // null/[] clears back to the legacy default (main book).
+      changes.workspaces =
+        body.workspaces === null
+          ? null
+          : await sanitizeWorkspaces(body.workspaces, target.workspaces ?? []);
+    }
 
     await updateAdmin(id, changes);
 

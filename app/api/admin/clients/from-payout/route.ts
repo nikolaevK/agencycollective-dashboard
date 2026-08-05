@@ -14,7 +14,12 @@ import {
 import { normalizeBrandName, findLatestSourceDealIdForBrand } from "@/lib/payouts";
 import { findDeal } from "@/lib/deals";
 import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor } from "@/lib/api/requireAdmin";
+import {
+  isExternalScope,
+  listWorkspaceValues,
+  DEFAULT_WORKSPACE,
+} from "@/lib/workspaces";
 
 /**
  * Create a client seeded from a Payout-DB brand. Uses the SAME creation
@@ -26,8 +31,17 @@ import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmi
  * simply can't log into the portal until an email is added, same as today.
  */
 export async function POST(request: Request) {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // The Payout DB is internal-only: an external (partner) scope never reaches
+  // the pool or this import. Internal admins may import straight into a
+  // partner book via `workspace` (unscoped admins only — a scoped internal
+  // admin stays inside their own books).
+  if (isExternalScope(actor.scope)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   await ensureMigrated();
 
@@ -38,7 +52,27 @@ export async function POST(request: Request) {
       monthlyAmount?: number | null; // cents
       category?: string | null;
       email?: string | null;
+      workspace?: string | null;
     };
+
+    const workspace = String(body.workspace ?? "").trim() || DEFAULT_WORKSPACE;
+    if (workspace !== DEFAULT_WORKSPACE) {
+      if (actor.scope !== null && !actor.scope.includes(workspace)) {
+        return NextResponse.json(
+          { error: "You don't have access to that workspace" },
+          { status: 403 }
+        );
+      }
+      // Registry membership is required only for unscoped actors — a scoped
+      // internal admin's own scope is authoritative even if the registry row
+      // was deleted (mirrors createUserAction).
+      if (actor.scope === null) {
+        const valid = await listWorkspaceValues();
+        if (!valid.has(workspace)) {
+          return NextResponse.json({ error: "Unknown workspace" }, { status: 400 });
+        }
+      }
+    }
 
     const brandName = String(body.brandName ?? "").trim().slice(0, 200);
     if (!brandName) {
@@ -113,6 +147,7 @@ export async function POST(request: Request) {
       designBoardUrl: null,
       joinedAt: null,
       payoutBrand: null,
+      workspace,
     });
 
     // Persist the additive Client Directory fields (insertUser ignores them).

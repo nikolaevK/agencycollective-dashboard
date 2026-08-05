@@ -35,6 +35,7 @@ import type { ClientAccount } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
 import { MrrDetailModal } from "@/components/users/MrrDetailModal";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { ClientBillingTab } from "@/components/users/ClientBillingTab";
 import { ClientAdAccountsTab } from "@/components/users/ClientAdAccountsTab";
@@ -307,6 +308,7 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
   const [showEdit, setShowEdit] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [showMrrDetail, setShowMrrDetail] = useState(false);
+  const { isExternal } = useAdmin();
   const { patchProfile } = useClientProfileMutations();
   // ?tab=… deep-links a tab (e.g. the directory's Ad Accounts count column).
   const [tab, setTab] = useState<DetailTab>(() =>
@@ -536,7 +538,7 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-6 border-t border-border/50">
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Monthly MRR</p>
-                {client.payoutMrr > 0 ? (
+                {client.payoutMrr > 0 && !isExternal ? (
                   <button
                     onClick={() => setShowMrrDetail(true)}
                     className="text-xl font-black text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 dark:decoration-emerald-400/30 underline-offset-4 hover:decoration-emerald-600 dark:hover:decoration-emerald-400 transition-colors"

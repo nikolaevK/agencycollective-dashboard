@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { buildClientDirectory } from "@/lib/clientDirectory";
-import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmin";
+import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
+import { requireDirectoryActor } from "@/lib/api/requireAdmin";
 
 /**
  * Live-computed list of clients with a re-bill invoice currently awaiting
@@ -16,12 +16,13 @@ import { requireAdminRecord as requireAdminSession } from "@/lib/api/requireAdmi
  * Same payout-history cache (90s) backs both panels.
  */
 export async function GET() {
-  if (!(await requireAdminSession()))
+  const actor = await requireDirectoryActor();
+  if (!actor)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureMigrated();
 
-  const rows = await buildClientDirectory();
+  const rows = filterRowsByWorkspace(await buildClientDirectory(), actor.scope);
 
   const invoices = rows
     // Inactive/archived clients drop out of the awaiting-payment count/panel

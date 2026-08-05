@@ -78,6 +78,8 @@ export async function POST(request: Request) {
       id: crypto.randomUUID(),
       normalizedBrand: normalizeBrandName(brandName),
       brandName,
+      // v1 payout-doc uploads are internal tooling → main book.
+      workspace: "main",
       docType: docTypeRaw as DocType,
       fileName: file.name,
       fileSize: fileData.length,
