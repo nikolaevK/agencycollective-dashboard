@@ -70,6 +70,7 @@ export function verifyAdminSession(token: string): AdminSessionData | null {
         media_manage: false,
         admin: false,
         apitokens: false,
+        meta_accounts: false,
         ...(data.permissions ?? {}),
       },
     };

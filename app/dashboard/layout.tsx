@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, getEffectivePermissions } from "@/lib/admins";
+import { ALL_PERMISSION_KEYS } from "@/lib/permissions";
 import { workspaceScopeOf, isExternalScope } from "@/lib/workspaces";
 import { DashboardClientShell } from "@/components/layout/DashboardClientShell";
 
@@ -17,21 +18,19 @@ export default async function DashboardLayout({
 
   const permissions = getEffectivePermissions(admin);
 
-  // Detect if session data is stale (permissions changed in DB since last login)
+  // Detect if session data is stale (permissions changed in DB since last
+  // login). MUST compare EVERY permission key — middleware enforces the token
+  // snapshot, so any key missing here means granting that permission
+  // mid-session never takes effect until a manual re-login (this bit
+  // Media Buyers/API Tokens/Meta Accounts grants for years: the old
+  // hand-enumerated list compared only 9 of 13 keys). Looping over
+  // ALL_PERMISSION_KEYS makes future keys impossible to forget.
   const sessionPerms = session.permissions;
   const needsRefresh =
     session.isSuper !== admin.isSuper ||
     session.displayName !== admin.displayName ||
     session.avatarPath !== admin.avatarPath ||
-    sessionPerms.dashboard !== permissions.dashboard ||
-    sessionPerms.analyst !== permissions.analyst ||
-    sessionPerms.studio !== permissions.studio ||
-    sessionPerms.jsoneditor !== permissions.jsoneditor ||
-    sessionPerms.adcopy !== permissions.adcopy ||
-    sessionPerms.invoice !== permissions.invoice ||
-    sessionPerms.users !== permissions.users ||
-    sessionPerms.closers !== permissions.closers ||
-    sessionPerms.admin !== permissions.admin;
+    ALL_PERMISSION_KEYS.some((key) => sessionPerms[key] !== permissions[key]);
 
   // Workspace (book) scope — DB-fresh like the permissions above; drives
   // client-side gating of internal-only surfaces (Welcome Kit, SOPs, payout
