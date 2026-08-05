@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor, canManageMember } from "@/lib/teamAuth";
+import { getTeamActor, canManageMemberScoped } from "@/lib/teamAuth";
 import {
   getTask,
   updateTask,
@@ -52,7 +52,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
   const existing = await getTask(params.taskId);
   // Not-yours reads as not-found — don't leak other members' task ids.
-  if (!existing || !canManageMember(actor, existing.adminId))
+  if (!existing || !(await canManageMemberScoped(actor, existing.adminId)))
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   let body: Record<string, unknown>;
@@ -310,7 +310,7 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
 
   const existing = await getTask(params.taskId);
   // Not-yours reads as not-found — don't leak other members' task ids.
-  if (!existing || !canManageMember(actor, existing.adminId))
+  if (!existing || !(await canManageMemberScoped(actor, existing.adminId)))
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   try {

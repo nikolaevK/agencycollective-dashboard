@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { getTeamActor } from "@/lib/teamAuth";
+import { readAdmins } from "@/lib/admins";
+import { workspaceMembershipOf } from "@/lib/workspaces";
 import { buildTeamDirectory, parseTimeframe } from "@/lib/teamHub";
 
 /**
@@ -26,8 +28,32 @@ export async function GET(request: Request) {
     actor.scope !== null ? actor.scope : wsParam ? [wsParam] : null;
   try {
     const directory = await buildTeamDirectory(timeframe, viewerScope);
+
+    // Members this viewer can open/manage as a Head of Ads book manager —
+    // drives the card drill-in for non-privileged leads (the per-member API
+    // enforces the same rule server-side via canManageMemberScoped).
+    let managedAdminIds: string[] = [];
+    if (!actor.privileged && actor.managedWorkspaces.length > 0) {
+      const adminById = new Map((await readAdmins()).map((a) => [a.id, a] as const));
+      managedAdminIds = directory.members
+        .filter((m) => {
+          const admin = adminById.get(m.adminId);
+          if (!admin) return false;
+          const membership = workspaceMembershipOf(admin);
+          return actor.managedWorkspaces.some((w) => membership.includes(w));
+        })
+        .map((m) => m.adminId);
+    }
+
     return NextResponse.json({
-      data: { ...directory, viewer: { adminId: actor.admin.id, privileged: actor.privileged } },
+      data: {
+        ...directory,
+        viewer: {
+          adminId: actor.admin.id,
+          privileged: actor.privileged,
+          managedAdminIds,
+        },
+      },
     });
   } catch (err) {
     console.error("[team] GET directory failed:", err);

@@ -64,6 +64,14 @@ export function TeamGuide() {
             admin). There is no separate &ldquo;team&rdquo; permission.
           </li>
           <li>
+            <strong>Head of Ads manages their book.</strong> A roster member with the{" "}
+            <em>Head of Ads (lead)</em> attribution can open the hubs of members in{" "}
+            <strong>their own workspace(s)</strong> — view and manage their tasks, action
+            items, comments, attachments, tags, and set their monthly goals — without the{" "}
+            <Pill>admin</Pill> permission and without seeing any other book. Roster
+            add/remove and the CSM auto-split stay privileged-only.
+          </li>
+          <li>
             Tasks and action items belonging to someone else read as{" "}
             <em>not found</em> for non-privileged admins — ids are never leaked.
           </li>

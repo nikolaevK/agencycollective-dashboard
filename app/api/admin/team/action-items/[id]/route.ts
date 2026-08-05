@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor, canManageMember } from "@/lib/teamAuth";
+import { getTeamActor, canManageMemberScoped } from "@/lib/teamAuth";
 import {
   getActionItem,
   solveActionItem,
@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
   const existing = await getActionItem(params.id);
   // Not-yours reads as not-found — don't leak other members' item ids.
-  if (!existing || !canManageMember(actor, existing.adminId))
+  if (!existing || !(await canManageMemberScoped(actor, existing.adminId)))
     return NextResponse.json({ error: "Action item not found" }, { status: 404 });
 
   let body: Record<string, unknown>;

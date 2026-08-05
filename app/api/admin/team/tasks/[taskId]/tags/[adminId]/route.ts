@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor, canManageMember } from "@/lib/teamAuth";
+import { getTeamActor, canManageMemberScoped } from "@/lib/teamAuth";
 import { getTask, removeTaskTag, recordTaskActivity } from "@/lib/teamTasks";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -21,8 +21,9 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
 
   const task = await getTask(params.taskId);
   const selfUntag = actor.admin.id === params.adminId;
+  const canManage = task ? await canManageMemberScoped(actor, task.adminId) : false;
   // Not-yours reads as not-found — don't leak other members' task ids.
-  if (!task || (!canManageMember(actor, task.adminId) && !selfUntag))
+  if (!task || (!canManage && !selfUntag))
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   try {
@@ -32,7 +33,7 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
       // absent tag reads as the same 404 a missing task returns, so the
       // self-untag path can't be used to probe which task ids exist.
       return NextResponse.json(
-        { error: canManageMember(actor, task.adminId) ? "Tag not found" : "Task not found" },
+        { error: canManage ? "Tag not found" : "Task not found" },
         { status: 404 }
       );
     }
@@ -40,7 +41,7 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
     recordTaskActivity(
       params.taskId,
       { id: actor.admin.id, name: actor.admin.displayName?.trim() || actor.admin.username },
-      selfUntag && !canManageMember(actor, task.adminId)
+      selfUntag && !canManage
         ? "Removed their tag"
         : "Removed a tag"
     ).catch(() => {});

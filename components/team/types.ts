@@ -37,6 +37,10 @@ export type { TeamTaskDocument } from "@/lib/teamTaskDocuments";
 export type { TeamActionItemRecord, ActionSourceType } from "@/lib/teamActionItems";
 
 export interface TeamViewer {
+  /** Members this viewer manages as a Head of Ads book manager (empty when
+   *  privileged — privileged viewers can open everyone). Absent on the
+   *  member-hub payload. */
+  managedAdminIds?: string[];
   adminId: string;
   privileged: boolean;
 }

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor } from "@/lib/teamAuth";
+import { getTeamActor, canManageBookMember } from "@/lib/teamAuth";
 import {
   getTeamMember,
   setGoalCents,
@@ -15,11 +15,11 @@ interface RouteContext {
   params: { adminId: string };
 }
 
-/** Upsert one month's MRR-managed goal: { month: 'yyyy-mm', goalCents }. Privileged only. */
+/** Upsert one month's MRR-managed goal: { month: 'yyyy-mm', goalCents }. Privileged, or the book's Head of Ads for members of their book. */
 export async function PUT(request: Request, { params }: RouteContext) {
   const actor = await getTeamActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!actor.privileged)
+  if (!actor.privileged && !(await canManageBookMember(actor, params.adminId)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await ensureMigrated();
 

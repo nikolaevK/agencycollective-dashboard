@@ -579,11 +579,16 @@ function MemberCard({
   member: TeamMemberSummary;
   tfl: string;
   timeframe: TeamTimeframeValue;
-  viewer: { adminId: string; privileged: boolean };
+  viewer: { adminId: string; privileged: boolean; managedAdminIds?: string[] };
 }) {
   const router = useRouter();
   const { labels: healthLabels } = useRosterOptions("health");
-  const canOpen = viewer.privileged || viewer.adminId === m.adminId;
+  // Privileged admins open anyone; a Head of Ads (lead) opens members of
+  // their own book (server-enforced via canManageMemberScoped).
+  const canOpen =
+    viewer.privileged ||
+    viewer.adminId === m.adminId ||
+    (viewer.managedAdminIds ?? []).includes(m.adminId);
   const topHealth = useMemo(
     () =>
       Object.entries(m.healthCounts)
@@ -599,7 +604,7 @@ function MemberCard({
       type="button"
       aria-disabled={!canOpen}
       onClick={() => canOpen && router.push(`/dashboard/team/${m.adminId}`)}
-      title={canOpen ? undefined : "Only admins with Admin Management access can open other members' hubs"}
+      title={canOpen ? undefined : "Only Admin Management (or your book's Head of Ads) can open other members' hubs"}
       className={cn(
         "rounded-xl border border-border/60 bg-card p-4 text-left transition-all",
         canOpen

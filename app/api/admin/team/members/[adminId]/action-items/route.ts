@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor, canManageMember } from "@/lib/teamAuth";
+import { getTeamActor, canManageMemberScoped } from "@/lib/teamAuth";
 import {
   listActionItems,
   createActionItem,
@@ -22,7 +22,7 @@ interface RouteContext {
 export async function GET(request: Request, { params }: RouteContext) {
   const actor = await getTeamActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canManageMember(actor, params.adminId))
+  if (!(await canManageMemberScoped(actor, params.adminId)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await ensureMigrated();
 
@@ -54,7 +54,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function POST(request: Request, { params }: RouteContext) {
   const actor = await getTeamActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canManageMember(actor, params.adminId))
+  if (!(await canManageMemberScoped(actor, params.adminId)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await ensureMigrated();
 

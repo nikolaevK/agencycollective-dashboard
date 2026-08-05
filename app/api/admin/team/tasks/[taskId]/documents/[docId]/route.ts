@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { getTeamActor, canManageMember } from "@/lib/teamAuth";
+import { getTeamActor, canManageMemberScoped } from "@/lib/teamAuth";
 import { getTask, recordTaskActivity } from "@/lib/teamTasks";
 import {
   findTaskDocument,
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 
   const task = await getTask(params.taskId);
   // Not-yours reads as not-found — don't leak other members' task ids.
-  if (!task || !canManageMember(actor, task.adminId))
+  if (!task || !(await canManageMemberScoped(actor, task.adminId)))
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   const found = await findTaskDocumentWithData(params.docId);
@@ -51,7 +51,7 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
 
   const task = await getTask(params.taskId);
   // Not-yours reads as not-found — don't leak other members' task ids.
-  if (!task || !canManageMember(actor, task.adminId))
+  if (!task || !(await canManageMemberScoped(actor, task.adminId)))
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   try {
