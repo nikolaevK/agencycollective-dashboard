@@ -218,6 +218,27 @@ export const INITIAL_INVOICE_DATA: InvoiceData = {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Effective discount value for a given subtotal — the ONE place the
+ * $/percentage formula lives (totals engine, PDF, live preview, drawer
+ * breakdown all resolve through it, so the printed discount line always
+ * matches the total). Clamped to [0, subTotal]: a negative amount can never
+ * inflate the total, and a discount larger than the subtotal shows as exactly
+ * the subtotal, keeping "Subtotal − Discount = 0" arithmetically consistent
+ * on the client-facing invoice.
+ */
+export function discountValueOf(
+  subTotal: number,
+  discount: { amount: number; amountType: "amount" | "percentage" } | null
+): number {
+  if (!discount) return 0;
+  const raw =
+    discount.amountType === "percentage"
+      ? subTotal * (discount.amount / 100)
+      : discount.amount;
+  return Math.min(Math.max(0, raw), Math.max(0, subTotal));
+}
+
 export function calculateTotals(
   items: InvoiceItem[],
   discount: { amount: number; amountType: "amount" | "percentage" } | null,
@@ -227,13 +248,7 @@ export function calculateTotals(
   const subTotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   let total = subTotal;
 
-  if (discount) {
-    const discountValue =
-      discount.amountType === "percentage"
-        ? subTotal * (discount.amount / 100)
-        : discount.amount;
-    total -= discountValue;
-  }
+  total -= discountValueOf(subTotal, discount);
 
   if (tax) {
     const taxValue =

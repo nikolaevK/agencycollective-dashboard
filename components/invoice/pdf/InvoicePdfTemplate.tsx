@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 import type { InvoiceData } from "@/types/invoice";
+import { discountValueOf } from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
 
 function fmt(amount: number, currency: string): string {
@@ -209,11 +210,7 @@ export function InvoicePdfDocument({ data }: Props) {
   const { sender, receiver, details } = data;
   const themeColor = details.themeColor || ACCENT;
 
-  const discountAmount = details.discountDetails
-    ? details.discountDetails.amountType === "percentage"
-      ? details.subTotal * (details.discountDetails.amount / 100)
-      : details.discountDetails.amount
-    : 0;
+  const discountAmount = discountValueOf(details.subTotal, details.discountDetails);
   const taxAmount = details.taxDetails
     ? details.taxDetails.amountType === "percentage"
       ? details.subTotal * (details.taxDetails.amount / 100)

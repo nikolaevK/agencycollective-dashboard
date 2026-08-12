@@ -7,6 +7,7 @@ import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { readEmailAttachments } from "@/lib/invoice/readEmailAttachments";
 import {
   getAgencyProfileEmailBrand,
   type AgencyProfileEmailBrand,
@@ -21,36 +22,6 @@ interface RouteContext {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Free-form email attachments (alongside the invoice PDF). Limits tuned for
-// Vercel Pro's 4.5 MB request body cap (platform-level — exceeded requests are
-// rejected by Vercel before reaching this handler with a generic 413).
-// Budget: 4.5 MB total = PDF (typically 0.1–0.5 MB; cap 10 MB) + attachments
-// (cap 3 MB total) + form fields (~5 KB) + multipart/SMTP framing (~500 KB).
-// A degenerate giant PDF can still blow the budget — that's a pre-existing
-// concern of the 10 MB PDF cap, not the attachments limit.
-const MAX_ATTACHMENT_COUNT = 5;
-const MAX_ATTACHMENT_SIZE = 3 * 1024 * 1024; // 3 MB per file
-const MAX_TOTAL_ATTACHMENT_SIZE = 3 * 1024 * 1024; // 3 MB total
-// Executable-ish extensions that mail providers commonly bounce or strip;
-// blocking up-front avoids a silent partial send and surfaces the issue while
-// the admin still has the picker open.
-const BLOCKED_ATTACHMENT_EXTS = new Set([
-  "exe", "bat", "cmd", "com", "scr", "pif", "msi", "ps1", "vbs", "vbe",
-  "js", "jse", "wsf", "wsh", "hta", "jar", "app", "deb", "rpm",
-]);
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
-
-/** Cap filenames echoed back in error messages — a 5000-char filename would
- *  otherwise produce a 5000-char error string the toast/banner has to render. */
-function shortName(name: string): string {
-  return name.length > 80 ? `${name.slice(0, 77)}…` : name;
-}
 
 /**
  * Send a re-bill invoice to a client and file the PDF where both the Payout
@@ -122,53 +93,16 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       emailBrand = brand;
     }
 
-    // Free-form attachments (receipts, addendums, supporting docs). Validated
-    // here so a bad upload errors before we even open the SMTP connection;
-    // each file is materialised to a Buffer for nodemailer. The PDF itself
-    // is NOT counted against MAX_TOTAL_ATTACHMENT_SIZE — that ceiling is for
-    // these extras only; total payload to SMTP = PDF (capped 10 MB) + extras
-    // (capped 25 MB) = ~35 MB worst case, still inside typical relay limits.
-    const attachmentFiles = formData
-      .getAll("attachments")
-      .filter((v): v is File => v instanceof File);
-    if (attachmentFiles.length > MAX_ATTACHMENT_COUNT)
+    // Free-form attachments (receipts, addendums, supporting docs). The PDF
+    // itself is NOT counted against the attachments ceiling — that budget is
+    // for these extras only (see lib/invoice/attachments.ts).
+    const attachRead = await readEmailAttachments(formData);
+    if (!attachRead.ok)
       return NextResponse.json(
-        { error: `Too many attachments (max ${MAX_ATTACHMENT_COUNT})` },
-        { status: 400 }
+        { error: attachRead.error },
+        { status: attachRead.status }
       );
-    let totalAttachmentBytes = 0;
-    const additionalAttachments: Array<{
-      filename: string;
-      buffer: Buffer;
-      contentType: string;
-    }> = [];
-    for (const file of attachmentFiles) {
-      if (file.size === 0) continue; // empty file inputs come through as 0-byte Files
-      if (file.size > MAX_ATTACHMENT_SIZE)
-        return NextResponse.json(
-          { error: `Attachment "${shortName(file.name)}" exceeds ${MAX_ATTACHMENT_SIZE / 1024 / 1024} MB` },
-          { status: 413 }
-        );
-      totalAttachmentBytes += file.size;
-      if (totalAttachmentBytes > MAX_TOTAL_ATTACHMENT_SIZE)
-        return NextResponse.json(
-          {
-            error: `Attachments total exceeds ${MAX_TOTAL_ATTACHMENT_SIZE / 1024 / 1024} MB`,
-          },
-          { status: 413 }
-        );
-      const ext = extensionOf(file.name);
-      if (ext && BLOCKED_ATTACHMENT_EXTS.has(ext))
-        return NextResponse.json(
-          { error: `Attachment type ".${ext}" is not allowed` },
-          { status: 400 }
-        );
-      additionalAttachments.push({
-        filename: file.name,
-        buffer: Buffer.from(await file.arrayBuffer()),
-        contentType: file.type || "application/octet-stream",
-      });
-    }
+    const additionalAttachments = attachRead.attachments;
 
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       cc: ccEmails.length > 0 ? ccEmails : undefined,

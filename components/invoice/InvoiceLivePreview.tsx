@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { InvoiceData } from "@/types/invoice";
-import { formatCurrencyValue } from "@/lib/invoice/validation";
+import { discountValueOf, formatCurrencyValue } from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
 
 interface Props {
@@ -28,11 +28,7 @@ export function InvoiceLivePreview({ data }: Props) {
   const { sender, receiver, details } = data;
   const theme = details.themeColor || "#2563eb";
 
-  const discountAmt = details.discountDetails
-    ? details.discountDetails.amountType === "percentage"
-      ? details.subTotal * (details.discountDetails.amount / 100)
-      : details.discountDetails.amount
-    : 0;
+  const discountAmt = discountValueOf(details.subTotal, details.discountDetails);
   const taxAmt = details.taxDetails
     ? details.taxDetails.amountType === "percentage"
       ? details.subTotal * (details.taxDetails.amount / 100)

@@ -11,11 +11,15 @@ import {
   Eye,
   Loader2,
   Check,
-  Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
+import {
+  AttachmentPicker,
+  useEmailAttachments,
+} from "@/components/invoice/AttachmentPicker";
+import { DiscountField } from "@/components/invoice/InvoiceChargesForm";
 import {
   InvoiceStyleSelect,
   profilePaymentBlock,
@@ -23,10 +27,12 @@ import {
 import {
   calculateTotals,
   createEmptyItem,
+  discountValueOf,
   formatCurrencyValue,
 } from "@/lib/invoice/validation";
 import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import type {
+  DiscountDetails,
   InvoiceData,
   InvoiceItem,
   InvoiceSender,
@@ -37,29 +43,6 @@ import type {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-
-// Mirror the route's limits (tuned for Vercel Pro's 4.5 MB request body cap)
-// so the user gets immediate feedback before the upload happens. Server is
-// authoritative — these are UX, not security.
-const ATTACH_MAX_COUNT = 5;
-const ATTACH_MAX_BYTES = 3 * 1024 * 1024; // 3 MB per file
-const ATTACH_MAX_TOTAL_BYTES = 3 * 1024 * 1024; // 3 MB total
-const ATTACH_BLOCKED_EXTS = new Set([
-  "exe", "bat", "cmd", "com", "scr", "pif", "msi", "ps1", "vbs", "vbe",
-  "js", "jse", "wsf", "wsh", "hta", "jar", "app", "deb", "rpm",
-]);
-
-function fileExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 interface Props {
   userId: string;
@@ -96,9 +79,7 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
   const defaultPaymentRef = useRef<Partial<Record<PaymentType, PaymentInfo>>>({});
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
-  const [attachments, setAttachments] = useState<File[]>([]);
-  const [attachError, setAttachError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attach = useEmailAttachments();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "preview" | "download" | "send">(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,53 +88,6 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
   const paymentReq = useRef(0);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
-
-  // Add files from the picker. We APPEND (never replace) so repeated clicks
-  // build up the list, and we reset the input value after so picking the same
-  // file again — e.g. after removing it — still fires the onChange.
-  function handleAddFiles(picked: FileList | null) {
-    if (!picked || picked.length === 0) return;
-    setAttachError(null);
-    const incoming = Array.from(picked);
-    const next: File[] = [...attachments];
-    let runningTotal = next.reduce((s, f) => s + f.size, 0);
-    for (const f of incoming) {
-      if (next.length >= ATTACH_MAX_COUNT) {
-        setAttachError(`Max ${ATTACH_MAX_COUNT} attachments.`);
-        break;
-      }
-      const ext = fileExtension(f.name);
-      if (ext && ATTACH_BLOCKED_EXTS.has(ext)) {
-        setAttachError(`"${f.name}" — .${ext} files aren't allowed.`);
-        continue;
-      }
-      if (f.size > ATTACH_MAX_BYTES) {
-        setAttachError(`"${f.name}" exceeds ${formatBytes(ATTACH_MAX_BYTES)}.`);
-        continue;
-      }
-      if (runningTotal + f.size > ATTACH_MAX_TOTAL_BYTES) {
-        setAttachError(
-          `Total attachments would exceed ${formatBytes(ATTACH_MAX_TOTAL_BYTES)}.`
-        );
-        break;
-      }
-      // De-dupe by (name, size) — picking the same file twice in one open
-      // shouldn't double it. Different files with the same name + size will
-      // collide here too, but that's a very rare collision for a small list.
-      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
-      next.push(f);
-      runningTotal += f.size;
-    }
-    setAttachments(next);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function removeAttachment(i: number) {
-    setAttachments((prev) => prev.filter((_, idx) => idx !== i));
-    setAttachError(null);
-  }
-
-  const attachTotal = attachments.reduce((s, f) => s + f.size, 0);
 
   // Initial prefill.
   useEffect(() => {
@@ -193,8 +127,31 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
     setData((d) => (d ? { ...d, receiver: { ...d.receiver, ...patch } } : d));
   }
   function setItems(items: InvoiceItem[]) {
-    const { subTotal, totalAmount } = calculateTotals(items, null, null, null);
-    patchDetails({ items, subTotal, totalAmount });
+    setData((d) => {
+      if (!d) return d;
+      const { subTotal, totalAmount } = calculateTotals(
+        items,
+        d.details.discountDetails,
+        null,
+        null
+      );
+      return { ...d, details: { ...d.details, items, subTotal, totalAmount } };
+    });
+  }
+  function setDiscount(discountDetails: DiscountDetails | null) {
+    setData((d) => {
+      if (!d) return d;
+      const { subTotal, totalAmount } = calculateTotals(
+        d.details.items,
+        discountDetails,
+        null,
+        null
+      );
+      return {
+        ...d,
+        details: { ...d.details, discountDetails, subTotal, totalAmount },
+      };
+    });
   }
   function updateItem(id: string, patch: Partial<InvoiceItem>) {
     if (!data) return;
@@ -406,7 +363,7 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
       for (const cc of finalCcs) fd.append("cc", cc);
       // Additional email attachments (transient — not filed in Documents).
       // Server re-validates count/size/extension; this is just the wire format.
-      for (const file of attachments) fd.append("attachments", file);
+      for (const file of attach.attachments) fd.append("attachments", file);
       const res = await fetch(`/api/admin/clients/${userId}/invoice/send`, {
         method: "POST",
         body: fd,
@@ -430,6 +387,8 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
   }
 
   const currency = data?.details.currency ?? "USD";
+  const discount = data?.details.discountDetails ?? null;
+  const discountAmt = discountValueOf(data?.details.subTotal ?? 0, discount);
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={onClose}>
@@ -530,76 +489,8 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
 
             {/* Attachments (optional) — included with the email alongside the
                 invoice PDF. Not filed in the client's Documents tab; transient
-                send-time additions. Same limits as the server. */}
-            <div>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Attachments (optional)
-                </label>
-                <span className="text-[11px] text-muted-foreground">
-                  {attachments.length}/{ATTACH_MAX_COUNT} · {formatBytes(attachTotal)}/
-                  {formatBytes(ATTACH_MAX_TOTAL_BYTES)}
-                </span>
-              </div>
-              <div className="rounded-lg border bg-background p-2 space-y-2">
-                {attachments.length > 0 && (
-                  <ul className="space-y-1.5">
-                    {attachments.map((f, i) => (
-                      <li
-                        key={`${f.name}-${f.size}-${i}`}
-                        className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5"
-                      >
-                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="flex-1 min-w-0 text-xs text-foreground truncate">
-                          {f.name}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground shrink-0">
-                          {formatBytes(f.size)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(i)}
-                          aria-label={`Remove ${f.name}`}
-                          className="p-0.5 rounded hover:bg-background/60 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={attachments.length >= ATTACH_MAX_COUNT}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted/50 transition-colors",
-                      attachments.length >= ATTACH_MAX_COUNT && "opacity-50"
-                    )}
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add file{attachments.length === 0 ? "s" : ""}
-                  </button>
-                  {attachments.length === 0 && (
-                    <span className="text-[11px] text-muted-foreground">
-                      Max {ATTACH_MAX_COUNT} files, {formatBytes(ATTACH_MAX_BYTES)} each.
-                      No .exe/.js/etc.
-                    </span>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={(e) => handleAddFiles(e.target.files)}
-                  className="hidden"
-                />
-              </div>
-              {attachError && (
-                <p className="mt-1.5 text-[11px] text-destructive">{attachError}</p>
-              )}
-            </div>
+                send-time additions. */}
+            <AttachmentPicker state={attach} />
 
             {/* Invoice style — default AC or a saved agency profile (e.g. PepAds) */}
             <InvoiceStyleSelect
@@ -718,12 +609,42 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent }: Pro
               </button>
             </div>
 
-            {/* Total */}
-            <div className="flex items-center justify-between border-t border-border/50 pt-3">
-              <span className="text-sm text-muted-foreground">Total</span>
-              <span className="text-lg font-bold text-foreground">
-                {formatCurrencyValue(data.details.totalAmount, currency)}
-              </span>
+            {/* Discount (optional) — the same control the Invoice page uses;
+                feeds the shared calculateTotals so the PDF and live total
+                stay in sync. */}
+            <DiscountField discount={discount} onChange={setDiscount} />
+
+            {/* Total. The breakdown gates on discountAmt > 0 — the PDF hides
+                its discount row for a zero discount, so the drawer must too
+                or the preview and the sent invoice would disagree. */}
+            <div className="border-t border-border/50 pt-3 space-y-1">
+              {discountAmt > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-foreground">
+                      {formatCurrencyValue(data.details.subTotal, currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Discount
+                      {discount?.amountType === "percentage"
+                        ? ` (${discount.amount}%)`
+                        : ""}
+                    </span>
+                    <span className="text-red-600 dark:text-red-400">
+                      -{formatCurrencyValue(discountAmt, currency)}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-lg font-bold text-foreground">
+                  {formatCurrencyValue(data.details.totalAmount, currency)}
+                </span>
+              </div>
             </div>
 
             {error && (

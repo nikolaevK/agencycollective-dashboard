@@ -7,6 +7,7 @@ import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAd
 import { isExternalScope } from "@/lib/workspaces";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { readEmailAttachments } from "@/lib/invoice/readEmailAttachments";
 import {
   getAgencyProfileEmailBrand,
   type AgencyProfileEmailBrand,
@@ -25,25 +26,6 @@ import { createAdAccountInvoice } from "@/lib/adAccountInvoices";
 import { adInvoiceType, computeAdSpendFeeCents } from "@/lib/adAccountInvoice";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Same attachment limits as the client re-bill send route.
-const MAX_ATTACHMENT_COUNT = 5;
-const MAX_ATTACHMENT_SIZE = 3 * 1024 * 1024;
-const MAX_TOTAL_ATTACHMENT_SIZE = 3 * 1024 * 1024;
-const BLOCKED_ATTACHMENT_EXTS = new Set([
-  "exe", "bat", "cmd", "com", "scr", "pif", "msi", "ps1", "vbs", "vbe",
-  "js", "jse", "wsf", "wsh", "hta", "jar", "app", "deb", "rpm",
-]);
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
-
-function shortName(name: string): string {
-  return name.length > 80 ? `${name.slice(0, 77)}…` : name;
-}
 
 /** yyyy-mm-dd from a timestamp. */
 function datePart(value: string | null): string | null {
@@ -156,45 +138,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Free-form attachments.
-    const attachmentFiles = formData
-      .getAll("attachments")
-      .filter((v): v is File => v instanceof File);
-    if (attachmentFiles.length > MAX_ATTACHMENT_COUNT)
+    const attachRead = await readEmailAttachments(formData);
+    if (!attachRead.ok)
       return NextResponse.json(
-        { error: `Too many attachments (max ${MAX_ATTACHMENT_COUNT})` },
-        { status: 400 }
+        { error: attachRead.error },
+        { status: attachRead.status }
       );
-    let totalAttachmentBytes = 0;
-    const additionalAttachments: Array<{
-      filename: string;
-      buffer: Buffer;
-      contentType: string;
-    }> = [];
-    for (const file of attachmentFiles) {
-      if (file.size === 0) continue;
-      if (file.size > MAX_ATTACHMENT_SIZE)
-        return NextResponse.json(
-          { error: `Attachment "${shortName(file.name)}" exceeds ${MAX_ATTACHMENT_SIZE / 1024 / 1024} MB` },
-          { status: 413 }
-        );
-      totalAttachmentBytes += file.size;
-      if (totalAttachmentBytes > MAX_TOTAL_ATTACHMENT_SIZE)
-        return NextResponse.json(
-          { error: `Attachments total exceeds ${MAX_TOTAL_ATTACHMENT_SIZE / 1024 / 1024} MB` },
-          { status: 413 }
-        );
-      const ext = extensionOf(file.name);
-      if (ext && BLOCKED_ATTACHMENT_EXTS.has(ext))
-        return NextResponse.json(
-          { error: `Attachment type ".${ext}" is not allowed` },
-          { status: 400 }
-        );
-      additionalAttachments.push({
-        filename: file.name,
-        buffer: Buffer.from(await file.arrayBuffer()),
-        contentType: file.type || "application/octet-stream",
-      });
-    }
+    const additionalAttachments = attachRead.attachments;
 
     const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
       cc: ccEmails.length > 0 ? ccEmails : undefined,

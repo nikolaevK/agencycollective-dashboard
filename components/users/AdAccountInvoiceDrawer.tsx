@@ -11,10 +11,13 @@ import {
   Eye,
   Loader2,
   Check,
-  Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
+import {
+  AttachmentPicker,
+  useEmailAttachments,
+} from "@/components/invoice/AttachmentPicker";
 import {
   InvoiceStyleSelect,
   profilePaymentBlock,
@@ -40,29 +43,10 @@ const FIELD =
 const LABEL =
   "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block";
 
-const ATTACH_MAX_COUNT = 5;
-const ATTACH_MAX_BYTES = 3 * 1024 * 1024;
-const ATTACH_MAX_TOTAL_BYTES = 3 * 1024 * 1024;
-const ATTACH_BLOCKED_EXTS = new Set([
-  "exe", "bat", "cmd", "com", "scr", "pif", "msi", "ps1", "vbs", "vbe",
-  "js", "jse", "wsf", "wsh", "hta", "jar", "app", "deb", "rpm",
-]);
-
 // Ad-spend fee options: 2.0%–7.0% in 0.5% steps (basis points).
 const FEE_OPTIONS: { bps: number; label: string }[] = [];
 for (let bps = 200; bps <= 700; bps += 50) {
   FEE_OPTIONS.push({ bps, label: `${(bps / 100).toFixed(1)}%` });
-}
-
-function fileExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export interface AdAccountInvoiceTarget {
@@ -98,9 +82,7 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
 
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
-  const [attachments, setAttachments] = useState<File[]>([]);
-  const [attachError, setAttachError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attach = useEmailAttachments();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "preview" | "download" | "send">(null);
@@ -230,43 +212,6 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spendDollars, feeBps, accountName, vendor, retainerDollars]);
-
-  function handleAddFiles(picked: FileList | null) {
-    if (!picked || picked.length === 0) return;
-    setAttachError(null);
-    const incoming = Array.from(picked);
-    const next: File[] = [...attachments];
-    let runningTotal = next.reduce((s, f) => s + f.size, 0);
-    for (const f of incoming) {
-      if (next.length >= ATTACH_MAX_COUNT) {
-        setAttachError(`Max ${ATTACH_MAX_COUNT} attachments.`);
-        break;
-      }
-      const ext = fileExtension(f.name);
-      if (ext && ATTACH_BLOCKED_EXTS.has(ext)) {
-        setAttachError(`"${f.name}" — .${ext} files aren't allowed.`);
-        continue;
-      }
-      if (f.size > ATTACH_MAX_BYTES) {
-        setAttachError(`"${f.name}" exceeds ${formatBytes(ATTACH_MAX_BYTES)}.`);
-        continue;
-      }
-      if (runningTotal + f.size > ATTACH_MAX_TOTAL_BYTES) {
-        setAttachError(`Total attachments would exceed ${formatBytes(ATTACH_MAX_TOTAL_BYTES)}.`);
-        break;
-      }
-      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
-      next.push(f);
-      runningTotal += f.size;
-    }
-    setAttachments(next);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-  function removeAttachment(i: number) {
-    setAttachments((prev) => prev.filter((_, idx) => idx !== i));
-    setAttachError(null);
-  }
-  const attachTotal = attachments.reduce((s, f) => s + f.size, 0);
 
   function patchDetails(patch: Partial<InvoiceData["details"]>) {
     setData((d) => (d ? { ...d, details: { ...d.details, ...patch } } : d));
@@ -481,7 +426,7 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
       // resolves the profile itself; only the id crosses the wire.
       if (styleProfile) fd.set("styleProfileId", styleProfile.id);
       for (const cc of finalCcs) fd.append("cc", cc);
-      for (const file of attachments) fd.append("attachments", file);
+      for (const file of attach.attachments) fd.append("attachments", file);
 
       const res = await fetch("/api/admin/ad-accounts/invoice/send", {
         method: "POST",
@@ -675,51 +620,7 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
             </div>
 
             {/* Attachments */}
-            <div>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <label className={LABEL + " mb-0"}>Attachments (optional)</label>
-                <span className="text-[11px] text-muted-foreground">
-                  {attachments.length}/{ATTACH_MAX_COUNT} · {formatBytes(attachTotal)}/{formatBytes(ATTACH_MAX_TOTAL_BYTES)}
-                </span>
-              </div>
-              <div className="rounded-lg border bg-background p-2 space-y-2">
-                {attachments.length > 0 && (
-                  <ul className="space-y-1.5">
-                    {attachments.map((f, i) => (
-                      <li key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5">
-                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="flex-1 min-w-0 text-xs text-foreground truncate">{f.name}</span>
-                        <span className="text-[11px] text-muted-foreground shrink-0">{formatBytes(f.size)}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(i)}
-                          aria-label={`Remove ${f.name}`}
-                          className="p-0.5 rounded hover:bg-background/60 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={attachments.length >= ATTACH_MAX_COUNT}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted/50 transition-colors",
-                      attachments.length >= ATTACH_MAX_COUNT && "opacity-50"
-                    )}
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add file{attachments.length === 0 ? "s" : ""}
-                  </button>
-                </div>
-                <input ref={fileInputRef} type="file" multiple onChange={(e) => handleAddFiles(e.target.files)} className="hidden" />
-              </div>
-              {attachError && <p className="mt-1.5 text-[11px] text-destructive">{attachError}</p>}
-            </div>
+            <AttachmentPicker state={attach} />
 
             {/* Invoice style — default AC or a saved agency profile (e.g. PepAds) */}
             <InvoiceStyleSelect

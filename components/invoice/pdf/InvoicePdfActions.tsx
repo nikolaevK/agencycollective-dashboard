@@ -28,6 +28,7 @@ import {
   downloadBlob,
 } from "@/lib/invoice/validation";
 import { InvoicePdfDocument } from "./InvoicePdfTemplate";
+import { AttachmentPicker, useEmailAttachments } from "../AttachmentPicker";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -42,6 +43,10 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
   const [exportOpen, setExportOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [fromAccount, setFromAccount] = useState("");
+  // Cleared on send AND on dialog close — the component never unmounts, so
+  // without the close-time clear a file picked for one invoice would silently
+  // ride along on the next one's send.
+  const attach = useEmailAttachments();
 
   // Configured "send from" accounts (id/label/email only — no credentials).
   const { data: emailAccounts = [] } = useQuery<EmailAccount[]>({
@@ -146,6 +151,9 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
       );
       formData.append("invoiceNumber", data.details.invoiceNumber || "draft");
       formData.append("accountId", selectedAccount);
+      // Additional email attachments alongside the invoice PDF. Server
+      // re-validates count/size/extension; this is just the wire format.
+      for (const file of attach.attachments) formData.append("attachments", file);
 
       const res = await fetch("/api/invoice/send", { method: "POST", body: formData });
       setSendResult(res.ok ? "success" : "error");
@@ -153,6 +161,7 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
         setTimeout(() => {
           setEmailOpen(false);
           setEmail("");
+          attach.clear();
           setSendResult(null);
         }, 2000);
       }
@@ -306,7 +315,7 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">Send Invoice</span>
             <button
-              onClick={() => { setEmailOpen(false); setSendResult(null); }}
+              onClick={() => { setEmailOpen(false); setSendResult(null); attach.clear(); }}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               <X className="h-4 w-4" />
@@ -335,6 +344,11 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
             placeholder="recipient@example.com"
             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
           />
+
+          {/* Attachments (optional) — included with the email alongside the
+              invoice PDF. */}
+          <AttachmentPicker state={attach} />
+
           {sendResult === "success" && (
             <p className="text-xs text-emerald-600">Invoice sent!</p>
           )}

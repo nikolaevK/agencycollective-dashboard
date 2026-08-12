@@ -14,7 +14,7 @@ interface Props {
   onShippingChange: (s: ShippingDetails | null) => void;
 }
 
-function TypeToggle({
+export function TypeToggle({
   value,
   onChange,
 }: {
@@ -51,6 +51,63 @@ function TypeToggle({
   );
 }
 
+/**
+ * Discount checkbox + amount + $/% toggle — shared by the Invoice page
+ * (below, inside Additional Charges) and the client re-bill drawer, so both
+ * editors of DiscountDetails behave identically. The typed amount is clamped
+ * to >= 0 (min="0" only blocks the spinner, not typing "-50" — an unclamped
+ * negative would INFLATE the total via calculateTotals' subtraction).
+ */
+export function DiscountField({
+  discount,
+  onChange,
+}: {
+  discount: DiscountDetails | null;
+  onChange: (d: DiscountDetails | null) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={discount !== null}
+          onChange={(e) =>
+            onChange(
+              e.target.checked
+                ? { amount: 0, amountType: "amount" }
+                : null
+            )
+          }
+          className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+        />
+        <span className="text-sm font-medium text-foreground">Discount</span>
+      </label>
+      {discount && (
+        <div className="flex items-center gap-2 pl-6">
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={discount.amount || ""}
+            onChange={(e) =>
+              onChange({
+                ...discount,
+                amount: Math.max(0, parseFloat(e.target.value) || 0),
+              })
+            }
+            placeholder="0"
+            className={cn(INPUT_CLS, "w-32")}
+          />
+          <TypeToggle
+            value={discount.amountType}
+            onChange={(amountType) => onChange({ ...discount, amountType })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function InvoiceChargesForm({
   discount,
   tax,
@@ -65,48 +122,7 @@ export function InvoiceChargesForm({
         Additional Charges
       </h3>
 
-      {/* Discount */}
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={discount !== null}
-            onChange={(e) =>
-              onDiscountChange(
-                e.target.checked
-                  ? { amount: 0, amountType: "amount" }
-                  : null
-              )
-            }
-            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-          />
-          <span className="text-sm font-medium text-foreground">Discount</span>
-        </label>
-        {discount && (
-          <div className="flex items-center gap-2 pl-6">
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={discount.amount || ""}
-              onChange={(e) =>
-                onDiscountChange({
-                  ...discount,
-                  amount: parseFloat(e.target.value) || 0,
-                })
-              }
-              placeholder="0"
-              className={cn(INPUT_CLS, "w-32")}
-            />
-            <TypeToggle
-              value={discount.amountType}
-              onChange={(amountType) =>
-                onDiscountChange({ ...discount, amountType })
-              }
-            />
-          </div>
-        )}
-      </div>
+      <DiscountField discount={discount} onChange={onDiscountChange} />
 
       {/* Tax */}
       <div className="space-y-2">

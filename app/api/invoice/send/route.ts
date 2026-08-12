@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { sendInvoiceEmail, isAccountConfigured, type EmailAccountId } from "@/lib/invoice/emailService";
+import { readEmailAttachments } from "@/lib/invoice/readEmailAttachments";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,15 @@ export async function POST(req: NextRequest) {
       .replace(/[\r\n\t]/g, "")
       .slice(0, 100);
 
+    // Free-form attachments included alongside the invoice PDF.
+    const attachRead = await readEmailAttachments(formData);
+    if (!attachRead.ok)
+      return NextResponse.json(
+        { error: attachRead.error },
+        { status: attachRead.status }
+      );
+    const additionalAttachments = attachRead.attachments;
+
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
@@ -63,6 +73,8 @@ export async function POST(req: NextRequest) {
       accountId,
       // The secondary account is the PepAds billing mailbox → PepAds email wording.
       variant: accountId === "secondary" ? "pepads" : undefined,
+      additionalAttachments:
+        additionalAttachments.length > 0 ? additionalAttachments : undefined,
     });
 
     if (sent) {
