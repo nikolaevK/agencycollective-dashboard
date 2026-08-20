@@ -18,6 +18,7 @@ import {
 } from "@/lib/ghlCrmSync";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 import { isSetterTier } from "@/lib/appointments";
 
 function unauthorized() {
@@ -231,6 +232,15 @@ export async function PATCH(request: Request) {
     }).catch(() => {});
 
     const updated = await findDeal(id);
+
+    // A transition to closed enters the review queue — backfill the invoice/
+    // contract records createDealAction would have generated had the deal
+    // been created closed. Also heals older stuck deals: re-saving a closed
+    // deal with status "closed" re-runs the (idempotent) backfill.
+    if (updated && changes.status === "closed") {
+      await ensureDealPaperwork(updated, admin.id);
+    }
+
     return NextResponse.json({ data: updated });
   } catch (err) {
     console.error("[admin/deals PATCH]", err);

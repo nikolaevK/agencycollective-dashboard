@@ -11,6 +11,7 @@ import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
 import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 
 export async function GET() {
   // Closer-only: setters share the c_sess cookie but have no deals surface.
@@ -142,6 +143,14 @@ export async function PATCH(request: Request) {
     }
 
     const updated = await findDeal(id);
+
+    // A transition to closed lands the deal in the admin review queue —
+    // backfill the invoice/contract records createDealAction would have
+    // generated had the deal been created closed (best-effort, idempotent).
+    if (updated && changes.status === "closed") {
+      await ensureDealPaperwork(updated, session.closerId);
+    }
+
     return NextResponse.json({ data: updated });
   } catch (err) {
     console.error("[closer/deals PATCH]", err);

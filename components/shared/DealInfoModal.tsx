@@ -14,8 +14,8 @@ export function DealInfoModal({ title, type, content, onClose }: DealInfoModalPr
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md mx-4 rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div className="relative w-full max-w-md mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <h3 className="text-lg font-semibold text-foreground">{title}</h3>
           <button
             onClick={onClose}
@@ -24,7 +24,7 @@ export function DealInfoModal({ title, type, content, onClose }: DealInfoModalPr
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto">
           {type === "notes" && (
             <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
               {content || "No notes"}

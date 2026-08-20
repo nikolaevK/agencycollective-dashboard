@@ -15,6 +15,7 @@ import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
 import { findTemplateForServices } from "@/lib/contractTemplates";
 import { insertDealContract } from "@/lib/dealContracts";
 import { parseServiceCategory } from "@/lib/serviceCategory";
+import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 import { sendPushToAllAdmins } from "@/lib/pushNotifications";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
@@ -280,6 +281,14 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
   }
 
   await updateDeal(id, changes);
+
+  // A transition to closed lands the deal in the admin review queue —
+  // backfill the invoice/contract records createDealAction would have
+  // generated had the deal been created closed (best-effort, idempotent).
+  if (changes.status === "closed") {
+    const updated = await findDeal(id);
+    if (updated) await ensureDealPaperwork(updated, session.closerId);
+  }
 
   revalidatePath("/closer/dashboard");
   return {};
