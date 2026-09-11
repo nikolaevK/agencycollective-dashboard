@@ -6,13 +6,18 @@ import {
   X,
   Loader2,
   FileText,
-  XCircle,
   Plus,
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatDate } from "./format";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import {
+  InvoiceOverridePanel,
+  InvoiceProvenance,
+  type OverridableInvoice,
+} from "./InvoiceOverridePanel";
 
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
@@ -21,11 +26,8 @@ const LABEL =
 
 type InvoiceStatus = "sent" | "paid" | "unpaid" | "superseded";
 
-interface AccountInvoice {
-  id: string;
-  invoiceNumber: string;
+interface AccountInvoice extends OverridableInvoice {
   invoiceType: AdInvoiceType;
-  cycleAnchor: string;
   amountCents: number;
   recipientEmail: string | null;
   payoutDocumentId: string | null;
@@ -60,6 +62,8 @@ interface Props {
   accountId: string;
   accountName: string;
   defaultCycleAnchor: string | null;
+  /** The account's schedule `paid` flag (hint when Mark unpaid is contradicted by a payout). */
+  schedulePaid?: boolean;
   defaultRecipientEmail: string | null;
   defaultRetainerCents: number;
   onClose: () => void;
@@ -70,6 +74,7 @@ export function AdAccountInvoicesDrawer({
   accountId,
   accountName,
   defaultCycleAnchor,
+  schedulePaid,
   defaultRecipientEmail,
   defaultRetainerCents,
   onClose,
@@ -83,34 +88,14 @@ export function AdAccountInvoicesDrawer({
   });
 
   const [showRegister, setShowRegister] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Payout linking reads the ledger — hidden for external (partner) scopes.
+  const { isExternal } = useAdmin();
 
   function refreshAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-ad-account-invoices", accountId] });
     queryClient.invalidateQueries({ queryKey: ["admin-ad-accounts"] });
     queryClient.invalidateQueries({ queryKey: ["admin-ad-account-sent-invoices"] });
     onChanged();
-  }
-
-  async function handleMarkUnpaid(inv: AccountInvoice) {
-    if (!confirm(`Mark invoice ${inv.invoiceNumber} as unpaid?`)) return;
-    setBusyId(inv.id);
-    try {
-      const res = await fetch(`/api/admin/ad-accounts/invoices/${inv.id}/mark-unpaid`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${res.status}`);
-      }
-      refreshAll();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to mark unpaid.");
-    } finally {
-      setBusyId(null);
-    }
   }
 
   return (
@@ -130,6 +115,15 @@ export function AdAccountInvoicesDrawer({
         </div>
 
         <div className="p-5 space-y-4">
+          {defaultCycleAnchor && (
+            <p className="text-xs text-muted-foreground">
+              Current billing cycle:{" "}
+              <span className="font-semibold text-foreground">{formatDate(defaultCycleAnchor)}</span>
+              {" "}— an awaiting invoice anchored to this date shows as &ldquo;Invoice sent&rdquo;.
+              Use <span className="font-semibold">Manage</span> on any invoice to mark it paid/unpaid,
+              link a payout, or move it to another cycle.
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">
               History
@@ -183,7 +177,7 @@ export function AdAccountInvoicesDrawer({
                     key={inv.id}
                     className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3 flex-wrap"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold text-foreground truncate">
                           {inv.invoiceNumber}
@@ -200,7 +194,11 @@ export function AdAccountInvoicesDrawer({
                       <p className="text-xs text-muted-foreground truncate">
                         {typeLabel(inv.invoiceType)} · sent {formatDate(inv.sentAt)} · cycle{" "}
                         {formatDate(inv.cycleAnchor)}
+                        {inv.status === "sent" && defaultCycleAnchor && inv.cycleAnchor === defaultCycleAnchor && (
+                          <span className="ml-1 text-primary font-semibold">(current)</span>
+                        )}
                       </p>
+                      <InvoiceProvenance invoice={inv} />
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {inv.amountCents > 0 && (
@@ -220,21 +218,18 @@ export function AdAccountInvoicesDrawer({
                           PDF
                         </a>
                       )}
-                      {inv.status === "sent" && (
-                        <button
-                          onClick={() => handleMarkUnpaid(inv)}
-                          disabled={busyId === inv.id}
-                          title="Mark unpaid"
-                          className="flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                        >
-                          {busyId === inv.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <XCircle className="h-3 w-3" />
-                          )}
-                          Unpaid
-                        </button>
-                      )}
+                    </div>
+                    <div className="basis-full">
+                      <InvoiceOverridePanel
+                        invoice={inv}
+                        currentCycle={defaultCycleAnchor}
+                        schedulePaid={schedulePaid}
+                        patchUrl={`/api/admin/ad-accounts/invoices/${inv.id}`}
+                        payoutOptionsUrl={
+                          isExternal ? null : `/api/admin/ad-accounts/invoices/${inv.id}/payout-options`
+                        }
+                        onChanged={refreshAll}
+                      />
                     </div>
                   </li>
                 );

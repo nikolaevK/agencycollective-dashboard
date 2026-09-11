@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { computeRebillSchedule, type ClientBilling } from "@/lib/clientBilling";
+import {
+  computeRebillSchedule,
+  cycleOptionsAround,
+  type ClientBilling,
+} from "@/lib/clientBilling";
 
 // Pin the documented invariants of the pure re-bill engine (CLAUDE.md
 // "Re-bill / Ad-Account schedule gotchas") so refactors get a TS/CI nudge.
@@ -188,5 +192,52 @@ describe("computeRebillSchedule — paid flag", () => {
     expect(s.paid).toBe(true);
     expect(s.status).toBe("upcoming");
     expect(s.lastPaidMonth).toBe("2026-06");
+  });
+});
+
+describe("cycleOptionsAround — manual cycle pickers", () => {
+  it("shifts the reference cycle by whole months keeping the day", () => {
+    const opts = cycleOptionsAround("2026-10-15", [-1, 0, 1]);
+    expect(opts.map((o) => o.date)).toEqual(["2026-09-15", "2026-10-15", "2026-11-15"]);
+  });
+
+  it("clamps to the month length instead of overflowing (Jan 31 → Feb 28)", () => {
+    const opts = cycleOptionsAround("2026-01-31", [1, 2]);
+    expect(opts.map((o) => o.date)).toEqual(["2026-02-28", "2026-03-31"]);
+  });
+
+  it("rolls across year boundaries in both directions", () => {
+    const opts = cycleOptionsAround("2026-01-10", [-1, 12]);
+    expect(opts.map((o) => o.date)).toEqual(["2025-12-10", "2027-01-10"]);
+  });
+});
+
+describe("computeRebillSchedule — manually settled cycles", () => {
+  it("a paid invoice's cycle month merged into paidMonths marks the cycle paid without a payout", () => {
+    const s = computeRebillSchedule({
+      anchorDate: "2026-01-15",
+      billing: billing(),
+      // Payout DB only knows about September...
+      payoutMonths: [{ year: 2026, month: 9 }],
+      // ...but the admin marked the October-cycle invoice paid by hand.
+      paidMonths: [{ year: 2026, month: 10 }],
+      today: day("2026-10-20"),
+    });
+    expect(s.paid).toBe(true);
+    expect(s.lastPaidMonth).toBe("2026-10");
+  });
+
+  it("the directory merges paid cycles into payoutMonths too, so a hand-settled cycle advances the bill (no Paid + Overdue)", () => {
+    const paidCycles = [{ year: 2026, month: 10 }];
+    const s = computeRebillSchedule({
+      anchorDate: "2026-01-15",
+      billing: billing(),
+      payoutMonths: [{ year: 2026, month: 9 }, ...paidCycles],
+      paidMonths: paidCycles,
+      today: day("2026-10-20"),
+    });
+    expect(s.paid).toBe(true);
+    expect(s.nextRebillAt).toBe("2026-11-15");
+    expect(s.status).toBe("upcoming");
   });
 });

@@ -319,6 +319,28 @@ export function computeRebillSchedule(params: {
 }
 
 /**
+ * Candidate billing-cycle dates around a reference cycle (normally the
+ * schedule's `nextRebillAt`): the same day-of-month shifted by each offset in
+ * months, clamped to the month length (Jan 31 → Feb 28, not Mar 3). Pure —
+ * feeds the "which cycle does this invoice cover?" pickers so an admin can
+ * anchor an invoice to a previous or future cycle without typing dates.
+ */
+export function cycleOptionsAround(
+  referenceYmd: string,
+  offsets: number[] = [-2, -1, 0, 1, 2]
+): Array<{ offset: number; date: string }> {
+  const ref = parseDate(referenceYmd);
+  if (!ref) return [];
+  const day = ref.getUTCDate();
+  return offsets.map((offset) => {
+    const total = ref.getUTCFullYear() * 12 + ref.getUTCMonth() + offset;
+    const y = Math.floor(total / 12);
+    const m = total - y * 12;
+    return { offset, date: toIsoDate(billingDateFor(y, m, day)) };
+  });
+}
+
+/**
  * Statuses that should raise an in-app re-bill alert. `invoice_sent` is
  * intentionally NOT an alert — the client has already been billed for this
  * cycle and is showcased in the parallel "Sent invoices" panel instead.

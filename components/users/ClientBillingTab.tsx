@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RebillStatusChip } from "./RebillStatusChip";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import { InvoiceOverridePanel, InvoiceProvenance } from "./InvoiceOverridePanel";
 
 // Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
 // invoice drawer, keeping the per-client page's initial bundle light.
@@ -60,6 +62,23 @@ function monthLabel(year: number, month: number): string {
   });
 }
 
+async function fetchInvoiceHistory(userId: string): Promise<RebillInvoice[]> {
+  const res = await fetch(`/api/admin/clients/${userId}/rebill-invoices`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  return (json.data?.invoices as RebillInvoice[]) ?? [];
+}
+
+const INVOICE_STATUS_STYLES: Record<
+  RebillInvoice["status"],
+  { label: string; cls: string }
+> = {
+  sent: { label: "Awaiting", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+  paid: { label: "Paid", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  unpaid: { label: "Unpaid", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
+  superseded: { label: "Superseded", cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
+};
+
 async function fetchBilling(userId: string): Promise<BillingResponse> {
   const res = await fetch(`/api/admin/clients/${userId}/billing`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -83,11 +102,26 @@ export function ClientBillingTab({
   isPepads?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { isExternal } = useAdmin();
   const { data, isLoading } = useQuery({
     queryKey: ["client-billing", userId],
     queryFn: () => fetchBilling(userId),
     staleTime: 30_000,
   });
+  const { data: invoiceHistory = [] } = useQuery({
+    queryKey: ["client-rebill-invoices", userId],
+    queryFn: () => fetchInvoiceHistory(userId),
+    staleTime: 30_000,
+  });
+
+  function refreshAfterOverride() {
+    queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
+    queryClient.invalidateQueries({ queryKey: ["client-billing", userId] });
+    queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    onChanged?.();
+  }
 
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -125,12 +159,14 @@ export function ClientBillingTab({
     setMarkingUnpaid(true);
     setUnpaidError(null);
     try {
+      // Same path as the Manage panel below (sets the manual lock) — one
+      // "Mark unpaid" semantic on this tab.
       const res = await fetch(
-        `/api/admin/clients/${userId}/rebill-invoices/${inv.id}/mark-unpaid`,
+        `/api/admin/clients/${userId}/rebill-invoices/${inv.id}`,
         {
-          method: "POST",
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ status: "unpaid" }),
         }
       );
       if (!res.ok) {
@@ -139,6 +175,7 @@ export function ClientBillingTab({
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["client-billing", userId] }),
+        queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] }),
         queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
@@ -238,8 +275,10 @@ export function ClientBillingTab({
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Sent {formatDate(activeInvoice.sentAt)} for the{" "}
-                {formatDate(activeInvoice.cycleAnchor)} cycle. Awaiting payment
-                in the Payout DB — will auto-clear when a payout lands.
+                {formatDate(activeInvoice.cycleAnchor)} cycle.{" "}
+                {activeInvoice.reconcileLocked
+                  ? "Reopened by hand — auto-matching is paused until you Resync it below."
+                  : "Awaiting payment in the Payout DB — will auto-clear when a payout lands."}
               </p>
               {unpaidError && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-1.5">
@@ -430,6 +469,91 @@ export function ClientBillingTab({
         </div>
       </div>
 
+      {/* Invoice history + manual overrides */}
+      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+        <div className="flex items-center gap-2 p-5 border-b border-border/50">
+          <Send className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-bold text-foreground">Re-bill invoices</h3>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {invoiceHistory.length} invoice{invoiceHistory.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {data.schedule.nextRebillAt && (
+          <p className="px-5 pt-3 text-xs text-muted-foreground">
+            Current billing cycle:{" "}
+            <span className="font-semibold text-foreground">
+              {formatDate(data.schedule.nextRebillAt)}
+            </span>
+            {" "}— an awaiting invoice anchored to this date shows as &ldquo;Invoice sent&rdquo;.
+            Use <span className="font-semibold">Manage</span> to mark an invoice paid/unpaid, link a
+            payout, move it to another cycle, or hand it back to the automation.
+          </p>
+        )}
+        {invoiceHistory.length === 0 ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No re-bill invoices recorded for this client.
+          </p>
+        ) : (
+          <ul className="p-5 space-y-2">
+            {invoiceHistory.map((inv) => {
+              const st = INVOICE_STATUS_STYLES[inv.status];
+              const isCurrent =
+                inv.status === "sent" &&
+                data.schedule.nextRebillAt != null &&
+                inv.cycleAnchor === data.schedule.nextRebillAt;
+              return (
+                <li
+                  key={inv.id}
+                  className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3 flex-wrap"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {inv.invoiceNumber}
+                      </p>
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          st.cls
+                        )}
+                      >
+                        {st.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      sent {formatDate(inv.sentAt)} · cycle {formatDate(inv.cycleAnchor)}
+                      {isCurrent && (
+                        <span className="ml-1 text-primary font-semibold">(current)</span>
+                      )}
+                    </p>
+                    <InvoiceProvenance invoice={inv} />
+                  </div>
+                  {inv.amountCents > 0 && (
+                    <span className="text-sm font-semibold text-foreground shrink-0">
+                      {formatMoney(inv.amountCents)}
+                    </span>
+                  )}
+                  <div className="basis-full">
+                    <InvoiceOverridePanel
+                      invoice={inv}
+                      currentCycle={data.schedule.nextRebillAt}
+                      schedulePaid={data.schedule.paid}
+                      patchUrl={`/api/admin/clients/${userId}/rebill-invoices/${inv.id}`}
+                      payoutOptionsUrl={
+                        isExternal
+                          ? null
+                          : `/api/admin/clients/${userId}/rebill-invoices/payout-options`
+                      }
+                      onChanged={refreshAfterOverride}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
       {/* Payment history */}
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
         <div className="flex items-center gap-2 p-5 border-b border-border/50">
@@ -480,6 +604,7 @@ export function ClientBillingTab({
             // Directory page so the row moves into the Sent Invoices panel.
             queryClient.invalidateQueries({ queryKey: ["client-documents", userId] });
             queryClient.invalidateQueries({ queryKey: ["client-billing", userId] });
+            queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
             queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
             queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
             queryClient.invalidateQueries({ queryKey: ["admin-users"] });
@@ -495,7 +620,10 @@ export function ClientBillingTab({
           defaultAmountCents={data.payoutMrr}
           defaultRecipientEmail={clientEmail}
           onClose={() => setShowRegister(false)}
-          onRegistered={() => onChanged?.()}
+          onRegistered={() => {
+            queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
+            onChanged?.();
+          }}
         />
       )}
     </div>

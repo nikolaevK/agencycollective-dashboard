@@ -3,6 +3,11 @@ import { getDb, ensureMigrated } from "./db";
 import { decideAutoPaid } from "./clientRebillInvoices";
 import type { AdInvoiceType } from "./adAccountInvoice";
 import type { Row } from "@libsql/client";
+import {
+  manualFieldsFromRow,
+  EMPTY_MANUAL_FIELDS,
+  type InvoiceManualFields,
+} from "./invoiceManualOverride";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,7 +24,7 @@ import type { Row } from "@libsql/client";
  */
 export type AdAccountInvoiceStatus = "sent" | "paid" | "unpaid" | "superseded";
 
-export interface AdAccountInvoice {
+export interface AdAccountInvoice extends InvoiceManualFields {
   id: string;
   adAccountId: string | null;
   userId: string | null;
@@ -96,6 +101,7 @@ function rowToInvoice(row: Row): AdAccountInvoice {
       row.marked_unpaid_reason != null ? String(row.marked_unpaid_reason) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
+    ...manualFieldsFromRow(row),
   };
 }
 
@@ -117,7 +123,7 @@ export async function getSentInvoicesByAdAccount(): Promise<
   const result = await db.execute(`
     SELECT * FROM ad_account_invoices
     WHERE status = 'sent' AND ad_account_id IS NOT NULL
-    ORDER BY sent_at DESC
+    ORDER BY sent_at DESC, created_at DESC
   `);
   const map = new Map<string, AdAccountInvoice[]>();
   for (const row of result.rows) {
@@ -257,7 +263,7 @@ export async function createAdAccountInvoice(
       [
         {
           sql: `UPDATE ad_account_invoices
-                SET status = 'superseded', updated_at = ?
+                SET status = 'superseded', reconcile_locked = 0, updated_at = ?
                 WHERE ad_account_id = ? AND status = 'sent'`,
           args: [now, input.adAccountId],
         },
@@ -293,6 +299,7 @@ export async function createAdAccountInvoice(
     markedUnpaidReason: null,
     createdAt: now,
     updatedAt: now,
+    ...EMPTY_MANUAL_FIELDS,
   };
 }
 
@@ -332,8 +339,9 @@ async function markInvoicePaid(
               paid_at = ?,
               paid_payout_month = ?,
               paid_payout_year = ?,
+              paid_source = 'auto',
               updated_at = ?
-          WHERE id = ? AND status = 'sent'`,
+          WHERE id = ? AND status = 'sent' AND reconcile_locked = 0`,
     args: [now, payoutMonth, payoutYear, now, id],
   });
 }
@@ -355,6 +363,8 @@ export async function reconcileInvoiceForAdAccount(
   payoutMonths: Array<{ year: number; month: number }>
 ): Promise<AdAccountInvoice | null> {
   if (!invoice || invoice.status !== "sent") return invoice;
+  // An admin-set status (or a reopened row) is locked until they Resync.
+  if (invoice.reconcileLocked) return invoice;
   const promote = decideAutoPaid(invoice.cycleAnchor, payoutMonths);
   if (!promote) return invoice;
 
@@ -370,5 +380,6 @@ export async function reconcileInvoiceForAdAccount(
     paidAt: new Date().toISOString(),
     paidPayoutMonth: promote.month,
     paidPayoutYear: promote.year,
+    paidSource: "auto",
   };
 }

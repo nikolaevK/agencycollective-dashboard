@@ -19,6 +19,7 @@ import {
   getAdAccountPayoutMonthsByBrand,
 } from "@/lib/payouts";
 import { computeRebillSchedule, type ClientBilling } from "@/lib/clientBilling";
+import { getPaidCycleMonthsByKey } from "@/lib/invoiceManualOverride";
 import { businessToday, businessTodayYmd } from "@/lib/businessTime";
 import { getAdAccount, normalizeFeeBps } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
@@ -202,7 +203,10 @@ export async function POST(req: NextRequest) {
     let cycleAnchor = businessTodayYmd();
     if (account && brand) {
       try {
-        const byBrand = await getAdAccountPayoutMonthsByBrand();
+        const [byBrand, paidCycles] = await Promise.all([
+          getAdAccountPayoutMonthsByBrand(),
+          getPaidCycleMonthsByKey("ad_account_invoices", "ad_account_id"),
+        ]);
         const norm = normalizeBrandName(brand);
         const months: Array<{ year: number; month: number }> = [];
         for (const [key, arr] of byBrand) {
@@ -233,16 +237,35 @@ export async function POST(req: NextRequest) {
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
         };
+        // Same month basis as the directory: payouts + hand-settled cycles.
+        const scheduleMonths = [...months, ...(paidCycles.get(account.id) ?? [])];
         const schedule = computeRebillSchedule({
           anchorDate: datePart(account.createdAt),
           billing,
-          payoutMonths: months,
+          payoutMonths: scheduleMonths,
+          paidMonths: scheduleMonths,
           today: businessToday(),
         });
         if (schedule.nextRebillAt) cycleAnchor = schedule.nextRebillAt;
       } catch {
         // keep today
       }
+    }
+    // Manual cycle selection: the drawer lets the admin bill a previous or
+    // future cycle instead of the computed next one. Must be a real date.
+    const requestedCycle = String(formData.get("cycleAnchor") ?? "").trim();
+    // A send for the account's CURRENT cycle replaces its active invoice (a
+    // re-send). A send for any OTHER cycle — a delayed month billed late, or a
+    // month billed ahead — must coexist with it, like a registered backfill
+    // does, so the current-cycle invoice keeps its "Invoice sent" status.
+    const supersede = !requestedCycle || requestedCycle === cycleAnchor;
+    if (requestedCycle) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedCycle))
+        return NextResponse.json({ error: "cycleAnchor must be yyyy-mm-dd" }, { status: 400 });
+      const probe = new Date(`${requestedCycle}T00:00:00Z`);
+      if (isNaN(probe.getTime()) || probe.toISOString().slice(0, 10) !== requestedCycle)
+        return NextResponse.json({ error: "cycleAnchor is not a real date" }, { status: 400 });
+      cycleAnchor = requestedCycle;
     }
 
     const rawAmount = Number(formData.get("amountCents"));
@@ -285,6 +308,7 @@ export async function POST(req: NextRequest) {
         feeBps,
         recipientEmail: email,
         sentByAdminId: session.adminId,
+        supersede,
       });
     } catch (err) {
       console.error("[ad-account-invoice/send] invoice record failed:", err);

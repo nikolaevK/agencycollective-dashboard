@@ -246,7 +246,7 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
           {/* Getting paid */}
           <Section icon={CheckCircle2} title="Getting paid (reconciliation)">
             <p>
-              The dashboard never marks a payment by hand — it reads the <strong>Payout DB</strong>.
+              By default the dashboard reads the <strong>Payout DB</strong> rather than being told a payment landed.
               When a payout for the account&rsquo;s brand is flagged{" "}
               <strong>&ldquo;Ad Account&rdquo;</strong> in the Sales Rep column, the matching
               sent invoice auto-promotes to <Pill tone="green">Paid</Pill> and the account
@@ -268,6 +268,56 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
                 column silently turns off this auto-matching.
               </li>
             </ul>
+          </Section>
+
+          {/* Manual overrides */}
+          <Section icon={CheckCircle2} title="Manual controls (when the automation gets it wrong)">
+            <p>
+              Payments arrive late, land under a different month, or get booked ahead —
+              and the automatic matching above only ever moves an invoice from{" "}
+              <Pill tone="violet">Awaiting</Pill> to <Pill tone="green">Paid</Pill>. Every other
+              transition is yours. Open an account&rsquo;s <strong>Invoices</strong> and use{" "}
+              <strong>Manage</strong> on any row:
+            </p>
+            <ul className="mt-2 space-y-2">
+              <li>
+                <strong>Mark paid</strong> — settles the invoice&rsquo;s cycle by hand: the account
+                shows Paid and its next bill moves one month on, exactly as if a payout had
+                landed for that cycle. Optionally <strong>link a payout row</strong> from the
+                brand&rsquo;s ledger to record which payment it was (also available later via{" "}
+                <strong>Link payout</strong>). Linking is a record, not a move — if a payment was
+                booked under the wrong month, edit its Payout Month on the Payouts page instead.
+              </li>
+              <li>
+                <strong>Mark unpaid</strong> — records that the cycle went unpaid (works on paid
+                invoices too). The schedule is not advanced.
+              </li>
+              <li>
+                <strong>Reopen</strong> — puts a paid/unpaid invoice back to awaiting.
+              </li>
+              <li>
+                <strong>Set cycle</strong> — moves the invoice to a previous or future billing
+                cycle. Only an awaiting invoice on the <em>current</em> cycle lights the
+                &ldquo;Invoice sent&rdquo; status, so align it here when a payout or a billing-day
+                change has shifted the schedule.
+              </li>
+              <li>
+                <strong>Resync</strong> — shown on rows you set by hand: clears the manual markers,
+                returns the invoice to awaiting, and lets the Payout DB decide again.
+              </li>
+              <li>
+                <strong>Superseded</strong> invoices (replaced by a re-send) are frozen — manage
+                the newer invoice instead.
+              </li>
+            </ul>
+            <p className="mt-2">
+              Anything you set by hand is <strong>locked</strong> (a small &ldquo;manual&rdquo; tag) —
+              the auto-matching leaves it alone until you Resync, so a stray payout can&rsquo;t undo
+              your call. When sending a new invoice you can also pick the <strong>billing cycle</strong>{" "}
+              it covers: the default cycle replaces the account&rsquo;s current awaiting invoice
+              (a re-send), while any other cycle is recorded alongside it, like a registered
+              backdated invoice.
+            </p>
           </Section>
 
           {/* Gotchas */}

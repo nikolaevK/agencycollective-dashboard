@@ -36,8 +36,14 @@ import type {
   PaymentInfo,
 } from "@/types/invoice";
 import { buildAdAccountLineItems } from "@/lib/adAccountLineItem";
+import { cycleOptionsAround } from "@/lib/clientBilling";
+import { formatDate } from "./format";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function todayYmd(): string {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+}
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
 const LABEL =
@@ -57,6 +63,9 @@ export interface AdAccountInvoiceTarget {
   monthlyRetainerCents: number;
   clientName: string | null;
   clientEmail: string | null;
+  /** The account's computed next bill date — default billing cycle for the
+   *  invoice; the drawer lets the admin pick a previous/future cycle. */
+  nextRebillAt?: string | null;
 }
 
 interface Props {
@@ -83,6 +92,10 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
   const attach = useEmailAttachments();
+  // Billing cycle the invoice covers. "" = let the server use the account's
+  // computed next cycle (previous behaviour); any date overrides it.
+  const [cycleAnchor, setCycleAnchor] = useState("");
+  const cycleChoices = adAccount?.nextRebillAt ? cycleOptionsAround(adAccount.nextRebillAt) : [];
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "preview" | "download" | "send">(null);
@@ -413,6 +426,8 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
       fd.set("invoiceNumber", data.details.invoiceNumber);
       fd.set("amountCents", String(Math.max(0, Math.round((data.details.totalAmount ?? 0) * 100))));
       if (adAccount) fd.set("adAccountId", adAccount.id);
+      // Manual cycle selection (blank = server-computed next cycle).
+      if (cycleAnchor) fd.set("cycleAnchor", cycleAnchor);
       // Components — the server derives the invoice type (retainer / ad_spend /
       // combined) and records the ad-spend detail from these.
       fd.set("retainerCents", String(retainerCents));
@@ -586,6 +601,54 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent }: Props) {
                 />
               </div>
             </div>
+
+            {/* Billing cycle (attached accounts only) */}
+            {adAccount && (
+              <div>
+                <label className={LABEL}>Billing cycle</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <select
+                    className={FIELD}
+                    value={
+                      cycleAnchor === "" ||
+                      cycleChoices.some((c) => c.offset !== 0 && c.date === cycleAnchor)
+                        ? cycleAnchor
+                        : "custom"
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "custom") setCycleAnchor(adAccount.nextRebillAt ?? todayYmd());
+                      else setCycleAnchor(v);
+                    }}
+                  >
+                    <option value="">
+                      Next cycle{adAccount.nextRebillAt ? ` (${formatDate(adAccount.nextRebillAt)})` : ""} — default
+                    </option>
+                    {cycleChoices
+                      .filter((c) => c.offset !== 0)
+                      .map((c) => (
+                        <option key={c.date} value={c.date}>
+                          {formatDate(c.date)} ({c.offset < 0 ? "previous" : "future"})
+                        </option>
+                      ))}
+                    <option value="custom">Custom date…</option>
+                  </select>
+                  {cycleAnchor !== "" && (
+                    <input
+                      type="date"
+                      className={FIELD}
+                      value={cycleAnchor}
+                      onChange={(e) => setCycleAnchor(e.target.value)}
+                    />
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Which monthly cycle this invoice covers. The default replaces the account&rsquo;s
+                  current awaiting invoice (a re-send) and lights &ldquo;Invoice sent&rdquo;. Any
+                  other cycle is recorded alongside it — for a delayed or upcoming month.
+                </p>
+              </div>
+            )}
 
             {/* CC */}
             <div>

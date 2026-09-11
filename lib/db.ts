@@ -526,6 +526,26 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // verifyApiToken on EVERY /api/v1 + /api/mcp request, so it must
     // self-heal (the CREATE above includes it inline for fresh DBs).
     { table: "api_tokens",              column: "workspaces",          defn: "TEXT" },
+    // Manual invoice overrides (client re-bill + ad-account invoices). Read on
+    // EVERY directory build (paid-cycle months + the reconcile lock) and
+    // written by the manual-status routes, so they must self-heal here. Both
+    // CREATE TABLEs are gated by the version body and carry these inline for
+    // a fresh DB.
+    //   paid_source      'auto' (payout reconciliation) | 'manual' | 'payout'
+    //                    (admin linked a specific payouts.id)
+    //   paid_payout_id   explicit payouts.id relationship (nullable)
+    //   reconcile_locked 1 = an admin set the status by hand; the read-time
+    //                    auto-promotion must leave the row alone until Resync.
+    { table: "client_rebill_invoices",  column: "paid_source",         defn: "TEXT" },
+    { table: "client_rebill_invoices",  column: "paid_payout_id",      defn: "TEXT" },
+    { table: "client_rebill_invoices",  column: "paid_by_admin_id",    defn: "TEXT" },
+    { table: "client_rebill_invoices",  column: "manual_note",         defn: "TEXT" },
+    { table: "client_rebill_invoices",  column: "reconcile_locked",    defn: "INTEGER NOT NULL DEFAULT 0" },
+    { table: "ad_account_invoices",     column: "paid_source",         defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "paid_payout_id",      defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "paid_by_admin_id",    defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "manual_note",         defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "reconcile_locked",    defn: "INTEGER NOT NULL DEFAULT 0" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -2076,6 +2096,11 @@ export async function migrate(): Promise<void> {
       marked_unpaid_at         TEXT,
       marked_unpaid_by_admin_id TEXT,
       marked_unpaid_reason     TEXT,
+      paid_source              TEXT,
+      paid_payout_id           TEXT,
+      paid_by_admin_id         TEXT,
+      manual_note              TEXT,
+      reconcile_locked         INTEGER NOT NULL DEFAULT 0,
       created_at               TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
     )
@@ -2278,6 +2303,11 @@ export async function migrate(): Promise<void> {
       marked_unpaid_at          TEXT,
       marked_unpaid_by_admin_id TEXT,
       marked_unpaid_reason      TEXT,
+      paid_source               TEXT,
+      paid_payout_id            TEXT,
+      paid_by_admin_id          TEXT,
+      manual_note               TEXT,
+      reconcile_locked          INTEGER NOT NULL DEFAULT 0,
       created_at                TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
     )

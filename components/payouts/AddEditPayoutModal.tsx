@@ -5,6 +5,11 @@ import { X, ChevronLeft, Plus, Trash2, FileCheck2, AlertTriangle, CheckCircle2 }
 import { cn } from "@/lib/utils";
 import type { PayoutRecord, SplitParty } from "@/lib/payouts";
 
+const PERIOD_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 /** Pre-fill values + linkage when adding a payout from a signed deal. */
 export interface SourceDealPrefill {
   dealId: string;
@@ -59,6 +64,13 @@ export function AddEditPayoutModal({
 
   const [brandName, setBrandName] = useState("");
   const [dateJoined, setDateJoined] = useState("");
+  // Explicit payout period. Previously derived from Date Joined — that made it
+  // impossible to record a re-bill for a month other than the join month
+  // without fudging the date. New rows default to the month the admin is
+  // viewing; deal imports default to the deal's close month; edits keep the
+  // stored period. Never silently re-derived.
+  const [payoutMonth, setPayoutMonth] = useState(defaultMonth);
+  const [payoutYear, setPayoutYear] = useState(String(defaultYear));
   const [firstDayAdSpend, setFirstDayAdSpend] = useState("");
   const [vertical, setVertical] = useState("");
   const [pointOfContact, setPointOfContact] = useState("");
@@ -102,6 +114,8 @@ export function AddEditPayoutModal({
     if (payout) {
       setBrandName(payout.brandName);
       setDateJoined(payout.dateJoined ?? "");
+      setPayoutMonth(payout.payoutMonth);
+      setPayoutYear(String(payout.payoutYear));
       setFirstDayAdSpend(payout.firstDayAdSpend ?? "");
       setVertical(payout.vertical ?? "");
       setPointOfContact(payout.pointOfContact ?? "");
@@ -122,6 +136,11 @@ export function AddEditPayoutModal({
     } else if (sourceDeal) {
       setBrandName(sourceDeal.brandName);
       setDateJoined(sourceDeal.dateJoined);
+      {
+        const m = sourceDeal.dateJoined.match(/^(\d{4})-(\d{2})/);
+        setPayoutMonth(m ? Number(m[2]) : defaultMonth);
+        setPayoutYear(m ? m[1] : String(defaultYear));
+      }
       setFirstDayAdSpend("");
       setVertical(sourceDeal.vertical);
       setPointOfContact(sourceDeal.pointOfContact);
@@ -142,6 +161,8 @@ export function AddEditPayoutModal({
     } else {
       setBrandName("");
       setDateJoined("");
+      setPayoutMonth(defaultMonth);
+      setPayoutYear(String(defaultYear));
       setFirstDayAdSpend("");
       setVertical("");
       setPointOfContact("");
@@ -169,7 +190,7 @@ export function AddEditPayoutModal({
     setNewVerticalName("");
     setAddingReferral(false);
     setNewReferralName("");
-  }, [payout, sourceDeal, open]);
+  }, [payout, sourceDeal, open, defaultMonth, defaultYear]);
 
   useEffect(() => {
     if (addingRep && newRepRef.current) newRepRef.current.focus();
@@ -203,6 +224,11 @@ export function AddEditPayoutModal({
         return;
       }
     }
+    const periodYear = Number(payoutYear);
+    if (!Number.isInteger(periodYear) || periodYear < 2000 || periodYear > 2100) {
+      setError("Payout year must be between 2000 and 2100");
+      return;
+    }
     setSaving(true);
     setError("");
 
@@ -231,12 +257,9 @@ export function AddEditPayoutModal({
 
       if (isEdit && payout) {
         payload.id = payout.id;
-        // Sync payout month/year with dateJoined on edit
-        if (dateJoined) {
-          const [y, m] = dateJoined.split("-");
-          payload.payoutMonth = Number(m);
-          payload.payoutYear = Number(y);
-        }
+        // Explicit payout period (was: silently re-derived from Date Joined).
+        payload.payoutMonth = payoutMonth;
+        payload.payoutYear = periodYear;
         const res = await fetch("/api/admin/payouts", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -247,15 +270,8 @@ export function AddEditPayoutModal({
           throw new Error(d.error || "Update failed");
         }
       } else {
-        // Derive payout month/year from dateJoined when available
-        if (dateJoined) {
-          const [y, m] = dateJoined.split("-");
-          payload.payoutMonth = Number(m);
-          payload.payoutYear = Number(y);
-        } else {
-          payload.payoutMonth = defaultMonth;
-          payload.payoutYear = defaultYear;
-        }
+        payload.payoutMonth = payoutMonth;
+        payload.payoutYear = periodYear;
 
         if (isImport && sourceDeal) {
           // Import path: create the payout AND attach the signed scope + invoice.
@@ -499,6 +515,42 @@ export function AddEditPayoutModal({
             placeholder="e.g. Buy Or Die, Ads + Creatives"
           />
         </div>
+      </div>
+
+      {/* Payout period — which month this row is booked under */}
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-1.5">
+          Payout Month
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <select
+            value={payoutMonth}
+            onChange={(e) => setPayoutMonth(Number(e.target.value))}
+            className={inputClass}
+          >
+            {PERIOD_MONTHS.map((name, i) => (
+              <option key={name} value={i + 1}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min={2000}
+            max={2100}
+            value={payoutYear}
+            onChange={(e) => setPayoutYear(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          The month this payment is booked under — past or upcoming.
+          {isEdit
+            ? " Changing it moves the row to that month."
+            : isImport
+              ? " Defaults to the deal's close month."
+              : " Defaults to the month you're viewing on the Payouts page."}
+        </p>
       </div>
 
       {/* Dates */}

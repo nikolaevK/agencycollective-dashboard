@@ -24,6 +24,7 @@ import {
   type RebillSchedule,
 } from "./clientBilling";
 import { businessToday } from "./businessTime";
+import { getPaidCycleMonthsByKey } from "./invoiceManualOverride";
 import {
   getLatestActiveInvoice,
   getLatestActiveInvoicesByUser,
@@ -177,6 +178,31 @@ function qualifyingRebillMonths(
 }
 
 /**
+ * Qualifying REBILL months for one client (same rule the directory feeds the
+ * schedule + reconciliation). Used by the manual-override route after a
+ * "Resync" so the reopened invoice is re-evaluated against payouts at once.
+ */
+export async function qualifyingMonthsForUser(
+  user: UserRecord
+): Promise<Array<{ year: number; month: number }>> {
+  const [histories, rebillByBrand] = await Promise.all([
+    getAllBrandHistories(),
+    getRebillPayoutMonthsByBrand(),
+  ]);
+  return qualifyingRebillMonths(matchHistories(user, histories), rebillByBrand);
+}
+
+/**
+ * The brand a client's payouts are matched under — the explicit link, or (main
+ * book only) the display name. Non-main clients never fall back to the name
+ * (see matchHistories). Null = no payout basis at all.
+ */
+export function payoutBrandBasisForUser(user: UserRecord): string | null {
+  if (user.workspace !== "main") return user.payoutBrand;
+  return user.payoutBrand ?? user.displayName ?? null;
+}
+
+/**
  * Build one enriched directory row. Pure assembly given the inputs — shared by
  * the full-directory build and the single-client detail so both compute MRR and
  * the re-bill schedule identically. Returns the matched payout brand timelines
@@ -204,6 +230,15 @@ function buildRow(
   profile: ClientProfile,
   team: ClientTeamMember[],
   adAccounts: AdAccount[],
+  /**
+   * Cycle months of this client's PAID re-bill invoices (any source). Merged
+   * into BOTH `payoutMonths` (advances the next bill) and `paidMonths` (the
+   * Paid chip) so a cycle an admin settled by hand — or linked to a payout
+   * recorded under a different month — behaves like a payout-recognised one.
+   * Invoice reconciliation stays on the qualifying-payout months only. See
+   * lib/invoiceManualOverride.ts.
+   */
+  paidInvoiceMonths: Array<{ year: number; month: number }>,
   today?: Date
 ): { row: ClientDirectoryRow; matched: BrandHistory[] } {
   // Recurring MRR. Default = the latest payout month's amount_due (summed
@@ -248,10 +283,16 @@ function buildRow(
   const joinedAt =
     datePart(user.joinedAt) ?? earliestPayoutJoin ?? datePart(user.createdAt);
 
-  // All (year, month) pairs that have a payout for this client.
-  const payoutMonths = matched.flatMap((h) =>
-    h.months.map((m) => ({ year: m.year, month: m.month }))
-  );
+  // All (year, month) pairs that have a payout for this client — PLUS the
+  // cycle months of paid invoices, so a cycle an admin settled by hand
+  // advances the next-bill date exactly as a recorded payout would (else the
+  // row would read "Paid" and "Overdue" at once and stay in the alerts).
+  const payoutMonths = [
+    ...matched.flatMap((h) =>
+      h.months.map((m) => ({ year: m.year, month: m.month }))
+    ),
+    ...paidInvoiceMonths,
+  ];
 
   // Only a still-sent invoice influences the schedule status (paid/unpaid/
   // superseded are historical records, not awaiting-payment signals).
@@ -265,7 +306,10 @@ function buildRow(
   // established baseline), evaluated PER BRAND so a multi-brand client or a
   // month with mixed rebill/non-rebill rows still resolves correctly. A
   // matching REBILL payment marks the client `paid` until the next re-bill date.
-  const paidMonths = qualifyingRebillMonths(matched, rebillByBrand);
+  const paidMonths = [
+    ...qualifyingRebillMonths(matched, rebillByBrand),
+    ...paidInvoiceMonths,
+  ];
 
   const schedule = computeRebillSchedule({
     anchorDate: joinedAt,
@@ -362,6 +406,7 @@ async function buildClientDirectoryNow(
     profileMap,
     teamMap,
     allAdAccounts,
+    paidInvoiceMonthsByUser,
   ] = await Promise.all([
     readUsers(),
     readAllClientAccounts(),
@@ -372,6 +417,7 @@ async function buildClientDirectoryNow(
     getAllClientProfiles(),
     getAllClientTeams(),
     listAdAccounts(),
+    getPaidCycleMonthsByKey("client_rebill_invoices", "user_id"),
   ]);
 
   const accountsByUser = new Map<string, ClientAccount[]>();
@@ -428,6 +474,7 @@ async function buildClientDirectoryNow(
         profileMap.get(user.id) ?? defaultClientProfile(user.id),
         teamMap.get(user.id) ?? [],
         adAccountsByUser.get(user.id) ?? [],
+        paidInvoiceMonthsByUser.get(user.id) ?? [],
         t
       ).row
   );
@@ -455,17 +502,27 @@ export async function getClientDetail(
   // client detail (which the send route reads for cycle_anchor) agrees with it.
   const t = today ?? businessToday();
 
-  const [accounts, histories, billing, rawInvoice, rebillByBrand, profile, team, adAccounts] =
-    await Promise.all([
-      readAccountsForUser(userId),
-      getAllBrandHistories(),
-      getClientBilling(userId),
-      getLatestActiveInvoice(userId),
-      getRebillPayoutMonthsByBrand(),
-      getClientProfile(userId),
-      getClientTeam(userId),
-      listAdAccountsForUser(userId),
-    ]);
+  const [
+    accounts,
+    histories,
+    billing,
+    rawInvoice,
+    rebillByBrand,
+    profile,
+    team,
+    adAccounts,
+    paidInvoiceMonthsByUser,
+  ] = await Promise.all([
+    readAccountsForUser(userId),
+    getAllBrandHistories(),
+    getClientBilling(userId),
+    getLatestActiveInvoice(userId),
+    getRebillPayoutMonthsByBrand(),
+    getClientProfile(userId),
+    getClientTeam(userId),
+    listAdAccountsForUser(userId),
+    getPaidCycleMonthsByKey("client_rebill_invoices", "user_id"),
+  ]);
 
   // Reconcile this user's invoice against their qualifying REBILL payouts
   // before building the row so a freshly-recognised payment promotes status
@@ -486,6 +543,7 @@ export async function getClientDetail(
     profile ?? defaultClientProfile(userId),
     team,
     adAccounts,
+    paidInvoiceMonthsByUser.get(userId) ?? [],
     t
   );
   return { row, history: matched };

@@ -16,6 +16,7 @@ import {
   type AdAccountInvoice,
 } from "./adAccountInvoices";
 import { listAdAccounts, type AdAccountStatus } from "./adAccounts";
+import { getPaidCycleMonthsByKey } from "./invoiceManualOverride";
 import { businessToday } from "./businessTime";
 import { inWorkspaceScope, type WorkspaceScope } from "./workspaces";
 
@@ -111,12 +112,14 @@ export async function buildAdAccountDirectory(
   // clock — otherwise statuses/dates flip a day early every evening (PT) and the
   // recomputed `nextRebillAt` won't match a just-sent invoice's `cycle_anchor`.
   const t = today ?? businessToday();
-  const [allAccounts, users, adAccountMonthsMap, sentByAccount] = await Promise.all([
-    listAdAccounts(),
-    readUsers(),
-    getAdAccountPayoutMonthsByBrand(),
-    getSentInvoicesByAdAccount(),
-  ]);
+  const [allAccounts, users, adAccountMonthsMap, sentByAccount, paidCycleByAccount] =
+    await Promise.all([
+      listAdAccounts(),
+      readUsers(),
+      getAdAccountPayoutMonthsByBrand(),
+      getSentInvoicesByAdAccount(),
+      getPaidCycleMonthsByKey("ad_account_invoices", "ad_account_id"),
+    ]);
   const accounts = allAccounts.filter((a) => inWorkspaceScope(scope, a.workspace));
 
   const usersById = new Map<string, UserRecord>();
@@ -177,13 +180,22 @@ export async function buildAdAccountDirectory(
         invoice && invoice.status === "sent"
           ? { cycleAnchor: invoice.cycleAnchor }
           : null;
+      // Schedule months = payouts PLUS the cycle months of paid invoices, so a
+      // cycle an admin settled by hand advances the next bill and shows `paid`
+      // like a payout-recognised one (lib/invoiceManualOverride.ts). Invoice
+      // reconciliation above deliberately used the raw payout months only — a
+      // manually-paid October must not auto-settle a still-open September.
+      const scheduleMonths = [
+        ...payoutMonths,
+        ...(paidCycleByAccount.get(acct.id) ?? []),
+      ];
       const schedule = computeRebillSchedule({
         anchorDate: datePart(acct.createdAt),
         billing,
-        payoutMonths,
+        payoutMonths: scheduleMonths,
         // Every Ad-Account-flagged payout month is a confirmed payment, so the
         // account shows `paid` until the next bill once one lands.
-        paidMonths: payoutMonths,
+        paidMonths: scheduleMonths,
         today: t,
         activeSentInvoice: sentForSchedule,
       });

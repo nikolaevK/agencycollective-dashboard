@@ -404,6 +404,76 @@ export async function readPayoutsByNormalizedBrand(
 }
 
 // ---------------------------------------------------------------------------
+// Payout rows for one brand — the invoice "link to payout" picker
+// ---------------------------------------------------------------------------
+
+/** Slim payout row offered when an admin links an invoice to a payment. */
+export interface PayoutLinkOption {
+  id: string;
+  brandName: string;
+  payoutMonth: number;
+  payoutYear: number;
+  amountDue: number; // cents
+  amountPaid: number; // cents
+  salesRep: string | null;
+  isPaid: boolean;
+}
+
+/**
+ * Every payout row whose brand matches `brand`, newest month first. Main-book
+ * callers get the fuzzy `brandsMatch` set (same basis as the directory);
+ * `exactOnly` (partner books) restricts to exact normalized equality — never
+ * let a substring collision expose another brand's ledger rows.
+ */
+export async function listPayoutRowsForBrand(
+  brand: string,
+  exactOnly = false,
+  limit = 60
+): Promise<PayoutLinkOption[]> {
+  const norm = normalizeBrandName(brand);
+  if (!norm) return [];
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute(
+    `SELECT id, brand_name, payout_month, payout_year, amount_due, amount_paid, sales_rep, is_paid
+     FROM payouts`
+  );
+  const rows: PayoutLinkOption[] = [];
+  for (const row of result.rows) {
+    const rowNorm = normalizeBrandName(String(row.brand_name ?? ""));
+    if (!rowNorm) continue;
+    const match = exactOnly ? rowNorm === norm : brandsMatch(norm, rowNorm);
+    if (!match) continue;
+    rows.push({
+      id: String(row.id),
+      brandName: String(row.brand_name ?? ""),
+      payoutMonth: Number(row.payout_month),
+      payoutYear: Number(row.payout_year),
+      amountDue: Number(row.amount_due ?? 0),
+      amountPaid: Number(row.amount_paid ?? 0),
+      salesRep: row.sales_rep != null ? String(row.sales_rep) : null,
+      isPaid: Number(row.is_paid) === 1,
+    });
+  }
+  rows.sort(
+    (a, b) => b.payoutYear - a.payoutYear || b.payoutMonth - a.payoutMonth
+  );
+  return rows.slice(0, limit);
+}
+
+/** True when a payout row's brand is an acceptable link target for `brand`. */
+export function payoutMatchesBrand(
+  payoutBrand: string,
+  brand: string,
+  exactOnly = false
+): boolean {
+  const a = normalizeBrandName(payoutBrand);
+  const b = normalizeBrandName(brand);
+  if (!a || !b) return false;
+  return exactOnly ? a === b : brandsMatch(a, b);
+}
+
+// ---------------------------------------------------------------------------
 // Brand histories — full per-brand payment timeline (Client Directory)
 // ---------------------------------------------------------------------------
 

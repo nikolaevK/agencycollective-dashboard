@@ -73,6 +73,7 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
       monthlyRetainerCents: row.monthlyRetainerCents,
       clientName: row.clientName,
       clientEmail: row.clientEmail,
+      nextRebillAt: row.schedule.nextRebillAt,
     });
     setDrawerOpen(true);
   }
@@ -240,6 +241,7 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
           accountId={invoicesRow.id}
           accountName={invoicesRow.accountName}
           defaultCycleAnchor={invoicesRow.schedule.nextRebillAt}
+          schedulePaid={invoicesRow.schedule.paid}
           defaultRecipientEmail={invoicesRow.clientEmail}
           defaultRetainerCents={invoicesRow.monthlyRetainerCents}
           onClose={() => setInvoicesRow(null)}
