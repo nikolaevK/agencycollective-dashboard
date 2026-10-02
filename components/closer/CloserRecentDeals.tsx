@@ -12,6 +12,7 @@ import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { format, startOfWeek, startOfMonth } from "date-fns";
 
 type RangeFilter = "all" | "week" | "month";
@@ -86,6 +87,62 @@ const DELETABLE_STATUSES: ReadonlySet<DealStatus> = new Set([
   "follow_up",
   "not_closed",
 ]);
+
+/* ── Edit Deal Modal ── (same guards as the admin one in RecentDealsTable) */
+function EditDealModal({
+  deal,
+  onClose,
+  onSaved,
+}: {
+  deal: DealPublic;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Backdrop / × / Escape are easy to hit by accident — confirm before
+  // throwing edits away, and never close mid-save (the result would be lost).
+  function requestClose() {
+    if (saving) return;
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  }
+
+  // Stays registered while saving (requestClose no-ops) so Escape is absorbed
+  // here instead of falling through to a layer underneath.
+  useEscapeKey(requestClose);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
+          <button
+            onClick={requestClose}
+            disabled={saving}
+            className="-mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            <span className="sr-only">Close</span>&times;
+          </button>
+        </div>
+        <div className="p-6">
+          <UnifiedDealForm
+            key={deal.id}
+            mode="edit"
+            context="closer"
+            initialData={deal}
+            onSuccess={onSaved}
+            onCancel={onClose}
+            onDirtyChange={setDirty}
+            onPendingChange={setSaving}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CloserRecentDeals({ deals, readOnly }: Props) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
@@ -444,27 +501,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
 
     {/* Edit modal */}
     {editDeal && (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setEditDeal(null)} />
-        <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
-            <button onClick={() => setEditDeal(null)} className="text-muted-foreground hover:text-foreground">
-              <span className="sr-only">Close</span>&times;
-            </button>
-          </div>
-          <div className="p-6">
-            <UnifiedDealForm
-              key={editDeal.id}
-              mode="edit"
-              context="closer"
-              initialData={editDeal}
-              onSuccess={handleSaved}
-              onCancel={() => setEditDeal(null)}
-            />
-          </div>
-        </div>
-      </div>
+      <EditDealModal deal={editDeal} onClose={() => setEditDeal(null)} onSaved={handleSaved} />
     )}
     </>
   );

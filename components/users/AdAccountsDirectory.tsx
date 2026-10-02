@@ -290,13 +290,17 @@ export function AdAccountsDirectory() {
               <span className="whitespace-nowrap">Payment settings</span>
             </button>
           )}
-          <button
-            onClick={() => setInvoiceTarget(null)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"
-          >
-            <Send className="h-4 w-4" />
-            <span className="whitespace-nowrap">Send ad invoice</span>
-          </button>
+          {/* A free invoice (no account) is internal-only — the send route
+              refuses it for partner books, so don't offer it there. */}
+          {!admin.isExternal && (
+            <button
+              onClick={() => setInvoiceTarget(null)}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"
+            >
+              <Send className="h-4 w-4" />
+              <span className="whitespace-nowrap">Send ad invoice</span>
+            </button>
+          )}
           <button
             onClick={() => setShowAdd(true)}
             className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"

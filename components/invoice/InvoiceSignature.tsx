@@ -5,6 +5,7 @@ import { Pen, Type, Upload, X, Trash2 } from "lucide-react";
 import type { SignatureData } from "@/types/invoice";
 import { SIGNATURE_FONTS, SIGNATURE_COLORS } from "@/lib/invoice/validation";
 import { cn } from "@/lib/utils";
+import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 interface Props {
   signature: SignatureData | null;
@@ -127,7 +128,10 @@ export function InvoiceSignature({ signature, onChange }: Props) {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return;
+    if (!isPdfImageType(file.type)) {
+      alert(PDF_IMAGE_ERROR);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       onChange({
@@ -324,7 +328,7 @@ export function InvoiceSignature({ signature, onChange }: Props) {
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*"
+                accept={PDF_IMAGE_ACCEPT}
                 onChange={handleFileUpload}
                 className="hidden"
               />

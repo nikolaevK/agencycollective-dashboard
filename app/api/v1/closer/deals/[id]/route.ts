@@ -15,6 +15,7 @@ import { isSetterTier } from "@/lib/appointments";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { logAuditEvent } from "@/lib/auditLog";
+import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_STATUSES: DealStatus[] = [
@@ -168,6 +169,11 @@ export async function PATCH(
     }).catch(() => {});
 
     const updated = await findDeal(params.id);
+    // A transition to closed enters the review queue — backfill the invoice /
+    // contract records exactly like the dashboard PATCH does (idempotent).
+    if (updated && changes.status === "closed") {
+      await ensureDealPaperwork(updated, auth.token.id);
+    }
     return ok(updated);
   } catch (err) {
     console.error("PATCH /api/v1/closer/deals/[id] error:", err);

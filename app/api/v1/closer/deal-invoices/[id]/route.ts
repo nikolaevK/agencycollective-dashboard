@@ -11,6 +11,8 @@ import {
   updateAdditionalInvoice,
 } from "@/lib/dealAdditionalInvoices";
 import { logAuditEvent } from "@/lib/auditLog";
+import { applyInvoiceSpec, normalizeApiInvoiceData, parseInvoiceSpec } from "@/lib/invoice/invoiceSpec";
+import type { InvoiceData } from "@/types/invoice";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -44,7 +46,9 @@ export async function GET(
 
 /**
  * Update an invoice record (draft edits / historical registration — never
- * sends email): { invoiceData? (object), status? ("draft"|"sent") }.
+ * sends email): { invoiceData? (object), invoice? (InvoiceSpec, CENTS —
+ * applied over the current or given invoiceData), status? ("draft"|"sent") }.
+ * Totals are recomputed and the printed number is pinned to the record's.
  */
 export async function PATCH(
   request: Request,
@@ -66,12 +70,24 @@ export async function PATCH(
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
 
     const changes: { invoiceData?: string; status?: string } = {};
+    let data: InvoiceData | null = null;
     if (body.invoiceData !== undefined) {
       if (typeof body.invoiceData !== "object" || body.invoiceData === null) {
         return fail("invalid_request", "invoiceData must be an object", 400);
       }
-      changes.invoiceData = JSON.stringify(body.invoiceData);
+      if (JSON.stringify(body.invoiceData).length > 1_000_000) {
+        return fail("payload_too_large", "invoiceData is too large", 413);
+      }
+      const norm = normalizeApiInvoiceData(body.invoiceData, found.record.invoiceNumber);
+      if (!norm.ok) return fail("invalid_request", norm.error, 400);
+      data = norm.value;
     }
+    if (body.invoice !== undefined && body.invoice !== null) {
+      const spec = parseInvoiceSpec(body.invoice);
+      if (!spec.ok) return fail("invalid_request", spec.error, 400);
+      data = applyInvoiceSpec(data ?? found.record.invoiceData, spec.value);
+    }
+    if (data) changes.invoiceData = JSON.stringify(data);
     if (body.status !== undefined) {
       const status = String(body.status);
       if (status !== "draft" && status !== "sent") {

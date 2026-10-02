@@ -8,9 +8,12 @@ import {
   ChevronDown,
   XCircle,
   Loader2,
+  AlertCircle,
+  RotateCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatMoney, formatDate } from "./format";
+import { formatCentsExact } from "@/lib/format";
+import { formatDate } from "./format";
 
 interface SentInvoice {
   id: string;
@@ -86,9 +89,42 @@ export function SentInvoicesPanel({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data } = useSentInvoices();
+  const { data, isLoading, isError, isFetching, refetch } = useSentInvoices();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [errorId, setErrorId] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+
+  // A failed load must not read as "nothing sent" (the panel used to vanish).
+  if (isError && !data) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] px-4 py-3">
+        <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+        <p className="flex-1 min-w-0 text-sm text-foreground">
+          Couldn&rsquo;t load sent invoices.
+        </p>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50 shrink-0"
+        >
+          {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Only surface the loading state when the admin asked for the panel (the
+  // summary card opens it) — otherwise it would flash in and out on page load.
+  if (isLoading) {
+    if (!open) return null;
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-violet-500/30 bg-violet-500/[0.04] dark:bg-violet-500/[0.06] px-4 py-3 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading sent invoices…
+      </div>
+    );
+  }
 
   const visible = (data?.invoices ?? []).filter(
     (i) => !restrictToUserIds || restrictToUserIds.has(i.userId)
@@ -114,7 +150,7 @@ export function SentInvoicesPanel({
       return;
 
     setBusyId(inv.id);
-    setErrorId(null);
+    setRowError(null);
     try {
       const res = await fetch(
         `/api/admin/clients/${inv.userId}/rebill-invoices/${inv.id}/mark-unpaid`,
@@ -139,7 +175,10 @@ export function SentInvoicesPanel({
       ]);
     } catch (e) {
       console.error("[sent-invoices] mark-unpaid failed:", e);
-      setErrorId(inv.id);
+      setRowError({
+        id: inv.id,
+        message: e instanceof Error ? e.message : "Failed to mark unpaid.",
+      });
     } finally {
       setBusyId(null);
     }
@@ -184,7 +223,7 @@ export function SentInvoicesPanel({
                   key={inv.id}
                   inv={inv}
                   busy={busyId === inv.id}
-                  error={errorId === inv.id}
+                  error={rowError?.id === inv.id ? rowError.message : null}
                   onOpenClient={() => router.push(`/dashboard/users/${inv.userId}`)}
                   onMarkUnpaid={() => handleMarkUnpaid(inv)}
                 />
@@ -198,7 +237,7 @@ export function SentInvoicesPanel({
                   key={inv.id}
                   inv={inv}
                   busy={busyId === inv.id}
-                  error={errorId === inv.id}
+                  error={rowError?.id === inv.id ? rowError.message : null}
                   onOpenClient={() => router.push(`/dashboard/users/${inv.userId}`)}
                   onMarkUnpaid={() => handleMarkUnpaid(inv)}
                 />
@@ -237,55 +276,67 @@ function InvoiceRow({
 }: {
   inv: SentInvoice;
   busy: boolean;
-  error: boolean;
+  /** Mark-unpaid failure message for this row, shown inline. */
+  error: string | null;
   onOpenClient: () => void;
   onMarkUnpaid: () => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-3 rounded-lg border border-border/50 bg-card px-3 py-2.5">
-      <button
-        type="button"
-        onClick={onOpenClient}
-        className="flex flex-1 min-w-0 items-center gap-3 text-left"
-      >
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0">
-          <Send className="h-4 w-4" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">
-            {inv.clientName}
-          </p>
-          <p className="text-xs text-muted-foreground truncate">
-            {inv.invoiceNumber} · sent {formatDate(inv.sentAt)} · cycle{" "}
-            {formatDate(inv.cycleAnchor)}
-          </p>
-        </div>
-        {inv.amountCents > 0 && (
-          <span className="text-sm font-semibold text-foreground shrink-0">
-            {formatMoney(inv.amountCents)}
+    <div className="rounded-lg border border-border/50 bg-card px-3 py-2.5">
+      {/* Phones: Mark unpaid wraps under the row so name/meta/email keep their width. */}
+      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+        <button
+          type="button"
+          onClick={onOpenClient}
+          className="flex flex-1 basis-full min-w-0 items-center gap-3 text-left sm:basis-0"
+        >
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0">
+            <Send className="h-4 w-4" />
           </span>
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={onMarkUnpaid}
-        disabled={busy}
-        title="Mark this period as unpaid (historical marker — schedule unaffected)"
-        className={cn(
-          "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0",
-          error
-            ? "border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
-            : "border-border/60 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10",
-          busy && "opacity-50"
-        )}
-      >
-        {busy ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <XCircle className="h-3 w-3" />
-        )}
-        Mark unpaid
-      </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">
+              {inv.clientName}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {inv.invoiceNumber} · sent {formatDate(inv.sentAt)} · cycle{" "}
+              {formatDate(inv.cycleAnchor)}
+            </p>
+            {inv.recipientEmail && (
+              <p className="text-[11px] text-muted-foreground truncate">
+                to {inv.recipientEmail}
+              </p>
+            )}
+          </div>
+          {inv.amountCents > 0 && (
+            <span className="text-sm font-semibold text-foreground shrink-0">
+              {formatCentsExact(inv.amountCents)}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onMarkUnpaid}
+          disabled={busy}
+          title="Mark this period as unpaid (historical marker — schedule unaffected)"
+          className={cn(
+            "ml-auto flex h-9 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 sm:h-auto",
+            error
+              ? "border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+              : "border-border/60 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10",
+            busy && "opacity-50"
+          )}
+        >
+          {busy ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <XCircle className="h-3 w-3" />
+          )}
+          Mark unpaid
+        </button>
+      </div>
+      {error && (
+        <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>
+      )}
     </div>
   );
 }

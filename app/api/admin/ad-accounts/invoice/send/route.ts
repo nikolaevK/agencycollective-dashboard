@@ -7,6 +7,7 @@ import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAd
 import { isExternalScope } from "@/lib/workspaces";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { EMAIL_RE } from "@/lib/invoice/email";
 import { readEmailAttachments } from "@/lib/invoice/readEmailAttachments";
 import {
   getAgencyProfileEmailBrand,
@@ -24,9 +25,16 @@ import { businessToday, businessTodayYmd } from "@/lib/businessTime";
 import { getAdAccount, normalizeFeeBps } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import { createAdAccountInvoice } from "@/lib/adAccountInvoices";
+import {
+  getInvoiceDraft,
+  claimInvoiceDraftForSend,
+  releaseInvoiceDraftClaim,
+  invoiceDraftConflictMessage,
+  markInvoiceDraftSent,
+} from "@/lib/invoiceDrafts";
+import { isRealYmd } from "@/lib/businessTime";
 import { adInvoiceType, computeAdSpendFeeCents } from "@/lib/adAccountInvoice";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** yyyy-mm-dd from a timestamp. */
 function datePart(value: string | null): string | null {
@@ -119,6 +127,24 @@ export async function POST(req: NextRequest) {
       if (ccEmails.length >= 10) break;
     }
 
+    // Manual cycle selection (the drawer's "Billing cycle" picker, or an API
+    // draft's options) — validated BEFORE emailing: rejecting it afterwards
+    // left an emailed invoice unrecorded and the draft sendable again.
+    const requestedCycle = String(formData.get("cycleAnchor") ?? "").trim();
+    if (requestedCycle && !isRealYmd(requestedCycle))
+      return NextResponse.json({ error: "cycleAnchor must be a real date (yyyy-mm-dd)" }, { status: 400 });
+
+    // Reviewing a prepared draft: it must be this account's. Whether it can
+    // still go out is decided by the atomic claim right before emailing.
+    const draftId = String(formData.get("draftId") ?? "").trim() || null;
+    if (draftId) {
+      const draft = await getInvoiceDraft(draftId);
+      if (!draft || draft.kind !== "ad_account" || !adAccountId || draft.adAccountId !== adAccountId)
+        return NextResponse.json({ error: "Invoice draft not found" }, { status: 404 });
+      if (draft.status !== "pending")
+        return NextResponse.json({ error: `This draft was already ${draft.status}` }, { status: 409 });
+    }
+
     const buffer = Buffer.from(await pdfFile.arrayBuffer());
     const safeNumber =
       invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100) || "Invoice";
@@ -147,13 +173,34 @@ export async function POST(req: NextRequest) {
       );
     const additionalAttachments = attachRead.attachments;
 
-    const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
-      cc: ccEmails.length > 0 ? ccEmails : undefined,
-      variant: "adaccount",
-      brand: emailBrand,
-      additionalAttachments:
-        additionalAttachments.length > 0 ? additionalAttachments : undefined,
-    });
+    // Claim the draft BEFORE emailing so two reviewers (or tabs) can't both
+    // send it, and a reject can't land mid-send. Released if the email fails.
+    let claim: string | null = null;
+    if (draftId) {
+      claim = await claimInvoiceDraftForSend(draftId, {
+        reviewedBy: session.adminId,
+        reviewedByName: actor.admin.username,
+      });
+      if (!claim)
+        return NextResponse.json({ error: await invoiceDraftConflictMessage(draftId) }, { status: 409 });
+    }
+
+    let sent = false;
+    try {
+      sent = await sendInvoiceEmail(email, buffer, safeNumber, {
+        cc: ccEmails.length > 0 ? ccEmails : undefined,
+        variant: "adaccount",
+        brand: emailBrand,
+        additionalAttachments:
+          additionalAttachments.length > 0 ? additionalAttachments : undefined,
+      });
+    } finally {
+      if (!sent && draftId && claim) {
+        await releaseInvoiceDraftClaim(draftId, claim).catch((err) =>
+          console.error("[ad-account-invoice/send] draft claim release failed:", err)
+        );
+      }
+    }
     if (!sent)
       return NextResponse.json({ error: "Failed to send invoice email" }, { status: 500 });
 
@@ -251,22 +298,14 @@ export async function POST(req: NextRequest) {
         // keep today
       }
     }
-    // Manual cycle selection: the drawer lets the admin bill a previous or
-    // future cycle instead of the computed next one. Must be a real date.
-    const requestedCycle = String(formData.get("cycleAnchor") ?? "").trim();
+    // Manual cycle selection (validated above, before the email): the admin
+    // may bill a previous or future cycle instead of the computed next one.
     // A send for the account's CURRENT cycle replaces its active invoice (a
     // re-send). A send for any OTHER cycle — a delayed month billed late, or a
     // month billed ahead — must coexist with it, like a registered backfill
     // does, so the current-cycle invoice keeps its "Invoice sent" status.
     const supersede = !requestedCycle || requestedCycle === cycleAnchor;
-    if (requestedCycle) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedCycle))
-        return NextResponse.json({ error: "cycleAnchor must be yyyy-mm-dd" }, { status: 400 });
-      const probe = new Date(`${requestedCycle}T00:00:00Z`);
-      if (isNaN(probe.getTime()) || probe.toISOString().slice(0, 10) !== requestedCycle)
-        return NextResponse.json({ error: "cycleAnchor is not a real date" }, { status: 400 });
-      cycleAnchor = requestedCycle;
-    }
+    if (requestedCycle) cycleAnchor = requestedCycle;
 
     const rawAmount = Number(formData.get("amountCents"));
     const amountCents =
@@ -294,8 +333,9 @@ export async function POST(req: NextRequest) {
     const invoiceType = adInvoiceType(retainerCents, feeCents);
 
     let recorded = true;
+    let recordId: string | null = null;
     try {
-      await createAdAccountInvoice({
+      const record = await createAdAccountInvoice({
         adAccountId,
         userId,
         brand,
@@ -310,9 +350,23 @@ export async function POST(req: NextRequest) {
         sentByAdminId: session.adminId,
         supersede,
       });
+      recordId = record.id;
     } catch (err) {
       console.error("[ad-account-invoice/send] invoice record failed:", err);
       recorded = false;
+    }
+
+    // The reviewed draft is done. Best-effort — the email already went out.
+    if (draftId) {
+      await markInvoiceDraftSent(draftId, {
+        reviewedBy: session.adminId,
+        reviewedByName: actor.admin.username,
+        sentInvoiceId: recordId,
+        amountCents,
+        invoiceNumber: safeNumber,
+        recipientEmail: email,
+        ccEmails,
+      }).catch((err) => console.error("[ad-account-invoice/send] draft stamp failed:", err));
     }
 
     return NextResponse.json({ success: true, saved: docSaved, recorded });

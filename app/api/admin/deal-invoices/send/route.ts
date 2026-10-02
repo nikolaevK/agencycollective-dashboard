@@ -5,10 +5,12 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findDealInvoiceMeta, updateDealInvoice } from "@/lib/dealInvoices";
 import { updateAdditionalInvoice } from "@/lib/dealAdditionalInvoices";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { EMAIL_RE } from "@/lib/invoice/email";
 import { findDealContractByDealId, updateDealContract } from "@/lib/dealContracts";
 import { findAdditionalContractsByDealId, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
 import { findContractTemplate, type ContractTemplateRecord } from "@/lib/contractTemplates";
 import { generateContractFromDeal, fetchDocusealTemplate } from "@/lib/dealContractGenerator";
+import { archiveSupersededSubmission } from "@/lib/docuseal/client";
 import { findDeal, updateDeal, type DealRecord } from "@/lib/deals";
 import type { DocuSealTemplate } from "@/lib/docuseal/schemas";
 
@@ -20,6 +22,8 @@ type SendTarget = {
   id: string;
   templateId: string;
   overrideId: number | null;
+  /** The submission a resend replaces — archived once the new one is saved. */
+  previousSubmissionId: number | null;
 };
 
 interface ContractContext {
@@ -110,6 +114,7 @@ async function sendContracts(
       } else {
         await updateAdditionalContract(t.id, changes);
       }
+      await archiveSupersededSubmission(t.previousSubmissionId, result.submissionId);
       return result;
     })
   );
@@ -184,7 +189,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "invoiceId, email, and pdf required" }, { status: 400 });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Shared address rule (no `<>`/spaces etc.) — this address also goes to DocuSeal.
+    const emailRegex = EMAIL_RE;
     if (!emailRegex.test(email) || email.length > 254) {
       return NextResponse.json({ error: "Invalid email" }, { status: 400 });
     }
@@ -235,6 +241,7 @@ export async function POST(req: NextRequest) {
         id: contract.id,
         templateId: contract.contractTemplateId,
         overrideId: contract.docusealTemplateOverrideId ?? null,
+        previousSubmissionId: contract.docusealSubmissionId ?? null,
       });
     }
     for (const ac of additionalContracts) {
@@ -244,6 +251,7 @@ export async function POST(req: NextRequest) {
           id: ac.id,
           templateId: ac.contractTemplateId,
           overrideId: ac.docusealTemplateOverrideId ?? null,
+          previousSubmissionId: ac.docusealSubmissionId ?? null,
         });
       }
     }
@@ -284,7 +292,10 @@ export async function POST(req: NextRequest) {
       if (seenCc.has(v)) continue;
       seenCc.add(v);
       ccEmails.push(v);
-      if (ccEmails.length >= 10) break;
+      // The closer is CC'd on top of the deal's up-to-10 additional CCs, so a
+      // deal invoice legitimately carries 11 (was 10 — the last one silently
+      // dropped).
+      if (ccEmails.length >= 11) break;
     }
 
     // Kick off the contract context prefetch now so it overlaps the SMTP

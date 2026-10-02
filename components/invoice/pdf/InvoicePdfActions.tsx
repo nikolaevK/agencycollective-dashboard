@@ -22,6 +22,7 @@ import type { EmailAccount } from "@/lib/invoice/emailService";
 import {
   invoiceDataSchema,
   saveInvoice,
+  getSavedInvoices,
   exportAsJson,
   exportAsCsv,
   exportAsXml,
@@ -30,14 +31,32 @@ import {
 import { InvoicePdfDocument } from "./InvoicePdfTemplate";
 import { AttachmentPicker, useEmailAttachments } from "../AttachmentPicker";
 import { cn } from "@/lib/utils";
+import { isValidEmail } from "@/lib/invoice/email";
 
 interface Props {
   data: InvoiceData;
   onNewInvoice: () => void;
   onOpenSaved: () => void;
+  /** In-page preview (the page's full-screen dialog). Falls back to a new tab. */
+  onPreview?: () => void;
 }
 
-export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
+const SECTION_LABELS: Record<string, string> = {
+  sender: "From",
+  receiver: "Bill to",
+  details: "Invoice",
+};
+
+/** "details.items.0.name: Item name is required" → "Line 1: Item name is required". */
+function friendlyIssue(path: (string | number)[], message: string): string {
+  if (path[0] === "details" && path[1] === "items" && typeof path[2] === "number") {
+    return `Line ${path[2] + 1}: ${message}`;
+  }
+  const section = SECTION_LABELS[String(path[0])];
+  return section ? `${section}: ${message}` : message;
+}
+
+export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }: Props) {
   const [generating, setGenerating] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -64,14 +83,15 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
   const selectedAccount = fromAccount || emailAccounts[0]?.id || "primary";
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<"success" | "error" | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [saveMsg, setSaveMsg] = useState("");
 
   const validate = (): boolean => {
     const result = invoiceDataSchema.safeParse(data);
     if (!result.success) {
-      const errors = result.error.issues.map(
-        (issue) => `${issue.path.join(".")}: ${issue.message}`
+      const errors = Array.from(
+        new Set(result.error.issues.map((issue) => friendlyIssue(issue.path, issue.message)))
       );
       setValidationErrors(errors);
       return false;
@@ -102,6 +122,10 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
   };
 
   const handlePreview = async () => {
+    if (onPreview) {
+      if (validate()) onPreview();
+      return;
+    }
     const blob = await generateBlob();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -109,19 +133,41 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
+  // Print from a hidden iframe: no popup to get blocked (window.open after an
+  // await often is), and the blob URL is released afterwards.
   const handlePrint = async () => {
     const blob = await generateBlob();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (win) {
-      win.addEventListener("load", () => win.print());
-    }
+    const frame = document.createElement("iframe");
+    frame.style.position = "fixed";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.src = url;
+    frame.onload = () => {
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+      } catch {
+        window.open(url, "_blank");
+      }
+    };
+    document.body.appendChild(frame);
+    setTimeout(() => {
+      frame.remove();
+      URL.revokeObjectURL(url);
+    }, 60_000);
   };
 
   const handleSave = () => {
-    saveInvoice(data);
-    setSaveMsg("Invoice saved!");
+    const entry = saveInvoice(data);
+    // saveInvoice swallows a full-storage error — confirm it actually landed.
+    const stored = getSavedInvoices().some((i) => i.id === entry.id);
+    setSaveMsg(stored ? "Invoice saved!" : "");
+    if (!stored) {
+      setValidationErrors(["Couldn't save — this browser's invoice storage is full. Delete some saved invoices (Load) and try again."]);
+    }
     setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -134,15 +180,25 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
   };
 
   const handleSendEmail = async () => {
-    if (!email.trim()) return;
-    const blob = await generateBlob();
-    if (!blob) return;
-
+    // Locked from the first click — the PDF render below takes a moment, and
+    // a second click used to start a second send.
+    if (sending || sendResult === "success") return;
+    if (!isValidEmail(email)) {
+      setSendResult("error");
+      setSendError("Enter a valid recipient email.");
+      return;
+    }
     setSending(true);
     setSendResult(null);
+    setSendError(null);
+    const blob = await generateBlob();
+    if (!blob) {
+      setSending(false);
+      return;
+    }
     try {
       const formData = new FormData();
-      formData.append("email", email);
+      formData.append("email", email.trim());
       formData.append(
         "pdf",
         new File([blob], `invoice-${data.details.invoiceNumber || "draft"}.pdf`, {
@@ -157,6 +213,10 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
 
       const res = await fetch("/api/invoice/send", { method: "POST", body: formData });
       setSendResult(res.ok ? "success" : "error");
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setSendError(typeof j.error === "string" ? j.error : null);
+      }
       if (res.ok) {
         setTimeout(() => {
           setEmailOpen(false);
@@ -315,8 +375,11 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">Send Invoice</span>
             <button
-              onClick={() => { setEmailOpen(false); setSendResult(null); attach.clear(); }}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              type="button"
+              onClick={() => { setEmailOpen(false); setSendResult(null); setSendError(null); attach.clear(); }}
+              disabled={sending}
+              aria-label="Close send panel"
+              className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -339,8 +402,12 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
           )}
           <input
             type="email"
+            aria-label="Recipient email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (sendError) setSendError(null);
+            }}
             placeholder="recipient@example.com"
             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
           />
@@ -354,15 +421,16 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved }: Props) {
           )}
           {sendResult === "error" && (
             <p className="text-xs text-destructive">
-              Failed to send. Check server SMTP configuration.
+              {sendError ?? "Failed to send. Check server SMTP configuration."}
             </p>
           )}
           <button
+            type="button"
             onClick={handleSendEmail}
-            disabled={sending || !email.trim()}
+            disabled={sending || generating || sendResult === "success" || !email.trim()}
             className={cn(
               "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all ac-gradient",
-              (sending || !email.trim()) && "opacity-60 cursor-not-allowed"
+              (sending || generating || sendResult === "success" || !email.trim()) && "opacity-60 cursor-not-allowed"
             )}
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}

@@ -19,6 +19,18 @@ export function formatCents(cents: number | null | undefined): string {
   }).format((Number.isFinite(n) ? n : 0) / 100);
 }
 
+/** Integer cents → "$1,234.56" (always 2 decimals, NaN-safe) — invoice amounts,
+ *  so lists match the PDFs to the cent. */
+export function formatCentsExact(cents: number | null | undefined): string {
+  const n = Number(cents);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format((Number.isFinite(n) ? n : 0) / 100);
+}
+
 /** Dollars → "$1,234.56" under $1k, whole dollars above (legacy behavior). */
 export function formatCurrency(value: number, currency = "USD"): string {
   const decimals = Math.abs(value) >= 1_000 ? 0 : 2;

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RotateCcw } from "lucide-react";
+import { Maximize2, RotateCcw } from "lucide-react";
 import type {
   InvoiceData,
   InvoiceItem,
@@ -31,11 +31,12 @@ import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import { InvoiceSenderForm } from "./InvoiceSenderForm";
 import { InvoiceReceiverForm } from "./InvoiceReceiverForm";
 import { InvoiceDetailsForm } from "./InvoiceDetailsForm";
-import { InvoiceItemsTable } from "./InvoiceItemsTable";
+import { LineItemsEditor } from "./LineItemsEditor";
 import { InvoiceChargesForm } from "./InvoiceChargesForm";
 import { InvoiceFooterForm } from "./InvoiceFooterForm";
 import { InvoicePdfActions } from "./pdf/InvoicePdfActions";
 import { InvoiceLivePreview } from "./InvoiceLivePreview";
+import { InvoicePreviewDialog } from "./InvoicePreviewDialog";
 import { InvoiceSavedList } from "./InvoiceSavedList";
 
 export function InvoicePage() {
@@ -43,6 +44,8 @@ export function InvoicePage() {
   const [loaded, setLoaded] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [previewMode, setPreviewMode] = useState<null | "live" | "pdf">(null);
+  const [itemsNotice, setItemsNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -157,47 +160,6 @@ export function InvoicePage() {
     setData((prev) => ({ ...prev, details: { ...prev.details, items } }));
   }, []);
 
-  const addItem = useCallback(() => {
-    setData((prev) => ({
-      ...prev,
-      details: { ...prev.details, items: [...prev.details.items, createEmptyItem()] },
-    }));
-  }, []);
-
-  const removeItem = useCallback((id: string) => {
-    setData((prev) => ({
-      ...prev,
-      details: { ...prev.details, items: prev.details.items.filter((item) => item.id !== id) },
-    }));
-  }, []);
-
-  const updateItem = useCallback(
-    (id: string, field: keyof InvoiceItem, value: string | number) => {
-      setData((prev) => ({
-        ...prev,
-        details: {
-          ...prev.details,
-          items: prev.details.items.map((item) => {
-            if (item.id !== id) return item;
-            const updated = { ...item, [field]: value };
-            if (field === "quantity" || field === "unitPrice") {
-              updated.total = Math.round(updated.quantity * updated.unitPrice * 100) / 100;
-            }
-            return updated;
-          }),
-        },
-      }));
-    },
-    []
-  );
-
-  const addPresetItem = useCallback((item: InvoiceItem) => {
-    setData((prev) => ({
-      ...prev,
-      details: { ...prev.details, items: [...prev.details.items, item] },
-    }));
-  }, []);
-
   const updateDiscount = useCallback((discount: DiscountDetails | null) => {
     setData((prev) => ({ ...prev, details: { ...prev.details, discountDetails: discount } }));
   }, []);
@@ -295,6 +257,16 @@ export function InvoicePage() {
 
   return (
     <>
+      {/* Invoice-wide settings (presets, agency defaults, saved profiles).
+          These used to sit in the sticky preview column — expanding one
+          pushed the live preview below the fold where it couldn't be
+          scrolled to. */}
+      <div className="mb-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+        <InvoiceServiceManager />
+        <InvoiceAgencySettings />
+        <InvoiceAgencyProfiles onApply={applyProfile} />
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
         {/* Left column: Form */}
         <div className="xl:col-span-3 space-y-6">
@@ -314,15 +286,31 @@ export function InvoicePage() {
             <InvoiceReceiverForm receiver={data.receiver} onChange={updateReceiver} />
           </div>
 
-          <InvoiceItemsTable
-            items={data.details.items}
-            currency={data.details.currency}
-            onUpdateItem={updateItem}
-            onAddItem={addItem}
-            onAddPreset={addPresetItem}
-            onRemoveItem={removeItem}
-            onUpdateItems={updateItems}
-          />
+          <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+                Line Items
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                {data.details.items.length} line{data.details.items.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <LineItemsEditor
+              items={data.details.items}
+              currency={data.details.currency}
+              onChange={updateItems}
+              allowSavePreset
+              onNotice={setItemsNotice}
+            />
+            {itemsNotice && (
+              <p
+                role="status"
+                className={itemsNotice.type === "success" ? "text-xs text-emerald-600" : "text-xs text-destructive"}
+              >
+                {itemsNotice.text}
+              </p>
+            )}
+          </div>
 
           <InvoiceChargesForm
             discount={data.details.discountDetails}
@@ -357,48 +345,66 @@ export function InvoicePage() {
           />
         </div>
 
-        {/* Right column: Preview + Actions */}
+        {/* Right column: Actions + Preview. Sticky and exactly one viewport
+            tall on desktop — the preview scrolls inside, so a long invoice
+            is never cut off below the fold. A definite height (not just
+            max-h) so the actions block's 55% cap resolves. */}
         <div className="xl:col-span-2">
-          <div className="sticky top-6 space-y-4">
-            <InvoicePdfActions
-              data={data}
-              onNewInvoice={handleNewInvoice}
-              onOpenSaved={() => setSavedOpen(true)}
-            />
+          <div className="space-y-4 xl:sticky xl:top-6 xl:flex xl:h-[calc(100vh-3rem)] xl:flex-col xl:space-y-0 xl:gap-4">
+            <div className="shrink-0 space-y-3 xl:max-h-[55%] xl:overflow-y-auto">
+              <InvoicePdfActions
+                data={data}
+                onNewInvoice={handleNewInvoice}
+                onOpenSaved={() => setSavedOpen(true)}
+                onPreview={() => setPreviewMode("pdf")}
+              />
 
-            {confirmReset && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                <p className="text-xs text-amber-600 font-medium">
-                  Click &quot;New&quot; again to confirm. Unsaved changes will be lost.
-                </p>
-              </div>
-            )}
+              {confirmReset && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                  <p className="text-xs text-amber-600 font-medium">
+                    Click &quot;New&quot; again to confirm. Unsaved changes will be lost.
+                  </p>
+                </div>
+              )}
 
-            <button
-              onClick={handleNewInvoice}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            >
-              <RotateCcw className="h-4 w-4" />
-              {confirmReset ? "Confirm Reset" : "Reset Invoice"}
-            </button>
-
-            {/* Service Manager */}
-            <InvoiceServiceManager />
-            <InvoiceAgencySettings />
-            <InvoiceAgencyProfiles onApply={applyProfile} />
+              <button
+                type="button"
+                onClick={handleNewInvoice}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              >
+                <RotateCcw className="h-4 w-4" />
+                {confirmReset ? "Confirm Reset" : "Reset Invoice"}
+              </button>
+            </div>
 
             {/* Live Preview */}
-            <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-              <div className="border-b border-border/50 px-4 py-2">
+            <div className="flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-border/50 dark:border-white/[0.06] bg-card xl:min-h-0 xl:flex-1">
+              <div className="flex shrink-0 items-center justify-between border-b border-border/50 px-4 py-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Live Preview
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode("live")}
+                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <Maximize2 className="h-3 w-3" />
+                  Full screen
+                </button>
               </div>
-              <InvoiceLivePreview data={data} />
+              <div className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-3">
+                <div className="overflow-hidden rounded-sm shadow-md ring-1 ring-black/5">
+                  <InvoiceLivePreview data={data} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {previewMode && (
+        <InvoicePreviewDialog data={data} initialMode={previewMode} onClose={() => setPreviewMode(null)} />
+      )}
 
       {/* Saved invoices modal */}
       <InvoiceSavedList

@@ -218,70 +218,144 @@ export const INITIAL_INVOICE_DATA: InvoiceData = {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+/** Non-finite (NaN from imported JSON / legacy drafts) counts as 0. */
+function finite(n: number): number {
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Round to cents (same formula every item.total writer uses); never -0. */
+function roundCents(n: number): number {
+  return Math.round(finite(n) * 100) / 100 || 0;
+}
+
+/**
+ * A line's amount as printed AND summed: quantity × unit price, rounded to
+ * cents. The subtotal adds these rounded amounts, so the printed lines always
+ * add up to the printed subtotal.
+ */
+export function lineAmountOf(item: Pick<InvoiceItem, "quantity" | "unitPrice">): number {
+  return roundCents(finite(item.quantity) * finite(item.unitPrice));
+}
+
 /**
  * Effective discount value for a given subtotal — the ONE place the
  * $/percentage formula lives (totals engine, PDF, live preview, drawer
  * breakdown all resolve through it, so the printed discount line always
- * matches the total). Clamped to [0, subTotal]: a negative amount can never
- * inflate the total, and a discount larger than the subtotal shows as exactly
- * the subtotal, keeping "Subtotal − Discount = 0" arithmetically consistent
- * on the client-facing invoice.
+ * matches the total). Clamped to [0, subTotal] (a percentage to 0–100): a
+ * negative amount can never inflate the total, and a discount larger than the
+ * subtotal shows as exactly the subtotal, keeping "Subtotal − Discount = 0"
+ * arithmetically consistent on the client-facing invoice. Rounded to cents —
+ * the printed value is the value subtracted.
  */
 export function discountValueOf(
   subTotal: number,
   discount: { amount: number; amountType: "amount" | "percentage" } | null
 ): number {
   if (!discount) return 0;
+  const base = finite(subTotal);
+  const amount = finite(discount.amount);
   const raw =
     discount.amountType === "percentage"
-      ? subTotal * (discount.amount / 100)
-      : discount.amount;
-  return Math.min(Math.max(0, raw), Math.max(0, subTotal));
+      ? base * (Math.min(Math.max(0, amount), 100) / 100)
+      : amount;
+  return roundCents(Math.min(Math.max(0, raw), Math.max(0, base)));
 }
 
+/**
+ * Effective tax value — same single-source idea as discountValueOf. A
+ * percentage applies to the PRE-discount subtotal (the long-standing base).
+ * Clamped to >= 0: every renderer hides the line unless it's > 0, so a
+ * negative tax would silently lower the total and the printed lines wouldn't
+ * add up. Rounded to cents like the discount.
+ */
+export function taxValueOf(
+  subTotal: number,
+  tax: { amount: number; amountType: "amount" | "percentage" } | null
+): number {
+  if (!tax) return 0;
+  const amount = finite(tax.amount);
+  const raw =
+    tax.amountType === "percentage" ? finite(subTotal) * (amount / 100) : amount;
+  return roundCents(Math.max(0, raw));
+}
+
+/** Effective shipping value — same base, clamp and rounding as taxValueOf. */
+export function shippingValueOf(
+  subTotal: number,
+  shipping: { cost: number; costType: "amount" | "percentage" } | null
+): number {
+  if (!shipping) return 0;
+  const cost = finite(shipping.cost);
+  const raw =
+    shipping.costType === "percentage" ? finite(subTotal) * (cost / 100) : cost;
+  return roundCents(Math.max(0, raw));
+}
+
+/**
+ * THE totals engine. Every part is rounded to cents before it's combined
+ * (lines → subtotal, each charge on that subtotal), so the total is exactly
+ * the sum of the printed parts.
+ */
 export function calculateTotals(
   items: InvoiceItem[],
   discount: { amount: number; amountType: "amount" | "percentage" } | null,
   tax: { amount: number; amountType: "amount" | "percentage" } | null,
   shipping: { cost: number; costType: "amount" | "percentage" } | null
 ): { subTotal: number; totalAmount: number } {
-  const subTotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  let total = subTotal;
-
-  total -= discountValueOf(subTotal, discount);
-
-  if (tax) {
-    const taxValue =
-      tax.amountType === "percentage"
-        ? subTotal * (tax.amount / 100)
-        : tax.amount;
-    total += taxValue;
-  }
-
-  if (shipping) {
-    const shippingValue =
-      shipping.costType === "percentage"
-        ? subTotal * (shipping.cost / 100)
-        : shipping.cost;
-    total += shippingValue;
-  }
+  const subTotal = roundCents(items.reduce((sum, item) => sum + lineAmountOf(item), 0));
+  const total =
+    subTotal -
+    discountValueOf(subTotal, discount) +
+    taxValueOf(subTotal, tax) +
+    shippingValueOf(subTotal, shipping);
 
   return {
-    subTotal: Math.round(subTotal * 100) / 100,
-    totalAmount: Math.max(0, Math.round(total * 100) / 100),
+    subTotal,
+    totalAmount: Math.max(0, roundCents(total)),
   };
 }
 
+/**
+ * Parse typed or pasted money / quantity text ("$1,500.00", "1,500", "12,5",
+ * an in-progress "1.") into a number, or null when it isn't a non-negative
+ * number in progress (the caller rejects the keystroke). `$` and spaces are
+ * ignored. With a "." present every comma is a thousands separator; without
+ * one, a comma followed by exactly three digits is grouping and a final comma
+ * with 0–2 digits after it is the decimal point. More than `maxDecimals`
+ * fraction digits → null.
+ */
+export function parseDecimalInput(raw: string, maxDecimals = 2): number | null {
+  const s = raw.replace(/[$\s]/g, "");
+  if (!/^[\d.,]*$/.test(s)) return null;
+  let int: string;
+  let frac = "";
+  const dot = s.indexOf(".");
+  if (dot >= 0) {
+    frac = s.slice(dot + 1);
+    if (/[.,]/.test(frac)) return null;
+    int = s.slice(0, dot).replace(/,/g, "");
+  } else {
+    const parts = s.split(",");
+    if (parts.length > 1 && parts[parts.length - 1].length < 3) frac = parts.pop()!;
+    if (parts.slice(1).some((p) => p.length !== 3)) return null;
+    int = parts.join("");
+  }
+  if (frac.length > maxDecimals) return null;
+  const n = parseFloat(`${int || "0"}.${frac || "0"}`);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function formatCurrencyValue(amount: number, currencyCode: string): string {
+  const value = finite(amount);
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: currencyCode,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(value);
   } catch {
-    return `${currencyCode} ${amount.toFixed(2)}`;
+    return `${currencyCode} ${value.toFixed(2)}`;
   }
 }
 
@@ -393,7 +467,7 @@ export function exportAsCsv(data: InvoiceData): Blob {
       item.description,
       String(item.quantity),
       String(item.unitPrice),
-      String(item.quantity * item.unitPrice),
+      String(lineAmountOf(item)),
     ]);
   }
   rows.push([]);
@@ -455,7 +529,7 @@ export function exportAsXml(data: InvoiceData): Blob {
     xml += `      <description>${esc(item.description)}</description>\n`;
     xml += `      <quantity>${item.quantity}</quantity>\n`;
     xml += `      <unitPrice>${item.unitPrice}</unitPrice>\n`;
-    xml += `      <total>${item.quantity * item.unitPrice}</total>\n`;
+    xml += `      <total>${lineAmountOf(item)}</total>\n`;
     xml += `    </item>\n`;
   }
   xml += `  </items>\n`;

@@ -186,12 +186,12 @@ export async function findDeal(id: string): Promise<DealRecord | null> {
   return result.rows[0] ? rowToDeal(result.rows[0]) : null;
 }
 
-export async function insertDeal(deal: DealRecord): Promise<void> {
-  await ensureMigrated();
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO deals (id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails, setter_tier, no_retainer)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+/** Column list + values for inserting a deal — shared by insertDeal and the
+ *  draft approval's atomic claim-and-insert batch (lib/dealDrafts.ts). */
+export function dealInsertParts(deal: DealRecord): { columns: string; args: (string | number | null)[] } {
+  return {
+    columns:
+      "id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails, setter_tier, no_retainer, setter_override",
     args: [
       deal.id,
       deal.closerId,
@@ -216,7 +216,20 @@ export async function insertDeal(deal: DealRecord): Promise<void> {
       deal.additionalCcEmails && deal.additionalCcEmails.length > 0 ? JSON.stringify(deal.additionalCcEmails) : null,
       deal.setterTier,
       deal.noRetainer ? 1 : 0,
+      // A deliberately chosen setter is pinned so a later calendar claim on
+      // the event (reassignDealsForEvent) doesn't overwrite it.
+      deal.setterOverride ? 1 : 0,
     ],
+  };
+}
+
+export async function insertDeal(deal: DealRecord): Promise<void> {
+  await ensureMigrated();
+  const db = getDb();
+  const { columns, args } = dealInsertParts(deal);
+  await db.execute({
+    sql: `INSERT INTO deals (${columns}) VALUES (${args.map(() => "?").join(", ")})`,
+    args,
   });
 }
 

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # Claude Code local tooling
 .claude/
+
+# local scratch archives (not source)
+/_to_delete/

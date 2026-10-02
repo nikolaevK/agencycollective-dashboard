@@ -4,7 +4,7 @@ import { Lightbulb, Target } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 
 interface Props {
-  quota: number; // cents
+  quota: number | null; // cents; null while loading
   totalRevenue: number; // cents
   recentDeals: Array<{
     id: string;
@@ -16,7 +16,8 @@ interface Props {
 }
 
 export function DealSidebar({ quota, totalRevenue, recentDeals }: Props) {
-  const progress = quota > 0 ? Math.min((totalRevenue / quota) * 100, 100) : 0;
+  const hasQuota = quota !== null && quota > 0;
+  const progress = hasQuota ? Math.min((totalRevenue / quota) * 100, 100) : 0;
   const last3 = recentDeals.slice(0, 3);
 
   return (
@@ -41,7 +42,11 @@ export function DealSidebar({ quota, totalRevenue, recentDeals }: Props) {
         </div>
         <div className="mb-2 flex items-baseline justify-between">
           <span className="text-2xl font-bold text-foreground">{formatCents(totalRevenue)}</span>
-          <span className="text-xs text-muted-foreground">of {formatCents(quota)}</span>
+          {quota !== null && (
+            <span className="text-xs text-muted-foreground">
+              {hasQuota ? `of ${formatCents(quota)}` : "No quota set"}
+            </span>
+          )}
         </div>
         <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
           <div
@@ -49,9 +54,11 @@ export function DealSidebar({ quota, totalRevenue, recentDeals }: Props) {
             style={{ width: `${progress}%` }}
           />
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          {progress.toFixed(0)}% of monthly quota reached
-        </p>
+        {hasQuota && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {progress.toFixed(0)}% of monthly quota reached
+          </p>
+        )}
       </div>
 
       {/* Recent closures */}

@@ -94,6 +94,22 @@ export async function updateContractTemplate(
   await db.execute({ sql: `UPDATE contract_templates SET ${fields.join(", ")} WHERE id = ?`, args });
 }
 
+/**
+ * Unsigned contracts (primary + additional) still pointing at a template.
+ * Deleting the template strands them: they still look sendable, but the send
+ * fails with "Contract template not found" until another template is picked.
+ */
+export async function countUnsignedContractsUsingTemplate(id: string): Promise<number> {
+  await ensureMigrated();
+  const res = await getDb().execute({
+    sql: `SELECT
+            (SELECT COUNT(*) FROM deal_contracts WHERE contract_template_id = ? AND status != 'signed') +
+            (SELECT COUNT(*) FROM deal_additional_contracts WHERE contract_template_id = ? AND status != 'signed') AS n`,
+    args: [id, id],
+  });
+  return Number(res.rows[0]?.n ?? 0);
+}
+
 export async function deleteContractTemplate(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();

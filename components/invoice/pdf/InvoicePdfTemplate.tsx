@@ -9,26 +9,40 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 import type { InvoiceData } from "@/types/invoice";
-import { discountValueOf } from "@/lib/invoice/validation";
+import {
+  calculateTotals,
+  discountValueOf,
+  lineAmountOf,
+  shippingValueOf,
+  taxValueOf,
+} from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
 
 function fmt(amount: number, currency: string): string {
+  const value = Number.isFinite(amount) ? amount : 0; // legacy/imported data — never print "$NaN"
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(value);
   } catch {
-    return `${currency} ${amount.toFixed(2)}`;
+    return `${currency} ${value.toFixed(2)}`;
   }
+}
+
+// Quantity without trailing zeros ("3", "1.5").
+function fmtQty(qty: number): string {
+  return qty.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 function formatDate(iso: string): string {
   if (!iso) return "";
+  // Accept full ISO timestamps too — appending a time to one is "Invalid Date".
+  const ymd = /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : iso;
   try {
-    return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    return new Date(ymd + "T00:00:00").toLocaleDateString("en-US", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -48,12 +62,19 @@ const LIGHT_BG = "#EBF4FF";
 // sentences can wrap into many visual lines.
 //  - DESC_CHARS_PER_LINE: conservative (low) chars-per-line so we OVER-estimate
 //    height — the safe direction (route a borderline block to split, not clip).
-//    The 35% column is ~180pt wide; Helvetica 8pt averages ~42 chars/line.
-//  - BLOCK_MAX_VISUAL_LINES: max visual lines kept together. ~74 lines fit a
-//    full A4 page at 8pt/1.4; 55 leaves margin so a kept-together block always
-//    fits a fresh page and react-pdf relocates it whole instead of clipping.
+//    The 35% column is ~180pt wide (32%/~165pt with the Qty column); Helvetica
+//    8pt averages ~42 (~38) chars/line, so 34 stays conservative for both.
+//  - BLOCK_MAX_VISUAL_LINES: max visual lines kept together. ~69 lines fit the
+//    A4 content area (842pt minus the page's 70pt vertical padding) at 8pt/1.4;
+//    55 leaves margin so a kept-together block always fits a fresh page and
+//    react-pdf relocates it whole instead of clipping.
 const DESC_CHARS_PER_LINE = 34;
 const BLOCK_MAX_VISUAL_LINES = 55;
+// Space a section label (Payment Terms, Additional Notes, ...) needs below it
+// to stay on a page. react-pdf never splits a Text under orphans+widows (2+2)
+// lines, so a 2-3 line body moves whole: 48pt covers a 3-line body (3 x 12pt
+// + bottom padding), and the first 2 lines of a longer one.
+const LABEL_PRESENCE_AHEAD = 48;
 
 function visualLineCount(line: string): number {
   return Math.max(1, Math.ceil(line.length / DESC_CHARS_PER_LINE));
@@ -131,9 +152,12 @@ function buildItemRows(description: string): { lines: string[]; wrap: boolean; g
 }
 
 const s = StyleSheet.create({
-  page: { padding: 0, fontFamily: "Helvetica", fontSize: 9, color: "#1a1a1a" },
-  // Header
-  header: { padding: "30 40 20 40", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  // Vertical padding only: continuation pages get a top margin and rows stop
+  // short of the bottom edge, while the bill-to band stays full-bleed.
+  page: { paddingTop: 30, paddingBottom: 40, fontFamily: "Helvetica", fontSize: 9, color: "#1a1a1a" },
+  pageNumber: { position: "absolute", bottom: 16, left: 40, right: 40, textAlign: "right", fontSize: 7, color: "#999" },
+  // Header (top padding comes from the page)
+  header: { padding: "0 40 20 40", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   headerLeft: { flex: 1 },
   invoiceTitle: { fontSize: 18, fontFamily: "Helvetica-Bold", color: ACCENT, marginBottom: 4 },
   companyName: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#333" },
@@ -162,12 +186,17 @@ const s = StyleSheet.create({
   colDesc: { width: "35%" },
   colRate: { width: "15%", textAlign: "right" },
   colAmount: { width: "15%", textAlign: "right" },
+  // 6-column variant, only when some quantity isn't 1 (Product/Description
+  // give up the Qty column's width; Rate/Amount stay put).
+  colProductQty: { width: "25%" },
+  colDescQty: { width: "32%" },
+  colQty: { width: "8%", textAlign: "right" },
   // An item is a group of block-rows (one per description block). The group
   // carries the bottom border + vertical padding and wraps BETWEEN block-rows
-  // across a page. Each block-row is a full 5-column flex row: the empty leading
+  // across a page. Each block-row is a full 5/6-column flex row: the empty leading
   // cells on continuation blocks preserve the description's column offset when a
   // block lands on a later page (a single flex row drops the text to the left
-  // margin instead). The #, name, rate & amount render only on the first
+  // margin instead). The #, name, qty, rate & amount render only on the first
   // block-row, where the name is a flex child so the row grows to fit a long name.
   itemGroup: { paddingVertical: 5, borderBottomWidth: 0.5, borderBottomColor: "#eee" },
   blockRow: { flexDirection: "row", alignItems: "flex-start" },
@@ -196,10 +225,14 @@ const s = StyleSheet.create({
   customField: { flexDirection: "row", gap: 4, marginTop: 1 },
   customKey: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#555" },
   customValue: { fontSize: 8, color: "#555" },
-  // Footer section labels
-  footerSection: { padding: "6 40" },
-  footerLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: ACCENT, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 },
-  footerText: { fontSize: 8, color: "#555", lineHeight: 1.5 },
+  // Footer section labels. Label + text are PAGE-level siblings (each carrying
+  // the old section padding) rather than wrapped in a View: react-pdf ignores
+  // minPresenceAhead on the first child of a container, so only this way can
+  // the label refuse to sit orphaned at the bottom of a page. Labels also get
+  // wrap={false}: a one-line Text straddling the page edge is otherwise "split"
+  // with its line kept on the current page, skipping the presence check.
+  footerLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: ACCENT, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3, padding: "6 40 0 40" },
+  footerText: { fontSize: 8, color: "#555", lineHeight: 1.5, padding: "0 40 6 40" },
 });
 
 interface Props {
@@ -210,17 +243,22 @@ export function InvoicePdfDocument({ data }: Props) {
   const { sender, receiver, details } = data;
   const themeColor = details.themeColor || ACCENT;
 
-  const discountAmount = discountValueOf(details.subTotal, details.discountDetails);
-  const taxAmount = details.taxDetails
-    ? details.taxDetails.amountType === "percentage"
-      ? details.subTotal * (details.taxDetails.amount / 100)
-      : details.taxDetails.amount
-    : 0;
-  const shippingAmount = details.shippingDetails
-    ? details.shippingDetails.costType === "percentage"
-      ? details.subTotal * (details.shippingDetails.cost / 100)
-      : details.shippingDetails.cost
-    : 0;
+  // Printed Subtotal/Total come from the items + charges, never the stored
+  // subTotal/totalAmount, so the lines always add up even if an editor (or an
+  // API caller) saved a stale total.
+  const { subTotal, totalAmount } = calculateTotals(
+    details.items,
+    details.discountDetails,
+    details.taxDetails,
+    details.shippingDetails
+  );
+  const discountAmount = discountValueOf(subTotal, details.discountDetails);
+  const taxAmount = taxValueOf(subTotal, details.taxDetails);
+  const shippingAmount = shippingValueOf(subTotal, details.shippingDetails);
+  // Quantity is only printed when it says something (any item qty !== 1).
+  const showQty = details.items.some((item) => item.quantity !== 1);
+  const colProduct = showQty ? s.colProductQty : s.colProduct;
+  const colDesc = showQty ? s.colDescQty : s.colDesc;
 
   const senderLines = [sender.address, [sender.city, sender.zipCode].filter(Boolean).join(", "), sender.country].filter(Boolean);
 
@@ -239,7 +277,7 @@ export function InvoicePdfDocument({ data }: Props) {
               {sender.email ? <Text style={s.contactText}>{sender.email}</Text> : null}
               {sender.phone ? <Text style={s.contactText}>{sender.phone}</Text> : null}
             </View>
-            {sender.customInputs.map((ci) => (
+            {(sender.customInputs ?? []).map((ci) => (
               <View key={ci.id} style={s.customField}>
                 <Text style={s.customKey}>{ci.key}:</Text>
                 <Text style={s.customValue}>{ci.value}</Text>
@@ -261,7 +299,7 @@ export function InvoicePdfDocument({ data }: Props) {
               )}
               {receiver.email ? <Text style={{ ...s.contactText, marginTop: 2 }}>{receiver.email}</Text> : null}
               {receiver.phone ? <Text style={s.contactText}>{receiver.phone}</Text> : null}
-              {receiver.customInputs.map((ci) => (
+              {(receiver.customInputs ?? []).map((ci) => (
                 <View key={ci.id} style={s.customField}>
                   <Text style={s.customKey}>{ci.key}:</Text>
                   <Text style={s.customValue}>{ci.value}</Text>
@@ -272,7 +310,11 @@ export function InvoicePdfDocument({ data }: Props) {
         </View>
 
         {/* ── Invoice Details ── */}
-        <View style={s.detailsSection}>
+        {/* minPresenceAhead lives here, not on the table header: react-pdf
+            ignores it on the first child of a container (the header inside
+            tableSection). Requiring the header (~20pt) + ~40pt of rows below
+            this block keeps the header from being orphaned at a page bottom. */}
+        <View style={s.detailsSection} minPresenceAhead={60}>
           <Text style={{ ...s.detailsTitle, color: themeColor }}>Invoice details</Text>
           {details.invoiceNumber ? <Text style={s.detailLine}><Text style={{ ...s.detailLabel, color: themeColor }}>Invoice no.: </Text>{details.invoiceNumber}</Text> : null}
           {details.terms ? <Text style={s.detailLine}><Text style={{ ...s.detailLabel, color: themeColor }}>Terms: </Text>{details.terms}</Text> : null}
@@ -284,8 +326,9 @@ export function InvoicePdfDocument({ data }: Props) {
         <View style={s.tableSection}>
           <View style={s.tableHeader}>
             <Text style={{ ...s.tableHeaderText, ...s.colNum }}>#</Text>
-            <Text style={{ ...s.tableHeaderText, ...s.colProduct }}>Product or service</Text>
-            <Text style={{ ...s.tableHeaderText, ...s.colDesc }}>Description</Text>
+            <Text style={{ ...s.tableHeaderText, ...colProduct }}>Product or service</Text>
+            <Text style={{ ...s.tableHeaderText, ...colDesc }}>Description</Text>
+            {showQty ? <Text style={{ ...s.tableHeaderText, ...s.colQty }}>Qty</Text> : null}
             <Text style={{ ...s.tableHeaderText, ...s.colRate }}>Rate</Text>
             <Text style={{ ...s.tableHeaderText, ...s.colAmount }}>Amount</Text>
           </View>
@@ -296,7 +339,7 @@ export function InvoicePdfDocument({ data }: Props) {
                 // so a page break lands BETWEEN rows, never mid-list. A row only
                 // wraps when it's a single line taller than a page, so it splits
                 // instead of being clipped — no data loss either way. The
-                // #/name/rate/amount render on the first row only; empty leading
+                // #/name/qty/rate/amount render on the first row only; empty leading
                 // cells on later rows preserve the description's column offset.
                 <View
                   key={ri}
@@ -304,32 +347,33 @@ export function InvoicePdfDocument({ data }: Props) {
                   wrap={row.wrap}
                 >
                   <Text style={{ ...s.cellText, ...s.colNum }}>{ri === 0 ? `${idx + 1}.` : ""}</Text>
-                  <Text style={{ ...s.cellBold, ...s.colProduct }}>{ri === 0 ? item.name : ""}</Text>
-                  <View style={s.colDesc}>
+                  <Text style={{ ...s.cellBold, ...colProduct }}>{ri === 0 ? item.name : ""}</Text>
+                  <View style={colDesc}>
                     {row.lines.map((line, li) => (
                       <Text key={li} style={s.cellDesc}>{line}</Text>
                     ))}
                   </View>
+                  {showQty ? <Text style={{ ...s.cellText, ...s.colQty }}>{ri === 0 ? fmtQty(item.quantity) : ""}</Text> : null}
                   <Text style={{ ...s.cellText, ...s.colRate }}>{ri === 0 ? fmt(item.unitPrice, details.currency) : ""}</Text>
-                  <Text style={{ ...s.cellBold, ...s.colAmount }}>{ri === 0 ? fmt(item.quantity * item.unitPrice, details.currency) : ""}</Text>
+                  <Text style={{ ...s.cellBold, ...s.colAmount }}>{ri === 0 ? fmt(lineAmountOf(item), details.currency) : ""}</Text>
                 </View>
               ))}
             </View>
           ))}
         </View>
 
-        {/* ── Totals ── */}
-        <View style={s.totalSection}>
+        {/* ── Totals ── (kept together so Subtotal/Total never split across pages) */}
+        <View style={s.totalSection} wrap={false}>
           <View>
             {(details.discountDetails || details.taxDetails || details.shippingDetails) && (
               <>
                 <View style={s.chargeRow}>
                   <Text style={s.chargeLabel}>Subtotal</Text>
-                  <Text style={s.chargeValue}>{fmt(details.subTotal, details.currency)}</Text>
+                  <Text style={s.chargeValue}>{fmt(subTotal, details.currency)}</Text>
                 </View>
                 {details.discountDetails && discountAmount > 0 && (
                   <View style={s.chargeRow}>
-                    <Text style={s.chargeLabel}>Discount{details.discountDetails.amountType === "percentage" ? ` (${details.discountDetails.amount}%)` : ""}</Text>
+                    <Text style={s.chargeLabel}>Discount{details.discountDetails.amountType === "percentage" ? ` (${Math.min(100, details.discountDetails.amount)}%)` : ""}</Text>
                     <Text style={{ ...s.chargeValue, color: "#dc2626" }}>-{fmt(discountAmount, details.currency)}</Text>
                   </View>
                 )}
@@ -349,10 +393,10 @@ export function InvoicePdfDocument({ data }: Props) {
             )}
             <View style={{ ...s.totalRow, borderTopWidth: 1, borderTopColor: "#ccc", paddingTop: 6, marginTop: 4 }}>
               <Text style={s.totalLabel}>Total</Text>
-              <Text style={s.totalValue}>{fmt(details.totalAmount, details.currency)}</Text>
+              <Text style={s.totalValue}>{fmt(totalAmount, details.currency)}</Text>
             </View>
-            {details.totalInWords && details.totalAmount > 0 && (
-              <Text style={s.totalInWords}>{numberToWords(details.totalAmount, details.currency)}</Text>
+            {details.totalInWords && totalAmount > 0 && (
+              <Text style={s.totalInWords}>{numberToWords(totalAmount, details.currency)}</Text>
             )}
           </View>
         </View>
@@ -387,32 +431,34 @@ export function InvoicePdfDocument({ data }: Props) {
         )}
 
         {/* ── Note to customer (legacy / general) ── */}
+        {/* Title + text are page-level siblings (see footerLabel) so the title
+            can't be orphaned from its text. */}
         {details.noteToCustomer ? (
-          <View style={s.noteSection}>
-            <Text style={{ ...s.noteSectionTitle, color: themeColor }}>Note to customer</Text>
-            <Text style={s.noteText}>{details.noteToCustomer}</Text>
-          </View>
+          <>
+            <Text style={{ ...s.noteSectionTitle, color: themeColor, padding: "16 40 0 40" }} wrap={false} minPresenceAhead={LABEL_PRESENCE_AHEAD}>Note to customer</Text>
+            <Text style={{ ...s.noteText, padding: "0 40 10 40" }}>{details.noteToCustomer}</Text>
+          </>
         ) : null}
 
         {/* ── Payment terms ── */}
         {details.paymentTerms ? (
-          <View style={s.footerSection}>
-            <Text style={{ ...s.footerLabel, color: themeColor }}>Payment Terms</Text>
+          <>
+            <Text style={{ ...s.footerLabel, color: themeColor }} wrap={false} minPresenceAhead={LABEL_PRESENCE_AHEAD}>Payment Terms</Text>
             <Text style={s.footerText}>{details.paymentTerms}</Text>
-          </View>
+          </>
         ) : null}
 
         {/* ── Additional notes ── */}
         {details.additionalNotes ? (
-          <View style={s.footerSection}>
-            <Text style={{ ...s.footerLabel, color: themeColor }}>Additional Notes</Text>
+          <>
+            <Text style={{ ...s.footerLabel, color: themeColor }} wrap={false} minPresenceAhead={LABEL_PRESENCE_AHEAD}>Additional Notes</Text>
             <Text style={s.footerText}>{details.additionalNotes}</Text>
-          </View>
+          </>
         ) : null}
 
         {/* ── Signature ── */}
         {details.signature && details.signature.data && (
-          <View style={s.signatureSection}>
+          <View style={s.signatureSection} wrap={false}>
             <Text style={s.signatureLabel}>Signature</Text>
             {details.signature.type === "type" ? (
               <Text style={{ ...s.signatureText, color: details.signature.color || "#000" }}>{details.signature.data}</Text>
@@ -421,6 +467,13 @@ export function InvoicePdfDocument({ data }: Props) {
             )}
           </View>
         )}
+
+        {/* ── Page X of Y (multi-page only) ── */}
+        <Text
+          style={s.pageNumber}
+          fixed
+          render={({ pageNumber, totalPages }) => (totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : "")}
+        />
       </Page>
     </Document>
   );

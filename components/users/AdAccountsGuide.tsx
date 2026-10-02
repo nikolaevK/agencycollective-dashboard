@@ -208,6 +208,24 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
                 under <strong>Payment settings</strong> in the toolbar — they apply to ad-account
                 invoices <em>only</em>, never deal or client re-bill invoices.
               </li>
+              <li>
+                The <strong>retainer</strong> and <strong>ad-spend fee</strong> lines are calculated
+                from the Invoice components fields and are locked in the line list — change the
+                amounts above, not the lines. Extra lines you add stay editable. An optional{" "}
+                <strong>discount</strong> reduces the total (the recorded amount is the discounted
+                total).
+              </li>
+              <li>
+                Use the expand button in the drawer header for a wide editor with a live preview
+                beside it; <strong>Preview</strong> shows the exact PDF before you send.
+              </li>
+              <li>
+                <strong>Save draft</strong> keeps an invoice without sending it. Drafts — yours and
+                ones prepared by agents through the API / MCP — wait under{" "}
+                <strong>Drafts</strong> in the Client Directory header until someone opens one,
+                reviews it and presses <strong>Approve &amp; send</strong> (or rejects it with a
+                note). A draft never emails anyone on its own.
+              </li>
             </ul>
           </Section>
 

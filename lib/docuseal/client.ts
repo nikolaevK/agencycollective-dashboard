@@ -214,6 +214,29 @@ const ArchiveSubmissionResponseSchema = z.object({
 }).passthrough();
 
 /**
+ * Best-effort archive of the submission a contract RESEND just replaced, so
+ * the client's old signing link stops working. Without it the client holds
+ * two live links (duplicate signing emails), and a signature on the old one is
+ * silently dropped — the webhook only matches the contract's current
+ * submission. Never throws: the new submission is already live and saved.
+ */
+export async function archiveSupersededSubmission(
+  previousSubmissionId: number | null | undefined,
+  newSubmissionId: number
+): Promise<void> {
+  if (!previousSubmissionId || previousSubmissionId === newSubmissionId) return;
+  try {
+    await docusealArchiveSubmission(previousSubmissionId);
+  } catch (err) {
+    if (err instanceof DocuSealApiError && err.statusCode === 404) return; // already gone
+    console.error(
+      "[docuseal] archiving superseded submission failed (old signing link may still be live):",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
  * Archive a DocuSeal submission. Archiving is reversible — the submission is
  * moved to the archive folder and the signing link is invalidated. Use this
  * when an admin removes an additional contract locally so the client can no

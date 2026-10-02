@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { InvoiceServiceRecord } from "@/lib/invoiceServices";
 import type { InvoiceItem } from "@/types/invoice";
 import { cn } from "@/lib/utils";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
+
+/** A search box only earns its space once the catalog is long. */
+const SEARCH_THRESHOLD = 6;
 
 interface Props {
   onSelect: (item: InvoiceItem) => void;
@@ -17,6 +21,7 @@ interface Props {
 
 export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   const { data: services = [] } = useQuery<InvoiceServiceRecord[]>({
     queryKey: ["invoice-services"],
@@ -39,18 +44,21 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
       total: service.rate / 100,
     });
     setOpen(false);
+    setQuery("");
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [open]);
+  // Nesting-aware: inside an invoice drawer, Escape closes only this panel,
+  // not the drawer (and its unsaved edits) underneath.
+  useEscapeKey(() => setOpen(false), open);
 
   if (services.length === 0) return null;
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? services.filter((s) =>
+        [s.internalLabel, s.name, s.description].some((f) => (f ?? "").toLowerCase().includes(q))
+      )
+    : services;
 
   return (
     <div className="relative">
@@ -72,17 +80,38 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
       {open && (
         <>
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-40 bg-black/20 sm:bg-transparent"
             onClick={() => setOpen(false)}
           />
+          {/* Phones: a bottom sheet (an anchored panel ran off-screen when the
+              trigger wasn't at the left edge). sm+: anchored dropdown. */}
           <div
             className={cn(
-              "absolute top-full z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg",
-              align === "right" ? "right-0" : "left-0"
+              "fixed inset-x-4 bottom-4 z-50 max-h-[60vh] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-80 sm:max-h-72",
+              align === "right" ? "sm:right-0" : "sm:left-0"
             )}
           >
-            {services.map((service) => (
+            {services.length > SEARCH_THRESHOLD && (
+              <div className="sticky top-0 z-10 border-b border-border/50 bg-popover p-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search services…"
+                    aria-label="Search preset services"
+                    className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
+            )}
+            {visible.length === 0 && (
+              <p className="px-3 py-4 text-center text-xs text-muted-foreground">No services match.</p>
+            )}
+            {visible.map((service) => (
               <button
+                type="button"
                 key={service.id}
                 onClick={() => handleSelect(service)}
                 className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors border-b border-border/50 last:border-0"
@@ -99,7 +128,12 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
                   </p>
                 </div>
                 <span className="shrink-0 text-sm font-semibold text-foreground">
-                  ${(service.rate / 100).toLocaleString()}
+                  {(service.rate / 100).toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    minimumFractionDigits: service.rate % 100 === 0 ? 0 : 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </span>
               </button>
             ))}

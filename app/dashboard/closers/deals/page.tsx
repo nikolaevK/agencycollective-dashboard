@@ -6,6 +6,7 @@ import { Calendar, RefreshCw, Search } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { RecentDealsTable } from "@/components/closers/RecentDealsTable";
+import { DealDraftsPanel } from "@/components/closers/DealDraftsPanel";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -106,7 +107,7 @@ export default function AdminDealsPage() {
 
   // Deals fetch — driven by the per-month dropdown.
   const dealBounds = useMemo(() => monthToBounds(dealsMonth), [dealsMonth]);
-  const { data: deals = [], isLoading, isFetching } = useQuery<AdminDeal[]>({
+  const { data: deals = [], isLoading, isFetching, isLoadingError, refetch } = useQuery<AdminDeal[]>({
     queryKey: ["admin-deals", dealsMonth],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -126,7 +127,9 @@ export default function AdminDealsPage() {
   const baseFiltered = useMemo(() => {
     if (!search.trim()) return deals;
     const q = search.toLowerCase().trim();
-    return deals.filter((d) => d.clientName.toLowerCase().includes(q));
+    return deals.filter((d) =>
+      [d.clientName, d.brandName, d.closerName, d.invoiceNumber].some((v) => v?.toLowerCase().includes(q))
+    );
   }, [deals, search]);
 
   const filtered = useMemo(() => {
@@ -221,6 +224,10 @@ export default function AdminDealsPage() {
           <StatCard label="Outstanding" value={formatCents(outstanding)} valueClass="text-amber-600 dark:text-amber-400" sub={`${reviewQueueCount} need review`} />
         </div>
 
+        {/* Agent-proposed deals awaiting approval (v1 / MCP createDealDraft).
+            Renders nothing when there are none. */}
+        <DealDraftsPanel />
+
         {/* Deal-list month picker — independent from the metrics frame.
             Per-month browsing was the pre-revamp UX; restored so admin can
             audit any month's deals without changing the metrics row above. */}
@@ -249,7 +256,7 @@ export default function AdminDealsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search deals by client name..."
+              placeholder="Search by client, brand, closer or invoice #..."
               className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
             />
           </div>
@@ -295,8 +302,22 @@ export default function AdminDealsPage() {
               <div key={i} className="h-16 rounded-xl bg-muted/50 animate-pulse" />
             ))}
           </div>
+        ) : isLoadingError ? (
+          // Only when nothing has loaded yet — a failed background refetch
+          // keeps showing the last good list rather than "No deals yet".
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-12 text-center">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">Couldn&apos;t load deals.</p>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Retry
+            </button>
+          </div>
         ) : (
-          <RecentDealsTable deals={filtered} adminMode={true} />
+          <RecentDealsTable deals={filtered} adminMode={true} title="Deals" />
         )}
       </div>
     </DashboardShell>

@@ -8,7 +8,12 @@ import type {
   ShippingDetails,
   SignatureData,
 } from "@/types/invoice";
-import { formatCurrencyValue } from "@/lib/invoice/validation";
+import {
+  discountValueOf,
+  formatCurrencyValue,
+  shippingValueOf,
+  taxValueOf,
+} from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
 import { emptyPaymentInfo, loadPaymentInfoFromConfig } from "@/lib/invoice/paymentUtils";
 import { InvoiceSignature } from "./InvoiceSignature";
@@ -57,23 +62,9 @@ export function InvoiceFooterForm({
   onSignatureChange,
   onTotalInWordsChange,
 }: Props) {
-  const discountAmount = discount
-    ? discount.amountType === "percentage"
-      ? subTotal * (discount.amount / 100)
-      : discount.amount
-    : 0;
-
-  const taxAmount = tax
-    ? tax.amountType === "percentage"
-      ? subTotal * (tax.amount / 100)
-      : tax.amount
-    : 0;
-
-  const shippingAmount = shipping
-    ? shipping.costType === "percentage"
-      ? subTotal * (shipping.cost / 100)
-      : shipping.cost
-    : 0;
+  const discountAmount = discountValueOf(subTotal, discount);
+  const taxAmount = taxValueOf(subTotal, tax);
+  const shippingAmount = shippingValueOf(subTotal, shipping);
 
   const paymentType: PaymentType = paymentInfo?.paymentType ?? "local";
 

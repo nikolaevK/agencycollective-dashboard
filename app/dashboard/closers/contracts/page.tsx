@@ -6,6 +6,7 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { Plus, Pencil, Trash2, Loader2, Star, FileSignature, Eye, Upload, X, Hammer } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/providers/ToastProvider";
 
 const DocusealBuilder = lazy(() =>
   import("@docuseal/react").then((mod) => ({ default: mod.DocusealBuilder }))
@@ -37,8 +38,11 @@ interface DocuSealTemplateDetail {
 
 export default function ContractTemplatesPage() {
   const queryClient = useQueryClient();
+  const { toastError } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Set right after an upload so the Add Template form opens on that template.
+  const [uploadedPrefill, setUploadedPrefill] = useState<{ id: number; name: string } | null>(null);
   const [previewTemplateId, setPreviewTemplateId] = useState<number | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [builderTemplateId, setBuilderTemplateId] = useState<number | null>(null);
@@ -57,8 +61,31 @@ export default function ContractTemplatesPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this contract template?")) return;
-    await fetch(`/api/admin/contract-templates?id=${id}`, { method: "DELETE" });
-    queryClient.invalidateQueries({ queryKey: ["contract-templates"] });
+    try {
+      let res = await fetch(`/api/admin/contract-templates?id=${id}`, { method: "DELETE" });
+      if (res.status === 409) {
+        // Unsigned contracts still use it — they'd fail to send until another
+        // template is picked on each deal. Make that an explicit choice.
+        const json = await res.json().catch(() => ({}));
+        if (json.code !== "in_use") {
+          toastError(json.error || "Failed to delete template");
+          return;
+        }
+        const ok = confirm(
+          `${json.error}. Those contracts won't send until you pick another template on each deal. Delete anyway?`
+        );
+        if (!ok) return;
+        res = await fetch(`/api/admin/contract-templates?id=${id}&force=1`, { method: "DELETE" });
+      }
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toastError(json.error || "Failed to delete template");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["contract-templates"] });
+    } catch {
+      toastError("Couldn't reach the server. Check your connection and try again.");
+    }
   }
 
   return (
@@ -162,12 +189,16 @@ export default function ContractTemplatesPage() {
                         <button
                           onClick={() => { setEditingId(tmpl.id); setShowForm(true); }}
                           className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+                          title="Edit template"
+                          aria-label={`Edit ${tmpl.name}`}
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleDelete(tmpl.id)}
                           className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors"
+                          title="Delete template"
+                          aria-label={`Delete ${tmpl.name}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -228,6 +259,8 @@ export default function ContractTemplatesPage() {
                   <button
                     onClick={() => handleDelete(tmpl.id)}
                     className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors shrink-0"
+                    title="Delete template"
+                    aria-label={`Delete ${tmpl.name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -242,10 +275,12 @@ export default function ContractTemplatesPage() {
           <TemplateFormModal
             editId={editingId}
             templates={templates}
-            onClose={() => { setShowForm(false); setEditingId(null); }}
+            prefill={uploadedPrefill}
+            onClose={() => { setShowForm(false); setEditingId(null); setUploadedPrefill(null); }}
             onSaved={() => {
               setShowForm(false);
               setEditingId(null);
+              setUploadedPrefill(null);
               queryClient.invalidateQueries({ queryKey: ["contract-templates"] });
             }}
           />
@@ -264,6 +299,7 @@ export default function ContractTemplatesPage() {
             onUploaded={(newId: number, newName: string) => {
               setShowUpload(false);
               setEditingId(null);
+              setUploadedPrefill({ id: newId, name: newName });
               setShowForm(true);
               queryClient.invalidateQueries({ queryKey: ["docuseal-templates"] });
             }}
@@ -293,18 +329,21 @@ export default function ContractTemplatesPage() {
 function TemplateFormModal({
   editId,
   templates,
+  prefill,
   onClose,
   onSaved,
 }: {
   editId: string | null;
   templates: ContractTemplate[];
+  /** Just-uploaded DocuSeal template to preselect when adding. */
+  prefill?: { id: number; name: string } | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const existing = editId ? templates.find((t) => t.id === editId) : null;
 
-  const [name, setName] = useState(existing?.name ?? "");
-  const [docusealTemplateId, setDocusealTemplateId] = useState(String(existing?.docusealTemplateId ?? ""));
+  const [name, setName] = useState(existing?.name ?? prefill?.name ?? "");
+  const [docusealTemplateId, setDocusealTemplateId] = useState(String(existing?.docusealTemplateId ?? prefill?.id ?? ""));
   const [serviceKeysStr, setServiceKeysStr] = useState(existing?.serviceKeys?.join(", ") ?? "");
   const [isDefault, setIsDefault] = useState(existing?.isDefault ?? false);
   const [saving, setSaving] = useState(false);
@@ -365,7 +404,7 @@ function TemplateFormModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground">
             {editId ? "Edit Template" : "Add Contract Template"}
@@ -624,16 +663,21 @@ function UploadTemplateModal({
   const INPUT_CLS =
     "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
+  // An upload in flight can't be cancelled — don't let a stray click hide it.
+  const close = () => {
+    if (!uploading) onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={close} />
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Upload Contract Document
           </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">&times;</button>
+          <button onClick={close} disabled={uploading} className="text-muted-foreground hover:text-foreground disabled:opacity-50">&times;</button>
         </div>
         <form onSubmit={handleUpload} className="p-6 space-y-4">
           <div>
@@ -687,7 +731,7 @@ function UploadTemplateModal({
           {error && <p className="text-sm text-red-500">{error}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <button type="button" onClick={close} disabled={uploading} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50">
               Cancel
             </button>
             <button

@@ -1,34 +1,26 @@
 "use client";
 
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, BookmarkPlus, GripVertical, FileCheck, FileSignature, ExternalLink, Pencil, XCircle, RefreshCw, RotateCw } from "lucide-react";
+import { useState, useEffect, useRef, lazy, Suspense, type ReactNode } from "react";
+import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, FileCheck, FileSignature, ExternalLink, Pencil, RefreshCw, RotateCw } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { useDealInvoice } from "@/hooks/useDealInvoice";
 import { useDealContract } from "@/hooks/useDealContract";
 import { useAdditionalInvoices, type AdditionalInvoiceRecord } from "@/hooks/useAdditionalInvoices";
-import { useAdditionalContracts, type AdditionalContractRecord } from "@/hooks/useAdditionalContracts";
+import { useAdditionalContracts } from "@/hooks/useAdditionalContracts";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
-import { formatCurrencyValue, createEmptyItem } from "@/lib/invoice/validation";
-import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
-import type { InvoiceData, InvoiceItem, PaymentInfo, PaymentType } from "@/types/invoice";
+import { InvoiceDrawerShell } from "@/components/invoice/InvoiceDrawerShell";
+import { InvoicePreviewDialog } from "@/components/invoice/InvoicePreviewDialog";
+import { InvoiceTotalsSummary } from "@/components/invoice/InvoiceTotalsSummary";
+import { LineItemsEditor } from "@/components/invoice/LineItemsEditor";
+import { CcChipsInput, useCcField } from "@/components/invoice/CcChipsInput";
+import { DiscountField } from "@/components/invoice/InvoiceChargesForm";
+import { InvoiceNotesFields } from "@/components/invoice/InvoiceNotesFields";
+import { calculateTotals, formatCurrencyValue } from "@/lib/invoice/validation";
+import { isValidEmail } from "@/lib/invoice/email";
+import type { DiscountDetails, InvoiceData, InvoiceItem, PaymentInfo, PaymentType } from "@/types/invoice";
 import { loadPaymentInfoFromConfig, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
 import { cn } from "@/lib/utils";
 
@@ -46,67 +38,46 @@ interface Props {
 
 const INPUT_CLS =
   "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
+const LABEL_CLS = "mb-1 block text-xs font-medium text-muted-foreground";
+
+// The closer's address is CC'd on top of the deal's up-to-10 additional CCs
+// (see UnifiedDealForm), so a deal invoice can carry 11 — the send route
+// accepts the same.
+const DEAL_MAX_CC = 11;
 
 function loadPaymentTemplate(config: Record<string, string>, type: PaymentType): PaymentInfo {
   return loadPaymentInfoFromConfig(config, type) ?? emptyPaymentInfo(type);
 }
 
-function SortableDrawerRow({
-  item,
-  idx,
-  total,
-  currency,
-  onUpdate,
-  onRemove,
-}: {
-  item: InvoiceItem;
-  idx: number;
-  total: number;
-  currency: string;
-  onUpdate: (idx: number, field: keyof InvoiceItem, value: string | number) => void;
-  onRemove: (idx: number) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
+/** Totals for the drawer — the SAME engine the Invoice page, PDF and other
+ *  drawers use. (This used to re-derive subtotal-only, silently dropping any
+ *  discount / tax / shipping already on the invoice data.) */
+function withTotals(data: InvoiceData): InvoiceData {
+  const { subTotal, totalAmount } = calculateTotals(
+    data.details.items,
+    data.details.discountDetails,
+    data.details.taxDetails,
+    data.details.shippingDetails
+  );
+  return { ...data, details: { ...data.details, subTotal, totalAmount } };
+}
 
+/** The address an invoice is sent to is the one its "Bill to" block prints. */
+function withRecipientEmail(data: InvoiceData, email: string): InvoiceData {
+  const v = email.trim();
+  if (data.receiver.email === v) return data;
+  return { ...data, receiver: { ...data.receiver, email: v } };
+}
+
+function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn("hidden sm:flex items-start gap-1 py-1.5 border-b border-border/30", isDragging && "opacity-50 bg-accent rounded")}
-    >
-      <div className="w-6 pt-2 flex items-center">
-        <button className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none" {...attributes} {...listeners}>
-          <GripVertical className="h-4 w-4" />
-        </button>
+    <section className="space-y-3 rounded-xl border border-border/60 bg-background/40 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
+        {aside}
       </div>
-      <div className="flex-[3] pr-2">
-        <input type="text" value={item.name} onChange={(e) => onUpdate(idx, "name", e.target.value)} placeholder="Service name" className={cn(INPUT_CLS, "h-8 text-xs")} />
-      </div>
-      <div className="flex-[3] pr-2">
-        <textarea
-          value={item.description}
-          onChange={(e) => onUpdate(idx, "description", e.target.value)}
-          placeholder="Description"
-          rows={2}
-          className="flex w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow resize-y min-h-[32px]"
-        />
-      </div>
-      <div className="w-14 pr-2">
-        <input type="number" min="0" step="any" value={item.quantity || ""} onChange={(e) => onUpdate(idx, "quantity", parseFloat(e.target.value) || 0)} className={cn(INPUT_CLS, "h-8 text-xs text-right")} />
-      </div>
-      <div className="w-20 pr-2">
-        <input type="number" min="0" step="any" value={item.unitPrice || ""} onChange={(e) => onUpdate(idx, "unitPrice", parseFloat(e.target.value) || 0)} className={cn(INPUT_CLS, "h-8 text-xs text-right")} />
-      </div>
-      <div className="w-20 pr-1 pt-1.5 text-right text-xs font-medium text-foreground whitespace-nowrap">
-        {formatCurrencyValue(item.quantity * item.unitPrice, currency)}
-      </div>
-      <div className="w-7 pt-1.5 flex items-center">
-        <button onClick={() => onRemove(idx)} disabled={total <= 1} className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-20" title="Remove">
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
+      {children}
+    </section>
   );
 }
 
@@ -125,7 +96,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     (canSendPrimaryContract ? 1 : 0) + sendableAdditionalContracts.length;
   const canSendContract = totalSendableContracts > 0;
   const isSent = invoice?.status === "sent";
-  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [invoiceData, setInvoiceDataRaw] = useState<InvoiceData | null>(null);
   const [addlData, setAddlData] = useState<Map<string, InvoiceData>>(new Map());
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
   const primaryDataRef = useRef<InvoiceData | null>(null);
@@ -137,12 +108,30 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const [previewingContractKey, setPreviewingContractKey] = useState<string | null>(null);
   // Which contract's template dropdown is open (same keying)
   const [changingTemplateKey, setChangingTemplateKey] = useState<string | null>(null);
-  const [clientEmail, setClientEmail] = useState("");
-  const [ccEmails, setCcEmails] = useState<string[]>([]);
-  const [ccInput, setCcInput] = useState("");
-  const [ccError, setCcError] = useState<string | null>(null);
+  const [clientEmail, setClientEmailRaw] = useState("");
+  const cc = useCcField(DEAL_MAX_CC);
   const [prefilledForDealId, setPrefilledForDealId] = useState<string | null>(null);
   const [drawerPaymentType, setDrawerPaymentType] = useState<PaymentType>(dealPaymentType === "international" ? "international" : "local");
+  // Unsaved edits since the last load/save/send. Guards the close action AND
+  // stops a background refetch (window focus) from re-seeding over edits.
+  const [dirty, setDirty] = useState(false);
+  // Bumped on every user edit — a send only clears `dirty` when nothing was
+  // edited while it was in flight (those edits weren't sent; the post-send
+  // refetch must not re-seed over them).
+  const editSeqRef = useRef(0);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+
+  /** User edit of the active invoice. */
+  const setInvoiceData = (next: InvoiceData) => {
+    setInvoiceDataRaw(next);
+    setDirty(true);
+    editSeqRef.current++;
+  };
+  const setClientEmail = (v: string) => {
+    setClientEmailRaw(v);
+    setDirty(true);
+    editSeqRef.current++;
+  };
 
   const { data: agencyConfig } = useQuery<Record<string, string>>({
     queryKey: ["agency-config"],
@@ -177,16 +166,16 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [savingPreset, setSavingPreset] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Reset CC state when switching deals
+  const { setEmails: setCcEmails, setDraft: setCcDraft, setError: setCcError } = cc;
   useEffect(() => {
     setPrefilledForDealId(null);
     setCcEmails([]);
-    setCcInput("");
+    setCcDraft("");
     setCcError(null);
-  }, [dealId]);
+  }, [dealId, setCcEmails, setCcDraft, setCcError]);
 
   // Prefill CC chip list once per dealId, from fresh closer email + deal's additional CCs.
   // Only runs the first time the query resolves for a given dealId — admin's subsequent
@@ -204,59 +193,9 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       const v = (addr || "").trim().toLowerCase();
       if (v && !seen.has(v)) { list.push(v); seen.add(v); }
     }
-    setCcEmails(list);
+    setCcEmails(list.slice(0, DEAL_MAX_CC));
     setPrefilledForDealId(dealId);
-  }, [dealId, ccPrefill, prefilledForDealId]);
-
-  function commitCc(raw: string): boolean {
-    const v = raw.trim().toLowerCase();
-    if (!v) return false;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
-      setCcError("Enter a valid email address");
-      return false;
-    }
-    if (ccEmails.includes(v)) {
-      setCcError("Already added");
-      return false;
-    }
-    if (ccEmails.length >= 10) {
-      setCcError("Maximum 10 CCs");
-      return false;
-    }
-    setCcEmails((prev) => [...prev, v]);
-    setCcInput("");
-    setCcError(null);
-    return true;
-  }
-
-  function removeCc(addr: string) {
-    setCcEmails((prev) => prev.filter((e) => e !== addr));
-    setCcError(null);
-  }
-
-  function commitCcBatch(tokens: string[]) {
-    const next = [...ccEmails];
-    const seen = new Set(next);
-    let firstError: string | null = null;
-    for (const raw of tokens) {
-      const v = raw.trim().toLowerCase();
-      if (!v) continue;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
-        if (firstError === null) firstError = "Some entries were invalid and skipped";
-        continue;
-      }
-      if (seen.has(v)) continue;
-      if (next.length >= 10) {
-        if (firstError === null) firstError = "Maximum 10 CCs";
-        break;
-      }
-      next.push(v);
-      seen.add(v);
-    }
-    if (next.length !== ccEmails.length) setCcEmails(next);
-    setCcInput("");
-    setCcError(firstError);
-  }
+  }, [dealId, ccPrefill, prefilledForDealId, setCcEmails]);
 
   // Sync additional invoices from server into local state
   useEffect(() => {
@@ -265,7 +204,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       const next = new Map(prev);
       for (const inv of additionalInvoices) {
         if (!next.has(inv.id)) {
-          next.set(inv.id, inv.invoiceData);
+          next.set(inv.id, withTotals(inv.invoiceData));
         }
       }
       return next;
@@ -274,6 +213,8 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
   useEffect(() => {
     if (!invoice || !agencyConfig) return;
+    // Never re-seed over unsaved edits (a window-focus refetch lands here).
+    if (dirty) return;
     const src = invoice.invoiceData;
     const logo = src.details.invoiceLogo || agencyConfig.default_logo || "";
     const theme = (!src.details.themeColor || src.details.themeColor === "#2563eb")
@@ -289,11 +230,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       noteToCustomer = "";
     }
 
-    // Sync toggle from loaded payment info or deal payment type
-    const resolvedType: PaymentType = paymentInfo?.paymentType === "international" ? "international" : effectiveType;
-    setDrawerPaymentType(resolvedType);
-
-    const built: InvoiceData = {
+    const built: InvoiceData = withTotals({
       ...src,
       details: {
         ...src.details,
@@ -302,117 +239,37 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         paymentInfo,
         noteToCustomer,
       },
-    };
+    });
     primaryDataRef.current = built;
     // Only load into editor if primary tab is active — don't overwrite additional invoice edits
     if (activeInvoiceId === null) {
-      setInvoiceData(built);
+      setInvoiceDataRaw(built);
+      // Sync toggle from loaded payment info or deal payment type
+      setDrawerPaymentType(paymentInfo?.paymentType === "international" ? "international" : effectiveType);
     }
-    setClientEmail(invoice.clientEmail || "");
+    setClientEmailRaw(invoice.clientEmail || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoice, agencyConfig, dealPaymentType]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
-
-  // Hooks must run unconditionally — keep this above the !dealId early return.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
-  );
+  // Esc from the drawer is handled by InvoiceDrawerShell (nesting-aware).
 
   if (!dealId) return null;
 
   const dealValueDollars = dealValue / 100;
   const invoiceTotal = invoiceData?.details.totalAmount ?? 0;
   const mismatch = Math.abs(invoiceTotal - dealValueDollars) > 0.01;
+  const activeAddl = activeInvoiceId ? additionalInvoices.find((i) => i.id === activeInvoiceId) ?? null : null;
+  const displayNumber = activeAddl ? activeAddl.invoiceNumber : invoice?.invoiceNumber;
+  const displayStatus = activeAddl ? activeAddl.status : invoice?.status;
 
-  const recalc = (data: InvoiceData): InvoiceData => {
-    const subTotal = data.details.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
-    return {
-      ...data,
-      details: {
-        ...data.details,
-        subTotal: Math.round(subTotal * 100) / 100,
-        totalAmount: Math.round(subTotal * 100) / 100,
-      },
-    };
-  };
-
-  const updateItem = (idx: number, field: keyof InvoiceItem, value: string | number) => {
+  const setItems = (items: InvoiceItem[]) => {
     if (!invoiceData) return;
-    const items = invoiceData.details.items.map((item, i) => {
-      if (i !== idx) return item;
-      const updated = { ...item, [field]: value };
-      if (field === "quantity" || field === "unitPrice") {
-        updated.total = Math.round(updated.quantity * updated.unitPrice * 100) / 100;
-      }
-      return updated;
-    });
-    setInvoiceData(recalc({ ...invoiceData, details: { ...invoiceData.details, items } }));
+    setInvoiceData(withTotals({ ...invoiceData, details: { ...invoiceData.details, items } }));
   };
 
-  const addItem = () => {
+  const setDiscount = (discountDetails: DiscountDetails | null) => {
     if (!invoiceData) return;
-    setInvoiceData(recalc({
-      ...invoiceData,
-      details: {
-        ...invoiceData.details,
-        items: [...invoiceData.details.items, createEmptyItem()],
-      },
-    }));
-  };
-
-  const removeItem = (idx: number) => {
-    if (!invoiceData || invoiceData.details.items.length <= 1) return;
-    setInvoiceData(recalc({
-      ...invoiceData,
-      details: {
-        ...invoiceData.details,
-        items: invoiceData.details.items.filter((_, i) => i !== idx),
-      },
-    }));
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (!invoiceData) return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const items = invoiceData.details.items;
-    const oldIndex = items.findIndex((i) => i.id === active.id);
-    const newIndex = items.findIndex((i) => i.id === over.id);
-    setInvoiceData(recalc({
-      ...invoiceData,
-      details: { ...invoiceData.details, items: arrayMove(items, oldIndex, newIndex) },
-    }));
-  };
-
-  const saveItemAsPreset = async (idx: number) => {
-    if (!invoiceData) return;
-    const item = invoiceData.details.items[idx];
-    if (!item.name.trim()) return;
-    setSavingPreset(idx);
-    try {
-      await fetch("/api/admin/invoice-services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: item.name,
-          description: item.description,
-          rate: Math.round(item.unitPrice * 100),
-        }),
-      });
-      queryClient.invalidateQueries({ queryKey: ["invoice-services"] });
-      setMsg({ type: "success", text: `"${item.name}" saved as preset` });
-    } catch {
-      setMsg({ type: "error", text: "Failed to save preset" });
-    } finally {
-      setSavingPreset(null);
-    }
+    setInvoiceData(withTotals({ ...invoiceData, details: { ...invoiceData.details, discountDetails } }));
   };
 
   const switchToInvoice = (targetId: string | null) => {
@@ -427,14 +284,14 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
     // Load target data
     if (targetId === null) {
-      setInvoiceData(primaryDataRef.current);
+      setInvoiceDataRaw(primaryDataRef.current);
       const pt = primaryDataRef.current?.details.paymentInfo?.paymentType;
       setDrawerPaymentType(pt === "international" ? "international" : "local");
       setActiveInvoiceId(null);
     } else {
       const data = addlData.get(targetId);
       if (data) {
-        setInvoiceData(data);
+        setInvoiceDataRaw(data);
         const pt = data.details.paymentInfo?.paymentType;
         setDrawerPaymentType(pt === "international" ? "international" : "local");
         setActiveInvoiceId(targetId);
@@ -463,10 +320,11 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
             setAddlData((prev) => new Map(prev).set(activeInvoiceId, invoiceData));
           }
         }
-        setAddlData((prev) => new Map(prev).set(newInv.id, newInv.invoiceData));
+        const seeded = withTotals(newInv.invoiceData);
+        setAddlData((prev) => new Map(prev).set(newInv.id, seeded));
         queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
-        setInvoiceData(newInv.invoiceData);
-        const pt = newInv.invoiceData.details.paymentInfo?.paymentType;
+        setInvoiceDataRaw(seeded);
+        const pt = seeded.details.paymentInfo?.paymentType;
         setDrawerPaymentType(pt === "international" ? "international" : "local");
         setActiveInvoiceId(newInv.id);
         setMsg({ type: "success", text: `Additional invoice #${newInv.invoiceNumber} created` });
@@ -530,12 +388,19 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
-  const handleDeleteAdditional = async (id: string) => {
+  const handleDeleteAdditional = async (inv: AdditionalInvoiceRecord) => {
+    const warning =
+      inv.status === "sent"
+        ? `Delete invoice #${inv.invoiceNumber}? It was already sent to the client — this removes our record and stored PDF.`
+        : `Delete draft invoice #${inv.invoiceNumber}?`;
+    if (!window.confirm(warning)) return;
+    const id = inv.id;
     setDeletingId(id);
+    setMsg(null);
     try {
       // If deleting the active tab, switch to primary first
       if (activeInvoiceId === id) {
-        setInvoiceData(primaryDataRef.current);
+        setInvoiceDataRaw(primaryDataRef.current);
         const pt = primaryDataRef.current?.details.paymentInfo?.paymentType;
         setDrawerPaymentType(pt === "international" ? "international" : "local");
         setActiveInvoiceId(null);
@@ -545,6 +410,9 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         setAddlData((prev) => { const next = new Map(prev); next.delete(id); return next; });
         queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
         setMsg({ type: "success", text: "Invoice deleted" });
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setMsg({ type: "error", text: json.error || "Failed to delete invoice" });
       }
     } catch {
       setMsg({ type: "error", text: "Failed to delete invoice" });
@@ -553,30 +421,42 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
+  /** Flush the active tab and resolve every invoice's latest data (with the
+   *  recipient email stamped in, so the PDF prints the address it goes to). */
+  const resolveAllInvoiceData = (): { primary: InvoiceData | null; additional: Map<string, InvoiceData> } => {
+    const primaryRaw = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
+    const finalAddl = new Map(addlData);
+    if (activeInvoiceId !== null && invoiceData) {
+      finalAddl.set(activeInvoiceId, invoiceData);
+    }
+    const primary = primaryRaw ? withRecipientEmail(primaryRaw, clientEmail) : null;
+    for (const [id, data] of finalAddl) finalAddl.set(id, withRecipientEmail(data, clientEmail));
+    // Also flush to refs/state so they stay in sync
+    if (activeInvoiceId === null) {
+      primaryDataRef.current = primary;
+      if (primary) setInvoiceDataRaw(primary);
+    } else {
+      primaryDataRef.current = primary;
+      const active = finalAddl.get(activeInvoiceId);
+      if (active) setInvoiceDataRaw(active);
+    }
+    setAddlData(finalAddl);
+    return { primary, additional: finalAddl };
+  };
+
   const handleSave = async () => {
     if (!invoice || !invoiceData) return;
     setSaving(true);
     setMsg(null);
     try {
-      // Resolve primary and additional data from current tab state
-      const primaryData = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
-      const finalAddl = new Map(addlData);
-      if (activeInvoiceId !== null && invoiceData) {
-        finalAddl.set(activeInvoiceId, invoiceData);
-      }
-      // Also flush to refs/state so they stay in sync
-      if (activeInvoiceId === null) {
-        primaryDataRef.current = invoiceData;
-      } else {
-        setAddlData(finalAddl);
-      }
+      const { primary: primaryData, additional: finalAddl } = resolveAllInvoiceData();
 
       // Save primary + additional invoices in parallel
       const saveResults = await Promise.all([
         fetch("/api/admin/deal-invoices", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: invoice.id, invoiceData: primaryData, clientEmail }),
+          body: JSON.stringify({ id: invoice.id, invoiceData: primaryData, clientEmail: clientEmail.trim() }),
         }),
         ...[...finalAddl].map(([id, data]) =>
           fetch("/api/admin/deal-invoices/additional", {
@@ -589,6 +469,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       const allOk = saveResults.every((r) => r.ok);
 
       if (allOk) {
+        setDirty(false);
         setMsg({ type: "success", text: finalAddl.size > 0 ? "All invoices saved" : "Invoice saved" });
         queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] });
         if (finalAddl.size > 0) queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] });
@@ -602,92 +483,48 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
-  const generateBlob = async (): Promise<Blob | null> => {
-    if (!invoiceData) return null;
+  const handleDownload = async () => {
+    if (!invoiceData) return;
     setGenerating(true);
     try {
-      return await pdf(<InvoicePdfDocument data={invoiceData} />).toBlob();
+      const blob = await pdf(<InvoicePdfDocument data={withRecipientEmail(invoiceData, clientEmail)} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${invoiceData.details.invoiceNumber || "draft"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch {
       setMsg({ type: "error", text: "PDF generation failed" });
-      return null;
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleDownload = async () => {
-    const blob = await generateBlob();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `invoice-${invoiceData?.details.invoiceNumber || "draft"}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handlePreview = async () => {
-    const blob = await generateBlob();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  };
-
   const handleSend = async () => {
-    if (!invoice || !invoiceData || !clientEmail.trim()) {
-      setMsg({ type: "error", text: "Client email is required" });
+    if (!invoice || !invoiceData || !isValidEmail(clientEmail)) {
+      setMsg({ type: "error", text: "A valid client email is required" });
+      return;
+    }
+    // Commit any pending CC input so it isn't silently dropped — validated
+    // BEFORE the (slow) PDF renders so bad input fails fast.
+    const finalCcs = cc.finalize([clientEmail]);
+    if (!finalCcs) {
+      setMsg({ type: "error", text: "Fix the CC field before sending" });
       return;
     }
     setSending(true);
     setMsg(null);
+    const editSeqAtSend = editSeqRef.current;
     try {
       // Flush the active tab to its storage, then resolve primary + additional
       // data locally. The invoice JSON rides along on the send request (the
       // server persists it with the sent status), so no separate save
       // round-trip is needed first.
-      const primaryData = activeInvoiceId === null ? invoiceData : primaryDataRef.current;
-      const finalAddl = new Map(addlData);
-      if (activeInvoiceId !== null && invoiceData) {
-        finalAddl.set(activeInvoiceId, invoiceData);
-      }
-      if (activeInvoiceId === null) {
-        primaryDataRef.current = invoiceData;
-      } else {
-        setAddlData(finalAddl);
-      }
-
+      const { primary: primaryData, additional: finalAddl } = resolveAllInvoiceData();
       if (!primaryData) return;
-
-      // Commit any pending CC input so it isn't silently dropped — validated
-      // BEFORE the (slow) PDF renders so bad input fails fast.
-      // If the pending value is invalid or would be dropped (dup/cap), surface the error
-      // and abort the send so the user can fix or clear the field.
-      let finalCcs = ccEmails;
-      if (ccInput.trim()) {
-        const pending = ccInput.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pending) || pending.length > 254) {
-          setCcError("Clear or fix the pending CC before sending");
-          setSending(false);
-          return;
-        }
-        if (finalCcs.includes(pending)) {
-          setCcError("Pending CC is already in the list — remove it from the input");
-          setSending(false);
-          return;
-        }
-        if (finalCcs.length >= 10) {
-          setCcError("Maximum 10 CCs — clear the pending input");
-          setSending(false);
-          return;
-        }
-        finalCcs = [...finalCcs, pending];
-        setCcEmails(finalCcs);
-        setCcInput("");
-        setCcError(null);
-      }
 
       // Generate all PDFs in parallel
       const addlEntries = additionalInvoices
@@ -701,7 +538,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
-      formData.append("email", clientEmail);
+      formData.append("email", clientEmail.trim());
       for (const addr of finalCcs) formData.append("cc", addr);
       formData.append("pdf", new File([primaryBlob], `invoice-${primaryData.details.invoiceNumber}.pdf`, { type: "application/pdf" }));
       formData.append("invoiceData", JSON.stringify(primaryData));
@@ -725,6 +562,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       const invoiceCount = 1 + additionalIds.length;
       const invoiceLabel = invoiceCount > 1 ? `${invoiceCount} invoices` : "Invoice";
       if (res.ok) {
+        if (editSeqRef.current === editSeqAtSend) setDirty(false);
         const sentCount: number = Number(json.contractsSent ?? 0);
         const failedCount: number = Number(json.contractsFailed ?? 0);
         const contractNoun = (n: number) => (n === 1 ? "contract" : "contracts");
@@ -748,6 +586,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
         queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] });
         queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
         queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
       } else {
         setMsg({ type: "error", text: json.error || "Failed to send" });
@@ -759,234 +598,253 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     }
   };
 
+  const sendLabel = (() => {
+    if (sending) return "Sending...";
+    const hasAddl = additionalInvoices.length > 0;
+    const label = hasAddl ? "All Invoices" : "Invoice";
+    const contractSuffix =
+      totalSendableContracts === 0
+        ? ""
+        : totalSendableContracts === 1
+        ? " & Contract"
+        : ` & ${totalSendableContracts} Contracts`;
+    if (isSent) return `Resend ${label}${contractSuffix}`;
+    return contractSuffix
+      ? `Send ${label}${contractSuffix}`
+      : hasAddl
+      ? `Send ${label}`
+      : "Send to Client";
+  })();
+
+  const footer = invoiceData ? (
+    <div className="space-y-2">
+      {msg && (
+        <div
+          role="status"
+          className={cn(
+            "rounded-lg px-3 py-2 text-xs font-medium",
+            msg.type === "success" ? "bg-emerald-500/5 text-emerald-600 border border-emerald-500/30" : "bg-destructive/5 text-destructive border border-destructive/30"
+          )}
+        >
+          {msg.text}
+        </div>
+      )}
+      {/* Sent info + View PDF */}
+      {activeInvoiceId === null && isSent && invoice && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] text-muted-foreground">
+            Sent {invoice.sentCount} time{invoice.sentCount !== 1 ? "s" : ""}
+            {invoice.sentAt && <> · Last sent {new Date(invoice.sentAt).toLocaleDateString()}</>}
+            {invoice.clientEmail && <> · {invoice.clientEmail}</>}
+          </p>
+          {invoice.hasPdf && (
+            <button
+              type="button"
+              onClick={() => window.open(`/api/admin/deal-invoices/pdf?id=${invoice.id}`, "_blank")}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+            >
+              <FileCheck className="h-3.5 w-3.5" />
+              View sent PDF
+            </button>
+          )}
+        </div>
+      )}
+      {activeAddl?.status === "sent" && activeAddl.hasPdf && (
+        <button
+          type="button"
+          onClick={() => window.open(`/api/admin/deal-invoices/additional/pdf?id=${activeAddl.id}`, "_blank")}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+        >
+          <FileCheck className="h-3.5 w-3.5" />
+          View Sent Invoice PDF
+        </button>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={handleSave} disabled={saving || sending} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save
+        </button>
+        <button type="button" onClick={handleDownload} disabled={generating} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
+          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          PDF
+        </button>
+        <button type="button" onClick={() => setPdfPreviewOpen(true)} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors">
+          <Eye className="h-3.5 w-3.5" />
+          Preview
+        </button>
+        {dirty && <span className="ml-auto text-[11px] font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>}
+      </div>
+      <button
+        type="button"
+        onClick={handleSend}
+        disabled={sending || !clientEmail.trim()}
+        className={cn(
+          "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all ac-gradient shadow-lg shadow-primary/20",
+          (sending || !clientEmail.trim()) && "opacity-60 cursor-not-allowed"
+        )}
+      >
+        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        {sendLabel}
+      </button>
+    </div>
+  ) : null;
+
   return (
     <>
-      <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="fixed right-0 top-0 bottom-0 z-[60] w-full max-w-xl bg-card border-l border-border shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">Invoice Review</h3>
-            {invoice && (() => {
-              const activeAddl = activeInvoiceId ? additionalInvoices.find(i => i.id === activeInvoiceId) : null;
-              const displayNumber = activeAddl ? activeAddl.invoiceNumber : invoice.invoiceNumber;
-              const displayStatus = activeAddl ? activeAddl.status : invoice.status;
-              return (
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-muted-foreground">#{displayNumber}</span>
-                  <span className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
-                    displayStatus === "sent"
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                      : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-                  )}>
-                    {displayStatus === "sent" ? "Sent" : "Draft"}
-                  </span>
-                </div>
-              );
-            })()}
-          </div>
-          <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {isLoading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {!isLoading && !invoice && (
-            <p className="text-sm text-muted-foreground text-center py-12">No invoice found for this deal</p>
-          )}
-
-          {invoiceData && (
+      <InvoiceDrawerShell
+        title="Invoice Review"
+        badges={
+          invoice && (
+            <span className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
+              displayStatus === "sent"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+            )}>
+              {displayStatus === "sent" ? "Sent" : "Draft"}
+            </span>
+          )
+        }
+        subtitle={
+          invoice ? (
             <>
-              {/* Mismatch warning — primary invoice only */}
-              {activeInvoiceId === null && mismatch && (
-                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-600">
-                    Invoice total ({formatCurrencyValue(invoiceTotal, "USD")}) differs from deal value ({formatCurrencyValue(dealValueDollars, "USD")})
-                  </p>
-                </div>
-              )}
+              #{displayNumber} · Deal value {formatCurrencyValue(dealValueDollars, "USD")}
+            </>
+          ) : undefined
+        }
+        onClose={onClose}
+        dirty={dirty}
+        busy={sending}
+        preview={invoiceData ? withRecipientEmail(invoiceData, clientEmail) : null}
+        footer={footer}
+      >
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
 
-              {/* Deal Notes */}
-              {dealNotes && (
-                <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
-                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{dealNotes}</p>
-                </div>
-              )}
+        {!isLoading && !invoice && (
+          <p className="text-sm text-muted-foreground text-center py-12">No invoice found for this deal</p>
+        )}
 
-              {/* Invoice Tabs */}
-              {(additionalInvoices.length > 0 || addingInvoice || activeInvoiceId !== null) && (
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Invoice</label>
-                  <div className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
+        {invoiceData && (
+          <div className="space-y-4">
+            {/* Mismatch warning — primary invoice only */}
+            {activeInvoiceId === null && mismatch && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-600">
+                  Invoice total ({formatCurrencyValue(invoiceTotal, "USD")}) differs from deal value ({formatCurrencyValue(dealValueDollars, "USD")})
+                </p>
+              </div>
+            )}
+
+            {/* Deal Notes */}
+            {dealNotes && (
+              <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
+                <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{dealNotes}</p>
+              </div>
+            )}
+
+            {/* Invoice tabs — the primary plus any additional invoices */}
+            <div>
+              <label className={LABEL_CLS}>Invoices</label>
+              <div className="flex flex-wrap items-center gap-1 rounded-lg bg-muted/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => switchToInvoice(null)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    activeInvoiceId === null ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  #{invoice?.invoiceNumber}
+                  <span className={cn("inline-block h-1.5 w-1.5 rounded-full", isSent ? "bg-emerald-500" : "bg-amber-500")} />
+                </button>
+                {additionalInvoices.map((inv) => (
+                  <div key={inv.id} className="relative flex items-center">
                     <button
                       type="button"
-                      onClick={() => switchToInvoice(null)}
+                      onClick={() => switchToInvoice(inv.id)}
                       className={cn(
-                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                        activeInvoiceId === null ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-7",
+                        activeInvoiceId === inv.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      #{invoice?.invoiceNumber}
+                      <span className="flex items-center gap-1.5">
+                        #{inv.invoiceNumber}
+                        <span className={cn(
+                          "inline-block h-1.5 w-1.5 rounded-full",
+                          inv.status === "sent" ? "bg-emerald-500" : "bg-amber-500"
+                        )} />
+                      </span>
                     </button>
-                    {additionalInvoices.map((inv) => (
-                      <div key={inv.id} className="relative flex items-center">
-                        <button
-                          type="button"
-                          onClick={() => switchToInvoice(inv.id)}
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-7",
-                            activeInvoiceId === inv.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            #{inv.invoiceNumber}
-                            <span className={cn(
-                              "inline-block h-1.5 w-1.5 rounded-full",
-                              inv.status === "sent" ? "bg-emerald-500" : "bg-amber-500"
-                            )} />
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleDeleteAdditional(inv.id); }}
-                          disabled={deletingId === inv.id}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                          title="Delete invoice"
-                        >
-                          {deletingId === inv.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
-                        </button>
-                      </div>
-                    ))}
                     <button
                       type="button"
-                      onClick={handleAddInvoice}
-                      disabled={addingInvoice}
-                      className="rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
-                      title="Add invoice"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteAdditional(inv); }}
+                      disabled={deletingId === inv.id}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      title="Delete invoice"
+                      aria-label={`Delete invoice ${inv.invoiceNumber}`}
                     >
-                      {addingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                      {deletingId === inv.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
                     </button>
                   </div>
-                </div>
-              )}
-
-              {/* Payment Type Toggle */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Payment Type</label>
-                <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDrawerPaymentType("local");
-                      if (invoiceData && agencyConfig) {
-                        const template = loadPaymentTemplate(agencyConfig, "local");
-                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
-                      }
-                    }}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${drawerPaymentType === "local" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-                  >
-                    Local
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDrawerPaymentType("international");
-                      if (invoiceData && agencyConfig) {
-                        const template = loadPaymentTemplate(agencyConfig, "international");
-                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
-                      }
-                    }}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${drawerPaymentType === "international" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-                  >
-                    International
-                  </button>
-                </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddInvoice}
+                  disabled={addingInvoice}
+                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                  title="Add an additional invoice (starts as a copy of the primary)"
+                >
+                  {addingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Invoice
+                </button>
               </div>
+            </div>
 
-              {/* Client email */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Client Email</label>
-                <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@example.com" className={INPUT_CLS} />
-              </div>
-
-              {/* CC list (closer email + deal's additional CCs + admin-added) */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  CC <span className="font-normal text-muted-foreground">(optional)</span>
-                </label>
-                <div className="flex flex-wrap gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-within:ring-2 focus-within:ring-ring">
-                  {ccEmails.map((addr) => (
-                    <span
-                      key={addr}
-                      className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground"
-                    >
-                      {addr}
-                      <button
-                        type="button"
-                        onClick={() => removeCc(addr)}
-                        className="text-muted-foreground hover:text-foreground"
-                        aria-label={`Remove ${addr}`}
-                      >
-                        <XCircle className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+            <Section title="Recipient">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="deal-inv-email" className={LABEL_CLS}>Client email</label>
                   <input
-                    type="text"
-                    inputMode="email"
-                    autoComplete="off"
-                    value={ccInput}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (/[,;]$/.test(v)) {
-                        const raw = v.replace(/[,;]+$/, "").trim();
-                        if (raw) commitCc(raw); else setCcInput("");
-                      } else {
-                        setCcInput(v);
-                        if (ccError) setCcError(null);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === "Tab") {
-                        if (ccInput.trim()) {
-                          e.preventDefault();
-                          commitCc(ccInput);
-                        }
-                      } else if (e.key === "Backspace" && !ccInput && ccEmails.length > 0) {
-                        e.preventDefault();
-                        removeCc(ccEmails[ccEmails.length - 1]);
-                      }
-                    }}
-                    onPaste={(e) => {
-                      const text = e.clipboardData.getData("text");
-                      if (!/[\s,;]/.test(text)) return;
-                      e.preventDefault();
-                      commitCcBatch(text.split(/[\s,;]+/));
-                    }}
-                    onBlur={() => { if (ccInput.trim()) commitCc(ccInput); }}
-                    placeholder={ccEmails.length === 0 ? "closer@example.com" : ""}
-                    className="flex-1 min-w-[140px] bg-transparent px-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                    id="deal-inv-email"
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="client@example.com"
+                    className={cn(INPUT_CLS, clientEmail.trim() && !isValidEmail(clientEmail) && "border-destructive/60")}
                   />
                 </div>
-                {ccError && <p className="mt-1 text-xs text-destructive">{ccError}</p>}
-              </div>
-
-              {/* Invoice Date & Due Date */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Invoice Date</label>
+                  <label htmlFor="deal-inv-billto" className={LABEL_CLS}>Bill to</label>
                   <input
+                    id="deal-inv-billto"
+                    type="text"
+                    value={invoiceData.receiver.name}
+                    onChange={(e) => setInvoiceData({ ...invoiceData, receiver: { ...invoiceData.receiver, name: e.target.value } })}
+                    className={INPUT_CLS}
+                  />
+                </div>
+              </div>
+              {/* CC list (closer email + deal's additional CCs + admin-added) */}
+              <div>
+                <label htmlFor="deal-inv-cc" className={LABEL_CLS}>
+                  CC <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <CcChipsInput field={cc} id="deal-inv-cc" exclude={[clientEmail]} placeholder="closer@example.com" />
+              </div>
+            </Section>
+
+            <Section title="Details">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label htmlFor="deal-inv-date" className={LABEL_CLS}>Invoice date</label>
+                  <input
+                    id="deal-inv-date"
                     type="date"
                     value={invoiceData.details.invoiceDate}
                     onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, invoiceDate: e.target.value } })}
@@ -994,296 +852,134 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Due Date</label>
+                  <label htmlFor="deal-inv-due" className={LABEL_CLS}>Due date</label>
                   <input
+                    id="deal-inv-due"
                     type="date"
                     value={invoiceData.details.dueDate}
                     onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, dueDate: e.target.value } })}
                     className={INPUT_CLS}
                   />
                 </div>
-              </div>
-
-              {/* Bill To */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Bill To</label>
-                <input
-                  type="text"
-                  value={invoiceData.receiver.name}
-                  onChange={(e) => setInvoiceData({ ...invoiceData, receiver: { ...invoiceData.receiver, name: e.target.value } })}
-                  className={INPUT_CLS}
-                />
-              </div>
-
-              {/* Line Items — table layout with drag-and-drop */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wide">Line Items</h4>
-
-                {/* Table header */}
-                <div className="hidden sm:flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border pb-2">
-                  <div className="w-6" />
-                  <div className="flex-[3] pr-2">Item</div>
-                  <div className="flex-[3] pr-2">Description</div>
-                  <div className="w-14 pr-2 text-right">Qty</div>
-                  <div className="w-20 pr-2 text-right">Unit Price</div>
-                  <div className="w-20 pr-1 text-right">Total</div>
-                  <div className="w-7" />
-                </div>
-
-                {/* Desktop rows with DnD */}
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext items={invoiceData.details.items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                    {invoiceData.details.items.map((item, idx) => (
-                      <SortableDrawerRow
-                        key={item.id}
-                        item={item}
-                        idx={idx}
-                        total={invoiceData.details.items.length}
-                        currency={invoiceData.details.currency}
-                        onUpdate={updateItem}
-                        onRemove={removeItem}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-
-                {/* Mobile cards (no dnd) */}
-                <div className="sm:hidden space-y-2">
-                  {invoiceData.details.items.map((item, idx) => (
-                    <div key={item.id} className="rounded-lg border border-border/50 bg-background p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <input type="text" value={item.name} onChange={(e) => updateItem(idx, "name", e.target.value)} placeholder="Service name" className={cn(INPUT_CLS, "font-medium flex-1")} />
-                        <button onClick={() => removeItem(idx)} disabled={invoiceData.details.items.length <= 1} className="p-1.5 text-muted-foreground hover:text-destructive disabled:opacity-20 shrink-0">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <textarea value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="Description" rows={2} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-base sm:text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow resize-y" />
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Qty</label>
-                          <input type="number" min="0" step="any" value={item.quantity || ""} onChange={(e) => updateItem(idx, "quantity", parseFloat(e.target.value) || 0)} className={cn(INPUT_CLS, "text-right")} />
-                        </div>
-                        <div>
-                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Rate</label>
-                          <input type="number" min="0" step="any" value={item.unitPrice || ""} onChange={(e) => updateItem(idx, "unitPrice", parseFloat(e.target.value) || 0)} className={cn(INPUT_CLS, "text-right")} />
-                        </div>
-                        <div>
-                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Total</label>
-                          <div className="flex h-9 items-center justify-end text-sm font-medium">{formatCurrencyValue(item.quantity * item.unitPrice, invoiceData.details.currency)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add item / Add service + Subtotal */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                  <div className="flex items-center gap-4">
-                    <button onClick={addItem} className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Item
-                    </button>
-                    <InvoiceServiceSelector onSelect={(item) => {
-                      if (!invoiceData) return;
-                      setInvoiceData(recalc({
-                        ...invoiceData,
-                        details: { ...invoiceData.details, items: [...invoiceData.details.items, item] },
-                      }));
-                    }} />
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Subtotal:{" "}
-                    <span className="font-semibold text-foreground">
-                      {formatCurrencyValue(invoiceData.details.subTotal, invoiceData.details.currency)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Save item as preset hint */}
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground pt-1">
-                  <BookmarkPlus className="h-3 w-3" />
-                  Click bookmark on any item to save it as a preset for future invoices
-                </div>
-
-                {/* Bookmark buttons row */}
-                <div className="flex flex-wrap gap-1">
-                  {invoiceData.details.items.map((item, idx) => (
-                    item.name.trim() && (
+                <div>
+                  <span className={LABEL_CLS}>Payment type</span>
+                  <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+                    {(["local", "international"] as PaymentType[]).map((t) => (
                       <button
-                        key={item.id}
-                        onClick={() => saveItemAsPreset(idx)}
-                        disabled={savingPreset === idx}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors disabled:opacity-50"
-                        title={`Save "${item.name}" as preset`}
+                        key={t}
+                        type="button"
+                        aria-pressed={drawerPaymentType === t}
+                        onClick={() => {
+                          setDrawerPaymentType(t);
+                          if (invoiceData && agencyConfig) {
+                            const template = loadPaymentTemplate(agencyConfig, t);
+                            setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
+                          }
+                        }}
+                        className={cn(
+                          "flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors",
+                          drawerPaymentType === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                        )}
                       >
-                        {savingPreset === idx ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <BookmarkPlus className="h-2.5 w-2.5" />}
-                        {item.name.length > 20 ? item.name.slice(0, 20) + "..." : item.name}
+                        {t}
                       </button>
-                    )
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
+            </Section>
 
-              {/* Total */}
-              <div className="flex justify-between items-center pt-3 border-t border-border">
-                <span className="text-sm font-medium text-foreground">Total</span>
-                <span className="text-lg font-bold text-foreground">
-                  {formatCurrencyValue(invoiceData.details.totalAmount, invoiceData.details.currency)}
+            <Section
+              title="Line items"
+              aside={
+                <span className="text-xs text-muted-foreground">
+                  {invoiceData.details.items.length} line{invoiceData.details.items.length !== 1 ? "s" : ""}
                 </span>
-              </div>
+              }
+            >
+              <LineItemsEditor
+                items={invoiceData.details.items}
+                currency={invoiceData.details.currency}
+                onChange={setItems}
+                minItems={1}
+                allowSavePreset
+                onNotice={setMsg}
+              />
+            </Section>
 
-              {/* Add Invoice button — shown when no additional invoices exist yet */}
-              {additionalInvoices.length === 0 && activeInvoiceId === null && !addingInvoice && (
-                <button
-                  onClick={handleAddInvoice}
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Additional Invoice
-                </button>
-              )}
+            <Section title="Discount & notes">
+              <DiscountField discount={invoiceData.details.discountDetails} onChange={setDiscount} />
+              <InvoiceNotesFields
+                idPrefix="deal-inv"
+                paymentTerms={invoiceData.details.paymentTerms}
+                additionalNotes={invoiceData.details.additionalNotes}
+                onChange={(patch) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, ...patch } })}
+              />
+              <InvoiceTotalsSummary details={invoiceData.details} />
+            </Section>
 
-              {/* Contracts */}
-              <div className="space-y-3">
+            {/* Contracts */}
+            <div className="space-y-3">
+              <ContractSection
+                dealId={dealId}
+                contract={contract ?? null}
+                hasPendingContract={hasPendingContract}
+                showPreview={previewingContractKey === "primary"}
+                onTogglePreview={() =>
+                  setPreviewingContractKey((k) => (k === "primary" ? null : "primary"))
+                }
+                changingTemplate={changingTemplateKey === "primary"}
+                setChangingTemplate={(v) =>
+                  setChangingTemplateKey(v ? "primary" : null)
+                }
+                queryClient={queryClient}
+                label="Contract"
+              />
+              {additionalContracts.map((ac, idx) => (
                 <ContractSection
+                  key={ac.id}
                   dealId={dealId}
-                  contract={contract ?? null}
-                  hasPendingContract={hasPendingContract}
-                  showPreview={previewingContractKey === "primary"}
+                  contract={ac}
+                  hasPendingContract={ac.status === "pending"}
+                  showPreview={previewingContractKey === ac.id}
                   onTogglePreview={() =>
-                    setPreviewingContractKey((k) => (k === "primary" ? null : "primary"))
+                    setPreviewingContractKey((k) => (k === ac.id ? null : ac.id))
                   }
-                  changingTemplate={changingTemplateKey === "primary"}
+                  changingTemplate={changingTemplateKey === ac.id}
                   setChangingTemplate={(v) =>
-                    setChangingTemplateKey(v ? "primary" : null)
+                    setChangingTemplateKey(v ? ac.id : null)
                   }
                   queryClient={queryClient}
-                  label="Contract"
+                  additionalContractId={ac.id}
+                  onDelete={() => handleDeleteContract(ac.id)}
+                  deleting={deletingContractId === ac.id}
+                  label={`Contract ${idx + 2}`}
                 />
-                {additionalContracts.map((ac, idx) => (
-                  <ContractSection
-                    key={ac.id}
-                    dealId={dealId}
-                    contract={ac}
-                    hasPendingContract={ac.status === "pending"}
-                    showPreview={previewingContractKey === ac.id}
-                    onTogglePreview={() =>
-                      setPreviewingContractKey((k) => (k === ac.id ? null : ac.id))
-                    }
-                    changingTemplate={changingTemplateKey === ac.id}
-                    setChangingTemplate={(v) =>
-                      setChangingTemplateKey(v ? ac.id : null)
-                    }
-                    queryClient={queryClient}
-                    additionalContractId={ac.id}
-                    onDelete={() => handleDeleteContract(ac.id)}
-                    deleting={deletingContractId === ac.id}
-                    label={`Contract ${idx + 2}`}
-                  />
-                ))}
-                {additionalContracts.length < 10 && (
-                  <button
-                    onClick={handleAddContract}
-                    disabled={addingContract}
-                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
-                  >
-                    {addingContract ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                    Add Additional Contract
-                  </button>
-                )}
-              </div>
-
-              {/* Messages */}
-              {msg && (
-                <div className={cn(
-                  "rounded-lg px-3 py-2 text-xs font-medium",
-                  msg.type === "success" ? "bg-emerald-500/5 text-emerald-600 border border-emerald-500/30" : "bg-destructive/5 text-destructive border border-destructive/30"
-                )}>
-                  {msg.text}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer actions */}
-        {invoiceData && (
-          <div className="border-t border-border px-5 py-4 space-y-2 shrink-0">
-            {/* Sent info + View PDF */}
-            {activeInvoiceId === null && isSent && invoice && (
-              <div className="space-y-1.5">
-                {invoice.hasPdf && (
-                  <button
-                    onClick={() => window.open(`/api/admin/deal-invoices/pdf?id=${invoice.id}`, "_blank")}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                  >
-                    <FileCheck className="h-3.5 w-3.5" />
-                    View Sent Invoice PDF
-                  </button>
-                )}
-                <p className="text-[10px] text-muted-foreground text-center">
-                  Sent {invoice.sentCount} time{invoice.sentCount !== 1 ? "s" : ""}
-                  {invoice.sentAt && <> · Last sent {new Date(invoice.sentAt).toLocaleDateString()}</>}
-                  {invoice.clientEmail && <> · {invoice.clientEmail}</>}
-                </p>
-              </div>
-            )}
-            {activeInvoiceId && (() => {
-              const activeAddl = additionalInvoices.find(i => i.id === activeInvoiceId);
-              return activeAddl?.status === "sent" && activeAddl?.hasPdf ? (
+              ))}
+              {additionalContracts.length < 10 && (
                 <button
-                  onClick={() => window.open(`/api/admin/deal-invoices/additional/pdf?id=${activeInvoiceId}`, "_blank")}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                  type="button"
+                  onClick={handleAddContract}
+                  disabled={addingContract}
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
                 >
-                  <FileCheck className="h-3.5 w-3.5" />
-                  View Sent Invoice PDF
+                  {addingContract ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Add Additional Contract
                 </button>
-              ) : null;
-            })()}
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Save
-              </button>
-              <button onClick={handleDownload} disabled={generating} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </button>
-              <button onClick={handlePreview} disabled={generating} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
-                <Eye className="h-3.5 w-3.5" />
-                Preview
-              </button>
-            </div>
-            <button
-              onClick={handleSend}
-              disabled={sending || !clientEmail.trim()}
-              className={cn(
-                "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all ac-gradient shadow-lg shadow-primary/20",
-                (sending || !clientEmail.trim()) && "opacity-60 cursor-not-allowed"
               )}
-            >
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {(() => {
-                if (sending) return "Sending...";
-                const hasAddl = additionalInvoices.length > 0;
-                const label = hasAddl ? "All Invoices" : "Invoice";
-                const contractSuffix =
-                  totalSendableContracts === 0
-                    ? ""
-                    : totalSendableContracts === 1
-                    ? " & Contract"
-                    : ` & ${totalSendableContracts} Contracts`;
-                if (isSent) return `Resend ${label}${contractSuffix}`;
-                return contractSuffix
-                  ? `Send ${label}${contractSuffix}`
-                  : hasAddl
-                  ? `Send ${label}`
-                  : "Send to Client";
-              })()}
-            </button>
+            </div>
           </div>
         )}
-      </div>
+      </InvoiceDrawerShell>
+
+      {pdfPreviewOpen && invoiceData && (
+        <InvoicePreviewDialog
+          data={withRecipientEmail(invoiceData, clientEmail)}
+          initialMode="pdf"
+          title={`Invoice #${displayNumber ?? ""}`}
+          onClose={() => setPdfPreviewOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -1826,12 +1522,9 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
     onClose();
   }
 
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
-    document.addEventListener("keydown", handleEsc);
-    return () => document.removeEventListener("keydown", handleEsc);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clonedId, onClose]);
+  // Nesting-aware: Escape closes this editor only, not the invoice drawer
+  // underneath (which used to close too and drop its unsaved edits).
+  useEscapeKey(() => { void handleClose(); });
 
   return (
     <>

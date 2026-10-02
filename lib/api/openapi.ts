@@ -248,6 +248,87 @@ const dealBody = obj(
   ["closerId", "clientName"]
 );
 
+/**
+ * Agent-friendly invoice input (lib/invoice/invoiceSpec.ts). MCP flattens
+ * nested objects, so the description carries the full shape.
+ */
+const invoiceSpecSchema = obj(
+  {
+    items: arr(
+      obj(
+        {
+          name: str("Line item name (≤200 chars)"),
+          description: str("Optional; blank lines start a new paragraph on the PDF"),
+          quantity: { type: "number", description: "Default 1" },
+          unitPriceCents: num("Unit price in integer CENTS"),
+        },
+        ["name", "unitPriceCents"]
+      )
+    ),
+    discount: {
+      ...obj({
+        type: { type: "string", enum: ["amount", "percentage"] },
+        value: { type: "number", description: "CENTS for amount; 0–100 for percentage" },
+      }),
+      nullable: true,
+    },
+    invoiceDate: str("yyyy-mm-dd"),
+    dueDate: str("yyyy-mm-dd"),
+    terms: str('Header terms line, e.g. "Due on receipt"'),
+    paymentTerms: str("Printed under Payment Terms (≤2000 chars)"),
+    notes: str("Printed under Additional Notes (≤2000 chars)"),
+    billToName: str("Override the Bill-to name"),
+  }
+);
+invoiceSpecSchema.description =
+  "Invoice changes applied over the server-built invoice (same prefill the dashboard uses — sender, payment block, logo are automatic). " +
+  'Shape: { items?: [{ name, description?, quantity? (default 1), unitPriceCents }] (replaces the lines), ' +
+  'discount?: { type: "amount"|"percentage", value } | null (value in CENTS for amount, 0–100 for percentage), ' +
+  "invoiceDate?, dueDate? (yyyy-mm-dd), terms?, paymentTerms?, notes?, billToName? }. Totals are always recomputed.";
+
+const DRAFT_NOTE = str("Context for the human reviewer (why / source, ≤2000 chars)");
+
+/** Deal-draft fields — createDeal's fields, validated like the closer portal form. */
+const dealDraftBody = (required?: string[]) =>
+  obj(
+    {
+      closerId: str("Closer credited with the deal (listClosers)"),
+      clientName: str(),
+      dealValue: num("Deal value in integer CENTS (> 0 unless status is not_closed)"),
+      status: {
+        type: "string",
+        enum: ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"],
+        description: "Status the deal gets on approval (default closed — generates the deal's invoice + contract)",
+      },
+      clientEmail: str("Invoice / contract recipient"),
+      clientUserId: str("Link to a Client Directory client (listClients)"),
+      serviceCategory: arr(str("Service name, e.g. Meta Ads")),
+      industry: str(),
+      closingDate: str("yyyy-mm-dd (default: approval day for closed deals)"),
+      notes: str("Closer notes shown to the invoice reviewer"),
+      paymentType: { type: "string", enum: ["local", "international"] },
+      brandName: str(),
+      website: str(),
+      paidStatus: { type: "string", enum: ["paid", "unpaid"] },
+      additionalCcEmails: arr(str("CC on the invoice email (max 10)")),
+      setterId: str(),
+      setterTier: { type: "string", enum: ["A", "B", "C", "D"], nullable: true },
+      noRetainer: bool(),
+      googleEventId: str("Link to a calendar event (one deal per closer + event)"),
+      invoice: invoiceSpecSchema,
+      note: DRAFT_NOTE,
+    },
+    required
+  );
+
+/** Optional fields shared by the invoice-draft create/update operations. */
+const invoiceDraftCommon = {
+  invoice: invoiceSpecSchema,
+  recipientEmail: str("Who the invoice is emailed to (default: the client's email)"),
+  ccEmails: arr(str("CC address (max 10)")),
+  note: DRAFT_NOTE,
+};
+
 const payoutBody = obj({
   brandName: str(),
   payoutMonth: num("1–12 (default: current)"),
@@ -423,6 +504,8 @@ export const openApiSpec: OpenApiSpec = {
         ],
       }),
       post: op("createDeal", "Create a deal", "closer", "closer:write", {
+        description:
+          "Writes a LIVE deal immediately (counts in metrics/commissions at once). Agents should normally use createDealDraft so a person approves it first. A closed deal gets its draft invoice + pending contract records (nothing is sent). 409 when the closer already has a deal linked to that googleEventId (a retry never creates a duplicate). An explicit setterId is pinned (a later calendar claim won't reassign it).",
         requestBody: { required: true, schema: dealBody },
       }),
     },
@@ -432,12 +515,44 @@ export const openApiSpec: OpenApiSpec = {
       }),
       patch: op("updateDeal", "Update a deal", "closer", "closer:write", {
         description:
-          "First-party effects only: auto-show attendance on closed transition, invoice email sync. No GHL pushes.",
+          "First-party effects only: auto-show attendance on closed transition, invoice email sync, and the draft invoice + contract records on a transition to closed (nothing is sent). No GHL pushes.",
         parameters: [pathParam("id", "Deal id")],
         requestBody: { schema: dealBody },
       }),
       delete: op("deleteDeal", "Delete a deal", "closer", "closer:delete", {
         parameters: [pathParam("id", "Deal id")],
+      }),
+    },
+    "/closer/deal-drafts": {
+      get: op("listDealDrafts", "List deal drafts", "closer", "closer:read", {
+        description:
+          "Deals proposed for human approval and their review outcome. status: pending (awaiting a person) | approved (dealId = the created deal) | rejected (reviewNote says why).",
+        parameters: [
+          ...PAGINATION,
+          q("status", "pending | approved | rejected (default: all)"),
+          q("closerId", "Filter to one closer"),
+        ],
+      }),
+      post: op("createDealDraft", "Propose a deal for human approval", "closer", "closer:write", {
+        description:
+          "PREFERRED way for agents to add a deal. Creates NO deal: a person reviews it in the dashboard's Deal queue (Agent drafts) and approves — which creates the deal through the normal path (setter attribution, calendar attendance, the deal's draft invoice + contract) — or rejects it with a note. Approval never emails anything; the invoice is then sent by a person from the invoice drawer. Optional `invoice` adjusts the invoice generated on approval. Poll getDealDraft for the outcome.",
+        requestBody: { required: true, schema: dealDraftBody(["closerId", "clientName", "dealValue"]) },
+      }),
+    },
+    "/closer/deal-drafts/{id}": {
+      get: op("getDealDraft", "Get a deal draft", "closer", "closer:read", {
+        description:
+          "Includes `invoicePreview` (pending drafts): the exact invoice approval would generate, with dollar amounts as on the PDF.",
+        parameters: [pathParam("id", "Deal draft id")],
+      }),
+      patch: op("updateDealDraft", "Revise a pending deal draft", "closer", "closer:write", {
+        description: "Any createDealDraft field; `invoice: null` clears the proposed invoice changes. 409 once reviewed.",
+        parameters: [pathParam("id", "Deal draft id")],
+        requestBody: { required: true, schema: dealDraftBody() },
+      }),
+      delete: op("deleteDealDraft", "Withdraw a pending deal draft", "closer", "closer:delete", {
+        description: "Only pending, API-created drafts; reviewed drafts are history (409, also while a person is sending it); dashboard-saved drafts → 403.",
+        parameters: [pathParam("id", "Deal draft id")],
       }),
     },
     "/closer/deals/{id}/invoices": {
@@ -448,10 +563,12 @@ export const openApiSpec: OpenApiSpec = {
     },
     "/closer/deals/{id}/invoices/additional": {
       post: op("createAdditionalInvoice", "Create an additional invoice draft", "closer", "closer:write", {
+        description:
+          "A draft a person sends from the deal's invoice drawer (never emailed by the API). Pass `invoice` (InvoiceSpec, CENTS) to start from a copy of the primary invoice (new `items` replace its lines and drop its discount unless you pass one), or a full `invoiceData` (dollars). Requires the deal's primary invoice (closed deal); max 10 per deal. Totals are recomputed; the printed number is the allocated one.",
         parameters: [pathParam("id", "Deal id")],
         requestBody: {
           required: true,
-          schema: obj({ invoiceData: anyObj("InvoiceData object") }, ["invoiceData"]),
+          schema: obj({ invoiceData: anyObj("Full InvoiceData object (dollar amounts)"), invoice: invoiceSpecSchema }),
         },
       }),
       delete: op("deleteAdditionalInvoice", "Delete an additional invoice", "closer", "closer:delete", {
@@ -469,11 +586,14 @@ export const openApiSpec: OpenApiSpec = {
         parameters: [pathParam("id", "Invoice id (primary or additional)")],
       }),
       patch: op("updateDealInvoice", "Update an invoice record", "closer", "closer:write", {
+        description:
+          "Edit a deal invoice draft — never emails. `invoice` (InvoiceSpec, CENTS) is applied over the current invoice (or over `invoiceData` when both are given). status \"sent\" only registers an out-of-band send; leave drafts for a person to send from the dashboard. Totals are recomputed; the printed number stays the record's.",
         parameters: [pathParam("id", "Invoice id")],
         requestBody: {
           required: true,
           schema: obj({
-            invoiceData: anyObj("InvoiceData object"),
+            invoiceData: anyObj("Full InvoiceData object (dollar amounts)"),
+            invoice: invoiceSpecSchema,
             status: { type: "string", enum: ["draft", "sent"] },
           }),
         },
@@ -515,7 +635,9 @@ export const openApiSpec: OpenApiSpec = {
         },
       }),
       delete: op("deleteContractTemplate", "Delete a template mapping", "closer", "closer:delete", {
-        parameters: [pathParam("id", "Template id")],
+        description:
+          "409 while unsigned contracts still use the template (they'd fail to send until another template is picked) — pass force=true to delete anyway.",
+        parameters: [pathParam("id", "Template id"), q("force", "true = delete even if unsigned contracts use it", { type: "boolean" })],
       }),
     },
     "/closer/payouts": {
@@ -830,6 +952,20 @@ export const openApiSpec: OpenApiSpec = {
         parameters: [pathParam("id", "Client id"), q("paymentType", "local | international")],
       }),
     },
+    "/client/clients/{id}/billing/invoice/drafts": {
+      post: op("createClientInvoiceDraft", "Prepare a re-bill invoice for human review", "client", "client:write", {
+        description:
+          "PREFERRED way for agents to invoice a client. Starts from the same prefill as the dashboard (the client's MRR line); `invoice` overrides lines / discount / dates / notes. Nothing is emailed, filed or recorded: a person reviews it in the client's Billing tab (or the Client Directory's Drafts panel) and sends it — or rejects it with a note. Poll getInvoiceDraft for the outcome.",
+        parameters: [pathParam("id", "Client id")],
+        requestBody: {
+          required: true,
+          schema: obj({
+            ...invoiceDraftCommon,
+            paymentType: { type: "string", enum: ["local", "international"] },
+          }),
+        },
+      }),
+    },
     "/client/clients/{id}/billing/invoices/register": {
       post: op("registerClientInvoice", "Register an out-of-band re-bill invoice", "client", "client:write", {
         description: "No email — records the invoice into the re-bill lifecycle (invoice_sent).",
@@ -950,6 +1086,56 @@ export const openApiSpec: OpenApiSpec = {
           q("vendor", "Vendor override"),
           q("paymentType", "local | international"),
         ],
+      }),
+    },
+    "/client/ad-accounts/invoice/drafts": {
+      post: op("createAdAccountInvoiceDraft", "Prepare an ad-account invoice for human review", "client", "client:write", {
+        description:
+          "Lines are generated exactly like the dashboard drawer: a retainer line (retainerCents, default the account's monthly retainer) and an ad-spend fee line (spendCents × feeBps, default the account's fee) — each only when > 0. `invoice.items` are EXTRA lines appended after them. Nothing is emailed or recorded until a person sends it from the Ad Accounts tab.",
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              adAccountId: str("Ad account (listAdAccounts)"),
+              retainerCents: num("Retainer for this invoice in CENTS (0 omits the line)"),
+              spendCents: num("Ad spend in CENTS the fee is charged on (0 omits the line)"),
+              feeBps: num("Ad-spend fee in basis points (200–700)"),
+              cycleAnchor: str("Billing cycle yyyy-mm-dd (default: the account's next cycle)"),
+              paymentType: { type: "string", enum: ["local", "international"] },
+              ...invoiceDraftCommon,
+            },
+            ["adAccountId"]
+          ),
+        },
+      }),
+    },
+    "/client/invoice-drafts": {
+      get: op("listInvoiceDrafts", "List invoice drafts", "client", "client:read", {
+        description:
+          "Re-bill + ad-account invoices prepared for human review, and their outcome: pending | sent (sentInvoiceId = the recorded invoice) | rejected (reviewNote says why). Rows omit invoiceData.",
+        parameters: [
+          ...PAGINATION,
+          q("status", "pending | sent | rejected (default: all)"),
+          q("kind", "client_rebill | ad_account"),
+          q("clientId", "Filter to one client (ad-account drafts follow the account's CURRENT owner)"),
+          q("adAccountId", "Filter to one ad account"),
+        ],
+      }),
+    },
+    "/client/invoice-drafts/{id}": {
+      get: op("getInvoiceDraft", "Get an invoice draft", "client", "client:read", {
+        description: "Includes the full invoiceData (dollar amounts, as printed).",
+        parameters: [pathParam("id", "Invoice draft id")],
+      }),
+      patch: op("updateInvoiceDraft", "Revise a pending invoice draft", "client", "client:write", {
+        description:
+          "`invoice` is applied over the current draft (for ad-account drafts its items replace the EXTRA lines only). paymentType / ad-account components can't change — delete and recreate. 409 once reviewed or while a person is sending it; 403 for a draft a person saved in the dashboard (API-created drafts only).",
+        parameters: [pathParam("id", "Invoice draft id")],
+        requestBody: { required: true, schema: obj({ ...invoiceDraftCommon }) },
+      }),
+      delete: op("deleteInvoiceDraft", "Withdraw a pending invoice draft", "client", "client:delete", {
+        description: "Only pending, API-created drafts; reviewed drafts are history (409, also while a person is sending it); dashboard-saved drafts → 403.",
+        parameters: [pathParam("id", "Invoice draft id")],
       }),
     },
     "/client/ad-accounts/invoices/{invoiceId}/document": {

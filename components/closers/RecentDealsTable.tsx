@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { format } from "date-fns";
 import Link from "next/link";
-import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase, UserRound } from "lucide-react";
+import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNote, Briefcase, UserRound, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { useToast } from "@/components/providers/ToastProvider";
 import { DealStatusBadge } from "@/components/closers/DealStatusBadge";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -45,24 +47,44 @@ interface RecentDealsTableProps {
   deals: DealWithInvoice[];
   adminMode?: boolean;
   closerId?: string;
+  title?: string;
 }
 
 
 function PaidStatusBadge({ deal, adminMode }: { deal: DealWithInvoice; adminMode: boolean }) {
   const queryClient = useQueryClient();
+  const { toastError } = useToast();
+  const [toggling, setToggling] = useState(false);
   const isPaid = deal.paidStatus === "paid";
 
   const toggle = async () => {
-    if (!adminMode) return;
-    const res = await fetch("/api/admin/deals", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: deal.id, paidStatus: isPaid ? "unpaid" : "paid" }),
-    });
-    if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
-      queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+    // Locked while in flight — a double click used to flip it twice.
+    if (!adminMode || toggling) return;
+    setToggling(true);
+    try {
+      const res = await fetch("/api/admin/deals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deal.id, paidStatus: isPaid ? "unpaid" : "paid" }),
+      });
+      if (res.ok) {
+        // Awaited so the badge stays locked until the refetched row lands.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["admin-deals"] }),
+          queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] }),
+          queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] }),
+          queryClient.invalidateQueries({ queryKey: ["closer-deals"] }),
+          queryClient.invalidateQueries({ queryKey: ["closer-detail"] }),
+          queryClient.invalidateQueries({ queryKey: ["closers-stats"] }),
+        ]);
+      } else {
+        const json = await res.json().catch(() => ({}));
+        toastError(json.error ?? `Couldn't mark ${deal.clientName} as ${isPaid ? "unpaid" : "paid"}. Try again.`);
+      }
+    } catch {
+      toastError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -70,15 +92,17 @@ function PaidStatusBadge({ deal, adminMode }: { deal: DealWithInvoice; adminMode
     <button
       type="button"
       onClick={adminMode ? toggle : undefined}
+      disabled={toggling}
       className={cn(
-        "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors",
+        "inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-60",
         isPaid
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
           : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
-        adminMode && "cursor-pointer hover:opacity-80"
+        adminMode && "cursor-pointer hover:opacity-80 disabled:cursor-wait"
       )}
-      title={adminMode ? (isPaid ? "Mark as unpaid" : "Mark as paid") : undefined}
+      title={adminMode ? (toggling ? "Updating…" : isPaid ? "Mark as unpaid" : "Mark as paid") : undefined}
     >
+      {toggling && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
       {isPaid ? "Paid" : "Unpaid"}
     </button>
   );
@@ -117,17 +141,39 @@ function DealActionsDropdown({
   anchorRef: React.RefObject<HTMLButtonElement>;
 }) {
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  // Layout effect so the menu is placed before first paint. Opens upward
+  // when there isn't room below the trigger (last rows of a long table).
+  useLayoutEffect(() => {
     if (!anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
-    setPos({ top: rect.bottom + 4, left: rect.right - 160 });
+    const menuHeight = menuRef.current?.offsetHeight ?? 0;
+    const fitsBelow = rect.bottom + 4 + menuHeight <= window.innerHeight - 8;
+    setPos({
+      top: fitsBelow ? rect.bottom + 4 : Math.max(8, rect.top - 4 - menuHeight),
+      left: rect.right - 160,
+    });
   }, [anchorRef]);
+
+  // Position is computed once, so close instead of drifting away from the
+  // trigger on scroll (any scroll container — capture phase) or resize.
+  useEffect(() => {
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
+  useEscapeKey(onClose);
 
   return createPortal(
     <>
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
+        ref={menuRef}
         className="fixed z-[61] w-40 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100"
         style={{ top: pos.top, left: Math.max(8, pos.left) }}
       >
@@ -168,6 +214,8 @@ function DealActionsCell({
       <button
         ref={btnRef}
         onClick={() => setOpen((v) => !v)}
+        aria-label="Deal actions"
+        aria-expanded={open}
         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
       >
         <MoreHorizontal className="h-4 w-4" />
@@ -195,14 +243,34 @@ function EditDealModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Backdrop / × / Escape are easy to hit by accident — confirm before
+  // throwing edits away, and never close mid-save (the result would be lost).
+  function requestClose() {
+    if (saving) return;
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  }
+
+  // Stays registered while saving (requestClose no-ops) so Escape is absorbed
+  // here instead of falling through to a layer underneath.
+  useEscapeKey(requestClose);
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
       <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-border bg-card rounded-t-2xl">
           <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <span className="sr-only">Close</span>&times;
+          <button
+            onClick={requestClose}
+            disabled={saving}
+            aria-label="Close"
+            className="-mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            <span aria-hidden>&times;</span>
           </button>
         </div>
         <div className="p-6">
@@ -213,6 +281,8 @@ function EditDealModal({
             initialData={deal}
             onSuccess={onSaved}
             onCancel={onClose}
+            onDirtyChange={setDirty}
+            onPendingChange={setSaving}
           />
         </div>
       </div>
@@ -221,14 +291,22 @@ function EditDealModal({
 }
 
 /* ── Main component ── */
-export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDealsTableProps) {
+export function RecentDealsTable({ deals, adminMode = true, closerId, title = "Recent Closings" }: RecentDealsTableProps) {
   const [editDeal, setEditDeal] = useState<DealPublic | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<{ type: "notes" | "services"; deal: DealPublic } | null>(null);
-  const [invoiceDealId, setInvoiceDealId] = useState<string | null>(null);
-  const [contractDealId, setContractDealId] = useState<string | null>(null);
-  const invoiceDeal = deals.find((d) => d.id === invoiceDealId);
-  const [isPending, startTransition] = useTransition();
+  // Snapshot the deal when a drawer opens: a send can move it out of a
+  // status-filtered list (closed → pending_signature), and the drawer must
+  // keep its value / client email rather than fall back to blanks.
+  const [invoiceSnap, setInvoiceSnap] = useState<DealWithInvoice | null>(null);
+  const [contractSnap, setContractSnap] = useState<DealWithInvoice | null>(null);
+  const invoiceDeal = invoiceSnap && (deals.find((d) => d.id === invoiceSnap.id) ?? invoiceSnap);
+  const contractDeal = contractSnap && (deals.find((d) => d.id === contractSnap.id) ?? contractSnap);
+  const confirmDeleteDeal = deals.find((d) => d.id === confirmDeleteId);
+  // Plain state rather than useTransition: on React 18 an async transition's
+  // isPending clears at the first await, so "Deleting..." never stayed up.
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const recentDeals = [...deals]
@@ -238,18 +316,44 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
         new Date(a.closingDate || a.createdAt).getTime()
     );
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
+  function openDeleteConfirm(id: string) {
+    setDeleteError(null);
+    setConfirmDeleteId(id);
+  }
+
+  function closeDeleteConfirm() {
+    if (deleting) return;
+    setConfirmDeleteId(null);
+  }
+
+  // Registered for as long as the dialog is open (closeDeleteConfirm no-ops
+  // mid-delete), so Escape never falls through to a layer underneath.
+  useEscapeKey(closeDeleteConfirm, !!confirmDeleteId);
+
+  async function handleDelete(id: string) {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
       const res = await fetch(`/api/admin/deals?id=${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (json.error) {
-        alert(json.error);
+      // 404 = already deleted (another tab/admin) — same end state, so close
+      // and refresh instead of leaving a dead row behind an error.
+      if (!res.ok && res.status !== 404) {
+        // Keep the dialog open so the failure is visible next to the action.
+        const json = await res.json().catch(() => ({}));
+        setDeleteError(json.error || "Failed to delete deal. Try again.");
+        return;
       }
       setConfirmDeleteId(null);
       queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
       queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
       queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
-    });
+      queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
+    } catch {
+      setDeleteError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function handleSaved() {
@@ -263,7 +367,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
     <>
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
         <h3 className="text-sm font-semibold text-foreground mb-6">
-          Recent Closings
+          {title}
         </h3>
 
         {recentDeals.length === 0 ? (
@@ -346,21 +450,29 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                           {deal.invoiceStatus && (
                             <DealInvoiceStatusBadge
                               status={deal.invoiceStatus}
-                              onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
+                              onClick={adminMode ? () => setInvoiceSnap(deal) : undefined}
                               isAdmin={adminMode}
                             />
                           )}
                           {deal.contractStatus && (
-                            <DealContractStatusBadge
-                              status={deal.contractStatus}
-                              onClick={adminMode ? () => {
-                                if (deal.contractStatus === "pending") {
-                                  setInvoiceDealId(deal.id);
-                                } else {
-                                  setContractDealId(deal.id);
-                                }
-                              } : undefined}
-                            />
+                            // Intentional: a pending contract has no DocuSeal
+                            // submission yet — it's picked and sent together
+                            // with the invoice, so it opens the invoice drawer.
+                            <span
+                              className="inline-flex"
+                              title={adminMode && deal.contractStatus === "pending" ? "Pending contracts are sent with the invoice" : undefined}
+                            >
+                              <DealContractStatusBadge
+                                status={deal.contractStatus}
+                                onClick={adminMode ? () => {
+                                  if (deal.contractStatus === "pending") {
+                                    setInvoiceSnap(deal);
+                                  } else {
+                                    setContractSnap(deal);
+                                  }
+                                } : undefined}
+                              />
+                            </span>
                           )}
                           <PaidStatusBadge deal={deal} adminMode={adminMode} />
                         </div>
@@ -373,7 +485,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                           <DealActionsCell
                             deal={deal}
                             onEdit={setEditDeal}
-                            onDelete={setConfirmDeleteId}
+                            onDelete={openDeleteConfirm}
                           />
                         </td>
                       )}
@@ -429,7 +541,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                       <DealActionsCell
                         deal={deal}
                         onEdit={setEditDeal}
-                        onDelete={setConfirmDeleteId}
+                        onDelete={openDeleteConfirm}
                       />
                     )}
                   </div>
@@ -440,21 +552,26 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
                       {deal.invoiceStatus && (
                         <DealInvoiceStatusBadge
                           status={deal.invoiceStatus}
-                          onClick={adminMode ? () => setInvoiceDealId(deal.id) : undefined}
+                          onClick={adminMode ? () => setInvoiceSnap(deal) : undefined}
                           isAdmin={adminMode}
                         />
                       )}
                       {deal.contractStatus && (
-                        <DealContractStatusBadge
-                          status={deal.contractStatus}
-                          onClick={adminMode ? () => {
-                            if (deal.contractStatus === "pending") {
-                              setInvoiceDealId(deal.id);
-                            } else {
-                              setContractDealId(deal.id);
-                            }
-                          } : undefined}
-                        />
+                        <span
+                          className="inline-flex"
+                          title={adminMode && deal.contractStatus === "pending" ? "Pending contracts are sent with the invoice" : undefined}
+                        >
+                          <DealContractStatusBadge
+                            status={deal.contractStatus}
+                            onClick={adminMode ? () => {
+                              if (deal.contractStatus === "pending") {
+                                setInvoiceSnap(deal);
+                              } else {
+                                setContractSnap(deal);
+                              }
+                            } : undefined}
+                          />
+                        </span>
                       )}
                       <PaidStatusBadge deal={deal} adminMode={adminMode} />
                     </div>
@@ -482,22 +599,22 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
       )}
 
       {/* Invoice review drawer */}
-      {adminMode && invoiceDealId && (
+      {adminMode && invoiceDeal && (
         <DealInvoiceDrawer
-          dealId={invoiceDealId}
-          dealValue={invoiceDeal?.dealValue ?? 0}
-          dealPaymentType={invoiceDeal?.paymentType}
-          dealNotes={invoiceDeal?.notes}
-          onClose={() => setInvoiceDealId(null)}
+          dealId={invoiceDeal.id}
+          dealValue={invoiceDeal.dealValue}
+          dealPaymentType={invoiceDeal.paymentType}
+          dealNotes={invoiceDeal.notes}
+          onClose={() => setInvoiceSnap(null)}
         />
       )}
 
       {/* Contract review drawer */}
-      {adminMode && contractDealId && (
+      {adminMode && contractDeal && (
         <DealContractDrawer
-          dealId={contractDealId}
-          clientEmail={deals.find((d) => d.id === contractDealId)?.clientEmail}
-          onClose={() => setContractDealId(null)}
+          dealId={contractDeal.id}
+          clientEmail={contractDeal.clientEmail}
+          onClose={() => setContractSnap(null)}
           isAdmin
         />
       )}
@@ -505,16 +622,23 @@ export function RecentDealsTable({ deals, adminMode = true, closerId }: RecentDe
       {/* Confirm delete dialog */}
       {confirmDeleteId && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteId(null)} />
-          <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-border bg-card shadow-2xl p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-2">Delete Deal</h3>
-            <p className="text-sm text-muted-foreground mb-6">Are you sure you want to delete this deal? This action cannot be undone.</p>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeDeleteConfirm} />
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-deal-title" className="relative w-full max-w-sm mx-4 rounded-2xl border border-border bg-card shadow-2xl p-6">
+            <h3 id="delete-deal-title" className="text-lg font-semibold text-foreground mb-2">
+              {confirmDeleteDeal ? `Delete deal for ${confirmDeleteDeal.clientName}?` : "Delete deal?"}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">This action cannot be undone.</p>
+            {deleteError && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+                <p className="text-sm text-destructive">{deleteError}</p>
+              </div>
+            )}
             <div className="flex items-center justify-end gap-3">
-              <button onClick={() => setConfirmDeleteId(null)} className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors">
+              <button onClick={closeDeleteConfirm} disabled={deleting} className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={() => handleDelete(confirmDeleteId)} disabled={isPending} className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50">
-                {isPending ? "Deleting..." : "Delete"}
+              <button onClick={() => handleDelete(confirmDeleteId)} disabled={deleting} className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50">
+                {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

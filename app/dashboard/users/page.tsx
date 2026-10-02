@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bot, Check, Copy, Plus } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { ClientDirectory } from "@/components/users/ClientDirectory";
 import { ClientSummaryCards } from "@/components/users/ClientSummaryCards";
@@ -22,6 +23,7 @@ import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAle
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
+import { InvoiceDraftsPanel, useInvoiceDrafts } from "@/components/users/InvoiceDraftsList";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import dynamic from "next/dynamic";
 // Lazy-loaded: the builder pulls in react-markdown (via WelcomeKitRenderer)
@@ -156,8 +158,25 @@ function buildRosterCsv(
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const admin = useAdmin();
   const [tab, setTab] = useState<TabId>("clients");
+  // Invoice drafts awaiting review (agent-prepared or saved from a drawer).
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const { data: pendingDrafts = [] } = useInvoiceDrafts();
+  // Push notifications deep-link here with ?drafts=1.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("drafts") === "1") setDraftsOpen(true);
+  }, []);
+  function closeDrafts() {
+    setDraftsOpen(false);
+    // Drop the deep-link param (keeping the rest) so a reload/Back doesn't reopen the panel.
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("drafts")) return;
+    params.delete("drafts");
+    const qs = params.toString();
+    router.replace(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+  }
   const [filters, setFilters] = useState<ClientFilterState>(DEFAULT_FILTERS);
   const [showAdd, setShowAdd] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -305,6 +324,27 @@ export default function UsersPage() {
               )}
             </div>
             {!admin.isExternal && <MaintenanceToggle />}
+            {(tab === "clients" || tab === "adAccounts") && (
+              <button
+                type="button"
+                onClick={() => setDraftsOpen(true)}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors",
+                  pendingDrafts.length > 0
+                    ? "border-violet-500/40 bg-violet-500/5 text-violet-700 hover:bg-violet-500/10 dark:text-violet-300"
+                    : "border-border/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                )}
+                title="Invoice drafts awaiting review"
+              >
+                <Bot className="h-4 w-4" />
+                Drafts
+                {pendingDrafts.length > 0 && (
+                  <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                    {pendingDrafts.length}
+                  </span>
+                )}
+              </button>
+            )}
             {tab === "clients" && (
               <>
                 <button
@@ -415,6 +455,8 @@ export default function UsersPage() {
       {showAdd && (
         <AddClientModal onClose={() => setShowAdd(false)} onCreated={handleRefresh} />
       )}
+
+      {draftsOpen && <InvoiceDraftsPanel onClose={closeDrafts} />}
     </DashboardShell>
   );
 }

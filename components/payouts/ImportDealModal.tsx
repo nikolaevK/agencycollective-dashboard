@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, FileText, FileCheck2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/format";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 export interface ImportableDeal {
   dealId: string;
@@ -31,6 +32,13 @@ interface ImportDealModalProps {
 
 export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps) {
   const [search, setSearch] = useState("");
+
+  // The modal stays mounted while closed — start each opening with a fresh search.
+  useEffect(() => {
+    if (open) setSearch("");
+  }, [open]);
+
+  useEscapeKey(onClose, open);
 
   const { data: deals = [], isLoading, isError } = useQuery<ImportableDeal[]>({
     queryKey: ["importable-deals"],
@@ -100,6 +108,7 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <X className="h-4 w-4" />
@@ -134,7 +143,9 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
           )}
           {!isLoading && !isError && filtered.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No closed deals available to import.
+              {deals.length > 0
+                ? `No matches for "${search.trim()}"`
+                : "No closed deals available to import."}
             </p>
           )}
           {filtered.map((deal) => {

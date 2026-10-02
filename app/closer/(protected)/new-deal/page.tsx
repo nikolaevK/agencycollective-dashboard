@@ -50,7 +50,10 @@ export default function NewDealPage() {
   });
 
   function handleSuccess() {
+    // ["closer-stats"] also feeds this page's Recent Closures (recentDeals);
+    // ["closer-deals"] keeps the closer's other deal lists fresh.
     queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
   }
 
   // closedRevenue THIS MONTH — what counts toward the monthly quota.
@@ -78,7 +81,7 @@ export default function NewDealPage() {
           {/* Right sidebar - desktop only */}
           <div className="hidden lg:block lg:col-span-4">
             <DealSidebar
-              quota={data?.closer.quota ?? 0}
+              quota={data ? data.closer.quota : null}
               totalRevenue={monthRevenue}
               recentDeals={
                 (data?.recentDeals ?? [])
@@ -105,7 +108,7 @@ export default function NewDealPage() {
                 <span className="text-xs text-muted-foreground">
                   {data.closer.quota > 0
                     ? `${Math.min(Math.round((monthRevenue / data.closer.quota) * 100), 100)}%`
-                    : "—"}
+                    : "No quota set"}
                 </span>
               </div>
               <div className="h-2 w-full rounded-full bg-muted overflow-hidden">

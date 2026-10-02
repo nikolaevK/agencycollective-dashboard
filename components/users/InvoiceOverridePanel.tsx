@@ -15,7 +15,8 @@ import {
 import { cn } from "@/lib/utils";
 import { cycleOptionsAround } from "@/lib/clientBilling";
 import type { PayoutLinkOption } from "@/lib/payouts";
-import { formatMoney, formatDate } from "./format";
+import { formatCentsExact } from "@/lib/format";
+import { formatDate } from "./format";
 
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
@@ -127,7 +128,10 @@ export function InvoiceOverridePanel({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>(null);
-  const [busy, setBusy] = useState(false);
+  // Which PATCH is in flight: "form" (a sub-form submit) or the immediate
+  // action ("reopen" | "unlink" | "resync") — that button shows the spinner.
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const busy = busyAction !== null;
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [payoutId, setPayoutId] = useState("");
@@ -160,8 +164,8 @@ export function InvoiceOverridePanel({
     };
   }, [mode, payoutOptionsUrl, payouts]);
 
-  async function patch(body: Record<string, unknown>) {
-    setBusy(true);
+  async function patch(body: Record<string, unknown>, action = "form") {
+    setBusyAction(action);
     setError(null);
     try {
       const res = await fetch(patchUrl, {
@@ -180,7 +184,7 @@ export function InvoiceOverridePanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed.");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -205,7 +209,9 @@ export function InvoiceOverridePanel({
           setMode(null);
           setError(null);
         }}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+        // Padding enlarges the hit area; the negative margin keeps the
+        // compact visual footprint.
+        className="-mx-2 -my-1.5 inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
       >
         Manage
         <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
@@ -252,9 +258,10 @@ export function InvoiceOverridePanel({
                 icon={RotateCcw}
                 label="Reopen (awaiting)"
                 disabled={busy}
+                loading={busyAction === "reopen"}
                 onClick={() => {
                   if (!confirm(`Reopen ${invoice.invoiceNumber} as awaiting payment?\n\nIt stays locked from auto-matching until you Resync.`)) return;
-                  patch({ status: "sent" });
+                  patch({ status: "sent" }, "reopen");
                 }}
               />
             )}
@@ -269,7 +276,11 @@ export function InvoiceOverridePanel({
                 icon={Link2}
                 label="Unlink payout"
                 disabled={busy}
-                onClick={() => patch({ paidPayoutId: null })}
+                loading={busyAction === "unlink"}
+                onClick={() => {
+                  if (!confirm(`Unlink the payout from ${invoice.invoiceNumber}?\n\nThe invoice stays paid (by hand) — only the payout reference is removed.`)) return;
+                  patch({ paidPayoutId: null }, "unlink");
+                }}
               />
             )}
             {invoice.reconcileLocked && (
@@ -277,9 +288,10 @@ export function InvoiceOverridePanel({
                 icon={RefreshCw}
                 label="Resync with payouts"
                 disabled={busy}
+                loading={busyAction === "resync"}
                 onClick={() => {
                   if (!confirm(`Hand ${invoice.invoiceNumber} back to the automation?\n\nManual markers and the note are cleared, the invoice returns to awaiting, and the Payout DB decides again whether it's paid.`)) return;
-                  patch({ resync: true });
+                  patch({ resync: true }, "resync");
                 }}
               />
             )}
@@ -306,18 +318,34 @@ export function InvoiceOverridePanel({
                       {payouts.map((p) => (
                         <option key={p.id} value={p.id}>
                           {monthLabel(p.payoutYear, p.payoutMonth)} · {p.brandName} ·{" "}
-                          {formatMoney(p.amountPaid || p.amountDue)}
+                          {formatCentsExact(p.amountPaid || p.amountDue)}
                           {p.salesRep ? ` · ${p.salesRep}` : ""}
                         </option>
                       ))}
                     </select>
                   )}
-                  {payouts !== null && payouts.length === 0 && (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {payoutsError
-                        ? "Couldn't load payout rows — try again."
-                        : "No payout rows found for this brand."}
+                  {payoutsError ? (
+                    <p className="mt-1 flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400">
+                      Couldn&rsquo;t load payout rows.
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Back to null re-runs the lazy loader above.
+                          setPayoutsError(false);
+                          setPayouts(null);
+                        }}
+                        className="font-semibold underline underline-offset-2 hover:text-foreground"
+                      >
+                        Retry
+                      </button>
                     </p>
+                  ) : (
+                    payouts !== null &&
+                    payouts.length === 0 && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        No payout rows found for this brand.
+                      </p>
+                    )
                   )}
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     Linking records which payment settled this cycle. If the payment was booked
@@ -432,6 +460,7 @@ function ActionButton({
   tone,
   active,
   disabled,
+  loading,
   onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
@@ -439,6 +468,8 @@ function ActionButton({
   tone?: "green" | "red";
   active?: boolean;
   disabled?: boolean;
+  /** Immediate (no sub-form) action in flight — spinner replaces the icon. */
+  loading?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -455,11 +486,13 @@ function ActionButton({
         tone === "red" && !active && "hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40"
       )}
     >
-      <Icon className="h-3 w-3" />
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
       {label}
     </button>
   );
 }
+
+const NOTE_MAX = 500;
 
 function NoteField({
   value,
@@ -471,13 +504,19 @@ function NoteField({
   placeholder: string;
 }) {
   return (
-    <input
-      className={FIELD}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      maxLength={500}
-    />
+    <div>
+      <textarea
+        className={cn(FIELD, "resize-y")}
+        rows={3}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={NOTE_MAX}
+      />
+      <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
+        {NOTE_MAX - value.length} characters left
+      </p>
+    </div>
   );
 }
 
@@ -499,7 +538,8 @@ function SubmitRow({
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted/50 transition-colors"
+        disabled={busy}
+        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
       >
         Cancel
       </button>

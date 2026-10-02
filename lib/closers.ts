@@ -214,6 +214,29 @@ export async function deleteCloser(id: string): Promise<boolean> {
     sql: "DELETE FROM note_shares WHERE shared_with_id = ?",
     args: [id],
   });
+  // Pending deal drafts credited to them can no longer be approved (approval
+  // re-validates the closer). Reviewed drafts stay as history.
+  await db
+    .execute({ sql: "DELETE FROM deal_drafts WHERE closer_id = ? AND status = 'pending'", args: [id] })
+    .catch((err) => console.error("[deleteCloser] deal_drafts cleanup failed (non-fatal):", err));
+  // Pending drafts naming them as SETTER stay approvable: drop the setter
+  // (approval then attributes the calendar claimer, if any).
+  try {
+    const pending = await db.execute({
+      sql: "SELECT id, fields FROM deal_drafts WHERE status = 'pending' AND fields LIKE ?",
+      args: [`%${id}%`],
+    });
+    for (const r of pending.rows) {
+      const fields = JSON.parse(String(r.fields));
+      if (fields?.setterId !== id) continue;
+      await db.execute({
+        sql: "UPDATE deal_drafts SET fields = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+        args: [JSON.stringify({ ...fields, setterId: null, setterTier: null }), new Date().toISOString(), String(r.id)],
+      });
+    }
+  } catch (err) {
+    console.error("[deleteCloser] deal_drafts setter cleanup failed (non-fatal):", err);
+  }
   const result = await db.execute({
     sql: "DELETE FROM closers WHERE id = ?",
     args: [id],

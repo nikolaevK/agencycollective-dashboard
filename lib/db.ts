@@ -414,6 +414,70 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_team_task_tags_admin
      ON team_task_tags (admin_id, created_at DESC)`,
+    // Deal drafts — a proposed deal (typically from an agent via the v1 API /
+    // MCP) awaiting a human's approval. Approval runs the normal creation path
+    // and stamps deal_id; until then the proposal touches no deal, metric,
+    // payout or GHL state. `fields` = JSON deal payload, `invoice_spec` = JSON
+    // InvoiceSpec (lib/invoice/invoiceSpec.ts) applied to the deal's invoice.
+    `CREATE TABLE IF NOT EXISTS deal_drafts (
+      id               TEXT PRIMARY KEY,
+      closer_id        TEXT NOT NULL,
+      client_name      TEXT NOT NULL,
+      deal_value       INTEGER NOT NULL DEFAULT 0,
+      fields           TEXT NOT NULL,
+      invoice_spec     TEXT,
+      note             TEXT,
+      status           TEXT NOT NULL DEFAULT 'pending',
+      source           TEXT NOT NULL DEFAULT 'api',
+      created_by       TEXT,
+      created_by_name  TEXT,
+      reviewed_by      TEXT,
+      reviewed_by_name TEXT,
+      reviewed_at      TEXT,
+      review_note      TEXT,
+      deal_id          TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_deal_drafts_status
+     ON deal_drafts (status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_deal_drafts_closer
+     ON deal_drafts (closer_id, status)`,
+    // Invoice drafts — a prepared client re-bill or ad-account invoice
+    // (agent via v1/MCP, or "Save draft" in a drawer) that a human reviews and
+    // sends. Sending through the normal drawer flow stamps sent_invoice_id;
+    // until then nothing is emailed, filed or recorded on the billing ledger.
+    `CREATE TABLE IF NOT EXISTS invoice_drafts (
+      id               TEXT PRIMARY KEY,
+      kind             TEXT NOT NULL,
+      user_id          TEXT,
+      ad_account_id    TEXT,
+      invoice_number   TEXT NOT NULL,
+      amount_cents     INTEGER NOT NULL DEFAULT 0,
+      recipient_email  TEXT,
+      cc_emails        TEXT,
+      payment_type     TEXT NOT NULL DEFAULT 'local',
+      options          TEXT,
+      note             TEXT,
+      status           TEXT NOT NULL DEFAULT 'pending',
+      source           TEXT NOT NULL DEFAULT 'api',
+      created_by       TEXT,
+      created_by_name  TEXT,
+      reviewed_by      TEXT,
+      reviewed_by_name TEXT,
+      reviewed_at      TEXT,
+      review_note      TEXT,
+      sent_invoice_id  TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      invoice_data     TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_drafts_status
+     ON invoice_drafts (status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_drafts_user
+     ON invoice_drafts (user_id, status) WHERE user_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_drafts_ad_account
+     ON invoice_drafts (ad_account_id, status) WHERE ad_account_id IS NOT NULL`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

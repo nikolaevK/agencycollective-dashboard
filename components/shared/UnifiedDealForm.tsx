@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
@@ -44,6 +44,11 @@ interface UnifiedDealFormProps {
   readOnlyDate?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
+  /** Fires when the form starts/stops differing from what it mounted with —
+   *  lets a hosting modal confirm before discarding edits. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Fires while a submit is in flight — lets a hosting modal block closing. */
+  onPendingChange?: (pending: boolean) => void;
 }
 
 export function UnifiedDealForm({
@@ -54,8 +59,13 @@ export function UnifiedDealForm({
   readOnlyDate,
   onSuccess,
   onCancel,
+  onDirtyChange,
+  onPendingChange,
 }: UnifiedDealFormProps) {
-  const [isPending, startTransition] = useTransition();
+  // Plain state, not useTransition: on React 18 an async transition's
+  // isPending clears at the first await, so the button re-enabled mid-request
+  // (double submits) and the "Saving..." state never really showed.
+  const [isPending, setIsPending] = useState(false);
   const queryClient = useQueryClient();
 
   const [clientName, setClientName] = useState(initialData?.clientName ?? calendarEvent?.title ?? "");
@@ -79,6 +89,7 @@ export function UnifiedDealForm({
   const [additionalCcEmails, setAdditionalCcEmails] = useState<string[]>(initialData?.additionalCcEmails ?? []);
   const [ccInputValue, setCcInputValue] = useState("");
   const [ccInputError, setCcInputError] = useState<string | null>(null);
+  const ccFieldRef = useRef<HTMLDivElement>(null);
   // Admin-only tier override + no-retainer flag (1099 §3.3, §3.8). Initialized
   // from the deal so the form reflects what the setter picked, but admin has
   // the final say. `setterTier === ""` means "no tier — drops setter from
@@ -92,11 +103,34 @@ export function UnifiedDealForm({
   const showAdminTierFields = context === "admin" && mode === "edit";
   const hasSetter = Boolean(initialData?.setterId);
 
+  // Dirty = any field differs from the values the form mounted with.
+  const fieldsKey = JSON.stringify([
+    clientName, clientUserId, clientEmail, dealValue, closingDate, selectedServices, industry,
+    status, notes, paymentType, brandName, website, additionalCcEmails, ccInputValue, setterTier, noRetainer,
+  ]);
+  const [initialFieldsKey] = useState(fieldsKey);
+  const dirty = fieldsKey !== initialFieldsKey;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onPendingChange?.(isPending); }, [isPending, onPendingChange]);
+
+  // The success banner auto-dismisses so it doesn't linger into the next entry.
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(false), 4000);
+    return () => clearTimeout(t);
+  }, [success]);
+
+  const clientEmailLc = clientEmail.trim().toLowerCase();
+
   function tryCommitCc(raw: string): boolean {
     const trimmed = raw.trim().toLowerCase();
     if (!trimmed) return false;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) || trimmed.length > 254) {
       setCcInputError("Enter a valid email address");
+      return false;
+    }
+    if (trimmed === clientEmailLc) {
+      setCcInputError("That's the client email");
       return false;
     }
     if (additionalCcEmails.includes(trimmed)) {
@@ -127,6 +161,10 @@ export function UnifiedDealForm({
       if (!v) continue;
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 254) {
         if (firstError === null) firstError = "Some entries were invalid and skipped";
+        continue;
+      }
+      if (v === clientEmailLc) {
+        if (firstError === null) firstError = "That's the client email";
         continue;
       }
       if (seen.has(v)) continue;
@@ -164,17 +202,35 @@ export function UnifiedDealForm({
     setSuccess(false);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleDiscard() {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    resetForm();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isPending) return;
     setError(null);
     setSuccess(false);
+
+    // A blocked CC is flagged next to the field AND by the submit button, with
+    // the field scrolled into view — on a phone the field is far above Submit.
+    function blockOnCc(message: string) {
+      setCcInputError(message);
+      setError(`Additional CCs: ${message}`);
+      ccFieldRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
 
     // Commit any pending CC input (so typed-but-unconfirmed values aren't dropped)
     let ccList = additionalCcEmails;
     if (ccInputValue.trim()) {
       const pending = ccInputValue.trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pending) || pending.length > 254) {
-        setCcInputError("Enter a valid email address");
+        blockOnCc("Enter a valid email address");
+        return;
+      }
+      if (pending === clientEmailLc) {
+        blockOnCc("That's the client email");
         return;
       }
       if (!ccList.includes(pending) && ccList.length < 10) {
@@ -184,6 +240,16 @@ export function UnifiedDealForm({
         setCcInputError(null);
       }
     }
+
+    // The client is already the invoice's To: address — a CC of it is a
+    // duplicate (e.g. left over from before the email was edited, or legacy
+    // data on an older deal). Drop it rather than block an unrelated save;
+    // the send route de-dupes it anyway.
+    if (clientEmailLc && ccList.includes(clientEmailLc)) {
+      ccList = ccList.filter((e) => e !== clientEmailLc);
+      setAdditionalCcEmails(ccList);
+    }
+    const trimmedEmail = clientEmail.trim();
 
     // Validation
     if (!clientName.trim()) {
@@ -222,117 +288,122 @@ export function UnifiedDealForm({
     // Auto-show: closed + calendar-linked = showed
     const autoShowStatus = status === "closed" && googleEventId ? "showed" : null;
 
-    startTransition(async () => {
-      try {
-        if (context === "closer" && mode === "create") {
-          // Server action
-          const fd = new FormData();
-          fd.set("clientName", clientName);
-          if (clientUserId) fd.set("clientUserId", clientUserId);
-          if (clientEmail) fd.set("clientEmail", clientEmail);
-          fd.set("dealValue", dealValue || "0");
-          fd.set("closingDate", closingDate);
-          fd.set("serviceCategory", serializedServices ?? "");
-          fd.set("industry", industry);
-          fd.set("status", status);
-          fd.set("notes", notes);
-          fd.set("paymentType", paymentType);
-          if (brandName) fd.set("brandName", brandName);
-          if (website) fd.set("website", website);
-          if (googleEventId) fd.set("googleEventId", googleEventId);
-          if (autoShowStatus) fd.set("showStatus", autoShowStatus);
-          for (const addr of ccList) fd.append("additionalCcEmails", addr);
+    setIsPending(true);
+    try {
+      if (context === "closer" && mode === "create") {
+        // Server action
+        const fd = new FormData();
+        fd.set("clientName", clientName);
+        if (clientUserId) fd.set("clientUserId", clientUserId);
+        if (trimmedEmail) fd.set("clientEmail", trimmedEmail);
+        fd.set("dealValue", dealValue || "0");
+        fd.set("closingDate", closingDate);
+        fd.set("serviceCategory", serializedServices ?? "");
+        fd.set("industry", industry);
+        fd.set("status", status);
+        fd.set("notes", notes);
+        fd.set("paymentType", paymentType);
+        if (brandName) fd.set("brandName", brandName);
+        if (website) fd.set("website", website);
+        if (googleEventId) fd.set("googleEventId", googleEventId);
+        if (autoShowStatus) fd.set("showStatus", autoShowStatus);
+        for (const addr of ccList) fd.append("additionalCcEmails", addr);
 
-          const result = await createDealAction(fd);
-          if (result.error) {
-            setError(result.error);
-            return;
-          }
-          setSuccess(true);
-          resetForm();
-          onSuccess?.();
-        } else if (context === "calendar-link") {
-          // POST to link-deal API
-          const res = await fetch("/api/closer/calendar/link-deal", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              eventId: calendarEvent?.id,
-              eventTitle: clientName || calendarEvent?.title,
-              eventDate: closingDate,
-              dealValue: parseFloat(dealValue) || 0,
-              serviceCategory: serializedServices,
-              industry: industry || null,
-              status,
-              notes: notes || null,
-              clientUserId,
-              clientEmail: clientEmail || null,
-              paymentType,
-              brandName: brandName || null,
-              website: website || null,
-              additionalCcEmails: ccList,
-            }),
-          });
-          const json = await res.json();
-          if (json.error) {
-            setError(json.error);
-            return;
-          }
-          queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
-          queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
-          queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
-          onSuccess?.();
-        } else if (mode === "edit") {
-          // PATCH to appropriate endpoint
-          const endpoint = context === "admin" ? "/api/admin/deals" : "/api/closer/deals";
-          const body: Record<string, unknown> = {
-            id: initialData?.id,
-            clientName,
+        const result = await createDealAction(fd);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        // Reset first — resetForm clears `success`, so the other order
+        // batched the banner away before it ever rendered.
+        resetForm();
+        setSuccess(true);
+        onSuccess?.();
+      } else if (context === "calendar-link") {
+        // POST to link-deal API
+        const res = await fetch("/api/closer/calendar/link-deal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventId: calendarEvent?.id,
+            eventTitle: clientName || calendarEvent?.title,
+            eventDate: closingDate,
             dealValue: parseFloat(dealValue) || 0,
             serviceCategory: serializedServices,
             industry: industry || null,
-            closingDate: closingDate || null,
             status,
             notes: notes || null,
-          };
-          if (clientUserId !== undefined) body.clientUserId = clientUserId;
-          body.clientEmail = clientEmail || null;
-          body.paymentType = paymentType;
-          body.brandName = brandName || null;
-          body.website = website || null;
-          body.additionalCcEmails = ccList;
-          if (autoShowStatus) body.showStatus = autoShowStatus;
-          if (showAdminTierFields) {
-            // Empty string → null (clears tier on the deal so it pays $0
-            // without disturbing the setter attribution). Admin sees the
-            // setter row but commission math drops them.
-            body.setterTier = setterTier === "" ? null : setterTier;
-            body.noRetainer = noRetainer;
-          }
-
-          const res = await fetch(endpoint, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          const json = await res.json();
-          if (json.error) {
-            setError(json.error);
-            return;
-          }
-          // Invalidate relevant queries
-          queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
-          queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
-          queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
-          queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
-          queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
-          queryClient.invalidateQueries({ queryKey: ["admin-all-deals-calendar"] });
-          onSuccess?.();
+            clientUserId,
+            clientEmail: trimmedEmail || null,
+            paymentType,
+            brandName: brandName || null,
+            website: website || null,
+            additionalCcEmails: ccList,
+          }),
+        });
+        const json = await res.json();
+        if (json.error) {
+          setError(json.error);
+          return;
         }
-      } catch {
-        setError("Something went wrong. Please try again.");
+        queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+        onSuccess?.();
+      } else if (mode === "edit") {
+        // PATCH to appropriate endpoint
+        const endpoint = context === "admin" ? "/api/admin/deals" : "/api/closer/deals";
+        const body: Record<string, unknown> = {
+          id: initialData?.id,
+          clientName,
+          dealValue: parseFloat(dealValue) || 0,
+          serviceCategory: serializedServices,
+          industry: industry || null,
+          closingDate: closingDate || null,
+          status,
+          notes: notes || null,
+        };
+        if (clientUserId !== undefined) body.clientUserId = clientUserId;
+        body.clientEmail = trimmedEmail || null;
+        body.paymentType = paymentType;
+        body.brandName = brandName || null;
+        body.website = website || null;
+        body.additionalCcEmails = ccList;
+        if (autoShowStatus) body.showStatus = autoShowStatus;
+        if (showAdminTierFields) {
+          // Empty string → null (clears tier on the deal so it pays $0
+          // without disturbing the setter attribution). Admin sees the
+          // setter row but commission math drops them.
+          body.setterTier = setterTier === "" ? null : setterTier;
+          body.noRetainer = noRetainer;
+        }
+
+        const res = await fetch(endpoint, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (json.error) {
+          setError(json.error);
+          return;
+        }
+        // Invalidate relevant queries
+        queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
+        queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-all-deals-calendar"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
+        onSuccess?.();
       }
-    });
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsPending(false);
+    }
   }
 
   const showClientAutocomplete = (context === "closer" || context === "calendar-link") && mode === "create";
@@ -380,7 +451,7 @@ export function UnifiedDealForm({
       </div>
 
       {/* Additional CCs */}
-      <div>
+      <div ref={ccFieldRef}>
         <label className="text-sm font-medium text-foreground mb-1.5 block">
           Additional CCs <span className="text-muted-foreground font-normal">(optional)</span>
         </label>
@@ -622,8 +693,8 @@ export function UnifiedDealForm({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add notes..."
-            rows={2}
-            className="flex w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow resize-none"
+            rows={4}
+            className="flex w-full min-h-[96px] rounded-lg border border-input bg-background pl-10 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow resize-y"
           />
         </div>
       </div>
@@ -646,7 +717,8 @@ export function UnifiedDealForm({
           <button
             type="button"
             onClick={onCancel}
-            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            disabled={isPending}
+            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {cancelLabel}
           </button>
@@ -654,8 +726,9 @@ export function UnifiedDealForm({
         {!onCancel && mode === "create" && (
           <button
             type="button"
-            onClick={resetForm}
-            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            onClick={handleDiscard}
+            disabled={isPending}
+            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {cancelLabel}
           </button>

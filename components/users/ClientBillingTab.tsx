@@ -10,14 +10,18 @@ import {
   Send,
   XCircle,
   Loader2,
+  RotateCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCentsExact } from "@/lib/format";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { InvoiceOverridePanel, InvoiceProvenance } from "./InvoiceOverridePanel";
 
 // Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
 // invoice drawer, keeping the per-client page's initial bundle light.
+import { InvoiceDraftsList } from "./InvoiceDraftsList";
 const ClientInvoiceDrawer = dynamic(
   () => import("./ClientInvoiceDrawer").then((m) => m.ClientInvoiceDrawer),
   { ssr: false }
@@ -54,6 +58,20 @@ interface FormState {
   settingsNotes: string;
 }
 
+function sameForm(a: FormState, b: FormState): boolean {
+  return (Object.keys(a) as (keyof FormState)[]).every((k) => a[k] === b[k]);
+}
+
+/** Clamp a number input to the server's range; blank stays blank (= default). */
+function clampNumberInput(v: string, min: number, max = Infinity): string {
+  if (v === "") return v;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  if (n < min) return String(min);
+  if (n > max) return String(max);
+  return v;
+}
+
 function monthLabel(year: number, month: number): string {
   return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", {
     month: "short",
@@ -78,6 +96,7 @@ const INVOICE_STATUS_STYLES: Record<
   unpaid: { label: "Unpaid", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
   superseded: { label: "Superseded", cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
 };
+const UNKNOWN_STATUS_CLS = "bg-muted text-muted-foreground";
 
 async function fetchBilling(userId: string): Promise<BillingResponse> {
   const res = await fetch(`/api/admin/clients/${userId}/billing`);
@@ -103,16 +122,23 @@ export function ClientBillingTab({
 }) {
   const queryClient = useQueryClient();
   const { isExternal } = useAdmin();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["client-billing", userId],
     queryFn: () => fetchBilling(userId),
     staleTime: 30_000,
   });
-  const { data: invoiceHistory = [] } = useQuery({
+  const {
+    data: invoiceHistoryData,
+    isLoading: historyLoading,
+    isError: historyError,
+    isFetching: historyFetching,
+    refetch: refetchHistory,
+  } = useQuery({
     queryKey: ["client-rebill-invoices", userId],
     queryFn: () => fetchInvoiceHistory(userId),
     staleTime: 30_000,
   });
+  const invoiceHistory = invoiceHistoryData ?? [];
 
   function refreshAfterOverride() {
     queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
@@ -124,6 +150,9 @@ export function ClientBillingTab({
   }
 
   const [form, setForm] = useState<FormState | null>(null);
+  // The form as last seeded from the server; any difference = unsaved edits.
+  const [seeded, setSeeded] = useState<FormState | null>(null);
+  const formDirty = form !== null && seeded !== null && !sameForm(form, seeded);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,10 +161,13 @@ export function ClientBillingTab({
   const [markingUnpaid, setMarkingUnpaid] = useState(false);
   const [unpaidError, setUnpaidError] = useState<string | null>(null);
 
+  // Re-seed from the server only while the form is clean: sending an invoice,
+  // marking unpaid and every override invalidate ["client-billing"], and that
+  // refetch used to silently wipe unsaved billing-config edits.
   useEffect(() => {
-    if (!data) return;
+    if (!data || formDirty) return;
     const b = data.billing;
-    setForm({
+    const next: FormState = {
       paused: b?.paused ?? false,
       pauseReason: b?.pauseReason ?? "",
       billingDay: b?.billingDay != null ? String(b.billingDay) : "",
@@ -144,7 +176,12 @@ export function ClientBillingTab({
       lastRebilledOverride: b?.lastRebilledOverride ?? "",
       mrrMonthOverride: b?.mrrMonthOverride ?? "",
       settingsNotes: b?.settingsNotes ?? "",
-    });
+    };
+    setSeeded(next);
+    setForm(next);
+    // Keyed on `data` only: re-running when formDirty flips (Save re-baselines
+    // it before the refetch lands) would briefly restore pre-save values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   async function handleMarkUnpaid() {
@@ -208,7 +245,13 @@ export function ClientBillingTab({
           settingsNotes: form.settingsNotes || null,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${res.status}`);
+      }
+      // Saved values are the new clean baseline, so the refetch below
+      // re-seeds the form with the server-normalized values.
+      setSeeded(form);
       await queryClient.invalidateQueries({ queryKey: ["client-billing", userId] });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
@@ -220,6 +263,16 @@ export function ClientBillingTab({
     } finally {
       setSaving(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <QueryErrorState
+        title="Couldn't load billing"
+        message="The billing details for this client failed to load."
+        onRetry={() => refetch()}
+      />
+    );
   }
 
   if (isLoading || !data || !form) {
@@ -271,7 +324,7 @@ export function ClientBillingTab({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-foreground">
                 Invoice {activeInvoice.invoiceNumber} sent ·{" "}
-                {formatMoney(activeInvoice.amountCents)}
+                {formatCentsExact(activeInvoice.amountCents)}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Sent {formatDate(activeInvoice.sentAt)} for the{" "}
@@ -317,9 +370,13 @@ export function ClientBillingTab({
         </div>
       )}
 
+      {/* Invoice drafts for this client awaiting review (agent-prepared or
+          saved from the drawer). Renders nothing when there are none. */}
+      <InvoiceDraftsList filter={{ userId, kind: "client_rebill" }} onChanged={onChanged} />
+
       {/* Schedule summary */}
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <CalendarClock className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-bold text-foreground">Re-bill schedule</h3>
           <RebillStatusChip status={data.schedule.status} paid={data.schedule.paid} className="ml-1" />
@@ -392,7 +449,7 @@ export function ClientBillingTab({
               min={1}
               max={31}
               value={form.billingDay}
-              onChange={(e) => set("billingDay", e.target.value)}
+              onChange={(e) => set("billingDay", clampNumberInput(e.target.value, 1, 31))}
               placeholder="auto"
               className={FIELD}
             />
@@ -402,7 +459,7 @@ export function ClientBillingTab({
               type="number"
               min={0}
               value={form.leadDays}
-              onChange={(e) => set("leadDays", e.target.value)}
+              onChange={(e) => set("leadDays", clampNumberInput(e.target.value, 0))}
               className={FIELD}
             />
           </Field>
@@ -474,9 +531,11 @@ export function ClientBillingTab({
         <div className="flex items-center gap-2 p-5 border-b border-border/50">
           <Send className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-bold text-foreground">Re-bill invoices</h3>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {invoiceHistory.length} invoice{invoiceHistory.length !== 1 ? "s" : ""}
-          </span>
+          {invoiceHistoryData && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {invoiceHistory.length} invoice{invoiceHistory.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
         {data.schedule.nextRebillAt && (
           <p className="px-5 pt-3 text-xs text-muted-foreground">
@@ -489,14 +548,39 @@ export function ClientBillingTab({
             payout, move it to another cycle, or hand it back to the automation.
           </p>
         )}
-        {invoiceHistory.length === 0 ? (
+        {historyLoading ? (
+          <div className="p-5 space-y-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-16 w-full animate-pulse rounded-lg bg-muted/60" />
+            ))}
+          </div>
+        ) : historyError && !invoiceHistoryData ? (
+          <div className="flex flex-col items-center gap-2 p-6 text-center">
+            <p className="text-sm text-red-600 dark:text-red-400">
+              Couldn&rsquo;t load re-bill invoices.
+            </p>
+            <button
+              type="button"
+              onClick={() => refetchHistory()}
+              disabled={historyFetching}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50"
+            >
+              {historyFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+              Retry
+            </button>
+          </div>
+        ) : invoiceHistory.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
             No re-bill invoices recorded for this client.
           </p>
         ) : (
           <ul className="p-5 space-y-2">
             {invoiceHistory.map((inv) => {
-              const st = INVOICE_STATUS_STYLES[inv.status];
+              // Fallback: an unexpected status must not crash the tab.
+              const st = INVOICE_STATUS_STYLES[inv.status] ?? {
+                label: String(inv.status),
+                cls: UNKNOWN_STATUS_CLS,
+              };
               const isCurrent =
                 inv.status === "sent" &&
                 data.schedule.nextRebillAt != null &&
@@ -530,7 +614,7 @@ export function ClientBillingTab({
                   </div>
                   {inv.amountCents > 0 && (
                     <span className="text-sm font-semibold text-foreground shrink-0">
-                      {formatMoney(inv.amountCents)}
+                      {formatCentsExact(inv.amountCents)}
                     </span>
                   )}
                   <div className="basis-full">

@@ -11,6 +11,7 @@ import {
 } from "@/lib/invoiceAgencyProfiles";
 import type { InvoiceSender, PaymentInfo } from "@/types/invoice";
 import { emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
+import { isPdfSafeImageValue, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 // Logo is a base64 data URL stored inline (Vercel FS is read-only). Cap matches
 // the client's 500 KB raw limit (~683 KB once base64-encoded) plus headroom.
@@ -59,6 +60,7 @@ function coerceInput(body: Record<string, unknown>): { input: AgencyProfileInput
 
   const logo = str(body.logo);
   if (logo.length > MAX_LOGO_CHARS) return { error: "Logo too large (max 500 KB)", status: 413 };
+  if (!isPdfSafeImageValue(logo)) return { error: PDF_IMAGE_ERROR, status: 400 };
 
   const themeColor = str(body.themeColor) || "#2563eb";
 

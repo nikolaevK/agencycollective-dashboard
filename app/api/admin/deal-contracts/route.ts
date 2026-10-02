@@ -9,7 +9,7 @@ import { generateContractFromDeal } from "@/lib/dealContractGenerator";
 import { insertDealContract, updateDealContract } from "@/lib/dealContracts";
 import { updateDeal } from "@/lib/deals";
 import { parseServiceCategory } from "@/lib/serviceCategory";
-import { docusealArchiveSubmission, DocuSealApiError } from "@/lib/docuseal/client";
+import { docusealArchiveSubmission, archiveSupersededSubmission, DocuSealApiError } from "@/lib/docuseal/client";
 import crypto from "crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -168,6 +168,10 @@ export async function POST(req: NextRequest) {
     // Check if contract already exists for this deal — use its selected template + override if present,
     // else fall back to service-key template matching
     const existing = await findDealContractByDealId(dealId);
+    // A resend would replace (and archive) a SIGNED submission — never.
+    if (existing?.status === "signed") {
+      return NextResponse.json({ error: "This contract is already signed" }, { status: 400 });
+    }
     let template = existing?.contractTemplateId
       ? await findContractTemplate(existing.contractTemplateId)
       : null;
@@ -194,6 +198,7 @@ export async function POST(req: NextRequest) {
         clientEmail,
         sentAt: new Date().toISOString(),
       });
+      await archiveSupersededSubmission(existing.docusealSubmissionId, result.submissionId);
     } else {
       await insertDealContract({
         id: crypto.randomUUID(),

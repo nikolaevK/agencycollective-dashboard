@@ -5,6 +5,7 @@ import { Upload, X, Check } from "lucide-react";
 import { CURRENCIES, THEME_COLORS } from "@/lib/invoice/validation";
 import { cn } from "@/lib/utils";
 import { INPUT_CLS } from "./styles";
+import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 const MAX_LOGO_BYTES = 500 * 1024; // 500 KB
 
@@ -38,8 +39,8 @@ export function InvoiceDetailsForm({
       alert("Logo must be under 500 KB");
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      alert("Please upload an image file");
+    if (!isPdfImageType(file.type)) {
+      alert(PDF_IMAGE_ERROR);
       return;
     }
     const reader = new FileReader();
@@ -74,7 +75,8 @@ export function InvoiceDetailsForm({
                   onChange("invoiceLogo", "");
                   if (fileRef.current) fileRef.current.value = "";
                 }}
-                className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Remove logo"
+                className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white text-xs opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -92,7 +94,7 @@ export function InvoiceDetailsForm({
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept={PDF_IMAGE_ACCEPT}
             onChange={handleLogoUpload}
             className="hidden"
           />

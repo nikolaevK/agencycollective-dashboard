@@ -2395,6 +2395,17 @@ export default function AdminDocumentationPage() {
                 connect with{" "}
                 <Pill>Authorization: Bearer ac_live_…</Pill> directly.
               </Bullet>
+              <Bullet>
+                <strong>Agents prepare, people approve.</strong>{" "}
+                <Pill>createDealDraft</Pill>,{" "}
+                <Pill>createClientInvoiceDraft</Pill> and{" "}
+                <Pill>createAdAccountInvoiceDraft</Pill> create drafts only —
+                nothing is emailed and no deal exists until someone approves
+                it in the dashboard (Deal queue → Agent drafts; Client
+                Directory → Drafts). Agents read the outcome back with{" "}
+                <Pill>getDealDraft</Pill> / <Pill>getInvoiceDraft</Pill>
+                (approved / sent, or rejected with a note).
+              </Bullet>
             </ul>
           </SubSection>
 

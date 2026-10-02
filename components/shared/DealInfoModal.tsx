@@ -1,7 +1,9 @@
 "use client";
 
+import { useId } from "react";
 import { X } from "lucide-react";
 import { parseServiceCategory } from "@/lib/serviceCategory";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 interface DealInfoModalProps {
   title: string;
@@ -11,14 +13,23 @@ interface DealInfoModalProps {
 }
 
 export function DealInfoModal({ title, type, content, onClose }: DealInfoModalProps) {
+  const titleId = useId();
+  useEscapeKey(onClose);
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[85vh] flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative w-full max-w-md mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[85vh] flex flex-col"
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+          <h3 id={titleId} className="text-lg font-semibold text-foreground">{title}</h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
           >
             <X className="h-4 w-4" />

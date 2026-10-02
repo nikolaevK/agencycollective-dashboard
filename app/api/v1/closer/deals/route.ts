@@ -8,6 +8,7 @@ import { allowedResourceIds } from "@/lib/apiScopes";
 import {
   readDeals,
   insertDeal,
+  findDealByCloserAndEvent,
   sanitizeCcEmails,
   type DealRecord,
   type DealStatus,
@@ -17,6 +18,8 @@ import { isSetterTier } from "@/lib/appointments";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { logAuditEvent } from "@/lib/auditLog";
+import { ensureDealPaperwork } from "@/lib/dealPaperwork";
+import { isValidEmail } from "@/lib/invoice/email";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_STATUSES: DealStatus[] = [
@@ -138,6 +141,19 @@ export async function POST(request: Request) {
     if (closingDate && !DATE_RE.test(closingDate)) {
       return fail("invalid_request", "closingDate must be yyyy-mm-dd", 400);
     }
+    // The address lands on the invoice + contract and is where DocuSeal sends
+    // the signing email — reject a malformed one now, not at send time.
+    const clientEmail = body.clientEmail ? String(body.clientEmail).trim() : null;
+    if (clientEmail && !isValidEmail(clientEmail)) {
+      return fail("invalid_request", "clientEmail is not a valid email", 400);
+    }
+    // One deal per (closer, calendar event) — same guard as the closer portal.
+    // Also makes an agent's retry-after-timeout a 409 instead of a second deal
+    // (with its own invoice + contract).
+    const googleEventId = body.googleEventId ? String(body.googleEventId).trim() : null;
+    if (googleEventId && (await findDealByCloserAndEvent(closerId, googleEventId))) {
+      return fail("conflict", "This closer already has a deal linked to that calendar event", 409);
+    }
 
     const nowIso = new Date().toISOString();
     const deal: DealRecord = {
@@ -146,7 +162,7 @@ export async function POST(request: Request) {
       setterId,
       clientName,
       clientUserId: body.clientUserId ? String(body.clientUserId).trim() : null,
-      clientEmail: body.clientEmail ? String(body.clientEmail).trim() : null,
+      clientEmail,
       dealValue,
       serviceCategory: body.serviceCategory ? String(body.serviceCategory).trim() : null,
       industry: body.industry ? String(body.industry).trim() : null,
@@ -157,7 +173,7 @@ export async function POST(request: Request) {
           ? body.showStatus
           : null,
       notes: body.notes ? String(body.notes).trim() : null,
-      googleEventId: body.googleEventId ? String(body.googleEventId).trim() : null,
+      googleEventId,
       paymentType: body.paymentType ? String(body.paymentType).trim() : "local",
       brandName: body.brandName ? String(body.brandName).trim() : null,
       website: body.website ? String(body.website).trim() : null,
@@ -165,11 +181,19 @@ export async function POST(request: Request) {
       additionalCcEmails: sanitizeCcEmails(body.additionalCcEmails),
       setterTier,
       noRetainer: Boolean(body.noRetainer),
-      setterOverride: false,
+      // An explicitly given setter is a deliberate pick — pinned like an admin
+      // edit so a later calendar claim on the event doesn't reassign it.
+      setterOverride: !!setterId,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
     await insertDeal(deal);
+
+    // Same records every dashboard path gives a closed deal (draft invoice +
+    // pending contract), so an API-created deal shows up in the Deal queue
+    // with an invoice to review. Idempotent and best-effort — never fails
+    // the create. Nothing is sent.
+    await ensureDealPaperwork(deal, auth.token.id);
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),

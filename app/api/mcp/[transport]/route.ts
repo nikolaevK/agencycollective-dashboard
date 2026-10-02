@@ -37,6 +37,13 @@ Conventions:
 
 Domains: closer (closers, deals, contracts, invoices, payouts, attendance/show rates), client (Client Directory: clients, billing + re-bill schedule, ad accounts + invoices, welcome kit), media (media-buyer PDF library), sops (standard operating procedures), audit (read-only audit trail), metaaccounts (FB account inventory & warm-up — credential fields are write-only, never returned), team (Team hub: roster members, tasks, action items — createTeamActionItem is the agent ingest path and auto-creates a linked task).
 
+Drafts → human approval (deals & invoices): agents PREPARE, people APPROVE. Nothing here ever emails a client.
+- New deal → createDealDraft (not createDeal, which writes a live deal at once). A person approves it in the Deal queue; approval creates the deal plus its draft invoice + contract. getDealDraft shows invoicePreview and, after review, status approved (dealId) or rejected (reviewNote).
+- Invoice a client → createClientInvoiceDraft (re-bill) or createAdAccountInvoiceDraft; a person reviews and sends it from the dashboard. getInvoiceDraft / listInvoiceDrafts show the outcome: sent (sentInvoiceId) or rejected (reviewNote).
+- Extra invoice on an existing deal → createAdditionalInvoice; adjust a deal's draft invoice → updateDealInvoice. Both stay drafts until a person sends them from the invoice drawer.
+- The optional "invoice" field (InvoiceSpec) is CENTS: { items: [{ name, description?, quantity?, unitPriceCents }], discount: { type: "amount"|"percentage", value }, invoiceDate, dueDate, terms, paymentTerms, notes, billToName } — sender, payment details and logo are filled in automatically. Add a "note" telling the reviewer why.
+- Pending drafts can be revised (update…Draft) or withdrawn (delete…Draft); reviewed drafts are read-only history.
+
 Workspaces (books): clients and ad accounts belong to a workspace ("main" = the primary Agency Collective book; partner books exist for outside teams). A token may be restricted to specific workspaces — it then only sees those books' clients, ad accounts, billing and documents (out-of-book ids answer resource_forbidden), and cross-brand internal surfaces like the payout pool are unavailable. createClient accepts an optional workspace field (defaults to the token's book when restricted, else "main").
 
 Start with getStarted to see this token's scopes and any client/closer/workspace restrictions. Use list tools to discover ids before calling item tools. Mutations are audit-logged as api:<token name>.`;

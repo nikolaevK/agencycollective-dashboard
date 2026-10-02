@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   X,
@@ -10,7 +10,9 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatMoney, formatDate } from "./format";
+import { formatCentsExact } from "@/lib/format";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { formatDate } from "./format";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import {
@@ -23,6 +25,8 @@ const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
 const LABEL =
   "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block leading-tight";
+// Same check the register route applies — fail fast instead of a 400.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type InvoiceStatus = "sent" | "paid" | "unpaid" | "superseded";
 
@@ -41,6 +45,7 @@ const STATUS_STYLES: Record<InvoiceStatus, { label: string; cls: string }> = {
   unpaid: { label: "Unpaid", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
   superseded: { label: "Superseded", cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
 };
+const UNKNOWN_STATUS_CLS = "bg-muted text-muted-foreground";
 
 function typeLabel(t: AdInvoiceType): string {
   return t === "combined" ? "Retainer + ad spend" : t === "ad_spend" ? "Ad spend fee" : "Retainer";
@@ -88,8 +93,27 @@ export function AdAccountInvoicesDrawer({
   });
 
   const [showRegister, setShowRegister] = useState(false);
+  // Whether the open register form holds input — collapsing it or closing
+  // the drawer would otherwise silently throw that input away.
+  const [registerDirty, setRegisterDirty] = useState(false);
   // Payout linking reads the ledger — hidden for external (partner) scopes.
   const { isExternal } = useAdmin();
+
+  function confirmDiscardRegister(): boolean {
+    return (
+      !showRegister ||
+      !registerDirty ||
+      confirm("Discard the backdated invoice you started entering?")
+    );
+  }
+  function hideRegister() {
+    setShowRegister(false);
+    setRegisterDirty(false);
+  }
+  function requestClose() {
+    if (confirmDiscardRegister()) onClose();
+  }
+  useEscapeKey(requestClose);
 
   function refreshAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-ad-account-invoices", accountId] });
@@ -99,7 +123,7 @@ export function AdAccountInvoicesDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={requestClose}>
       <div
         className="relative h-full w-full max-w-xl overflow-y-auto bg-card shadow-xl border-l border-border/50"
         onClick={(e) => e.stopPropagation()}
@@ -109,7 +133,12 @@ export function AdAccountInvoicesDrawer({
             <h2 className="text-lg font-bold text-foreground truncate">Invoices</h2>
             <p className="text-xs text-muted-foreground truncate">{accountName}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+          <button
+            type="button"
+            onClick={requestClose}
+            aria-label="Close"
+            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+          >
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
@@ -132,7 +161,12 @@ export function AdAccountInvoicesDrawer({
               </span>
             </p>
             <button
-              onClick={() => setShowRegister((s) => !s)}
+              type="button"
+              aria-expanded={showRegister}
+              onClick={() => {
+                if (!showRegister) setShowRegister(true);
+                else if (confirmDiscardRegister()) hideRegister();
+              }}
               className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -146,11 +180,12 @@ export function AdAccountInvoicesDrawer({
               defaultCycleAnchor={defaultCycleAnchor}
               defaultRecipientEmail={defaultRecipientEmail}
               defaultRetainerCents={defaultRetainerCents}
+              onDirtyChange={setRegisterDirty}
               onDone={() => {
-                setShowRegister(false);
+                hideRegister();
                 refreshAll();
               }}
-              onCancel={() => setShowRegister(false)}
+              onCancel={hideRegister}
             />
           )}
 
@@ -171,7 +206,11 @@ export function AdAccountInvoicesDrawer({
           ) : (
             <ul className="space-y-2">
               {invoices.map((inv) => {
-                const s = STATUS_STYLES[inv.status];
+                // Fallback: an unexpected status must not crash the drawer.
+                const s = STATUS_STYLES[inv.status] ?? {
+                  label: String(inv.status),
+                  cls: UNKNOWN_STATUS_CLS,
+                };
                 return (
                   <li
                     key={inv.id}
@@ -203,7 +242,7 @@ export function AdAccountInvoicesDrawer({
                     <div className="flex items-center gap-2 shrink-0">
                       {inv.amountCents > 0 && (
                         <span className="text-sm font-semibold text-foreground">
-                          {formatMoney(inv.amountCents)}
+                          {formatCentsExact(inv.amountCents)}
                         </span>
                       )}
                       {inv.payoutDocumentId && (
@@ -247,6 +286,7 @@ function RegisterForm({
   defaultCycleAnchor,
   defaultRecipientEmail,
   defaultRetainerCents,
+  onDirtyChange,
   onDone,
   onCancel,
 }: {
@@ -254,21 +294,40 @@ function RegisterForm({
   defaultCycleAnchor: string | null;
   defaultRecipientEmail: string | null;
   defaultRetainerCents: number;
+  /** Reports whether the form holds input beyond its defaults. */
+  onDirtyChange: (dirty: boolean) => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
+  // Defaults captured once — "has input" means anything differs from them.
+  const [initial] = useState(() => ({
+    cycleAnchor: defaultCycleAnchor ?? todayYmd(),
+    sentDate: todayYmd(),
+    amountDollars: defaultRetainerCents > 0 ? (defaultRetainerCents / 100).toFixed(2) : "",
+    recipientEmail: defaultRecipientEmail ?? "",
+  }));
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [cycleAnchor, setCycleAnchor] = useState(defaultCycleAnchor ?? todayYmd());
-  const [sentDate, setSentDate] = useState(todayYmd());
-  const [amountDollars, setAmountDollars] = useState(
-    defaultRetainerCents > 0 ? (defaultRetainerCents / 100).toFixed(2) : ""
-  );
+  const [cycleAnchor, setCycleAnchor] = useState(initial.cycleAnchor);
+  const [sentDate, setSentDate] = useState(initial.sentDate);
+  const [amountDollars, setAmountDollars] = useState(initial.amountDollars);
   const [invoiceType, setInvoiceType] = useState<AdInvoiceType>("retainer");
-  const [recipientEmail, setRecipientEmail] = useState(defaultRecipientEmail ?? "");
+  const [recipientEmail, setRecipientEmail] = useState(initial.recipientEmail);
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    invoiceNumber.trim() !== "" ||
+    file !== null ||
+    invoiceType !== "retainer" ||
+    cycleAnchor !== initial.cycleAnchor ||
+    sentDate !== initial.sentDate ||
+    amountDollars !== initial.amountDollars ||
+    recipientEmail !== initial.recipientEmail;
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   async function submit() {
     if (!invoiceNumber.trim()) {
@@ -282,6 +341,20 @@ function RegisterForm({
     const amount = Number(amountDollars);
     if (amountDollars && (!Number.isFinite(amount) || amount < 0)) {
       setError("Amount must be a non-negative number.");
+      return;
+    }
+    if (sentDate && !/^\d{4}-\d{2}-\d{2}$/.test(sentDate)) {
+      setError("Sent date is invalid.");
+      return;
+    }
+    const emailTrim = recipientEmail.trim();
+    if (emailTrim && (!EMAIL_RE.test(emailTrim) || emailTrim.length > 254)) {
+      setError("Recipient email is not a valid address.");
+      return;
+    }
+    // Same PDF test the route applies (MIME type or .pdf extension).
+    if (file && !(file.type === "application/pdf" || /\.pdf$/i.test(file.name))) {
+      setError("Only PDF files can be attached.");
       return;
     }
     if (file && file.size > 10 * 1024 * 1024) {
@@ -298,7 +371,7 @@ function RegisterForm({
       if (sentDate) fd.set("sentAt", sentDate);
       fd.set("amountCents", String(amountDollars ? Math.round(amount * 100) : 0));
       fd.set("invoiceType", invoiceType);
-      if (recipientEmail.trim()) fd.set("recipientEmail", recipientEmail.trim());
+      if (emailTrim) fd.set("recipientEmail", emailTrim);
       if (file) fd.set("pdf", file);
 
       const res = await fetch(`/api/admin/ad-accounts/${accountId}/invoices/register`, {
@@ -403,7 +476,11 @@ function RegisterForm({
           {file && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
               <span className="truncate">{file.name}</span>
-              <button onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ""; }}>
+              <button
+                type="button"
+                aria-label="Remove PDF"
+                onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ""; }}
+              >
                 <X className="h-3 w-3" />
               </button>
             </span>

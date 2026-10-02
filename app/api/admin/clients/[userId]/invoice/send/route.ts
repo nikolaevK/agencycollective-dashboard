@@ -7,6 +7,7 @@ import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 import { getClientDetail } from "@/lib/clientDirectory";
 import { ensureMigrated } from "@/lib/db";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/invoice/emailService";
+import { EMAIL_RE } from "@/lib/invoice/email";
 import { readEmailAttachments } from "@/lib/invoice/readEmailAttachments";
 import {
   getAgencyProfileEmailBrand,
@@ -15,13 +16,19 @@ import {
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import { normalizeBrandName } from "@/lib/payouts";
 import { createRebillInvoice } from "@/lib/clientRebillInvoices";
+import {
+  getInvoiceDraft,
+  claimInvoiceDraftForSend,
+  releaseInvoiceDraftClaim,
+  invoiceDraftConflictMessage,
+  markInvoiceDraftSent,
+} from "@/lib/invoiceDrafts";
 import { businessTodayYmd } from "@/lib/businessTime";
 
 interface RouteContext {
   params: { userId: string };
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Send a re-bill invoice to a client and file the PDF where both the Payout
@@ -74,6 +81,17 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       if (ccEmails.length >= 10) break;
     }
 
+    // Reviewing a prepared draft: it must belong to this client. Whether it
+    // can still go out is decided by the atomic claim right before emailing.
+    const draftId = String(formData.get("draftId") ?? "").trim() || null;
+    if (draftId) {
+      const draft = await getInvoiceDraft(draftId);
+      if (!draft || draft.kind !== "client_rebill" || draft.userId !== params.userId)
+        return NextResponse.json({ error: "Invoice draft not found" }, { status: 404 });
+      if (draft.status !== "pending")
+        return NextResponse.json({ error: `This draft was already ${draft.status}` }, { status: 409 });
+    }
+
     const buffer = Buffer.from(await pdfFile.arrayBuffer());
     const safeNumber =
       invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100) || "Invoice";
@@ -104,13 +122,34 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       );
     const additionalAttachments = attachRead.attachments;
 
-    const sent = await sendInvoiceEmail(email, buffer, safeNumber, {
-      cc: ccEmails.length > 0 ? ccEmails : undefined,
-      variant: "rebill",
-      brand: emailBrand,
-      additionalAttachments:
-        additionalAttachments.length > 0 ? additionalAttachments : undefined,
-    });
+    // Claim the draft BEFORE emailing so two reviewers (or tabs) can't both
+    // send it, and a reject can't land mid-send. Released if the email fails.
+    let claim: string | null = null;
+    if (draftId) {
+      claim = await claimInvoiceDraftForSend(draftId, {
+        reviewedBy: session.adminId,
+        reviewedByName: guard.actor.admin.username,
+      });
+      if (!claim)
+        return NextResponse.json({ error: await invoiceDraftConflictMessage(draftId) }, { status: 409 });
+    }
+
+    let sent = false;
+    try {
+      sent = await sendInvoiceEmail(email, buffer, safeNumber, {
+        cc: ccEmails.length > 0 ? ccEmails : undefined,
+        variant: "rebill",
+        brand: emailBrand,
+        additionalAttachments:
+          additionalAttachments.length > 0 ? additionalAttachments : undefined,
+      });
+    } finally {
+      if (!sent && draftId && claim) {
+        await releaseInvoiceDraftClaim(draftId, claim).catch((err) =>
+          console.error("[client-invoice/send] draft claim release failed:", err)
+        );
+      }
+    }
     if (!sent)
       return NextResponse.json({ error: "Failed to send invoice email" }, { status: 500 });
 
@@ -169,8 +208,9 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       Number.isFinite(rawAmount) && rawAmount >= 0
         ? Math.min(Math.round(rawAmount), 1_000_000_000) // 10M USD safety cap
         : 0;
+    let recordId: string | null = null;
     try {
-      await createRebillInvoice({
+      const record = await createRebillInvoice({
         userId: params.userId,
         invoiceNumber: safeNumber,
         payoutDocumentId: docSaved ? doc.id : null,
@@ -179,11 +219,25 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         recipientEmail: email,
         sentByAdminId: session.adminId,
       });
+      recordId = record.id;
     } catch (err) {
       console.error("[client-invoice/send] invoice record failed:", err);
       // Email + (maybe) doc save already succeeded — surfacing partial save
       // is enough; the next directory build won't show invoice_sent, but the
       // admin can re-send to re-establish the record if needed.
+    }
+
+    // The reviewed draft is done. Best-effort — the email already went out.
+    if (draftId) {
+      await markInvoiceDraftSent(draftId, {
+        reviewedBy: session.adminId,
+        reviewedByName: guard.actor.admin.username,
+        sentInvoiceId: recordId,
+        amountCents,
+        invoiceNumber: safeNumber,
+        recipientEmail: email,
+        ccEmails,
+      }).catch((err) => console.error("[client-invoice/send] draft stamp failed:", err));
     }
 
     return NextResponse.json({ success: true, saved: docSaved });

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { getAllAgencyConfigs, updateAgencyConfig } from "@/lib/agencyConfig";
+import { isPdfSafeImageValue, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 // Writable config keys and the permission each requires. Unknown keys are
 // rejected — this route must never be an arbitrary-key write path (payment
@@ -52,6 +53,9 @@ export async function PATCH(req: NextRequest) {
     }
     if (value.length > 1_000_000) {
       return NextResponse.json({ error: "Value too large" }, { status: 413 });
+    }
+    if (key === "default_logo" && !isPdfSafeImageValue(value)) {
+      return NextResponse.json({ error: PDF_IMAGE_ERROR }, { status: 400 });
     }
 
     await updateAgencyConfig(key, value);

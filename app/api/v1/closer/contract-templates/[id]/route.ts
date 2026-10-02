@@ -7,6 +7,7 @@ import {
   findContractTemplate,
   updateContractTemplate,
   deleteContractTemplate,
+  countUnsignedContractsUsingTemplate,
 } from "@/lib/contractTemplates";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -79,6 +80,19 @@ export async function DELETE(
   try {
     const existing = await findContractTemplate(params.id);
     if (!existing) return fail("not_found", "Template not found", 404);
+
+    // Same guard as the dashboard: deleting a template unsigned contracts
+    // still use strands them (they fail to send until re-templated).
+    if (new URL(request.url).searchParams.get("force") !== "true") {
+      const inUse = await countUnsignedContractsUsingTemplate(params.id);
+      if (inUse > 0) {
+        return fail(
+          "conflict",
+          `${inUse} unsigned contract${inUse === 1 ? "" : "s"} still use${inUse === 1 ? "s" : ""} this template — pass force=true to delete anyway`,
+          409
+        );
+      }
+    }
 
     await deleteContractTemplate(params.id);
 

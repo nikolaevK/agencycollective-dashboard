@@ -9,6 +9,7 @@ import { emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
 import { THEME_COLORS } from "@/lib/invoice/validation";
 import { cn } from "@/lib/utils";
 import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
+import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 const MAX_LOGO_BYTES = 500 * 1024; // 500 KB
 
@@ -279,12 +280,12 @@ function ProfileForm({
           <input
             ref={logoRef}
             type="file"
-            accept="image/*"
+            accept={PDF_IMAGE_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              if (!file.type.startsWith("image/")) { setErr("Please upload an image file"); return; }
+              if (!isPdfImageType(file.type)) { setErr(PDF_IMAGE_ERROR); return; }
               if (file.size > MAX_LOGO_BYTES) { setErr("Logo must be under 500 KB"); return; }
               setErr("");
               const reader = new FileReader();

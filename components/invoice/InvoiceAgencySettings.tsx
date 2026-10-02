@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
 import type { PaymentInfo } from "@/types/invoice";
 import { parsePaymentNoteToPaymentInfo, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
+import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 interface AgencyConfigs {
   sender: string;
@@ -212,11 +213,15 @@ export function InvoiceAgencySettings() {
               <input
                 ref={logoRef}
                 type="file"
-                accept="image/*"
+                accept={PDF_IMAGE_ACCEPT}
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
+                  if (!isPdfImageType(file.type)) {
+                    setMsg(PDF_IMAGE_ERROR);
+                    return;
+                  }
                   if (file.size > 500 * 1024) {
                     setMsg("Logo must be under 500 KB");
                     return;
@@ -226,7 +231,7 @@ export function InvoiceAgencySettings() {
                   reader.readAsDataURL(file);
                 }}
               />
-              <p className="text-[10px] text-muted-foreground">Used on all auto-generated invoices. Max 500 KB.</p>
+              <p className="text-[10px] text-muted-foreground">Used on all auto-generated invoices. PNG / JPG, max 500 KB.</p>
             </div>
           </div>
 

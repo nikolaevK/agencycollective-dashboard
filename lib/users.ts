@@ -241,6 +241,12 @@ export async function findUser(id: string): Promise<UserRecord | null> {
   return rows[0] ? rowToUser(rows[0]) : null;
 }
 
+export async function findUsersByIds(ids: string[]): Promise<UserRecord[]> {
+  if (ids.length === 0) return [];
+  const rows = await selectUserRows(`WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+  return rows.map(rowToUser);
+}
+
 export async function findUserBySlug(slug: string): Promise<UserRecord | null> {
   const rows = await selectUserRows("WHERE slug = ?", [slug]);
   return rows[0] ? rowToUser(rows[0]) : null;
@@ -471,6 +477,20 @@ export async function deleteUser(id: string): Promise<boolean> {
       if (!/no such table/i.test(msg)) {
         console.error(`[deleteUser] cleanup of ${table} failed (non-fatal):`, err);
       }
+    }
+  }
+  // The client's re-bill drafts go with them. Ad-account drafts stay: they
+  // belong to the account (which survives, unattached) — their user_id is
+  // only who owned it when drafted, possibly a different client by now.
+  try {
+    await db.execute({
+      sql: "DELETE FROM invoice_drafts WHERE user_id = ? AND kind = 'client_rebill'",
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] cleanup of invoice_drafts failed (non-fatal):", err);
     }
   }
 

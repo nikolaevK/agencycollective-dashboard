@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X, Send, ExternalLink, Loader2, FileSignature, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDealContract } from "@/hooks/useDealContract";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -26,28 +27,48 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
   const { data: contract, isLoading } = useDealContract(dealId);
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
+  // Blocked mid-send (Escape, backdrop and ×) so closing can't drop the
+  // result of an email in flight.
+  function requestClose() {
+    if (!resending) onClose();
+  }
+  // Stays registered while sending (requestClose no-ops) so Escape is absorbed
+  // here instead of falling through to whatever layer sits underneath.
+  useEscapeKey(requestClose);
+
   async function handleResend() {
-    if (!dealId) return;
+    if (!dealId || !clientEmail) return;
+    // This emails the client immediately — confirm the recipient first.
+    const verb = contract ? "Resend" : "Send";
+    if (!window.confirm(`${verb} the contract to ${clientEmail}? They'll get a new signing email right away.`)) return;
     setResending(true);
     setResendError(null);
+    setResendSuccess(null);
     try {
       const res = await fetch("/api/admin/deal-contracts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dealId, email: clientEmail }),
       });
-      const json = await res.json();
       if (!res.ok) {
-        setResendError(json.error || "Failed to resend");
+        const json = await res.json().catch(() => ({}));
+        setResendError(json.error || "Failed to send contract");
         return;
       }
+      setResendSuccess(`Contract sent to ${clientEmail}`);
       queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] });
       queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
       queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
+      // Sending moves a closed deal to pending_signature — refresh the queue.
+      queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
+      queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
     } catch {
       setResendError("Network error");
     } finally {
@@ -91,7 +112,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
       <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
@@ -99,7 +120,12 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
             <FileSignature className="h-5 w-5" />
             Contract
           </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button
+            onClick={requestClose}
+            disabled={resending}
+            aria-label="Close"
+            className="-mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -114,16 +140,20 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
               <FileSignature className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
               <p className="text-sm text-muted-foreground">No contract for this deal</p>
               {isAdmin && (
-                <button
-                  onClick={handleResend}
-                  disabled={resending}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Send Contract
-                </button>
+                <>
+                  <button
+                    onClick={handleResend}
+                    disabled={resending || !clientEmail}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Send Contract
+                  </button>
+                  <RecipientNote email={clientEmail} className="mt-2" />
+                </>
               )}
               {resendError && <p className="mt-2 text-xs text-red-500">{resendError}</p>}
+              {resendSuccess && <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">{resendSuccess}</p>}
             </div>
           ) : (
             <>
@@ -201,7 +231,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
                     {contract.status !== "signed" && (
                       <button
                         onClick={handleResend}
-                        disabled={resending}
+                        disabled={resending || !clientEmail}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
                         {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -217,7 +247,9 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
                       Sync Status
                     </button>
                   </div>
+                  {contract.status !== "signed" && <RecipientNote email={clientEmail} />}
                   {resendError && <p className="text-xs text-red-500">{resendError}</p>}
+                  {resendSuccess && <p className="text-xs text-emerald-600 dark:text-emerald-400">{resendSuccess}</p>}
                   {syncMessage && <p className="text-xs text-muted-foreground">{syncMessage}</p>}
                 </div>
               )}
@@ -226,5 +258,19 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
         </div>
       </div>
     </div>
+  );
+}
+
+/** Where Send/Resend will email — the deal's current client email, which can
+ *  differ from the address an earlier send went to. */
+function RecipientNote({ email, className }: { email?: string | null; className?: string }) {
+  return email ? (
+    <p className={cn("text-xs text-muted-foreground", className)}>
+      Sends to <span className="font-medium text-foreground">{email}</span>
+    </p>
+  ) : (
+    <p className={cn("text-xs text-amber-600 dark:text-amber-400", className)}>
+      No client email on this deal — edit the deal to add one.
+    </p>
   );
 }

@@ -276,6 +276,11 @@ export async function updateAdAccount(
 export async function deleteAdAccount(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
+  // Prepared-but-unsent invoice drafts for the account go with it (no FK;
+  // libSQL cascade isn't relied on). Best-effort.
+  await db
+    .execute({ sql: "DELETE FROM invoice_drafts WHERE ad_account_id = ?", args: [id] })
+    .catch((err) => console.error("[deleteAdAccount] invoice_drafts cleanup failed (non-fatal):", err));
   const result = await db.execute({
     sql: "DELETE FROM ad_accounts WHERE id = ?",
     args: [id],

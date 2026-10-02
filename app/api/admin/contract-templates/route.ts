@@ -7,6 +7,7 @@ import {
   insertContractTemplate,
   updateContractTemplate,
   deleteContractTemplate,
+  countUnsignedContractsUsingTemplate,
 } from "@/lib/contractTemplates";
 
 export async function GET() {
@@ -77,6 +78,22 @@ export async function DELETE(req: NextRequest) {
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  // Warn before stranding unsigned contracts on a deleted template; the UI
+  // confirms and retries with ?force=1.
+  if (req.nextUrl.searchParams.get("force") !== "1") {
+    const inUse = await countUnsignedContractsUsingTemplate(id);
+    if (inUse > 0) {
+      return NextResponse.json(
+        {
+          error: `${inUse} unsigned contract${inUse === 1 ? "" : "s"} still use${inUse === 1 ? "s" : ""} this template`,
+          code: "in_use",
+          count: inUse,
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   const deleted = await deleteContractTemplate(id);
   if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
