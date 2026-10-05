@@ -230,7 +230,11 @@ export function InvoiceDrawerShell({
                   Full screen
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+              {/* Stable gutter: the preview scales to this pane's width, so a
+                  scrollbar that comes and goes as the scaled page crosses the
+                  pane height would flip the width and loop forever (the
+                  flicker). The reserved gutter keeps the width constant. */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable]">
                 <div className="mx-auto max-w-[760px] overflow-hidden rounded-sm shadow-lg ring-1 ring-black/5">
                   <InvoiceLivePreview data={preview!} />
                 </div>

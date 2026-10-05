@@ -69,6 +69,10 @@ export function InvoiceLivePreview({ data }: Props) {
   // the SCALED page explicitly — otherwise the page bottom is cut off when
   // scaled up and blank space trails it when scaled down. The page itself is
   // observed too: its height changes as the user types.
+  // HOST REQUIREMENT: the scroll container around this preview must not
+  // change width when its vertical scrollbar appears (overflow-y-scroll or
+  // scrollbar-gutter: stable). Width → scale → height → scrollbar → width is
+  // otherwise a feedback loop that flickers forever near the overflow edge.
   const measure = useCallback(() => {
     if (wrapperRef.current) {
       setScale(wrapperRef.current.offsetWidth / PAGE_W);

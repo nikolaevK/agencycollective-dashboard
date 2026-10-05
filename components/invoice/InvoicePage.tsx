@@ -392,7 +392,9 @@ export function InvoicePage() {
                   Full screen
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-3">
+              {/* Stable gutter: a toggling scrollbar would change the width the
+                  preview scales to and loop (see InvoiceLivePreview). */}
+              <div className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-3 [scrollbar-gutter:stable]">
                 <div className="overflow-hidden rounded-sm shadow-md ring-1 ring-black/5">
                   <InvoiceLivePreview data={data} />
                 </div>

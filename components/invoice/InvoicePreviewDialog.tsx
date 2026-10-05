@@ -182,7 +182,9 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
         </button>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-auto overscroll-contain" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      {/* Stable gutter: the live page is sized from this scroller's width, so a
+          scrollbar appearing/disappearing must not change it (resize loop). */}
+      <div className="relative min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]" onClick={(e) => e.target === e.currentTarget && onClose()}>
         {mode === "live" ? (
           <div ref={liveRef} className="px-3 py-6 sm:px-6" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div
