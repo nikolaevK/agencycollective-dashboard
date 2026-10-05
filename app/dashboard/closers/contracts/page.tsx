@@ -867,16 +867,21 @@ function TemplateBuilderModal({
 function DocuSealBuilderEmbed({ token }: { token: string }) {
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-      <DocusealBuilder
-        token={token}
-        withSendButton={false}
-        withSignYourselfButton={false}
-        withUploadButton={true}
-        withAddPageButton={true}
-        autosave={false}
-        className="w-full h-full"
-        style={{ height: "100%" }}
-      />
+      {/* DocuSeal renders in-page with a transparent background and its own
+          dark text — always give it a light surface, or dark mode makes the
+          builder unreadable. */}
+      <div className="h-full bg-white text-neutral-900">
+        <DocusealBuilder
+          token={token}
+          withSendButton={false}
+          withSignYourselfButton={false}
+          withUploadButton={true}
+          withAddPageButton={true}
+          autosave={false}
+          className="w-full h-full"
+          style={{ height: "100%" }}
+        />
+      </div>
     </Suspense>
   );
 }

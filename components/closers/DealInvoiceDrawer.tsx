@@ -1550,7 +1550,14 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto">
+        {/* Light surface while the builder shows, in every theme — DocuSeal
+            renders in-page, transparent with dark text (unreadable on dark). */}
+        <div
+          className={cn(
+            "flex-1 overflow-auto",
+            token && !switchingToEdit && "bg-white text-neutral-900"
+          )}
+        >
           {(loading || switchingToEdit) && (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

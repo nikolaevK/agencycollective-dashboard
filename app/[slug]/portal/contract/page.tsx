@@ -110,7 +110,9 @@ export default function PortalContractPage() {
           Please review and sign the contract below
         </p>
       </div>
-      <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+      {/* Light surface in every theme — the in-page DocuSeal form is
+          transparent with dark text (unreadable on the dark theme). */}
+      <div className="rounded-xl border border-border/50 bg-white text-neutral-900 overflow-hidden">
         <DocusealForm
           src={contract.signingUrl}
           withTitle={false}
