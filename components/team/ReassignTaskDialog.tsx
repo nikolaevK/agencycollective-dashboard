@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Check, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TeamMemberOption } from "./useTeamData";
@@ -33,6 +33,7 @@ export function ReassignTaskDialog({
 }) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("");
+  const headingId = useId();
 
   // Everyone except the new owner can be tagged — including the current
   // assignee, who often wants to stay looped in on the work they hand off.
@@ -54,10 +55,17 @@ export function ReassignTaskDialog({
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
-      <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl p-5 space-y-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        className="relative w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-xl p-5 space-y-4"
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="text-sm font-black text-foreground">Reassign task</h3>
+            <h3 id={headingId} className="text-sm font-black text-foreground">
+              Reassign task
+            </h3>
             <p className="mt-0.5 text-xs text-muted-foreground truncate" title={task.title}>
               &ldquo;{task.title}&rdquo;
             </p>
@@ -65,7 +73,7 @@ export function ReassignTaskDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent shrink-0"
+            className="p-2 rounded-lg text-muted-foreground hover:bg-accent shrink-0"
             aria-label="Cancel reassign"
           >
             <X className="h-4 w-4" />
@@ -88,7 +96,7 @@ export function ReassignTaskDialog({
               — they see it in their hub&rsquo;s Tagged tab (no ownership)
             </span>
           </p>
-          <div className="max-h-44 overflow-y-auto space-y-0.5">
+          <div className="max-h-44 overflow-y-auto overscroll-contain space-y-0.5">
             {taggable.map((m) => {
               const on = checked.has(m.adminId);
               return (

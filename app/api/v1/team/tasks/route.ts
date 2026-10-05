@@ -10,7 +10,7 @@ import {
   parseTaskPriority,
   sanitizeChecklist,
 } from "@/lib/teamTasks";
-import { findAdmin } from "@/lib/admins";
+import { getTeamMember, isValidTeamDueYmd } from "@/lib/teamMembers";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -66,8 +66,10 @@ export async function POST(request: Request) {
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!adminId) return fail("invalid_request", "adminId is required", 400);
     if (!title) return fail("invalid_request", "title is required", 400);
-    if (!(await findAdmin(adminId))) {
-      return fail("not_found", "No admin with that adminId", 404);
+    // Tasks only land in ROSTERED hubs (an unrostered admin's hub is
+    // unreachable) — same rule as reassign/tag targets.
+    if (!(await getTeamMember(adminId))) {
+      return fail("not_found", "No team member with that adminId", 404);
     }
     if (body.status !== undefined && !parseTaskStatus(body.status)) {
       return fail("invalid_request", "status must be todo, in_progress, review, or complete", 400);
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
     if (body.priority !== undefined && !parseTaskPriority(body.priority)) {
       return fail("invalid_request", "priority must be urgent, high, normal, or low", 400);
     }
-    if (body.dueDate != null && !(typeof body.dueDate === "string" && YMD_RE.test(body.dueDate))) {
+    if (body.dueDate != null && !isValidTeamDueYmd(body.dueDate)) {
       return fail("invalid_request", "dueDate must be yyyy-mm-dd", 400);
     }
     const clientId =

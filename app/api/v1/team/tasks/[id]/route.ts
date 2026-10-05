@@ -21,11 +21,10 @@ import {
 } from "@/lib/teamTasks";
 import { syncActionItemForTask } from "@/lib/teamActionItems";
 import { listTaskDocuments } from "@/lib/teamTaskDocuments";
-import { getTeamMember } from "@/lib/teamMembers";
+import { getTeamMember, isValidTeamDueYmd } from "@/lib/teamMembers";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function OPTIONS() {
   return corsPreflight();
@@ -220,10 +219,15 @@ export async function PATCH(
       changes.priority = priority;
     }
     if (body.dueDate !== undefined) {
-      if (body.dueDate !== null && !(typeof body.dueDate === "string" && YMD_RE.test(body.dueDate))) {
+      // An unchanged (echoed) legacy value must not fail the whole PATCH.
+      if (
+        body.dueDate !== null &&
+        body.dueDate !== existing.dueDate &&
+        !isValidTeamDueYmd(body.dueDate)
+      ) {
         return fail("invalid_request", "dueDate must be yyyy-mm-dd or null", 400);
       }
-      changes.dueDate = body.dueDate;
+      changes.dueDate = body.dueDate as string | null; // validated, or the stored value
     }
     if (body.lineup !== undefined) changes.lineup = Boolean(body.lineup);
     if (body.checklist !== undefined)

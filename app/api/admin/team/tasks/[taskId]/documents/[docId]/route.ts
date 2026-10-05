@@ -56,7 +56,7 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
 
   try {
     // Metadata-only lookup — no reason to pull the BLOB just to delete it.
-    const doc = await findTaskDocument(params.docId);
+    const doc = await findTaskDocument(params.docId, params.taskId);
     if (!doc || doc.taskId !== params.taskId)
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
 

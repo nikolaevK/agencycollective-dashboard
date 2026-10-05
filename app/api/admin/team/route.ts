@@ -26,8 +26,16 @@ export async function GET(request: Request) {
   const wsParam = url.searchParams.get("workspace")?.trim() || null;
   const viewerScope =
     actor.scope !== null ? actor.scope : wsParam ? [wsParam] : null;
+  // Self-only viewers (not privileged, not a Head of Ads — e.g. a media
+  // buyer) receive just their own card: they can't open anyone else's hub,
+  // so other employees' summaries never leave the server.
+  const selfOnly = !actor.privileged && actor.managedWorkspaces.length === 0;
   try {
-    const directory = await buildTeamDirectory(timeframe, viewerScope);
+    const directory = await buildTeamDirectory(
+      timeframe,
+      viewerScope,
+      selfOnly ? actor.admin.id : null
+    );
 
     // Members this viewer can open/manage as a Head of Ads book manager —
     // drives the card drill-in for non-privileged leads (the per-member API
@@ -52,6 +60,7 @@ export async function GET(request: Request) {
           adminId: actor.admin.id,
           privileged: actor.privileged,
           managedAdminIds,
+          selfOnly,
         },
       },
     });

@@ -13,6 +13,7 @@ import {
 import { effectiveMrrCents } from "./clientProfile";
 import { getDb, ensureMigrated } from "./db";
 import { randomUUID } from "crypto";
+import { waitUntil } from "@vercel/functions";
 import type { InValue } from "@libsql/client";
 import type { RebillStatus } from "./clientBilling";
 import {
@@ -87,6 +88,8 @@ export interface TeamClientSlice {
   slug: string;
   displayName: string;
   logoPath: string | null;
+  /** The client's workspace (book) — gates which CSMs may take it. */
+  workspace: string;
   book: "agency" | "pepads";
   mrrCents: number; // effectiveMrrCents — pepads manual MRR respected
   isTop: boolean;
@@ -124,6 +127,7 @@ function toClientSlice(row: ClientDirectoryRow): TeamClientSlice {
     slug: row.slug,
     displayName: row.displayName,
     logoPath: row.logoPath,
+    workspace: row.workspace,
     book: row.profile.book,
     mrrCents: effectiveMrrCents(row),
     isTop: row.profile.isTop,
@@ -352,7 +356,12 @@ export async function buildTeamDirectory(
   timeframe: TeamTimeframe,
   /** Viewer's workspace scope — null = every book. Members, client rollups
    *  and slices are filtered through it (lib/workspaces.ts). */
-  viewerScope: WorkspaceScope = null
+  viewerScope: WorkspaceScope = null,
+  /** Self-only viewer (non-privileged, not a Head of Ads): only this admin's
+   *  own summary is built, and every book-level rollup (KPI totals, drill
+   *  slices) narrows to the clients attributed to them — other employees and
+   *  the rest of the book never reach the payload. */
+  selfAdminId: string | null = null
 ): Promise<TeamDirectory> {
   const today = businessTodayYmd();
   const window = timeframeWindow(timeframe, today);
@@ -362,11 +371,16 @@ export async function buildTeamDirectory(
   // The sweep reads the fresh rows and may create/solve system items.
   // Fire-and-forget: a read path must never wait on (or fail because of) it —
   // its output simply shows on the NEXT load. Idempotent via dedup_key.
+  // waitUntil keeps the serverless instance alive until it lands (otherwise
+  // Vercel can freeze it mid-run after the response, AFTER its throttle stamp
+  // was written — skipping the sweep for the whole window). No-op locally.
   // ALWAYS fed the UNSCOPED rows — a scoped row set would make the
   // auto-resolve pass believe out-of-scope conditions cleared.
-  void runTeamSystemSweep(allRows).catch((err) => {
-    console.error("[teamHub] system sweep failed", err);
-  });
+  waitUntil(
+    runTeamSystemSweep(allRows).catch((err) => {
+      console.error("[teamHub] system sweep failed", err);
+    })
+  );
 
   const rows = filterRowsByWorkspace(allRows, viewerScope);
 
@@ -374,10 +388,13 @@ export async function buildTeamDirectory(
   const [allMembers, taskStats, unsolvedCounts, goals, allUnrostered, wholeBookRebilledCents] =
     await Promise.all([
       listTeamMembers(),
-      taskStatsByAdmin(today, window.end),
-      unsolvedCountsByAdmin(),
+      taskStatsByAdmin(today, window.end, selfAdminId ?? undefined),
+      unsolvedCountsByAdmin(selfAdminId ?? undefined),
       getGoalsCentsByAdmin(month),
-      listUnrosteredAssignees(),
+      // The unrostered notice names other admins — never for self-only viewers.
+      selfAdminId !== null
+        ? Promise.resolve<UnrosteredAssignee[]>([])
+        : listUnrosteredAssignees(),
       // Whole-book re-billed revenue for the month — feeds book-attribution
       // members' + totals' collected headline. Row-level REBILL sum, NOT the
       // Closers-page brand-group metric (which counts unflagged upsell rows).
@@ -398,7 +415,10 @@ export async function buildTeamDirectory(
   // privileged internal admin never appears inside a partner book's team.
   let members = allMembers;
   let unrostered = allUnrostered;
-  if (viewerScope !== null) {
+  if (selfAdminId !== null) {
+    // Own summary only — an admin always belongs to their own scope.
+    members = allMembers.filter((m) => m.adminId === selfAdminId);
+  } else if (viewerScope !== null) {
     const adminById = new Map((await readAdmins()).map((a) => [a.id, a] as const));
     const belongs = (adminId: string) => {
       const admin = adminById.get(adminId);
@@ -408,7 +428,12 @@ export async function buildTeamDirectory(
     unrostered = allUnrostered.filter((u) => belongs(u.adminId));
   }
 
-  const active = rows.filter((r) => r.status === "active");
+  // Self-only viewers' book-level rollups cover just their own attributed
+  // clients (none when they aren't rostered) — never the whole book.
+  const active =
+    selfAdminId !== null
+      ? members.flatMap((m) => attributedClients(m, rows))
+      : rows.filter((r) => r.status === "active");
 
   const summaries = members.map((member) =>
     summarizeMember(
@@ -436,7 +461,15 @@ export async function buildTeamDirectory(
     tasksDueInWindow += s.tasks.overdue + s.tasks.dueToday + s.tasks.dueInWindow;
   }
 
-  const totalsMonthly = monthlyProgress(active, month, monthRebilledCents);
+  // The whole-book aggregate only headlines totals that span the whole book —
+  // a self-only viewer gets it only when they ARE book-attribution (COO).
+  const totalsMonthly = monthlyProgress(
+    active,
+    month,
+    selfAdminId !== null && !members.some((m) => m.attribution === "book")
+      ? null
+      : monthRebilledCents
+  );
 
 
   return {
@@ -474,6 +507,8 @@ export interface TeamMemberHub {
   clients: TeamClientSlice[];
   goalMonth: string; // yyyy-mm this summary's goal applies to
   goalHistory: Array<{ month: string; goalCents: number }>;
+  /** Books the member BELONGS to — a CSM may only take clients from these. */
+  memberWorkspaces: string[];
 }
 
 export async function buildMemberHub(
@@ -488,8 +523,11 @@ export async function buildMemberHub(
   // A scoped viewer can only open hubs of members BELONGING to one of their
   // books (out-of-scope hubs read as not-found, like everything else
   // workspace-y). Membership, not privilege — see workspaceMembershipOf.
+  // The admin row is needed either way (memberWorkspaces); only scoped
+  // viewers must have it BEFORE the build, to gate access.
+  const memberAdminP = findAdmin(adminId);
   if (viewerScope !== null) {
-    const memberAdmin = await findAdmin(adminId);
+    const memberAdmin = await memberAdminP;
     if (!memberAdmin || !scopesOverlap(viewerScope, workspaceMembershipOf(memberAdmin))) {
       return null;
     }
@@ -502,7 +540,7 @@ export async function buildMemberHub(
   const rows = filterRowsByWorkspace(await getDirectoryRowsMemo(), viewerScope);
   const clients = attributedClients(member, rows);
 
-  const [taskStats, unsolvedCounts, goalCents, goalHistory, monthRebilledCents] =
+  const [taskStats, unsolvedCounts, goalCents, goalHistory, monthRebilledCents, memberAdmin] =
     await Promise.all([
       taskStatsByAdmin(today, window.end, adminId),
       unsolvedCountsByAdmin(adminId),
@@ -516,6 +554,7 @@ export async function buildMemberHub(
             Number(goalMonth.slice(0, 4))
           )
         : Promise.resolve(null),
+      memberAdminP,
     ]);
 
   return {
@@ -537,6 +576,7 @@ export async function buildMemberHub(
       .sort((a, b) => b.mrrCents - a.mrrCents),
     goalMonth,
     goalHistory,
+    memberWorkspaces: memberAdmin ? workspaceMembershipOf(memberAdmin) : [],
   };
 }
 
@@ -559,15 +599,26 @@ export async function autoSplitCsmBook(
   actor: { id: string },
   opts: { confirm: boolean }
 ): Promise<{ assignments: CsmSplitAssignment[]; applied: boolean }> {
-  const [rows, members] = await Promise.all([
+  const [rows, members, admins] = await Promise.all([
     buildClientDirectory(),
     listTeamMembers(),
+    readAdmins(),
   ]);
   // A member with an explicit 0% share has opted out of the split entirely.
   const targets = members.filter(
     (m) => m.attribution === "csm" && m.splitSharePercent !== 0
   );
   if (targets.length === 0) return { assignments: [], applied: false };
+
+  // Books each target BELONGS to — a client only goes to a CSM of its own
+  // workspace (never internal CSM ↔ partner client, either direction).
+  const adminById = new Map(admins.map((a) => [a.id, a] as const));
+  const membershipOf = new Map(
+    targets.map((t) => {
+      const admin = adminById.get(t.adminId);
+      return [t.adminId, admin ? workspaceMembershipOf(admin) : []] as const;
+    })
+  );
 
   // Weight = explicit share percent, else an equal slice. The D'Hondt greedy
   // below keeps final client counts proportional to these weights (60/40
@@ -603,13 +654,19 @@ export async function autoSplitCsmBook(
 
   const assignments: CsmSplitAssignment[] = [];
   for (const client of candidates) {
+    // Only CSMs belonging to the client's book are eligible; none → the
+    // client stays unassigned (left for a manual pick).
+    const eligible = targets.filter((t) =>
+      membershipOf.get(t.adminId)!.includes(client.workspace)
+    );
+    if (eligible.length === 0) continue;
     // Next client goes to the target with the highest weight/(count+1)
     // quotient (D'Hondt) — proportional allocation; ties break to the
     // lighter managed-MRR book.
-    let best = targets[0];
+    let best = eligible[0];
     let bestLoad = load.get(best.adminId)!;
     let bestScore = weightOf.get(best.adminId)! / (bestLoad.count + 1);
-    for (const t of targets.slice(1)) {
+    for (const t of eligible.slice(1)) {
       const l = load.get(t.adminId)!;
       const score = weightOf.get(t.adminId)! / (l.count + 1);
       if (score > bestScore || (score === bestScore && l.mrr < bestLoad.mrr)) {

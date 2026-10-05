@@ -545,9 +545,12 @@ export async function runTeamSystemSweep(rows: ClientDirectoryRow[]): Promise<vo
   // forever. A human-solved item whose condition still persists keeps its key
   // (the dismissal holds until the condition actually clears).
   try {
+    // Range, not LIKE 'unassigned_team:%' — LIKE is case-insensitive in
+    // SQLite so it can't seek the UNIQUE dedup_key index (full scan per
+    // sweep); ';' is the character right after ':'.
     const open = await db.execute(
       `SELECT id, status, client_id, task_id, admin_id FROM team_action_items
-       WHERE dedup_key LIKE 'unassigned_team:%'`
+       WHERE dedup_key >= 'unassigned_team:' AND dedup_key < 'unassigned_team;'`
     );
     const stillUnassigned = new Set(unassigned.map((c) => c.id));
     const nowStamp = utcNowStamp();

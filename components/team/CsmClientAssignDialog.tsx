@@ -18,46 +18,70 @@ export function CsmClientAssignDialog({
   member,
   onClose,
 }: {
-  member: { adminId: string; name: string };
+  /** `workspaces` = the CSM's book membership — only those books' clients
+   *  can be assigned (the server rejects cross-book assignments). */
+  member: { adminId: string; name: string; workspaces: string[] };
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useTeamDirectory("today");
   const [search, setSearch] = useState("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Rows with a save in flight — each row toggles independently (one
+  // client_team write per client), so a pending save never swallows clicks
+  // on OTHER rows; only the busy row is disabled.
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   // Local overrides on top of the fetched snapshot (optimistic toggles).
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
 
-  const clients = useMemo(() => {
-    const list = (data?.clients ?? []).map((c) => ({
-      id: c.id,
-      displayName: c.displayName,
-      mrrCents: c.mrrCents,
-      otherCsms: c.team
-        .filter((t) => t.role === "csm" && t.adminId !== member.adminId)
-        .map((t) => t.name),
-      assigned:
-        overrides[c.id] ??
-        c.team.some((t) => t.role === "csm" && t.adminId === member.adminId),
-    }));
-    const q = search.trim().toLowerCase();
-    return list
-      .filter((c) => !q || c.displayName.toLowerCase().includes(q))
-      .sort((a, b) =>
-        a.assigned !== b.assigned
-          ? a.assigned
-            ? -1
-            : 1
-          : b.mrrCents - a.mrrCents
-      );
-  }, [data, overrides, search, member.adminId]);
+  // Order comes from the SERVER snapshot only — sorting by the optimistic
+  // state would jump a row to the other group on every click, putting a
+  // different client under the cursor for the next one.
+  const allClients = useMemo(
+    () =>
+      (data?.clients ?? [])
+        // Only the CSM's own books are assignable — but a stale cross-book
+        // assignment stays listed so it can still be removed.
+        .filter(
+          (c) =>
+            member.workspaces.includes(c.workspace) ||
+            c.team.some((t) => t.role === "csm" && t.adminId === member.adminId)
+        )
+        .map((c) => ({
+          id: c.id,
+          displayName: c.displayName,
+          mrrCents: c.mrrCents,
+          otherCsms: c.team
+            .filter((t) => t.role === "csm" && t.adminId !== member.adminId)
+            .map((t) => t.name),
+          serverAssigned: c.team.some(
+            (t) => t.role === "csm" && t.adminId === member.adminId
+          ),
+        }))
+        .sort((a, b) =>
+          a.serverAssigned !== b.serverAssigned
+            ? a.serverAssigned
+              ? -1
+              : 1
+            : b.mrrCents - a.mrrCents
+        ),
+    [data, member.adminId, member.workspaces]
+  );
+  const withState = allClients.map((c) => ({
+    ...c,
+    assigned: overrides[c.id] ?? c.serverAssigned,
+  }));
+  const q = search.trim().toLowerCase();
+  const clients = q
+    ? withState.filter((c) => c.displayName.toLowerCase().includes(q))
+    : withState;
 
-  const assigned = clients.filter((c) => c.assigned);
+  // Header totals cover every assigned client, not just the search matches.
+  const assigned = withState.filter((c) => c.assigned);
   const assignedMrr = assigned.reduce((s, c) => s + c.mrrCents, 0);
 
   async function toggle(clientId: string, next: boolean) {
-    if (busyId) return;
-    setBusyId(clientId);
+    if (busyIds.has(clientId)) return;
+    setBusyIds((prev) => new Set(prev).add(clientId));
     setOverrides((prev) => ({ ...prev, [clientId]: next }));
     try {
       const res = await fetch(`/api/admin/team/members/${member.adminId}/clients`, {
@@ -74,7 +98,11 @@ export function CsmClientAssignDialog({
       alert(err instanceof Error ? err.message : String(err));
       setOverrides((prev) => ({ ...prev, [clientId]: !next }));
     } finally {
-      setBusyId(null);
+      setBusyIds((prev) => {
+        const nextSet = new Set(prev);
+        nextSet.delete(clientId);
+        return nextSet;
+      });
     }
   }
 
@@ -118,7 +146,7 @@ export function CsmClientAssignDialog({
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-0.5">
           {isLoading && (
             <p className="py-8 text-center text-sm text-muted-foreground">Loading clients…</p>
           )}
@@ -127,7 +155,7 @@ export function CsmClientAssignDialog({
               <button
                 key={c.id}
                 type="button"
-                disabled={busyId === c.id}
+                disabled={busyIds.has(c.id)}
                 onClick={() => toggle(c.id, !c.assigned)}
                 className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-muted/40 disabled:opacity-50"
               >

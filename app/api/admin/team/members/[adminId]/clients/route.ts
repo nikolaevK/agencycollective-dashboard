@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { getTeamActor } from "@/lib/teamAuth";
 import { getTeamMember } from "@/lib/teamMembers";
+import { findAdmin } from "@/lib/admins";
+import { workspaceMembershipOf } from "@/lib/workspaces";
 import { getClientTeam, setClientTeam } from "@/lib/clientProfile";
 import { invalidateTeamDirectoryMemo } from "@/lib/teamHub";
 import { clientVisibleToScope } from "@/lib/api/supportScope";
@@ -49,8 +51,21 @@ export async function POST(request: Request, { params }: RouteContext) {
   if (typeof body.assigned !== "boolean") {
     return NextResponse.json({ error: "assigned must be a boolean" }, { status: 400 });
   }
-  if (!(await clientVisibleToScope(actor.scope, clientId))) {
+  const client = await clientVisibleToScope(actor.scope, clientId);
+  if (!client) {
     return NextResponse.json({ error: "Unknown clientId" }, { status: 400 });
+  }
+  // A CSM only takes clients from a book they BELONG to — never cross-book
+  // (internal CSM ↔ partner client). Unassigning stays allowed so a stale
+  // cross-book row can always be cleaned up.
+  if (body.assigned) {
+    const csmAdmin = await findAdmin(params.adminId);
+    if (!csmAdmin || !workspaceMembershipOf(csmAdmin).includes(client.workspace)) {
+      return NextResponse.json(
+        { error: "This CSM isn't a member of the client's workspace" },
+        { status: 400 }
+      );
+    }
   }
 
   try {

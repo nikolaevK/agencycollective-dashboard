@@ -54,7 +54,7 @@ export async function DELETE(
     const task = await getTask(params.id);
     if (!task) return fail("not_found", "Task not found", 404);
     // Metadata-only lookup — no reason to pull the BLOB just to delete it.
-    const doc = await findTaskDocument(params.documentId);
+    const doc = await findTaskDocument(params.documentId, params.id);
     if (!doc || doc.taskId !== params.id) {
       return fail("not_found", "Document not found", 404);
     }

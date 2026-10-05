@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { TASK_PRIORITY_META, TASK_PRIORITY_ORDER } from "./presentation";
+import { useTeamMemberOptions } from "./useTeamData";
 import type { TaskPriority } from "./types";
 
 const INPUT_CLS =
@@ -21,7 +22,9 @@ const ROLE_LABEL: Record<string, string> = {
  * Create a team ticket for a client from OUTSIDE the Team hub (the Client
  * Directory row menu). Assignee choices are the client's own team members —
  * plus "Me"; non-privileged admins can only ticket themselves (the API
- * enforces the same rule, this just avoids offering doomed options).
+ * enforces the same rule, this just avoids offering doomed options). Only
+ * Team ROSTER members are offered: an unrostered admin has no hub, so a task
+ * filed to them would be unreachable.
  */
 export function NewTeamTaskDialog({
   client,
@@ -38,6 +41,9 @@ export function NewTeamTaskDialog({
   const queryClient = useQueryClient();
   const privileged = viewer.isSuper || viewer.permissions.admin;
   const viewerName = viewer.displayName?.trim() || viewer.username;
+  const { data: roster, isLoading: rosterLoading, isError: rosterError } =
+    useTeamMemberOptions();
+  const rosterIds = new Set((roster ?? []).map((m) => m.adminId));
 
   // De-dupe team members holding multiple roles on this client.
   const teamOptions = new Map<string, { name: string; roles: string[] }>();
@@ -46,7 +52,7 @@ export function NewTeamTaskDialog({
     entry.roles.push(ROLE_LABEL[t.role] ?? t.role);
     teamOptions.set(t.adminId, entry);
   }
-  const options = privileged
+  const allOptions = privileged
     ? [
         ...(!teamOptions.has(viewer.adminId)
           ? [{ adminId: viewer.adminId, label: `${viewerName} (me)` }]
@@ -57,10 +63,23 @@ export function NewTeamTaskDialog({
         })),
       ]
     : [{ adminId: viewer.adminId, label: `${viewerName} (me)` }];
+  const options = allOptions.filter((o) => rosterIds.has(o.adminId));
+  // Client-team members left out for not being on the roster (named so the
+  // admin knows why they're missing).
+  const unrosteredNames = privileged
+    ? [...teamOptions.entries()]
+        .filter(([adminId]) => !rosterIds.has(adminId))
+        .map(([, e]) => e.name)
+    : [];
 
-  const [assignee, setAssignee] = useState(
-    options.find((o) => o.adminId !== viewer.adminId)?.adminId ?? options[0].adminId
-  );
+  // Picked assignee, falling back to the default (first non-self option) —
+  // derived rather than seeded, since options arrive with the roster fetch.
+  const [picked, setPicked] = useState("");
+  const assignee = options.some((o) => o.adminId === picked)
+    ? picked
+    : options.find((o) => o.adminId !== viewer.adminId)?.adminId ??
+      options[0]?.adminId ??
+      "";
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [dueDate, setDueDate] = useState("");
@@ -68,7 +87,7 @@ export function NewTeamTaskDialog({
 
   async function submit() {
     const t = title.trim();
-    if (!t || busy) return;
+    if (!t || busy || !assignee) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/admin/team/members/${assignee}/tasks`, {
@@ -105,7 +124,7 @@ export function NewTeamTaskDialog({
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-xl">
+      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-foreground">New team task</h2>
@@ -136,10 +155,16 @@ export function NewTeamTaskDialog({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <select
               value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-              className={cn(INPUT_CLS, "sm:col-span-3 min-w-0 text-xs")}
+              onChange={(e) => setPicked(e.target.value)}
+              disabled={options.length === 0}
+              className={cn(INPUT_CLS, "sm:col-span-3 min-w-0 text-xs disabled:opacity-60")}
               aria-label="Assignee"
             >
+              {options.length === 0 && (
+                <option value="">
+                  {rosterLoading ? "Loading team…" : "No one available on the Team roster"}
+                </option>
+              )}
               {options.map((o) => (
                 <option key={o.adminId} value={o.adminId}>
                   {o.label}
@@ -166,10 +191,27 @@ export function NewTeamTaskDialog({
               aria-label="Due date"
             />
           </div>
-          {client.team.length === 0 && (
+          {!rosterLoading && options.length === 0 ? (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              {rosterError
+                ? "Couldn't load the Team roster — close and try again."
+                : privileged
+                  ? "Nobody here is on the Team roster yet — add them on the Team page first."
+                  : "You're not on the Team roster yet — ask an admin to add you before creating team tasks."}
+            </p>
+          ) : client.team.length === 0 ? (
             <p className="text-[11px] text-amber-600 dark:text-amber-400">
               This client has no team assigned yet — the ticket will go to you.
             </p>
+          ) : (
+            unrosteredNames.length > 0 &&
+            !rosterLoading && (
+              <p className="text-[11px] text-muted-foreground">
+                {unrosteredNames.join(", ")} {unrosteredNames.length === 1 ? "isn't" : "aren't"} on
+                the Team roster, so they can&apos;t
+                receive tasks.
+              </p>
+            )
           )}
           <div className="flex justify-end gap-2 pt-1">
             <button
@@ -181,7 +223,7 @@ export function NewTeamTaskDialog({
             </button>
             <button
               type="button"
-              disabled={busy || !title.trim()}
+              disabled={busy || !title.trim() || !assignee}
               onClick={submit}
               className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >

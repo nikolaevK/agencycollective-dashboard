@@ -1,10 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { TeamHome } from "@/components/team/TeamHome";
-import { TeamGuide } from "@/components/team/TeamGuide";
 import { cn } from "@/lib/utils";
+
+// ~40KB of static docs — only fetched when the Documentation tab is opened.
+const TeamGuide = dynamic(
+  () => import("@/components/team/TeamGuide").then((m) => m.TeamGuide),
+  { loading: () => <div className="h-72 rounded-xl bg-muted/40 animate-pulse" /> }
+);
 
 type TabId = "overview" | "docs";
 

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { monthlyHeadline, monthlyRebillBucket } from "@/lib/teamRebill";
 import { formatMoney } from "@/components/users/format";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
@@ -65,8 +66,17 @@ export function MemberHub({ adminId }: { adminId: string }) {
   const itemsQuery = useMemberActionItems(adminId);
   const taggedQuery = useTaggedTasks(adminId);
   const mutations = useTaskMutations(adminId);
+  const viewer = useAdmin();
+  const listQueries = [tasksQuery, itemsQuery, taggedQuery];
 
-  if (hubQuery.isLoading) {
+  // Wait for the lists too — otherwise Lineup/Agenda/Unsolved render their
+  // "all clear" empty states (and 0 counts) before the data has arrived.
+  // Only the FIRST attempt holds the page: a failing list would otherwise
+  // keep the skeleton up through every retry (~7s) before the error banner.
+  if (
+    hubQuery.isLoading ||
+    (!hubQuery.isError && listQueries.some((q) => q.isLoading && q.failureCount === 0))
+  ) {
     return (
       <div className="space-y-4">
         <div className="h-28 rounded-xl bg-muted/40 animate-pulse" />
@@ -75,17 +85,25 @@ export function MemberHub({ adminId }: { adminId: string }) {
     );
   }
   if (hubQuery.error || !hubQuery.data) {
-    const msg = hubQuery.error instanceof Error ? hubQuery.error.message : "";
-    const forbidden = /forbidden/i.test(msg);
+    const err = hubQuery.error as (Error & { status?: number }) | null;
+    const forbidden = err?.status === 403;
+    // Your own hub 404s when you aren't on the Team roster yet.
+    const notRostered = err?.status === 404 && adminId === viewer.adminId;
     return (
       <div className="rounded-xl border border-border p-10 text-center">
         <p className="text-sm font-semibold text-foreground">
-          {forbidden ? "This hub isn't yours to view" : "Couldn't load this member hub"}
+          {forbidden
+            ? "This hub isn't yours to view"
+            : notRostered
+              ? "You're not on the Team roster yet"
+              : "Couldn't load this member hub"}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
           {forbidden
-            ? "Only admins with Admin Management access can open other members' hubs."
-            : msg || "The member may not be on the roster."}
+            ? "Only Admin Management (or your book's Head of Ads) can open other members' hubs."
+            : notRostered
+              ? "Ask an admin to add you to the roster to get your own hub."
+              : err?.message || "The member may not be on the roster."}
         </p>
         <Link href="/dashboard/team" className="mt-4 inline-block text-sm font-semibold text-primary">
           ← Back to Team
@@ -104,6 +122,8 @@ export function MemberHub({ adminId }: { adminId: string }) {
   // The tag "notification": open tagged tasks badge the tab until untagged.
   const taggedOpen = tagged.filter((t) => t.status !== "complete").length;
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
+  // A failed list would otherwise read as a genuine empty state ("Inbox zero").
+  const listFailed = listQueries.some((q) => q.isError || q.failureCount > 0);
 
   const tabs: { id: HubTab; label: string; count: number | null }[] = [
     { id: "home", label: "Home", count: null },
@@ -114,7 +134,13 @@ export function MemberHub({ adminId }: { adminId: string }) {
   ];
 
   return (
-    <div className="space-y-5">
+    <div
+      className={cn(
+        "space-y-5 transition-opacity",
+        // Previous timeframe's numbers stay visible (dimmed) while the new one loads.
+        hubQuery.isPlaceholderData && "opacity-60"
+      )}
+    >
       <Link
         href="/dashboard/team"
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-primary transition-colors"
@@ -147,8 +173,25 @@ export function MemberHub({ adminId }: { adminId: string }) {
         />
       </div>
 
+      {listFailed && (
+        <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-2.5 text-xs text-foreground flex-wrap">
+          <span className="flex-1 min-w-[12rem]">
+            Some hub data failed to load — counts and lists below may be incomplete.
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              listQueries.forEach((q) => (q.isError || q.failureCount > 0) && q.refetch())
+            }
+            className="font-semibold text-primary"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Stat chips — click to drill into the matching list */}
-      <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
         <HeaderStat
           label="Tasks"
           value={tasks.length}
@@ -237,14 +280,16 @@ export function MemberHub({ adminId }: { adminId: string }) {
             </button>
           ))}
         </div>
-        <div className="inline-flex rounded-lg border border-border bg-card p-0.5 mb-1.5">
+        {/* order-first on phones: when the tabs fill the row, the pill sits
+            above them instead of wrapping under the border line. */}
+        <div className="order-first sm:order-none inline-flex rounded-lg border border-border bg-card p-0.5 mb-1.5">
           {TIMEFRAME_OPTIONS.map((o) => (
             <button
               key={o.value}
               type="button"
               onClick={() => setTimeframe(o.value)}
               className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors",
+                "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
                 timeframe === o.value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -342,7 +387,7 @@ function RetentionStat({
       >
         {pct !== null ? `${pct}%` : "—"}
       </p>
-      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
         Retention
       </p>
     </Tag>
@@ -380,7 +425,7 @@ function HeaderStat({
       >
         {value}
       </p>
-      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
     </Tag>
@@ -483,6 +528,9 @@ function HeaderDrillPanel({
 }) {
   const router = useRouter();
   const month = hub.summary.monthly.month;
+  // Client rows open the Client Directory — only with its `users` permission.
+  const admin = useAdmin();
+  const canOpenClient = admin.isSuper || admin.permissions.users;
 
   const titles: Record<HeaderDrillKind, string> = {
     tasks: "All tasks",
@@ -522,8 +570,9 @@ function HeaderDrillPanel({
     <button
       key={c.id}
       type="button"
+      disabled={!canOpenClient}
       onClick={() => router.push(`/dashboard/users/${c.id}`)}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 text-left"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 enabled:hover:bg-muted/40 text-left"
     >
       <AvatarInitials name={c.displayName} className="w-7 h-7" />
       <span className="flex-1 truncate text-sm font-semibold text-foreground">
@@ -825,7 +874,7 @@ function HomeTab({
         )}
       </HomeCard>
 
-      <HomeCard title="✅ Board" hint="open Tasks →" onClick={onGoTasks} className="lg:col-span-2">
+      <HomeCard title="✅ Board" hint="open Tasks →" onClick={onGoTasks}>
         <div className="flex gap-4 px-2 flex-wrap">
           {(["todo", "in_progress", "review", "complete"] as const).map((s) => (
             <div key={s} className="flex items-center gap-1.5 text-sm">

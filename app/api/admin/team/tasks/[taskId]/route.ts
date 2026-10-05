@@ -19,11 +19,10 @@ import {
   type UpdateTaskInput,
 } from "@/lib/teamTasks";
 import { syncActionItemForTask } from "@/lib/teamActionItems";
-import { getTeamMember } from "@/lib/teamMembers";
+import { getTeamMember, isValidTeamDueYmd } from "@/lib/teamMembers";
 import { clientVisibleToScope } from "@/lib/api/supportScope";
 import { logAuditEvent } from "@/lib/auditLog";
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface RouteContext {
   params: { taskId: string };
@@ -262,13 +261,18 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       changes.priority = priority;
     }
     if (body.dueDate !== undefined) {
-      if (body.dueDate !== null && !(typeof body.dueDate === "string" && YMD_RE.test(body.dueDate))) {
+      // An unchanged (echoed) legacy value must not fail the whole PATCH.
+      if (
+        body.dueDate !== null &&
+        body.dueDate !== existing.dueDate &&
+        !isValidTeamDueYmd(body.dueDate)
+      ) {
         return NextResponse.json(
           { error: "dueDate must be yyyy-mm-dd or null" },
           { status: 400 }
         );
       }
-      changes.dueDate = body.dueDate;
+      changes.dueDate = body.dueDate as string | null; // validated, or the stored value
     }
     if (body.lineup !== undefined) changes.lineup = Boolean(body.lineup);
     if (body.checklist !== undefined)

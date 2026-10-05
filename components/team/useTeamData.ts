@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   TeamDirectoryPayload,
   MemberHubPayload,
@@ -18,10 +18,17 @@ import type {
 // error (refetch = rollback to server truth).
 // ---------------------------------------------------------------------------
 
+/** Error carrying the HTTP status — QueryProvider skips retries on 401/403. */
+function httpError(res: Response, json: { error?: string } | null): Error {
+  return Object.assign(new Error(json?.error ?? `HTTP ${res.status}`), {
+    status: res.status,
+  });
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) throw httpError(res, json);
   return json.data as T;
 }
 
@@ -36,7 +43,7 @@ async function mutateJson<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) throw httpError(res, json);
   return json.data as T;
 }
 
@@ -51,6 +58,10 @@ export function useTeamDirectory(timeframe: TeamTimeframeValue, workspace?: stri
         `/api/admin/team?timeframe=${timeframe}${ws ? `&workspace=${encodeURIComponent(ws)}` : ""}`
       ),
     staleTime: 60_000,
+    // A timeframe/workspace switch keeps the current view on screen while the
+    // new key loads, instead of unmounting the page (and the toggle) into a
+    // skeleton.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -61,6 +72,10 @@ export function useMemberHub(adminId: string, timeframe: TeamTimeframeValue) {
       fetchJson(`/api/admin/team/members/${adminId}?timeframe=${timeframe}`),
     staleTime: 60_000,
     retry: false,
+    // Keep the hub (and an open task sheet) mounted across a timeframe
+    // switch — but never show another member's data as a placeholder.
+    placeholderData: (prev, prevQuery) =>
+      prevQuery?.queryKey[1] === adminId ? prev : undefined,
   });
 }
 
@@ -197,7 +212,14 @@ export function useTaskMutations(adminId: string): TaskMutations {
           changes
         );
         setTasks((prev) => prev.map((t) => (t.id === id ? task : t)));
-        if (changes.status !== undefined) invalidateLinked();
+        // Status AND due-date changes move the server-side rollups (done /
+        // overdue / due counts); a status move also records an activity row.
+        if (changes.status !== undefined || changes.dueDate !== undefined) {
+          invalidateLinked();
+        }
+        if (changes.status !== undefined) {
+          queryClient.invalidateQueries({ queryKey: ["team-task-comments", id] });
+        }
       } catch (err) {
         rollback();
         throw err;
@@ -205,6 +227,10 @@ export function useTaskMutations(adminId: string): TaskMutations {
     },
 
     async moveTask(id, move, optimistic) {
+      // A same-lane reorder changes no rollup — only a lane change does.
+      const prevStatus = queryClient
+        .getQueryData<TeamTaskRecord[]>(key)
+        ?.find((t) => t.id === id)?.status;
       if (optimistic) queryClient.setQueryData<TeamTaskRecord[]>(key, optimistic);
       try {
         const task = await mutateJson<TeamTaskRecord>(
@@ -213,7 +239,10 @@ export function useTaskMutations(adminId: string): TaskMutations {
           { move }
         );
         setTasks((prev) => prev.map((t) => (t.id === id ? task : t)));
-        invalidateLinked();
+        if (prevStatus !== move.status) {
+          invalidateLinked();
+          queryClient.invalidateQueries({ queryKey: ["team-task-comments", id] });
+        }
       } catch (err) {
         rollback();
         throw err;

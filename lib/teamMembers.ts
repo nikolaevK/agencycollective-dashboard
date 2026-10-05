@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
+import { isRealYmd } from "./businessTime";
 
 // ---------------------------------------------------------------------------
 // Team roster — manual satellite table over admins (team_members, see
@@ -243,10 +244,25 @@ export async function removeTeamMember(adminId: string): Promise<void> {
 // Goals — per-month history with carry-forward
 // ---------------------------------------------------------------------------
 
-const MONTH_RE = /^\d{4}-\d{2}$/;
+// 4-digit year >= 2000, month 01-12 (rejects 2026-13, 0000-00, …).
+const MONTH_RE = /^(2\d{3})-(0[1-9]|1[0-2])$/;
 
 export function isValidGoalMonth(month: string): boolean {
   return MONTH_RE.test(month);
+}
+
+/**
+ * A team task / action-item due date: a real calendar `yyyy-mm-dd` in a sane
+ * year range. Rejects half-typed years a date input emits mid-entry
+ * (0002-10-05, 0202-10-05, …), which a bare shape regex would persist.
+ */
+export function isValidTeamDueYmd(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    isRealYmd(value) &&
+    value >= "2000-01-01" &&
+    value <= "2099-12-31"
+  );
 }
 
 /**

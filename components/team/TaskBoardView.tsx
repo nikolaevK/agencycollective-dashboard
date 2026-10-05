@@ -236,9 +236,18 @@ function BoardCard({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
         "rounded-lg border border-border/60 bg-card p-2.5 cursor-pointer hover:border-primary/50 transition-colors",
-        isDragging && "opacity-60 ring-2 ring-primary/40 z-10 relative"
+        isDragging && "opacity-60 ring-2 ring-primary/40 z-10 relative",
+        "focus-visible:outline-none focus-visible:border-primary"
       )}
       onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       <div className="flex items-start gap-1.5">
         <button
@@ -270,7 +279,7 @@ function BoardCard({
           </span>
         )}
         {t.source !== "manual" && (
-          <span className="text-[9px] font-bold uppercase text-cyan-600 dark:text-cyan-400">
+          <span className="text-[10px] font-bold uppercase text-cyan-600 dark:text-cyan-400">
             ⚡ auto
           </span>
         )}

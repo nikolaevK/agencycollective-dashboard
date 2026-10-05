@@ -1593,7 +1593,8 @@ export const openApiSpec: OpenApiSpec = {
         ],
       }),
       post: op("createTeamTask", "Create a task", "team", "team:write", {
-        description: "Tasks are assigned to ONE individual admin (adminId).",
+        description:
+          "Tasks are assigned to ONE individual admin (adminId), who must be a Team roster member (listTeamMembers) — any other adminId is a 404. dueDate must be a real yyyy-mm-dd date (years 2000–2099).",
         requestBody: { required: true, schema: teamTaskBody(["adminId", "title"]) },
       }),
     },
@@ -1708,7 +1709,7 @@ export const openApiSpec: OpenApiSpec = {
       }),
       post: op("createTeamActionItem", "Create an action item (+ linked task)", "team", "team:write", {
         description:
-          "The agent ingest path: relay a Slack thread or dashboard report to a member's inbox. Auto-creates a linked task on their board and returns both.",
+          "The agent ingest path: relay a Slack thread or dashboard report to a member's inbox. Auto-creates a linked task on their board and returns both. adminId must be a Team roster member (listTeamMembers) — any other adminId is a 404.",
         requestBody: { required: true, schema: teamActionItemBody(["adminId", "body"]) },
       }),
     },

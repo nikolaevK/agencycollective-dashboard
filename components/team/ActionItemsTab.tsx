@@ -48,9 +48,9 @@ export function ActionItemsTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.05] px-4 py-3">
+      <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.05] px-4 py-3 flex-wrap">
         <Zap className="h-4 w-4 shrink-0 text-primary mt-0.5" />
-        <p className="text-xs text-muted-foreground flex-1">
+        <p className="text-xs text-muted-foreground flex-1 min-w-[14rem]">
           Action items flagged in client Slack channels or dashboard threads are{" "}
           <span className="font-bold text-primary">relayed here by the reporting agent</span> and
           automatically added to {hub.member.name}&apos;s task board. Solving one completes the
@@ -59,7 +59,7 @@ export function ActionItemsTab({
         <button
           type="button"
           onClick={() => setAddOpen((o) => !o)}
-          className="shrink-0 inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
+          className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
         >
           <Plus className="h-3.5 w-3.5" />
           Add item
@@ -139,18 +139,25 @@ function ActionItemCard({
         )}
         <span className="ml-auto text-[11px] text-muted-foreground">
           {item.authorLabel && `${item.authorLabel} · `}
-          {formatDate(item.externalTs ?? item.createdAt)}
+          {/* Agents may relay a non-ISO stamp (e.g. a Slack ts) — fall back. */}
+          {formatDate(
+            item.externalTs && !Number.isNaN(Date.parse(item.externalTs))
+              ? item.externalTs
+              : item.createdAt
+          )}
         </span>
       </div>
 
-      <p className="mt-2 text-sm text-foreground leading-relaxed">{item.body}</p>
+      <p className="mt-2 text-sm text-foreground leading-relaxed break-words">
+        {item.body}
+      </p>
 
       <div className="mt-3 flex items-center gap-2.5 flex-wrap">
         {item.linkedTask && (
           <button
             type="button"
             onClick={() => onOpenTask(item.linkedTask!.id)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-cyan-500/10 px-2 py-1 text-[11px] font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-colors"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-cyan-500/10 px-2 py-1 text-left text-[11px] font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-colors break-words"
           >
             ⚡ Linked task: “{item.linkedTask.title}”
             <span

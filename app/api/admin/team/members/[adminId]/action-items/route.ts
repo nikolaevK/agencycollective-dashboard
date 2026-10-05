@@ -9,10 +9,9 @@ import {
   parseActionSourceType,
 } from "@/lib/teamActionItems";
 import { parseTaskPriority } from "@/lib/teamTasks";
+import { getTeamMember, isValidTeamDueYmd } from "@/lib/teamMembers";
 import { clientVisibleToScope } from "@/lib/api/supportScope";
 import { logAuditEvent } from "@/lib/auditLog";
-
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface RouteContext {
   params: { adminId: string };
@@ -39,6 +38,9 @@ export async function GET(request: Request, { params }: RouteContext) {
       adminId: params.adminId,
       status:
         statusParam === "solved" || statusParam === "unsolved" ? statusParam : undefined,
+      // Max cap, not the 100 default: the hub's Unsolved badge/chip and inbox
+      // derive from this one list (same rationale as the tasks route).
+      limit: 500,
     });
     return NextResponse.json({ data: { items, total } });
   } catch (err) {
@@ -65,6 +67,12 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // Items (and their linked tasks) only land in ROSTERED hubs — an
+  // unrostered admin's hub 404s and nothing would ever surface them.
+  if (!(await getTeamMember(params.adminId))) {
+    return NextResponse.json({ error: "Team member not found" }, { status: 404 });
+  }
+
   const text = typeof body.body === "string" ? body.body.trim() : "";
   if (!text) return NextResponse.json({ error: "body is required" }, { status: 400 });
   if (body.sourceType != null && !parseActionSourceType(body.sourceType)) {
@@ -79,7 +87,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       { status: 400 }
     );
   }
-  if (body.dueDate != null && !(typeof body.dueDate === "string" && YMD_RE.test(body.dueDate))) {
+  if (body.dueDate != null && !isValidTeamDueYmd(body.dueDate)) {
     return NextResponse.json({ error: "dueDate must be yyyy-mm-dd" }, { status: 400 });
   }
   const clientId =

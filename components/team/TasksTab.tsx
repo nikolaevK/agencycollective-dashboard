@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { Check, ChevronDown, ChevronRight, Flag, List, Columns3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { TaskBoardView } from "./TaskBoardView";
 import { ClientChip, DueLabel } from "./MemberHub";
 import { sortTasks, type TaskMutations } from "./useTeamData";
 import {
@@ -18,6 +18,12 @@ import type {
   TaskStatus,
   TaskPriority,
 } from "./types";
+
+// The board (and its @dnd-kit dependency) only loads once someone opens it.
+const TaskBoardView = dynamic(
+  () => import("./TaskBoardView").then((m) => m.TaskBoardView),
+  { loading: () => <div className="h-72 rounded-xl bg-muted/40 animate-pulse" /> }
+);
 
 type FilterChip = "all" | "todo" | "in_progress" | "review" | "complete" | "overdue";
 type GroupBy = "status" | "client" | "priority";
@@ -40,6 +46,8 @@ export function TasksTab({
   const [filter, setFilter] = useState<FilterChip>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const [search, setSearch] = useState("");
+  // Typing stays responsive while the (up to 500-row) list re-filters behind it.
+  const deferredSearch = useDeferredValue(search);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const isOverdue = (t: TeamTaskRecord) =>
@@ -59,19 +67,20 @@ export function TasksTab({
   );
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
+    const clientName = new Map(hub.clients.map((c) => [c.id, c.displayName]));
     return sortTasks(tasks).filter((t) => {
       if (filter === "overdue" && !isOverdue(t)) return false;
       if (filter !== "all" && filter !== "overdue" && t.status !== filter) return false;
       if (q) {
-        const client = hub.clients.find((c) => c.id === t.clientId);
-        const hay = `${t.title} ${t.description} ${client?.displayName ?? ""}`.toLowerCase();
+        const client = t.clientId ? clientName.get(t.clientId) : undefined;
+        const hay = `${t.title} ${t.description} ${client ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, filter, search, today, hub.clients]);
+  }, [tasks, filter, deferredSearch, today, hub.clients]);
 
   const chips: { id: FilterChip; label: string }[] = [
     { id: "all", label: "All" },
@@ -308,9 +317,19 @@ function TaskRow({
   const done = t.status === "complete";
   const ckDone = t.checklist.filter((c) => c.done).length;
   return (
+    // flex-wrap + the title's min-w floor: on phones the chips/due/flag wrap
+    // to a second line instead of crushing the title to nothing.
     <div
-      className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors"
+      role="button"
+      tabIndex={0}
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-muted/40"
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       <button
         type="button"
@@ -321,7 +340,8 @@ function TaskRow({
             .catch((err) => alert(err instanceof Error ? err.message : String(err)));
         }}
         className={cn(
-          "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+          // after: pseudo-element widens the 18px circle's hit area to ~34px.
+          "relative flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors after:absolute after:-inset-2",
           done
             ? "border-emerald-500 bg-emerald-500 text-white"
             : "border-muted-foreground/40 text-transparent hover:border-emerald-500 hover:text-emerald-500"
@@ -333,7 +353,7 @@ function TaskRow({
       <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
       <span
         className={cn(
-          "flex-1 truncate text-sm font-semibold",
+          "flex-1 min-w-[55%] truncate text-sm font-semibold",
           done ? "text-muted-foreground line-through" : "text-foreground"
         )}
       >

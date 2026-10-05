@@ -9,11 +9,9 @@ import {
   parseActionSourceType,
 } from "@/lib/teamActionItems";
 import { parseTaskPriority } from "@/lib/teamTasks";
-import { findAdmin } from "@/lib/admins";
+import { getTeamMember, isValidTeamDueYmd } from "@/lib/teamMembers";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
-
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function OPTIONS() {
   return corsPreflight();
@@ -62,8 +60,10 @@ export async function POST(request: Request) {
     const text = typeof body.body === "string" ? body.body.trim() : "";
     if (!adminId) return fail("invalid_request", "adminId is required", 400);
     if (!text) return fail("invalid_request", "body is required", 400);
-    if (!(await findAdmin(adminId))) {
-      return fail("not_found", "No admin with that adminId", 404);
+    // Items (and their linked tasks) only land in ROSTERED hubs — an
+    // unrostered admin's hub is unreachable, so the work would be invisible.
+    if (!(await getTeamMember(adminId))) {
+      return fail("not_found", "No team member with that adminId", 404);
     }
     const sourceType = parseActionSourceType(body.sourceType ?? "dashboard");
     if (!sourceType) {
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     if (body.priority != null && !parseTaskPriority(body.priority)) {
       return fail("invalid_request", "priority must be urgent, high, normal, or low", 400);
     }
-    if (body.dueDate != null && !(typeof body.dueDate === "string" && YMD_RE.test(body.dueDate))) {
+    if (body.dueDate != null && !isValidTeamDueYmd(body.dueDate)) {
       return fail("invalid_request", "dueDate must be yyyy-mm-dd", 400);
     }
     const clientId =

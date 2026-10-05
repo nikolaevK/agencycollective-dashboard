@@ -55,8 +55,14 @@ export function TeamGuide() {
       <Section icon={ShieldCheck} title="Who sees what">
         <ul className="space-y-2">
           <li>
-            <strong>Every admin</strong> can open this page, see the team overview cards, and
-            view + manage <strong>their own hub</strong> (tasks, action items, comments).
+            <strong>Every admin</strong> can open this page and view + manage{" "}
+            <strong>their own hub</strong> (tasks, action items, comments).
+          </li>
+          <li>
+            The overview shows <strong>only the cards you can open</strong>. Members without the{" "}
+            <Pill>admin</Pill> permission who aren&rsquo;t a Head of Ads (e.g. media buyers)
+            see just their own card — no other members, no book-wide KPI strip. If
+            they&rsquo;re not on the roster yet, the page says so.
           </li>
           <li>
             Opening <strong>another member&rsquo;s hub</strong>, managing the roster and goals,
@@ -581,7 +587,10 @@ export function TeamGuide() {
           &ldquo;Auto-split book&rdquo; assigns every active client that has no CSM across the{" "}
           <em>CSM-attribution</em> members — proportional to each member&rsquo;s{" "}
           <strong>Split&nbsp;%</strong> (set in the roster dialog; empty = equal share, 0 = opted
-          out), balancing by MRR. It always shows a <strong>preview first</strong>; nothing is
+          out), balancing by MRR. A client only goes to a CSM who <strong>belongs to the
+          client&rsquo;s workspace</strong> (no eligible CSM → it stays unassigned; the hub&rsquo;s
+          &ldquo;Assign clients&rdquo; enforces the same rule). It always shows a{" "}
+          <strong>preview first</strong>; nothing is
           written until you confirm. The result is ordinary Directory team assignments you can
           adjust by hand afterwards — from the client row or from the CSM&rsquo;s hub.
         </p>
@@ -615,7 +624,7 @@ export function TeamGuide() {
           <strong>Creating an item</strong> — <code className="rounded bg-muted px-1 text-xs">POST /api/v1/team/action-items</code>:
         </p>
         <Schema>{`{
-  "adminId": "…",                    // routed member (one individual) — required
+  "adminId": "…",                    // routed ROSTER member (listTeamMembers) — required; else 404
   "body": "Client asked how to track the ads — 3rd time, unanswered.",
   "clientId": "…",                   // optional client tag
   "sourceType": "slack",             // slack | dashboard | system

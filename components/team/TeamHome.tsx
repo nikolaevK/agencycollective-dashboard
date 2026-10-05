@@ -12,6 +12,7 @@ import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
 import { useTeamDirectory } from "./useTeamData";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import { RosterManageDialog } from "./RosterManageDialog";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
 import {
@@ -46,14 +47,26 @@ export function TeamHome() {
   // (super / Admin Management); "" = all books.
   const [workspace, setWorkspace] = useState("");
   const { workspaces, canManage } = useWorkspaces();
-  const { data, isLoading, error, refetch } = useTeamDirectory(timeframe, workspace);
+  const admin = useAdmin();
+  const { data, isLoading, error, refetch, isPlaceholderData } = useTeamDirectory(
+    timeframe,
+    workspace
+  );
 
   if (isLoading) {
+    // Non-privileged viewers usually get just their own card — skeleton
+    // accordingly so the page doesn't collapse from three cards to one.
+    const likelySelfOnly = !(admin.isSuper || admin.permissions.admin);
     return (
       <div className="space-y-4">
-        <div className="h-24 rounded-xl bg-muted/40 animate-pulse" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => (
+        {!likelySelfOnly && <div className="h-24 rounded-xl bg-muted/40 animate-pulse" />}
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            likelySelfOnly ? "max-w-xl" : "lg:grid-cols-2 xl:grid-cols-3"
+          )}
+        >
+          {(likelySelfOnly ? [0] : [0, 1, 2]).map((i) => (
             <div key={i} className="h-56 rounded-xl bg-muted/40 animate-pulse" />
           ))}
         </div>
@@ -72,9 +85,14 @@ export function TeamHome() {
   }
 
   const tfl = TIMEFRAME_PHRASE[timeframe];
+  // Self-only viewer (e.g. a media buyer): just their own card. The KPI strip
+  // would only repeat that card's numbers, so it's skipped.
+  const selfOnly = !!data.viewer.selfOnly;
+  const notRostered = selfOnly && data.members.length === 0;
 
   return (
-    <div className="space-y-5">
+    // The previous timeframe/book stays visible (dimmed) while the new one loads.
+    <div className={cn("space-y-5 transition-opacity", isPlaceholderData && "opacity-60")}>
       {/* Header row: timeframe + roster manage */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
@@ -94,34 +112,38 @@ export function TeamHome() {
             </button>
           ))}
         </div>
-        {canManage && workspaces.length > 1 && (
-          <select
-            value={workspace}
-            onChange={(e) => setWorkspace(e.target.value)}
-            title="Filter the team overview to one workspace (book)"
-            className="h-9 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground focus:outline-none"
-          >
-            <option value="">All workspaces</option>
-            {workspaces.map((w) => (
-              <option key={w.value} value={w.value}>{w.label}</option>
-            ))}
-          </select>
-        )}
-        {data.viewer.privileged && (
-          <button
-            type="button"
-            onClick={() => setManageOpen(true)}
-            className="inline-flex items-center gap-2 h-9 rounded-lg border border-border px-3.5 text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-          >
-            <Settings2 className="h-4 w-4" />
-            Manage roster
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {canManage && workspaces.length > 1 && (
+            <select
+              value={workspace}
+              onChange={(e) => setWorkspace(e.target.value)}
+              title="Filter the team overview to one workspace (book)"
+              className="h-9 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground focus:outline-none"
+            >
+              <option value="">All workspaces</option>
+              {workspaces.map((w) => (
+                <option key={w.value} value={w.value}>{w.label}</option>
+              ))}
+            </select>
+          )}
+          {data.viewer.privileged && (
+            <button
+              type="button"
+              onClick={() => setManageOpen(true)}
+              className="inline-flex items-center gap-2 h-9 rounded-lg border border-border px-3.5 text-sm font-semibold text-foreground hover:bg-accent transition-colors"
+            >
+              <Settings2 className="h-4 w-4" />
+              Manage roster
+            </button>
+          )}
+        </div>
       </div>
 
-      <KpiStrip data={data} tfl={tfl} drill={drill} onDrill={setDrill} />
+      {!selfOnly && <KpiStrip data={data} tfl={tfl} drill={drill} onDrill={setDrill} />}
 
-      {drill && <DrillPanel data={data} kind={drill} tfl={tfl} onClose={() => setDrill(null)} />}
+      {drill && !selfOnly && (
+        <DrillPanel data={data} kind={drill} tfl={tfl} onClose={() => setDrill(null)} />
+      )}
 
       {data.unrostered.length > 0 && (
         <UnrosteredNotice
@@ -135,11 +157,15 @@ export function TeamHome() {
 
       {data.members.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-10 text-center">
-          <p className="text-sm font-semibold text-foreground">No team members yet</p>
+          <p className="text-sm font-semibold text-foreground">
+            {notRostered ? "You're not on the Team roster yet" : "No team members yet"}
+          </p>
           <p className="text-xs text-muted-foreground mt-1">
             {data.viewer.privileged
               ? "Add admins to the roster to build their hubs."
-              : "An admin needs to set up the roster."}
+              : notRostered
+                ? "Ask an admin to add you to the roster to get your own hub."
+                : "An admin needs to set up the roster."}
           </p>
           {data.viewer.privileged && (
             <button
@@ -153,7 +179,12 @@ export function TeamHome() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            selfOnly ? "max-w-xl" : "lg:grid-cols-2 xl:grid-cols-3"
+          )}
+        >
           {data.members.map((m) => (
             <MemberCard
               key={m.adminId}
@@ -235,11 +266,16 @@ function KpiStrip({
       label: `Re-billed · ${monthName(t.monthly.month)}`,
       value: formatMoney(collected.cents),
       // "all rebills" qualifies the mixed populations: the aggregate spans
-      // the whole Payout DB while book MRR is active-directory only.
+      // the whole Payout DB while book MRR is active-directory only. Only
+      // shown when the headline actually IS that aggregate.
       sub:
         t.bookMrrCents > 0
-          ? `${Math.round((collected.cents / t.bookMrrCents) * 100)}% of book MRR · all rebills`
-          : "all rebills this month",
+          ? `${Math.round((collected.cents / t.bookMrrCents) * 100)}% of book MRR${
+              collected.wholeBook ? " · all rebills" : ""
+            }`
+          : collected.wholeBook
+            ? "all rebills this month"
+            : "collected this month",
       tone: "green",
     },
     {
@@ -266,7 +302,7 @@ function KpiStrip({
   ];
 
   return (
-    <div className="grid gap-3 grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
       {tiles.map((tile) => (
         <button
           key={tile.kind}
@@ -332,18 +368,20 @@ function DrillPanel({
       className="flex w-full items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/40 text-left"
     >
       <MemberAvatar name={m.name} avatarPath={m.avatarPath} size="sm" />
-      <span className="text-sm font-semibold text-foreground flex-1 truncate">{m.name}</span>
-      {right}
+      <span className="text-sm font-semibold text-foreground flex-1 min-w-[6rem] truncate">
+        {m.name}
+      </span>
+      <span className="min-w-0 text-right">{right}</span>
     </button>
   );
 
   const clientRow = (c: TeamClientSlice, right: React.ReactNode) => (
     <div key={c.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/40">
       <AvatarInitials name={c.displayName} className="w-7 h-7" />
-      <span className="text-sm font-semibold text-foreground flex-1 truncate">
+      <span className="text-sm font-semibold text-foreground flex-1 min-w-[6rem] truncate">
         {c.displayName}
       </span>
-      {right}
+      <span className="min-w-0 text-right">{right}</span>
     </div>
   );
 
@@ -662,7 +700,7 @@ function MemberCard({
           · {formatMoney(m.rebills.inWindowMrrCents)} · {tfl}
         </span>
         {m.rebills.sentInWindow > 0 && (
-          <span className="text-muted-foreground/60 font-semibold">
+          <span className="text-muted-foreground font-semibold">
             {m.rebills.sentInWindow} sent
           </span>
         )}
@@ -713,7 +751,7 @@ function StatTile({
       >
         {value}
       </p>
-      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
     </div>

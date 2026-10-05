@@ -110,14 +110,26 @@ export async function insertTaskDocument(input: {
       input.uploadedByName,
     ],
   });
-  const rows = await selectMetaRows("WHERE id = ?", [id]);
+  // task_id leads the forced covering index — an id-only predicate would
+  // scan the whole index; (task_id, id) is a direct seek.
+  const rows = await selectMetaRows("WHERE task_id = ? AND id = ?", [input.taskId, id]);
   return rowToDocument(rows[0]);
 }
 
-export async function findTaskDocument(id: string): Promise<TeamTaskDocument | null> {
+/**
+ * Metadata lookup. Pass `taskId` whenever the caller knows it: the forced
+ * covering index leads with task_id, so (task_id, id) seeks while an id-only
+ * predicate scans the whole index.
+ */
+export async function findTaskDocument(
+  id: string,
+  taskId?: string
+): Promise<TeamTaskDocument | null> {
   await ensureMigrated();
   try {
-    const rows = await selectMetaRows("WHERE id = ?", [id]);
+    const rows = taskId
+      ? await selectMetaRows("WHERE task_id = ? AND id = ?", [taskId, id])
+      : await selectMetaRows("WHERE id = ?", [id]);
     return rows[0] ? rowToDocument(rows[0]) : null;
   } catch (err) {
     if (isNoSuchTable(err)) return null;

@@ -43,6 +43,9 @@ export interface TeamViewer {
   managedAdminIds?: string[];
   adminId: string;
   privileged: boolean;
+  /** Directory payload only: the viewer receives just their own member
+   *  summary, and the totals cover only their own clients. */
+  selfOnly?: boolean;
 }
 
 export type TeamDirectoryPayload = TeamDirectory & { viewer: TeamViewer };

@@ -10,6 +10,7 @@ import { formatMoney, formatDate } from "@/components/users/format";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
+import { useAdmin } from "@/components/providers/AdminProvider";
 import {
   CHIP_BASE,
   FALLBACK_CHIP_CLS,
@@ -35,6 +36,11 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
   const totalMrr = clients.reduce((s, c) => s + c.mrrCents, 0);
   const zeroMrr = clients.filter((c) => c.mrrCents === 0).length;
   const canAssign = hub.viewer.privileged && hub.member.attribution === "csm";
+  // Client rows link into the Client Directory — only for viewers who hold its
+  // `users` permission (a media buyer without it would land on Access Denied).
+  const admin = useAdmin();
+  const canOpenClient = admin.isSuper || admin.permissions.users;
+  const openClient = (id: string) => router.push(`/dashboard/users/${id}`);
 
   const roleNames = (c: TeamClientSlice, role: string) =>
     c.team.filter((t) => t.role === role).map((t) => t.name).join(", ") || "—";
@@ -55,7 +61,7 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
       )}
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         <SummaryTile label="Clients" value={String(clients.length)} />
         <SummaryTile label="Total MRR managed" value={formatMoney(totalMrr)} tone="green" />
         <SummaryTile
@@ -75,8 +81,9 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
         />
       </div>
 
-      {/* Mobile card list — the 860px table needs 2+ screen-widths of panning */}
-      <div className="md:hidden space-y-2.5">
+      {/* Card list below lg — the 860px table needs 2+ screen-widths of
+          panning on phones, and the sidebar leaves only ~464px at md. */}
+      <div className="lg:hidden space-y-2.5">
         {clients.length === 0 ? (
           <div className="rounded-xl border border-border/60 px-3 py-10 text-center text-sm text-muted-foreground">
             No clients attributed to this member yet.
@@ -84,11 +91,9 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
         ) : (
           <>
             {clients.map((c) => (
-              <button
+              <ClientCardShell
                 key={c.id}
-                type="button"
-                onClick={() => router.push(`/dashboard/users/${c.id}`)}
-                className="w-full rounded-xl border border-border/60 bg-card p-3 text-left hover:border-primary/40 transition-colors"
+                onClick={canOpenClient ? () => openClient(c.id) : undefined}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -117,7 +122,7 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
                 <div className="mt-2">
                   <RebillCell c={c} />
                 </div>
-              </button>
+              </ClientCardShell>
             ))}
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
               <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
@@ -129,7 +134,7 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
         )}
       </div>
 
-      <div className="hidden md:block rounded-xl border border-border/60 overflow-x-auto">
+      <div className="hidden lg:block rounded-xl border border-border/60 overflow-x-auto">
         <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-left">
@@ -147,8 +152,11 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
             {clients.map((c) => (
               <tr
                 key={c.id}
-                className="border-b border-border/50 last:border-0 hover:bg-muted/20 cursor-pointer transition-colors"
-                onClick={() => router.push(`/dashboard/users/${c.id}`)}
+                className={cn(
+                  "border-b border-border/50 last:border-0 transition-colors",
+                  canOpenClient && "hover:bg-muted/20 cursor-pointer"
+                )}
+                onClick={canOpenClient ? () => openClient(c.id) : undefined}
               >
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -229,11 +237,37 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
 
       {assignOpen && (
         <CsmClientAssignDialog
-          member={{ adminId: hub.member.adminId, name: hub.member.name }}
+          member={{
+            adminId: hub.member.adminId,
+            name: hub.member.name,
+            workspaces: hub.memberWorkspaces,
+          }}
           onClose={() => setAssignOpen(false)}
         />
       )}
     </div>
+  );
+}
+
+/** Mobile client card — a link-button only when the viewer may open the client. */
+function ClientCardShell({
+  onClick,
+  children,
+}: {
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const cls = "block w-full rounded-xl border border-border/60 bg-card p-3 text-left";
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(cls, "hover:border-primary/40 transition-colors")}
+    >
+      {children}
+    </button>
+  ) : (
+    <div className={cls}>{children}</div>
   );
 }
 

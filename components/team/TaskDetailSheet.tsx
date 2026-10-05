@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Flag, Pin, PinOff, Trash2, Plus, Check, Paperclip, AtSign } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,17 @@ import type {
 const INPUT_CLS =
   "rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+/**
+ * A due date worth saving. Chrome fires `change` per typed year digit
+ * (0002 → 0020 → 0202 → 2026), so anything outside 20xx is a partial entry,
+ * not a date (the server accepts 2000–2099 only — isValidTeamDueYmd).
+ */
+const SAVABLE_DUE_RE = /^20\d\d-\d\d-\d\d$/;
+
+/** Hover-revealed row actions: always visible on touch (no hover there). */
+const ROW_ACTION_CLS =
+  "opacity-60 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-2.5 -m-1.5 text-muted-foreground hover:text-red-500";
+
 /** Slide-over task detail: status/priority/due/client/lineup, checklist, comments. */
 export function TaskDetailSheet({
   task: t,
@@ -44,8 +55,35 @@ export function TaskDetailSheet({
   const { data: memberOptions = [] } = useTeamMemberOptions();
   const [title, setTitle] = useState(t.title);
   const [description, setDescription] = useState(t.description);
+  const [dueDraft, setDueDraft] = useState(t.dueDate ?? "");
   const [newItem, setNewItem] = useState("");
   const [comment, setComment] = useState("");
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Text fields save only what the user actually typed. While untouched they
+  // follow the server copy, so an agent/teammate edit that lands while the
+  // sheet is open is shown — and never overwritten by a focus+blur.
+  const titleDirty = useRef(false);
+  const descriptionDirty = useRef(false);
+  useEffect(() => {
+    if (!titleDirty.current) setTitle(t.title);
+  }, [t.title]);
+  useEffect(() => {
+    if (!descriptionDirty.current) setDescription(t.description);
+  }, [t.description]);
+  useEffect(() => {
+    setDueDraft(t.dueDate ?? "");
+  }, [t.dueDate]);
+
+  // Focus moves into the sheet on open and back to the opener on close.
+  useEffect(() => {
+    const opener = document.activeElement;
+    panelRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (opener instanceof HTMLElement) opener.focus({ preventScroll: true });
+    };
+  }, []);
 
   // Picking a new assignee opens the confirm dialog, where extra members can
   // be checked to TAG (multi-recipient reassign: single owner + tags) and a
@@ -88,11 +126,17 @@ export function TaskDetailSheet({
         el.blur();
         return;
       }
+      // The reassign dialog sits on top: Escape cancels only that (never
+      // mid-request), keeping the sheet and its edits.
+      if (reassignTargetId) {
+        if (!reassignBusy) setReassignTargetId(null);
+        return;
+      }
       onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, reassignTargetId, reassignBusy]);
 
   const { data: comments = [] } = useQuery<TeamTaskComment[]>({
     queryKey: ["team-task-comments", t.id],
@@ -136,11 +180,17 @@ export function TaskDetailSheet({
   };
 
   async function tagMember(adminId: string) {
-    const res = await fetch(`/api/admin/team/tasks/${t.id}/tags`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adminId }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`/api/admin/team/tasks/${t.id}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminId }),
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const json = await res.json().catch(() => null);
     if (!res.ok) {
       alert(json?.error ?? `HTTP ${res.status}`);
@@ -152,9 +202,15 @@ export function TaskDetailSheet({
   }
 
   async function untagMember(adminId: string) {
-    const res = await fetch(`/api/admin/team/tasks/${t.id}/tags/${adminId}`, {
-      method: "DELETE",
-    });
+    let res: Response;
+    try {
+      res = await fetch(`/api/admin/team/tasks/${t.id}/tags/${adminId}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+      return;
+    }
     if (!res.ok) {
       const json = await res.json().catch(() => null);
       alert(json?.error ?? `HTTP ${res.status}`);
@@ -194,6 +250,8 @@ export function TaskDetailSheet({
         json.data as TeamTaskDocument,
       ]);
       refreshTrail();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false);
     }
@@ -201,9 +259,15 @@ export function TaskDetailSheet({
 
   async function removeDocument(doc: TeamTaskDocument) {
     if (!confirm(`Remove attachment "${doc.fileName}"?`)) return;
-    const res = await fetch(`/api/admin/team/tasks/${t.id}/documents/${doc.id}`, {
-      method: "DELETE",
-    });
+    let res: Response;
+    try {
+      res = await fetch(`/api/admin/team/tasks/${t.id}/documents/${doc.id}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+      return;
+    }
     if (!res.ok) {
       const json = await res.json().catch(() => null);
       alert(json?.error ?? `HTTP ${res.status}`);
@@ -220,6 +284,14 @@ export function TaskDetailSheet({
       .patchTask(t.id, changes)
       .catch((err) => alert(err instanceof Error ? err.message : String(err)));
 
+  // A failed due-date save snaps the input back to the server value (the
+  // [t.dueDate] sync effect won't fire — the server copy never changed).
+  const patchDue = (dueDate: string | null) =>
+    mutations.patchTask(t.id, { dueDate }).catch((err) => {
+      setDueDraft(t.dueDate ?? "");
+      alert(err instanceof Error ? err.message : String(err));
+    });
+
   const overdue = t.status !== "complete" && !!t.dueDate && t.dueDate < today;
   const statusIdx = TASK_STATUS_ORDER.indexOf(t.status);
   const nextStatus = TASK_STATUS_ORDER[(statusIdx + 1) % TASK_STATUS_ORDER.length];
@@ -233,13 +305,23 @@ export function TaskDetailSheet({
     const body = comment.trim();
     if (!body) return;
     setComment("");
-    const res = await fetch(`/api/admin/team/tasks/${t.id}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
-    });
+    // A failed post puts the text back (unless a new draft was started).
+    const restore = () => setComment((prev) => prev || body);
+    let res: Response;
+    try {
+      res = await fetch(`/api/admin/team/tasks/${t.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+    } catch (err) {
+      restore();
+      alert(err instanceof Error ? err.message : String(err));
+      return;
+    }
     if (!res.ok) {
       const json = await res.json().catch(() => null);
+      restore();
       alert(json?.error ?? `HTTP ${res.status}`);
       return;
     }
@@ -247,14 +329,23 @@ export function TaskDetailSheet({
   }
 
   return (
+    // Bottom sheet on phones (dvh = the visible viewport, unlike iOS vh);
+    // centered card from sm up.
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative w-full max-w-xl max-h-[92dvh] sm:max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl focus:outline-none"
+      >
         {/* Top bar */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-3 rounded-t-2xl">
           <p className="text-xs text-muted-foreground">
@@ -265,7 +356,7 @@ export function TaskDetailSheet({
               type="button"
               onClick={() => patch({ lineup: !t.lineup })}
               className={cn(
-                "p-1.5 rounded-lg transition-colors",
+                "p-2 rounded-lg transition-colors",
                 t.lineup
                   ? "text-primary hover:bg-primary/10"
                   : "text-muted-foreground hover:bg-accent"
@@ -284,7 +375,7 @@ export function TaskDetailSheet({
                     .catch((err) => alert(err instanceof Error ? err.message : String(err)));
                 }
               }}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-accent transition-colors"
+              className="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-accent transition-colors"
               aria-label="Delete task"
             >
               <Trash2 className="h-4 w-4" />
@@ -292,7 +383,7 @@ export function TaskDetailSheet({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent"
+              className="p-2 rounded-lg text-muted-foreground hover:bg-accent"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
@@ -300,7 +391,7 @@ export function TaskDetailSheet({
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4">
           {/* Status + priority controls */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex">
@@ -349,9 +440,11 @@ export function TaskDetailSheet({
               instead of hiding past the single-line input's edge. Enter
               commits (blur) rather than inserting a newline. */}
           <textarea
+            id={titleId}
             rows={1}
             value={title}
             onChange={(e) => {
+              titleDirty.current = true;
               setTitle(e.target.value.replace(/\n/g, " "));
               e.target.style.height = "auto";
               e.target.style.height = `${e.target.scrollHeight}px`;
@@ -369,16 +462,18 @@ export function TaskDetailSheet({
               }
             }}
             onBlur={() => {
+              if (!titleDirty.current) return;
+              titleDirty.current = false;
               const trimmed = title.trim();
               if (trimmed && trimmed !== t.title) patch({ title: trimmed });
-              else if (!trimmed) setTitle(t.title); // cleared — revert, never save blank
+              else setTitle(t.title); // cleared or unchanged — revert, never save blank
             }}
             className="w-full resize-none overflow-hidden bg-transparent text-lg font-black leading-snug text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1"
             aria-label="Task title"
           />
 
           {/* Fields */}
-          <div className="grid grid-cols-[100px_1fr] gap-y-2.5 items-center text-sm">
+          <div className="grid grid-cols-[84px_1fr] sm:grid-cols-[100px_1fr] gap-y-2.5 items-center text-sm">
             <span className="text-muted-foreground text-xs font-semibold">Assignee</span>
             {/* Controlled by the hub owner — a declined confirm or failed
                 reassign simply re-renders back to the current assignee.
@@ -410,10 +505,23 @@ export function TaskDetailSheet({
               ))}
             </select>
             <span className="text-muted-foreground text-xs font-semibold">Due date</span>
+            {/* Picker selections save at once; typed partials (and a mid-edit
+                empty value) settle on blur — never one PATCH per keystroke. */}
             <input
               type="date"
-              value={t.dueDate ?? ""}
-              onChange={(e) => patch({ dueDate: e.target.value || null })}
+              value={dueDraft}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDueDraft(v);
+                if (SAVABLE_DUE_RE.test(v) && v !== t.dueDate) patchDue(v);
+              }}
+              onBlur={() => {
+                if (dueDraft === "") {
+                  if (t.dueDate) patchDue(null);
+                } else if (!SAVABLE_DUE_RE.test(dueDraft)) {
+                  setDueDraft(t.dueDate ?? "");
+                }
+              }}
               className={cn(INPUT_CLS, "h-8 py-0 w-44 text-xs", overdue && "text-red-500 font-bold")}
               aria-label="Due date"
             />
@@ -425,6 +533,11 @@ export function TaskDetailSheet({
               aria-label="Client"
             >
               <option value="">No client</option>
+              {/* A task forwarded from another book can carry a client this
+                  hub doesn't manage — keep it selected rather than "No client". */}
+              {t.clientId && !hub.clients.some((c) => c.id === t.clientId) && (
+                <option value={t.clientId}>Client outside this hub</option>
+              )}
               {hub.clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.displayName}
@@ -445,7 +558,7 @@ export function TaskDetailSheet({
                   <button
                     type="button"
                     onClick={() => untagMember(tag.adminId)}
-                    className="hover:text-red-500"
+                    className="-m-2 p-2.5 rounded hover:text-red-500"
                     aria-label={`Untag ${tag.name}`}
                   >
                     <X className="h-3 w-3" />
@@ -496,8 +609,13 @@ export function TaskDetailSheet({
             </p>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                descriptionDirty.current = true;
+                setDescription(e.target.value);
+              }}
               onBlur={() => {
+                if (!descriptionDirty.current) return;
+                descriptionDirty.current = false;
                 if (description !== t.description) patch({ description });
               }}
               placeholder="Add description…"
@@ -540,7 +658,7 @@ export function TaskDetailSheet({
                   </button>
                   <span
                     className={cn(
-                      "flex-1 text-xs",
+                      "flex-1 min-w-0 break-words text-xs",
                       item.done ? "text-muted-foreground line-through" : "text-foreground"
                     )}
                   >
@@ -551,7 +669,7 @@ export function TaskDetailSheet({
                     onClick={() =>
                       setChecklist(t.checklist.filter((c) => c.id !== item.id))
                     }
-                    className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 -m-1 text-muted-foreground hover:text-red-500"
+                    className={ROW_ACTION_CLS}
                     aria-label="Remove item"
                   >
                     <X className="h-3 w-3" />
@@ -594,23 +712,27 @@ export function TaskDetailSheet({
               {documents.map((doc) => (
                 <div key={doc.id} className="flex items-center gap-2 group text-xs">
                   <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <a
-                    href={`/api/admin/team/tasks/${t.id}/documents/${doc.id}?view=1`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex-1 min-w-0 truncate font-semibold text-foreground hover:text-primary hover:underline"
-                    title={`${doc.fileName} · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB`}
-                  >
-                    {doc.fileName}
-                  </a>
-                  <span className="shrink-0 text-muted-foreground">
-                    {doc.uploadedByName ? `${doc.uploadedByName} · ` : ""}
-                    {formatDate(doc.createdAt)}
+                  {/* Phones: uploader/date stack under the filename instead of
+                      crushing it; side by side from sm. */}
+                  <span className="flex-1 min-w-0 sm:flex sm:items-center sm:gap-2">
+                    <a
+                      href={`/api/admin/team/tasks/${t.id}/documents/${doc.id}?view=1`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block min-w-0 truncate font-semibold text-foreground hover:text-primary hover:underline sm:flex-1"
+                      title={`${doc.fileName} · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB`}
+                    >
+                      {doc.fileName}
+                    </a>
+                    <span className="block truncate text-muted-foreground sm:shrink-0">
+                      {doc.uploadedByName ? `${doc.uploadedByName} · ` : ""}
+                      {formatDate(doc.createdAt)}
+                    </span>
                   </span>
                   <button
                     type="button"
                     onClick={() => removeDocument(doc)}
-                    className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 -m-1 text-muted-foreground hover:text-red-500"
+                    className={ROW_ACTION_CLS}
                     aria-label={`Remove ${doc.fileName}`}
                   >
                     <X className="h-3 w-3" />
@@ -648,9 +770,9 @@ export function TaskDetailSheet({
             <div className="space-y-2">
               {comments.map((c) =>
                 c.kind === "activity" ? (
-                  <p key={c.id} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-border" />
-                    <span className="min-w-0 truncate">
+                  <p key={c.id} className="flex items-start gap-2 text-[11px] text-muted-foreground">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-border" />
+                    <span className="min-w-0 break-words">
                       {c.body}
                       <span className="opacity-70">
                         {" "}
@@ -662,20 +784,24 @@ export function TaskDetailSheet({
                   <div key={c.id} className="text-xs">
                     <span className="font-bold text-foreground">{c.authorName || "Unknown"}</span>{" "}
                     <span className="text-muted-foreground">· {formatDate(c.createdAt)}</span>
-                    <p className="mt-0.5 text-foreground whitespace-pre-wrap">{c.body}</p>
+                    <p className="mt-0.5 text-foreground whitespace-pre-wrap break-words">{c.body}</p>
                   </div>
                 )
               )}
-              <input
-                type="text"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitComment();
-                }}
-                placeholder="Write a comment… Enter to send"
-                className={cn(INPUT_CLS, "w-full text-xs")}
-              />
+              {/* Pinned to the sheet's bottom so a long trail never pushes
+                  the composer out of reach. */}
+              <div className="sticky bottom-0 -mx-5 bg-card px-5 py-2">
+                <input
+                  type="text"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitComment();
+                  }}
+                  placeholder="Write a comment… Enter to send"
+                  className={cn(INPUT_CLS, "w-full text-xs")}
+                />
+              </div>
             </div>
           </div>
         </div>

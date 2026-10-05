@@ -29,10 +29,16 @@ export function TaggedTab({
 
   async function dismiss(task: TaggedTaskRecord) {
     if (!confirm(`Remove this tag? "${task.title}" leaves the Tagged section.`)) return;
-    const res = await fetch(
-      `/api/admin/team/tasks/${task.id}/tags/${hub.member.adminId}`,
-      { method: "DELETE" }
-    );
+    let res: Response;
+    try {
+      res = await fetch(
+        `/api/admin/team/tasks/${task.id}/tags/${hub.member.adminId}`,
+        { method: "DELETE" }
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+      return;
+    }
     if (!res.ok) {
       const json = await res.json().catch(() => null);
       alert(json?.error ?? `HTTP ${res.status}`);
@@ -67,7 +73,9 @@ export function TaggedTab({
           <button
             type="button"
             onClick={() => setExpandedId(expanded ? null : t.id)}
-            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            // flex-wrap + the title's min-w floor: on phones the owner chip /
+            // due / flag wrap below instead of crushing the title.
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 text-left"
           >
             {expanded ? (
               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -77,7 +85,7 @@ export function TaggedTab({
             <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
             <span
               className={cn(
-                "flex-1 truncate text-sm font-semibold",
+                "flex-1 min-w-[55%] truncate text-sm font-semibold",
                 t.status === "complete"
                   ? "text-muted-foreground line-through"
                   : "text-foreground"
@@ -94,7 +102,7 @@ export function TaggedTab({
           <button
             type="button"
             onClick={() => dismiss(t)}
-            className="shrink-0 p-1 text-muted-foreground hover:text-red-500"
+            className="shrink-0 p-2 -m-1 text-muted-foreground hover:text-red-500"
             title="Remove tag (leaves this section)"
             aria-label="Remove tag"
           >
@@ -104,7 +112,7 @@ export function TaggedTab({
         {expanded && (
           <div className="border-t border-border/60 px-9 py-2.5 text-xs space-y-1.5">
             {t.description ? (
-              <p className="whitespace-pre-wrap text-foreground">{t.description}</p>
+              <p className="whitespace-pre-wrap break-words text-foreground">{t.description}</p>
             ) : (
               <p className="text-muted-foreground">No description.</p>
             )}

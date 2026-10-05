@@ -8,6 +8,7 @@ import { formatMoney } from "@/components/users/format";
 import { adminRoleLabel } from "@/components/admins/types";
 import { MemberAvatar } from "./TeamHome";
 import { ATTRIBUTION_LABEL } from "./presentation";
+import { useTeamMemberOptions } from "./useTeamData";
 import type {
   TeamDirectoryPayload,
   TeamAttribution,
@@ -27,6 +28,12 @@ const ATTRIBUTIONS: TeamAttribution[] = ["book", "lead", "media_buyer", "csm"];
 
 const INPUT_CLS =
   "h-8 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** Goal input text for stored cents — exact (no rounding), "" when unset. */
+function goalInputOf(goalCents: number): string {
+  if (goalCents <= 0) return "";
+  return goalCents % 100 === 0 ? String(goalCents / 100) : (goalCents / 100).toFixed(2);
+}
 
 /** Default roster attribution/position from an admin's role slug. */
 function defaultsForRole(role: string): { attribution: TeamAttribution; position: string } {
@@ -50,6 +57,8 @@ export function RosterManageDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  // Split-only busy flag — row edits track their own pending saves, so a
+  // save on blur never disables the field the user just tabbed into.
   const [busy, setBusy] = useState(false);
   const [splitPreview, setSplitPreview] = useState<CsmSplitAssignment[] | null>(null);
 
@@ -64,19 +73,29 @@ export function RosterManageDialog({
     staleTime: 300_000,
   });
 
+  // The directory prop can be pinned to one workspace (TeamHome's book
+  // filter), so roster membership comes from the unpinned roster list too —
+  // otherwise other books' members look "addable" (→ 409 on add).
+  const { data: rosterOptions = [] } = useTeamMemberOptions();
   const rosteredIds = useMemo(
-    () => new Set(directory.members.map((m) => m.adminId)),
-    [directory.members]
+    () =>
+      new Set([
+        ...directory.members.map((m) => m.adminId),
+        ...rosterOptions.map((o) => o.adminId),
+      ]),
+    [directory.members, rosterOptions]
   );
   const addable = admins.filter((a) => !rosteredIds.has(a.id));
+  const shownIds = new Set(directory.members.map((m) => m.adminId));
+  const hiddenMemberCount = rosterOptions.filter((o) => !shownIds.has(o.adminId)).length;
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["team-directory"] });
     queryClient.invalidateQueries({ queryKey: ["team-member"] });
+    queryClient.invalidateQueries({ queryKey: ["team-member-options"] });
   };
 
   async function call(url: string, method: string, body?: unknown): Promise<boolean> {
-    setBusy(true);
     try {
       const res = await fetch(url, {
         method,
@@ -90,8 +109,9 @@ export function RosterManageDialog({
       }
       refresh();
       return true;
-    } finally {
-      setBusy(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }
 
@@ -115,18 +135,23 @@ export function RosterManageDialog({
       } else {
         setSplitPreview(result.assignments);
       }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   }
 
   const currentMonth = directory.today.slice(0, 7);
-  const hasCsmMembers = directory.members.some((m) => m.attribution === "csm");
+  // The split runs across the WHOLE roster, not just the pinned book.
+  const hasCsmMembers =
+    directory.members.some((m) => m.attribution === "csm") ||
+    rosterOptions.some((o) => o.attribution === "csm");
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl">
+      <div className="relative w-full max-w-4xl max-h-[88vh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-xl">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4 rounded-t-2xl">
           <h2 className="text-base font-bold">Team roster</h2>
           <button
@@ -152,22 +177,23 @@ export function RosterManageDialog({
                 goalCents={m.goalCents}
                 splitSharePercent={m.splitSharePercent}
                 currentMonth={currentMonth}
-                busy={busy}
                 onCall={call}
               />
             ))}
             {directory.members.length === 0 && (
               <p className="text-xs text-muted-foreground py-2">No members yet.</p>
             )}
+            {hiddenMemberCount > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                {hiddenMemberCount} member{hiddenMemberCount === 1 ? "" : "s"} in other
+                workspaces {hiddenMemberCount === 1 ? "isn't" : "aren't"} listed — clear the
+                workspace filter to edit them.
+              </p>
+            )}
           </div>
 
           {/* Add member */}
-          <AddMemberRow
-            addable={addable}
-            initialAdminId={initialAdminId}
-            busy={busy}
-            onCall={call}
-          />
+          <AddMemberRow addable={addable} initialAdminId={initialAdminId} onCall={call} />
 
           {/* CSM auto-split */}
           <div className="rounded-xl border border-border p-4">
@@ -199,7 +225,7 @@ export function RosterManageDialog({
                   </p>
                 ) : (
                   <>
-                    <div className="max-h-48 overflow-y-auto rounded-lg border border-border/60 divide-y divide-border/60">
+                    <div className="max-h-48 overflow-y-auto overscroll-contain rounded-lg border border-border/60 divide-y divide-border/60">
                       {splitPreview.map((a) => (
                         <div key={a.clientId} className="flex items-center gap-2 px-3 py-1.5 text-xs">
                           <span className="font-semibold text-foreground flex-1 truncate">
@@ -247,7 +273,6 @@ function MemberRosterRow({
   goalCents,
   splitSharePercent,
   currentMonth,
-  busy,
   onCall,
 }: {
   adminId: string;
@@ -258,12 +283,22 @@ function MemberRosterRow({
   goalCents: number;
   splitSharePercent: number | null;
   currentMonth: string;
-  busy: boolean;
   onCall: (url: string, method: string, body?: unknown) => Promise<boolean>;
 }) {
   const [pos, setPos] = useState(position);
-  const [goal, setGoal] = useState(goalCents > 0 ? String(Math.round(goalCents / 100)) : "");
+  const [goal, setGoal] = useState(goalInputOf(goalCents));
   const [share, setShare] = useState(splitSharePercent != null ? String(splitSharePercent) : "");
+  // In-flight saves for THIS row. Inputs stay enabled while saving (each
+  // field PATCHes independently); only Remove waits for them to settle.
+  const [pending, setPending] = useState(0);
+  const save = async (url: string, method: string, body?: unknown) => {
+    setPending((n) => n + 1);
+    try {
+      return await onCall(url, method, body);
+    } finally {
+      setPending((n) => n - 1);
+    }
+  };
 
   return (
     <div className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 flex-wrap">
@@ -274,19 +309,20 @@ function MemberRosterRow({
         value={pos}
         placeholder="Position"
         onChange={(e) => setPos(e.target.value)}
-        onBlur={() => {
-          if (pos !== position) onCall(`/api/admin/team/members/${adminId}`, "PATCH", { position: pos });
+        onBlur={async () => {
+          if (pos === position) return;
+          const ok = await save(`/api/admin/team/members/${adminId}`, "PATCH", { position: pos });
+          if (!ok) setPos(position);
         }}
         className={cn(INPUT_CLS, "w-36 flex-1 min-w-[110px]")}
-        disabled={busy}
+        aria-label={`Position for ${name}`}
       />
       <select
         value={attribution}
         onChange={(e) =>
-          onCall(`/api/admin/team/members/${adminId}`, "PATCH", { attribution: e.target.value })
+          save(`/api/admin/team/members/${adminId}`, "PATCH", { attribution: e.target.value })
         }
         className={cn(INPUT_CLS, "w-44")}
-        disabled={busy}
         aria-label="Attribution rule"
       >
         {ATTRIBUTIONS.map((a) => (
@@ -303,17 +339,22 @@ function MemberRosterRow({
           value={goal}
           placeholder="0"
           onChange={(e) => setGoal(e.target.value)}
-          onBlur={() => {
+          onBlur={async () => {
+            // Exact cents round-trip (goalInputOf) — an untouched field never
+            // re-PUTs a rounded value.
             const cents = Math.round(Number(goal || 0) * 100);
-            if (cents !== goalCents && Number.isFinite(cents) && cents >= 0) {
-              onCall(`/api/admin/team/members/${adminId}/goal`, "PUT", {
-                month: currentMonth,
-                goalCents: cents,
-              });
+            if (!Number.isFinite(cents) || cents < 0) {
+              setGoal(goalInputOf(goalCents));
+              return;
             }
+            if (cents === goalCents) return;
+            const ok = await save(`/api/admin/team/members/${adminId}/goal`, "PUT", {
+              month: currentMonth,
+              goalCents: cents,
+            });
+            if (!ok) setGoal(goalInputOf(goalCents));
           }}
           className={cn(INPUT_CLS, "w-24")}
-          disabled={busy}
           aria-label={`Monthly goal for ${name}`}
         />
       </div>
@@ -334,30 +375,31 @@ function MemberRosterRow({
                 return;
               }
               if (next !== splitSharePercent) {
-                onCall(`/api/admin/team/members/${adminId}`, "PATCH", {
+                save(`/api/admin/team/members/${adminId}`, "PATCH", {
                   splitSharePercent: next,
+                }).then((ok) => {
+                  if (!ok) setShare(splitSharePercent != null ? String(splitSharePercent) : "");
                 });
               }
             }}
             className={cn(INPUT_CLS, "w-16")}
-            disabled={busy}
             aria-label={`CSM split share for ${name}`}
           />
         </div>
       )}
       <button
         type="button"
-        disabled={busy}
+        disabled={pending > 0}
         onClick={() => {
           if (
             confirm(
               `Remove ${name} from the roster? Their tasks, action items, and goals are deleted. Client assignments are kept.`
             )
           ) {
-            onCall(`/api/admin/team/members/${adminId}`, "DELETE");
+            save(`/api/admin/team/members/${adminId}`, "DELETE");
           }
         }}
-        className="ml-auto p-1.5 text-muted-foreground hover:text-red-500 transition-colors"
+        className="ml-auto p-1.5 text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-50"
         aria-label={`Remove ${name} from roster`}
       >
         <Trash2 className="h-4 w-4" />
@@ -369,14 +411,13 @@ function MemberRosterRow({
 function AddMemberRow({
   addable,
   initialAdminId,
-  busy,
   onCall,
 }: {
   addable: AdminOption[];
   initialAdminId: string | null;
-  busy: boolean;
   onCall: (url: string, method: string, body?: unknown) => Promise<boolean>;
 }) {
+  const [busy, setBusy] = useState(false);
   const [adminId, setAdminId] = useState("");
   const [position, setPosition] = useState("");
   const [attribution, setAttribution] = useState<TeamAttribution>("lead");
@@ -459,12 +500,14 @@ function AddMemberRow({
           type="button"
           disabled={busy || !adminId}
           onClick={async () => {
+            setBusy(true);
             const ok = await onCall("/api/admin/team/members", "POST", {
               adminId,
               position,
               attribution,
               goalCents: Math.round(Number(goal || 0) * 100),
             });
+            setBusy(false);
             if (ok) {
               setAdminId("");
               setPosition("");
