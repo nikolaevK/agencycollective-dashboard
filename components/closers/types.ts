@@ -38,6 +38,8 @@ export interface DealPublic {
   additionalCcEmails: string[];
   setterTier: SetterTier | null;
   noRetainer: boolean;
+  /** Set when an admin entered the deal from the Deal queue. */
+  createdByAdminId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

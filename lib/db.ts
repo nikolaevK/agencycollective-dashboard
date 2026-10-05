@@ -498,6 +498,15 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // revert the admin's setter_id/setter_tier. Read on every attribution
     // pass, so it must self-heal here.
     { table: "deals",                  column: "setter_override",    defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Built-in "House" closer (lib/closers.ts HOUSE_CLOSER_ID) for deals an
+    // admin creates without crediting a real closer. readClosers() filters
+    // system rows out on EVERY closer list, so the column must self-heal here
+    // (the gated CREATE carries it inline for a fresh DB).
+    { table: "closers",                column: "is_system",          defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Deals entered by an admin from the Deal queue (POST /api/admin/deals) —
+    // provenance for the "Admin" badge. Only written by that path (insert
+    // emits it conditionally); inline in the gated CREATE for a fresh DB.
+    { table: "deals",                  column: "created_by_admin_id", defn: "TEXT" },
     // Multi-sub-account GHL — runtime push/pull breaks without this.
     // Must self-heal because the SCHEMA_VERSION probe below was already
     // stamped on existing deploys when this column didn't exist yet.
@@ -1087,7 +1096,8 @@ export async function migrate(): Promise<void> {
       quota           INTEGER NOT NULL DEFAULT 0,
       status          TEXT NOT NULL DEFAULT 'active',
       avatar_path     TEXT,
-      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      is_system       INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -1116,7 +1126,8 @@ export async function migrate(): Promise<void> {
       status          TEXT NOT NULL DEFAULT 'in_progress',
       notes           TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by_admin_id TEXT
     )
   `);
 

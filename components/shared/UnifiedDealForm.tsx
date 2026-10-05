@@ -2,16 +2,44 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe, X } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
 import { INDUSTRIES, DEAL_STATUSES, PAYMENT_TYPES } from "@/components/closers/types";
 import { parseServiceCategory, serializeServiceCategory } from "@/lib/serviceCategory";
 import { createDealAction } from "@/app/actions/closerDeals";
 import { SETTER_TIERS, SETTER_TIER_LABELS, type SetterTier } from "@/lib/appointments";
+import type { CreatedDeal } from "@/lib/dealCreation";
 
 const INPUT_CLS =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
+
+/** POST /api/admin/deals result — the new deal and its draft invoice. */
+export type AdminCreatedDeal = CreatedDeal;
+
+/** Every deal list/metric an admin deal create or edit can change. */
+const ADMIN_DEAL_QUERY_KEYS = [
+  "closer-stats",
+  "closer-deals",
+  "closer-detail",
+  "closers-stats",
+  "admin-all-deals",
+  "admin-all-deals-calendar",
+  "admin-deals",
+  "admin-deal-queue-metrics",
+];
+
+interface CreditOption {
+  id: string;
+  displayName: string;
+}
+
+/** GET /api/admin/deals/create-options — who an admin-entered deal can credit. */
+interface AdminCreateOptions {
+  house: CreditOption;
+  closers: CreditOption[];
+  setters: CreditOption[];
+}
 
 interface UnifiedDealFormProps {
   mode: "create" | "edit";
@@ -49,6 +77,8 @@ interface UnifiedDealFormProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Fires while a submit is in flight — lets a hosting modal block closing. */
   onPendingChange?: (pending: boolean) => void;
+  /** Admin create only: the created deal (+ its invoice id) for follow-up. */
+  onCreated?: (result: AdminCreatedDeal) => void;
 }
 
 export function UnifiedDealForm({
@@ -61,6 +91,7 @@ export function UnifiedDealForm({
   onCancel,
   onDirtyChange,
   onPendingChange,
+  onCreated,
 }: UnifiedDealFormProps) {
   // Plain state, not useTransition: on React 18 an async transition's
   // isPending clears at the first await, so the button re-enabled mid-request
@@ -103,10 +134,31 @@ export function UnifiedDealForm({
   const showAdminTierFields = context === "admin" && mode === "edit";
   const hasSetter = Boolean(initialData?.setterId);
 
+  // Admin create (Deal queue "New deal"): the admin picks who gets credit —
+  // the built-in House closer by default — and an optional setter + tier.
+  const adminCreate = context === "admin" && mode === "create";
+  const createOptionsQuery = useQuery<AdminCreateOptions>({
+    queryKey: ["admin-deal-create-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/deals/create-options");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return json.data;
+    },
+    enabled: adminCreate,
+    staleTime: 5 * 60_000,
+  });
+  const createOptions = createOptionsQuery.data;
+  // "" = the House default (its id arrives with the options).
+  const [creditCloserId, setCreditCloserId] = useState("");
+  const [creditSetterId, setCreditSetterId] = useState("");
+  const effectiveCloserId = creditCloserId || createOptions?.house.id || "";
+
   // Dirty = any field differs from the values the form mounted with.
   const fieldsKey = JSON.stringify([
     clientName, clientUserId, clientEmail, dealValue, closingDate, selectedServices, industry,
     status, notes, paymentType, brandName, website, additionalCcEmails, ccInputValue, setterTier, noRetainer,
+    creditCloserId, creditSetterId,
   ]);
   const [initialFieldsKey] = useState(fieldsKey);
   const dirty = fieldsKey !== initialFieldsKey;
@@ -256,6 +308,16 @@ export function UnifiedDealForm({
       setError("Client name is required");
       return;
     }
+    if (adminCreate) {
+      if (!effectiveCloserId) {
+        setError(createOptionsQuery.isError ? "Couldn't load closers — close and try again" : "Still loading closers…");
+        return;
+      }
+      if (creditSetterId && !setterTier) {
+        setError("Pick the setter's tier (or remove the setter)");
+        return;
+      }
+    }
     if (status !== "not_closed") {
       const dv = parseFloat(dealValue) || 0;
       if (dv <= 0) {
@@ -350,6 +412,39 @@ export function UnifiedDealForm({
         queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
         queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
         onSuccess?.();
+      } else if (adminCreate) {
+        // Created closed: lands in the Deal queue with its draft invoice.
+        const res = await fetch("/api/admin/deals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              closerId: effectiveCloserId,
+              clientName: clientName.trim(),
+              clientEmail: trimmedEmail || null,
+              dealValue: Math.round((parseFloat(dealValue) || 0) * 100), // cents
+              closingDate: closingDate || null,
+              serviceCategory: selectedServices,
+              industry: industry || null,
+              notes: notes || null,
+              paymentType,
+              brandName: brandName || null,
+              website: website || null,
+              additionalCcEmails: ccList,
+              setterId: creditSetterId || null,
+              setterTier: creditSetterId ? setterTier || null : null,
+              noRetainer: creditSetterId ? noRetainer : false,
+            },
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(json.error || "Failed to create the deal");
+          return;
+        }
+        for (const key of ADMIN_DEAL_QUERY_KEYS) queryClient.invalidateQueries({ queryKey: [key] });
+        onCreated?.(json.data as AdminCreatedDeal);
+        onSuccess?.();
       } else if (mode === "edit") {
         // PATCH to appropriate endpoint
         const endpoint = context === "admin" ? "/api/admin/deals" : "/api/closer/deals";
@@ -389,14 +484,7 @@ export function UnifiedDealForm({
           return;
         }
         // Invalidate relevant queries
-        queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["closer-deals"] });
-        queryClient.invalidateQueries({ queryKey: ["closer-detail"] });
-        queryClient.invalidateQueries({ queryKey: ["closers-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-all-deals"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-all-deals-calendar"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
+        for (const key of ADMIN_DEAL_QUERY_KEYS) queryClient.invalidateQueries({ queryKey: [key] });
         onSuccess?.();
       }
     } catch {
@@ -409,7 +497,7 @@ export function UnifiedDealForm({
   const showClientAutocomplete = (context === "closer" || context === "calendar-link") && mode === "create";
   const submitLabel =
     mode === "create"
-      ? context === "calendar-link"
+      ? context === "calendar-link" || adminCreate
         ? "Create Deal"
         : "Submit Entry"
       : "Save Changes";
@@ -417,6 +505,94 @@ export function UnifiedDealForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Credit — admin create only. House is the default: the deal belongs to
+          the agency, with no closer commission. */}
+      {adminCreate && (
+        <div className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-3">
+          <div>
+            <label htmlFor="admin-deal-closer" className="text-sm font-medium text-foreground mb-1.5 block">
+              Credited closer
+            </label>
+            <select
+              id="admin-deal-closer"
+              value={effectiveCloserId}
+              onChange={(e) => setCreditCloserId(e.target.value)}
+              disabled={!createOptions}
+              className={INPUT_CLS}
+            >
+              {!createOptions ? (
+                <option value="">{createOptionsQuery.isError ? "Couldn't load closers" : "Loading…"}</option>
+              ) : (
+                <>
+                  <option value={createOptions.house.id}>
+                    {createOptions.house.displayName} — agency deal, no closer commission
+                  </option>
+                  {createOptions.closers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.displayName}</option>
+                  ))}
+                </>
+              )}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {effectiveCloserId && effectiveCloserId !== createOptions?.house.id
+                ? "Counts toward this closer's revenue and commission, and shows in their portal."
+                : "Counts toward company revenue only — no closer gets credit."}
+            </p>
+          </div>
+          <div>
+            <label htmlFor="admin-deal-setter" className="text-sm font-medium text-foreground mb-1.5 block">
+              Setter <span className="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <select
+              id="admin-deal-setter"
+              value={creditSetterId}
+              onChange={(e) => setCreditSetterId(e.target.value)}
+              disabled={!createOptions}
+              className={INPUT_CLS}
+            >
+              <option value="">No setter</option>
+              {createOptions?.setters.map((s) => (
+                <option key={s.id} value={s.id}>{s.displayName}</option>
+              ))}
+            </select>
+          </div>
+          {creditSetterId && (
+            <>
+              <div>
+                <label htmlFor="admin-deal-tier" className="text-sm font-medium text-foreground mb-1.5 block">
+                  Setter tier
+                </label>
+                <select
+                  id="admin-deal-tier"
+                  value={setterTier}
+                  onChange={(e) => setSetterTier(e.target.value as "" | SetterTier)}
+                  className={INPUT_CLS}
+                >
+                  <option value="">Select tier…</option>
+                  {SETTER_TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      Tier {t} — {SETTER_TIER_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={noRetainer}
+                  onChange={(e) => setNoRetainer(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <span>
+                  No-retainer deal —{" "}
+                  <span className="text-muted-foreground">cap setter commission at $500 (§3.8)</span>
+                </span>
+              </label>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Client Name */}
       {showClientAutocomplete ? (
         <ClientAutocomplete
@@ -562,21 +738,29 @@ export function UnifiedDealForm({
         </select>
       </div>
 
-      {/* Status */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className={INPUT_CLS}
-        >
-          {DEAL_STATUSES
-            .filter((s) => context === "admin" || s.value !== "pending_signature")
-            .map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-        </select>
-      </div>
+      {/* Status — an admin-entered deal is always created closed: only closed
+          deals get the invoice (+ contract) to review and send. */}
+      {adminCreate ? (
+        <p className="text-xs text-muted-foreground">
+          Created as <span className="font-medium text-foreground">Closed</span> — its invoice lands in the Deal
+          queue for review. Nothing is emailed until you send it.
+        </p>
+      ) : (
+        <div>
+          <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={INPUT_CLS}
+          >
+            {DEAL_STATUSES
+              .filter((s) => context === "admin" || s.value !== "pending_signature")
+              .map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+          </select>
+        </div>
+      )}
 
       {/* Deal Value — hidden when not_closed */}
       {status !== "not_closed" && (

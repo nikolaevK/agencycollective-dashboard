@@ -264,7 +264,7 @@ async function getCloserNameMap(): Promise<Map<string, string>> {
   }
   await ensureMigrated();
   const db = getDb();
-  const result = await db.execute("SELECT id, display_name FROM closers WHERE status = 'active'");
+  const result = await db.execute("SELECT id, display_name FROM closers WHERE status = 'active' AND is_system = 0");
   const map = new Map<string, string>();
   for (const row of result.rows) {
     const name = String(row.display_name ?? "").trim().toLowerCase().replace(/\s+/g, " ");

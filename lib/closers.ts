@@ -23,7 +23,25 @@ export interface CloserRecord {
   status: CloserStatus;
   avatarPath: string | null;
   createdAt: string;
+  /** Built-in system row (the House closer) — never a person: no login, not
+   *  listed, not editable or deletable. Absent on records built in code. */
+  isSystem?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// House closer — the built-in credit target for deals an admin creates from
+// the Deal queue without crediting a real closer (deals.closer_id is NOT
+// NULL). A system row: hidden from every closer list (readClosers), unable to
+// log in (findCloserByEmail skips it — and it has no password), and refused
+// by edit/delete paths (deleting it would cascade its deals).
+// ---------------------------------------------------------------------------
+
+export const HOUSE_CLOSER_ID = "system-house";
+export const HOUSE_CLOSER_NAME = "House";
+// slugify() strips underscores, so no generated closer slug can collide.
+const HOUSE_CLOSER_SLUG = "__system_house__";
+// RFC 2606 reserved TLD — never deliverable, never a real login.
+const HOUSE_CLOSER_EMAIL = "house@closers.invalid";
 
 // ---------------------------------------------------------------------------
 // Slug utilities
@@ -64,16 +82,46 @@ function rowToCloser(row: Row): CloserRecord {
     status: String(row.status || "active") as CloserStatus,
     avatarPath: row.avatar_path != null ? String(row.avatar_path) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
+    isSystem: Number(row.is_system ?? 0) === 1,
   };
 }
 
-export async function readClosers(): Promise<CloserRecord[]> {
+/**
+ * Every closer/setter PERSON. System rows (the House closer) are excluded by
+ * default — pass `includeSystem` only for id→name maps over deals, where a
+ * House deal must still resolve to "House".
+ */
+export async function readClosers(
+  options: { includeSystem?: boolean } = {}
+): Promise<CloserRecord[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute(
-    "SELECT * FROM closers ORDER BY display_name"
+    options.includeSystem
+      ? "SELECT * FROM closers ORDER BY display_name"
+      : "SELECT * FROM closers WHERE is_system = 0 ORDER BY display_name"
   );
   return result.rows.map(rowToCloser);
+}
+
+/**
+ * The House closer, created on first use (idempotent — fixed id, INSERT OR
+ * IGNORE). Active so the normal "credit an active closer" guards accept it;
+ * zero commission/quota; no password.
+ */
+export async function ensureHouseCloser(): Promise<CloserRecord> {
+  const existing = await findCloser(HOUSE_CLOSER_ID);
+  if (existing) return existing;
+  const db = getDb();
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO closers
+            (id, slug, display_name, email, password_hash, role, commission_rate, quota, status, avatar_path, is_system)
+          VALUES (?, ?, ?, ?, NULL, 'closer', 0, 0, 'active', NULL, 1)`,
+    args: [HOUSE_CLOSER_ID, HOUSE_CLOSER_SLUG, HOUSE_CLOSER_NAME, HOUSE_CLOSER_EMAIL],
+  });
+  const house = await findCloser(HOUSE_CLOSER_ID);
+  if (!house) throw new Error("House closer could not be created");
+  return house;
 }
 
 export async function findCloser(id: string): Promise<CloserRecord | null> {
@@ -103,8 +151,10 @@ export async function findCloserByEmail(
 ): Promise<CloserRecord | null> {
   await ensureMigrated();
   const db = getDb();
+  // System rows are never a login: they have no password, and the
+  // first-time "set password" flow would otherwise let anyone claim one.
   const result = await db.execute({
-    sql: "SELECT * FROM closers WHERE email = ? COLLATE NOCASE",
+    sql: "SELECT * FROM closers WHERE email = ? COLLATE NOCASE AND is_system = 0",
     args: [email.trim().toLowerCase()],
   });
   return result.rows[0] ? rowToCloser(result.rows[0]) : null;
@@ -189,6 +239,10 @@ export async function updateCloser(
 export async function deleteCloser(id: string): Promise<boolean> {
   await ensureMigrated();
   const db = getDb();
+  // The House closer owns admin-created deals (closer_id ON DELETE CASCADE) —
+  // never delete it, and never run the cleanup below against it.
+  const target = await db.execute({ sql: "SELECT is_system FROM closers WHERE id = ?", args: [id] });
+  if (Number(target.rows[0]?.is_system ?? 0) === 1) return false;
   // libSQL does not guarantee FK CASCADE fires, so clear setter-side links
   // explicitly before removing the closer row. Setter-owned appointments are
   // deleted outright (they're worthless without the setter). Deals keep their

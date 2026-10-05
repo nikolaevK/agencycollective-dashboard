@@ -36,6 +36,9 @@ export interface DealRecord {
   /** Admin pinned setter attribution (§3.4). When true,
    *  reassignDealsForEvent leaves setter_id/setter_tier untouched. */
   setterOverride: boolean;
+  /** Admin who entered the deal from the Deal queue (POST /api/admin/deals);
+   *  null for closer-portal, draft-approval and API deals. */
+  createdByAdminId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -104,6 +107,7 @@ function rowToDeal(row: Row): DealRecord {
     setterTier: isSetterTier(tierRaw) ? tierRaw : null,
     noRetainer: Number(row.no_retainer ?? 0) === 1,
     setterOverride: Number(row.setter_override ?? 0) === 1,
+    createdByAdminId: row.created_by_admin_id != null ? String(row.created_by_admin_id) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
@@ -189,7 +193,7 @@ export async function findDeal(id: string): Promise<DealRecord | null> {
 /** Column list + values for inserting a deal — shared by insertDeal and the
  *  draft approval's atomic claim-and-insert batch (lib/dealDrafts.ts). */
 export function dealInsertParts(deal: DealRecord): { columns: string; args: (string | number | null)[] } {
-  return {
+  const parts = {
     columns:
       "id, closer_id, setter_id, client_name, client_user_id, client_email, deal_value, service_category, industry, closing_date, status, show_status, notes, google_event_id, payment_type, brand_name, website, paid_status, additional_cc_emails, setter_tier, no_retainer, setter_override",
     args: [
@@ -219,8 +223,15 @@ export function dealInsertParts(deal: DealRecord): { columns: string; args: (str
       // A deliberately chosen setter is pinned so a later calendar claim on
       // the event (reassignDealsForEvent) doesn't overwrite it.
       deal.setterOverride ? 1 : 0,
-    ],
+    ] as (string | number | null)[],
   };
+  // Emitted only for admin-entered deals, so every other insert path keeps
+  // working even before the column self-heals (lib/db.ts).
+  if (deal.createdByAdminId) {
+    parts.columns += ", created_by_admin_id";
+    parts.args.push(deal.createdByAdminId);
+  }
+  return parts;
 }
 
 export async function insertDeal(deal: DealRecord): Promise<void> {
@@ -692,7 +703,7 @@ export async function getTeamStats(
             COALESCE(SUM(CASE WHEN d.show_status = 'no_show' THEN 1 ELSE 0 END), 0) AS no_show_count
           FROM closers c
           LEFT JOIN deals d ON d.closer_id = c.id ${dateClause}
-          WHERE c.status = 'active' AND c.role != 'setter'
+          WHERE c.status = 'active' AND c.role != 'setter' AND c.is_system = 0
           GROUP BY c.id
           ORDER BY revenue DESC`,
     args: dateValues,

@@ -70,7 +70,7 @@ export async function GET() {
       getDealContractStatuses(dealIds),
       getDealsWithInvoicePdf(dealIds),
       getImportedDealIds(),
-      readClosers(),
+      readClosers({ includeSystem: true }),
     ]);
 
   const closerName = new Map(closers.map((c) => [c.id, c.displayName]));

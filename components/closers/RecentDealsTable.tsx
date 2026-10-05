@@ -409,6 +409,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                               )}
                             </span>
                             {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                            {deal.createdByAdminId && <AdminEnteredBadge />}
                             {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
                             {deal.closerName && (
                               <span className="relative shrink-0 text-muted-foreground group/closer">
@@ -505,6 +506,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
                           {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                          {deal.createdByAdminId && <AdminEnteredBadge />}
                           {deal.closerName && (
                             <span className="relative shrink-0 text-muted-foreground group/closer">
                               <UserRound className="h-3 w-3" />
@@ -645,5 +647,17 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
         </div>
       )}
     </>
+  );
+}
+
+/** Deal entered by an admin from the Deal queue (POST /api/admin/deals). */
+function AdminEnteredBadge() {
+  return (
+    <span
+      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+      title="Entered by an admin from the Deal queue"
+    >
+      Admin
+    </span>
   );
 }

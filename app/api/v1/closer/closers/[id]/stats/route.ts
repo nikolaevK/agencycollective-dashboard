@@ -24,7 +24,7 @@ export async function GET(
 
   try {
     const closer = await findCloser(params.id);
-    if (!closer) return fail("not_found", "Closer not found", 404);
+    if (!closer || closer.isSystem) return fail("not_found", "Closer not found", 404);
 
     const url = new URL(request.url);
     const sinceRaw = url.searchParams.get("since");

@@ -7,6 +7,7 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { RecentDealsTable } from "@/components/closers/RecentDealsTable";
 import { DealDraftsPanel } from "@/components/closers/DealDraftsPanel";
+import { AdminNewDeal } from "@/components/closers/AdminNewDeal";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -186,24 +187,27 @@ export default function AdminDealsPage() {
   return (
     <DashboardShell>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-2xl lg:text-3xl font-black text-foreground">Deal queue</h2>
             <p className="text-sm text-muted-foreground mt-1">
               Closed and pending-signature deals across your sales team. In-flight deals stay with the closer.
             </p>
           </div>
-          <button
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
-              queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
-            }}
-            disabled={isFetching}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <AdminNewDeal />
+            <button
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
+                queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
+              }}
+              disabled={isFetching}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <CloserSubNav />

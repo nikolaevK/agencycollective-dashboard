@@ -196,7 +196,7 @@ export function DealDraftsPanel() {
  *  couldn't be applied) — sits above the invoice drawer if that opened, at
  *  the top (top-left on wider screens, over the backdrop) so it never covers
  *  the drawer's Save / Send footer. */
-function ApprovedNotice({ result, onClose }: { result: ApprovedDeal; onClose: () => void }) {
+export function ApprovedNotice({ result, onClose }: { result: ApprovedDeal; onClose: () => void }) {
   return (
     <div role="status" className="fixed inset-x-4 top-4 z-[75] mx-auto max-w-md rounded-xl border border-emerald-500/30 bg-card p-4 shadow-2xl sm:left-6 sm:right-auto">
       <p className="text-sm font-semibold text-foreground">Deal created for {result.deal.clientName}</p>

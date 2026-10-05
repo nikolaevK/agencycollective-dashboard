@@ -16,6 +16,7 @@ import { setEventAttendance } from "@/lib/eventAttendance";
 import { findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
 import { logAuditEvent } from "@/lib/auditLog";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
+import { HOUSE_CLOSER_ID } from "@/lib/closers";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_STATUSES: DealStatus[] = [
@@ -90,6 +91,21 @@ export async function PATCH(
     if (body.status !== undefined) {
       const s = String(body.status).trim() as DealStatus;
       if (!VALID_STATUSES.includes(s)) return fail("invalid_request", "Invalid status", 400);
+      // In-flight statuses leave the admin Deal queue and live in the closer's
+      // portal — the House closer has none, so the deal would be orphaned.
+      // (Same rule as the admin PATCH; an echoed unchanged status passes.)
+      if (
+        deal.closerId === HOUSE_CLOSER_ID &&
+        s !== deal.status &&
+        s !== "closed" &&
+        s !== "pending_signature"
+      ) {
+        return fail(
+          "invalid_request",
+          "House deals have no closer portal — keep them closed or pending_signature, or delete the deal",
+          400
+        );
+      }
       changes.status = s;
     }
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;

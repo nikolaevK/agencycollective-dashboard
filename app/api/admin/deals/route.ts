@@ -8,7 +8,6 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
-import { readClosers } from "@/lib/closers";
 import { logAuditEvent } from "@/lib/auditLog";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
@@ -20,6 +19,11 @@ import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } fr
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 import { isSetterTier } from "@/lib/appointments";
+import { readClosers, findCloser, HOUSE_CLOSER_ID, ensureHouseCloser } from "@/lib/closers";
+import { requireDealReviewer } from "@/lib/api/dealDraftActor";
+import { parseDealDraftFields } from "@/lib/dealDraftFields";
+import { checkDealDraftReferences } from "@/lib/dealDraftApproval";
+import { createAdminDeal } from "@/lib/dealCreation";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
   const [invoiceStatuses, contractStatuses, closers] = await Promise.all([
     getDealInvoiceStatuses(dealIds),
     getDealContractStatuses(dealIds),
-    readClosers(),
+    readClosers({ includeSystem: true }),
   ]);
   // closers list already contains setter-role rows (setters live in the
   // closers table), so one name map covers both closer_id and setter_id.
@@ -94,6 +98,75 @@ export async function GET(request: Request) {
   }));
 
   return NextResponse.json({ data: dealsWithStatuses });
+}
+
+/**
+ * An admin enters a deal directly — no closer login needed. Credited to the
+ * closer they pick, or the built-in House closer (lib/closers.ts). Always
+ * created CLOSED, so it lands in this queue with its draft invoice (+ a
+ * pending contract when there's a client email) to review and send; nothing
+ * is emailed here. Body: `{ fields }` — the deal-draft field shape
+ * (lib/dealDraftFields.ts, dealValue in CENTS).
+ */
+export async function POST(request: Request) {
+  // Re-checks the `closers` permission against the fresh DB record.
+  const guard = await requireDealReviewer();
+  if (guard.response) return guard.response;
+  const { admin } = guard;
+
+  try {
+    const body = await request.json().catch(() => null);
+    const raw = body && typeof body === "object" ? (body as Record<string, unknown>).fields : null;
+    if (!raw || typeof raw !== "object") {
+      return NextResponse.json({ error: "fields must be an object" }, { status: 400 });
+    }
+    // Not calendar-linked (no attendance/GHL side effects) and no portal
+    // client link; always closed (only closed deals get paperwork to send).
+    const parsed = parseDealDraftFields({
+      ...(raw as Record<string, unknown>),
+      status: "closed",
+      googleEventId: null,
+      clientUserId: null,
+    });
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const fields = parsed.value;
+
+    if (fields.closerId === HOUSE_CLOSER_ID) await ensureHouseCloser();
+    // Same bar as every other create path: an ACTIVE closer (not a setter),
+    // and setter credit only to an actual setter.
+    const check = await checkDealDraftReferences(fields);
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status });
+    // A fresh admin pick must not credit commission to a deactivated setter
+    // (the picker offers active setters only; this covers direct calls).
+    // Admin-create only: draft approval can't edit the setter, so the shared
+    // check stays as is.
+    if (fields.setterId && (await findCloser(fields.setterId))?.status !== "active") {
+      return NextResponse.json({ error: "That setter is inactive" }, { status: 400 });
+    }
+
+    const created = await createAdminDeal(fields, { id: admin.id });
+
+    logAuditEvent({
+      adminId: admin.id,
+      adminUsername: admin.username,
+      action: "deal.create",
+      targetType: "deal",
+      targetId: created.deal.id,
+      details: JSON.stringify({
+        via: "admin",
+        clientName: created.deal.clientName,
+        closerId: created.deal.closerId,
+        house: created.deal.closerId === HOUSE_CLOSER_ID,
+        setterId: created.deal.setterId,
+        dealValue: created.deal.dealValue,
+      }),
+    }).catch(() => {});
+
+    return NextResponse.json({ data: created }, { status: 201 });
+  } catch (err) {
+    console.error("[admin/deals POST]", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -128,6 +201,14 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: "Invalid status" }, { status: 400 });
       }
       changes.status = s as "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
+      // In-flight statuses hand a deal back to its closer's portal and hide it
+      // from this queue — the House closer has no portal, so it'd be orphaned.
+      if (deal.closerId === HOUSE_CLOSER_ID && s !== "closed" && s !== "pending_signature") {
+        return NextResponse.json(
+          { error: "House deals have no closer portal — keep them closed or pending signature, or delete the deal" },
+          { status: 400 }
+        );
+      }
     }
     if (body.notes !== undefined) changes.notes = body.notes ? String(body.notes).trim() : null;
     if (body.clientUserId !== undefined) changes.clientUserId = body.clientUserId ? String(body.clientUserId).trim() : null;

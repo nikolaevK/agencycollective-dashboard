@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       getDealContractStatuses(dealIds),
       getDealsWithInvoicePdf(dealIds),
       getImportedDealIds(),
-      readClosers(),
+      readClosers({ includeSystem: true }),
     ]);
     const closerNames = new Map(closers.map((c) => [c.id, c.displayName]));
 

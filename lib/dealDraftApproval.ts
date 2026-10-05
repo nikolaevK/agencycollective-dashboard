@@ -1,17 +1,11 @@
-import { randomUUID } from "crypto";
 import { findCloser } from "./closers";
-import { findDealByCloserAndEvent, dealInsertParts, findDeal, type DealRecord } from "./deals";
-import { setEventAttendance } from "./eventAttendance";
-import { bestEffortPushAttendanceToGhl } from "./attendanceSync";
-import { bestEffortSyncShowedDidntClose, bestEffortSyncActiveClient } from "./ghlCrmSync";
-import { resolveSetterForEvent } from "./setterAttribution";
-import { ensureDealPaperwork } from "./dealPaperwork";
-import { findDealInvoiceByDealId, updateDealInvoice } from "./dealInvoices";
+import { findDealByCloserAndEvent, dealInsertParts, type DealRecord } from "./deals";
 import { generateInvoiceFromDeal } from "./dealInvoiceGenerator";
 import { applyInvoiceSpec } from "./invoice/invoiceSpec";
 import type { InvoiceData } from "@/types/invoice";
 import { approveDealDraftWithInsert, type DealDraft } from "./dealDrafts";
 import type { DealDraftFields } from "./dealDraftFields";
+import { buildDealRecord, finishDealCreation } from "./dealCreation";
 
 export type DealDraftCheck = { ok: true } | { ok: false; status: number; error: string };
 
@@ -59,53 +53,8 @@ export async function approveDealDraft(
   const check = await checkDealDraftReferences(f);
   if (!check.ok) return check;
 
-  // Setter credit: an explicit setter on the draft is a deliberate pick (pinned
-  // like an admin edit); otherwise attribute the calendar claimer, if any —
-  // at the tier THEY committed (only the setter's own pick counts), exactly
-  // like the closer portal.
-  let setterId = f.setterId;
-  let setterTier = f.setterTier;
-  const explicitSetter = !!f.setterId;
-  if (!explicitSetter) {
-    setterTier = null;
-    if (f.googleEventId) {
-      const resolved = await resolveSetterForEvent(f.googleEventId);
-      if (resolved) {
-        setterId = resolved.setterId;
-        setterTier = resolved.tier;
-      }
-    }
-  }
-
-  const dealId = randomUUID();
-  const closed = f.status === "closed";
-  const now = new Date().toISOString();
-  const record: DealRecord = {
-    id: dealId,
-    closerId: f.closerId,
-    setterId,
-    clientName: f.clientName,
-    clientUserId: f.clientUserId,
-    clientEmail: f.clientEmail,
-    dealValue: f.dealValue,
-    serviceCategory: f.serviceCategory,
-    industry: f.industry,
-    closingDate: f.closingDate,
-    status: f.status,
-    showStatus: closed && f.googleEventId ? "showed" : null,
-    notes: f.notes,
-    googleEventId: f.googleEventId,
-    paymentType: f.paymentType,
-    brandName: f.brandName,
-    website: f.website,
-    paidStatus: f.paidStatus,
-    additionalCcEmails: f.additionalCcEmails,
-    setterTier,
-    noRetainer: f.noRetainer,
-    setterOverride: explicitSetter,
-    createdAt: now,
-    updatedAt: now,
-  };
+  // Same record the closer portal would write (setter credit resolved there).
+  const record = await buildDealRecord(f);
 
   // Claim + insert commit together (or not at all), and only for the exact
   // version the reviewer approved — an agent edit since then → 409.
@@ -113,7 +62,7 @@ export async function approveDealDraft(
   try {
     claimed = await approveDealDraftWithInsert(
       draft.id,
-      { reviewedBy: actor.id, reviewedByName: actor.name, dealId, note, expectedUpdatedAt: draft.updatedAt },
+      { reviewedBy: actor.id, reviewedByName: actor.name, dealId: record.id, note, expectedUpdatedAt: draft.updatedAt },
       dealInsertParts(record)
     );
   } catch (err) {
@@ -124,52 +73,10 @@ export async function approveDealDraft(
     return { ok: false, status: 409, error: "This draft was already reviewed or changed since you opened it — reload it" };
   }
 
-  const warnings: string[] = [];
-
-  // Paperwork + the proposed invoice first: they're what the reviewer acts on
-  // next, and the GHL calls below can be slow (no fetch timeout) — a function
-  // timeout there must not leave the deal without its invoice.
-  // insertDeal may backfill closing_date — re-read so paperwork sees the row.
-  const deal = (await findDeal(dealId).catch(() => null)) ?? record;
-  await ensureDealPaperwork(deal, actor.id);
-
-  let invoiceId: string | null = null;
-  const invoice = await findDealInvoiceByDealId(dealId).catch(() => null);
-  if (invoice) {
-    invoiceId = invoice.id;
-    if (draft.invoice) {
-      try {
-        const data = applyInvoiceSpec(invoice.invoiceData, draft.invoice);
-        await updateDealInvoice(invoice.id, { invoiceData: JSON.stringify(data) });
-      } catch (err) {
-        console.error("[approveDealDraft] applying invoice spec failed:", err);
-        warnings.push("The deal was created, but the proposed invoice lines couldn't be applied — review the invoice before sending.");
-      }
-    }
-  } else if (closed && f.dealValue > 0) {
-    warnings.push("The deal was created, but its invoice couldn't be generated. Re-save the deal as closed to retry.");
-  } else if (draft.invoice) {
-    warnings.push("Proposed invoice lines are only applied to closed deals — none was generated for this status.");
-  }
-
-  if (closed && f.googleEventId) {
-    try {
-      await setEventAttendance(f.googleEventId, f.closerId, "showed");
-    } catch (err) {
-      console.error("[approveDealDraft] attendance write failed:", err);
-    }
-    // Same GHL stage logic as the admin deal PATCH: a deal that's already paid
-    // goes straight to "Active Client" — also running "Showed didn't close"
-    // would race GHL into a duplicate opportunity.
-    await Promise.allSettled([
-      bestEffortPushAttendanceToGhl({ googleEventId: f.googleEventId, dashboardStatus: "showed" }),
-      f.paidStatus === "paid"
-        ? bestEffortSyncActiveClient({ googleEventId: f.googleEventId, leadName: f.clientName })
-        : bestEffortSyncShowedDidntClose({ googleEventId: f.googleEventId, leadName: f.clientName }),
-    ]);
-  }
-
-  return { ok: true, deal, invoiceId, warnings };
+  // Paperwork + the proposed invoice spec, then attendance/GHL (shared with
+  // admin-entered deals — lib/dealCreation.ts).
+  const created = await finishDealCreation(record, { actorId: actor.id, invoiceSpec: draft.invoice });
+  return { ok: true, ...created };
 }
 
 /**

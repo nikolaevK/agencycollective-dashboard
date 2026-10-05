@@ -62,7 +62,8 @@ export async function PATCH(request: Request) {
     }
 
     const target = await findCloser(id);
-    if (!target) return NextResponse.json({ error: "Closer not found" }, { status: 404 });
+    // The House system row stays active — admin-created deals credit it.
+    if (!target || target.isSystem) return NextResponse.json({ error: "Closer not found" }, { status: 404 });
 
     await updateCloser(id, { status });
 

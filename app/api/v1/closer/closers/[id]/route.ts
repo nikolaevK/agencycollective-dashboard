@@ -41,7 +41,8 @@ export async function GET(
   if (!auth.ok) return auth.response;
 
   const closer = await findCloser(params.id);
-  if (!closer) return fail("not_found", "Closer not found", 404);
+  // The House system row isn't a person — invisible over the API (lib/closers.ts).
+  if (!closer || closer.isSystem) return fail("not_found", "Closer not found", 404);
   return ok(stripHash(closer));
 }
 
@@ -56,7 +57,7 @@ export async function PATCH(
 
   try {
     const existing = await findCloser(params.id);
-    if (!existing) return fail("not_found", "Closer not found", 404);
+    if (!existing || existing.isSystem) return fail("not_found", "Closer not found", 404);
 
     const body = await readJsonBody(request);
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
@@ -137,7 +138,7 @@ export async function DELETE(
 
   try {
     const existing = await findCloser(params.id);
-    if (!existing) return fail("not_found", "Closer not found", 404);
+    if (!existing || existing.isSystem) return fail("not_found", "Closer not found", 404);
 
     await deleteCloser(params.id);
 

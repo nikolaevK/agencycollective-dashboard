@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   if (!status && raw !== "all") return NextResponse.json({ error: "Invalid status" }, { status: 400 });
 
   try {
-    const [drafts, closers] = await Promise.all([listDealDrafts({ status, limit: 200 }), readClosers()]);
+    const [drafts, closers] = await Promise.all([listDealDrafts({ status, limit: 200 }), readClosers({ includeSystem: true })]);
     const names = new Map(closers.map((c) => [c.id, c.displayName]));
     return NextResponse.json({
       data: drafts.map((d) => ({ ...d, closerName: names.get(d.fields.closerId) ?? null })),

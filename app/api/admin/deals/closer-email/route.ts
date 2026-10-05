@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   const closer = await findCloser(deal.closerId);
   return NextResponse.json({
     data: {
-      closerEmail: closer?.email ?? null,
+      // The House system closer's address is a non-deliverable placeholder —
+      // never pre-fill it as a CC on the invoice send.
+      closerEmail: closer && !closer.isSystem ? closer.email : null,
       additionalCcEmails: deal.additionalCcEmails ?? [],
     },
   });

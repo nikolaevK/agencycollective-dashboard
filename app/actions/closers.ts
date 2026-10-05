@@ -146,7 +146,8 @@ export async function updateCloserAction(formData: FormData): Promise<{ error?: 
   if (!id) return { error: "Closer ID is required" };
 
   const closer = await findCloser(id);
-  if (!closer) return { error: "Closer not found" };
+  // The House system row isn't a person — not editable (lib/closers.ts).
+  if (!closer || closer.isSystem) return { error: "Closer not found" };
 
   const changes: Parameters<typeof updateCloser>[1] = {};
 
