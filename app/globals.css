@@ -199,3 +199,15 @@
   border-color: hsl(var(--border) / 0.2);
 }
 
+
+/* Password-manager guard. NordPass writes an inline `overflow: visible` onto
+   the scroll container of a modal/drawer the moment one of its email fields is
+   focused (so its dropdown isn't clipped) and never puts it back — the modal
+   can't scroll any more and everything below the fold is unreachable. An
+   author !important beats that non-important inline style. Only elements that
+   carry one of our scroll utilities AND an inline overflow are matched; none
+   of our own code sets inline overflow on such an element. */
+.overflow-auto[style*="overflow"] { overflow: auto !important; }
+.overflow-y-auto[style*="overflow"] { overflow-y: auto !important; }
+.overflow-x-auto[style*="overflow"] { overflow-x: auto !important; }
+.overflow-x-hidden[style*="overflow"] { overflow-x: hidden !important; }
