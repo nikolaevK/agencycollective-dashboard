@@ -12,6 +12,7 @@ import {
 } from "@/lib/payouts";
 import type { PayDistributed } from "@/lib/payouts";
 import { logAuditEvent } from "@/lib/auditLog";
+import { syncDealCloserFromSalesRep } from "@/lib/dealCloserReassign";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -329,8 +330,19 @@ export async function PATCH(request: Request) {
       details: JSON.stringify(changes),
     }).catch(() => {});
 
+    // A changed Sales Rep on a deal-imported payout moves the deal to the
+    // closer it names (lib/dealCloserReassign.ts). Only on an actual change,
+    // so editing other fields never re-attributes historical deals.
+    const closerReassignment =
+      payout.sourceDealId && changes.salesRep !== undefined && changes.salesRep !== payout.salesRep
+        ? await syncDealCloserFromSalesRep(payout.sourceDealId, changes.salesRep, {
+            adminId: admin.id,
+            adminUsername: admin.username,
+          })
+        : null;
+
     const updated = await findPayout(id);
-    return NextResponse.json({ data: updated });
+    return NextResponse.json({ data: updated, closerReassignment });
   } catch (err) {
     console.error("[admin/payouts PATCH]", err);
     return NextResponse.json(

@@ -6,6 +6,7 @@ import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import { findPayout, updatePayout, deletePayout } from "@/lib/payouts";
 import { parsePayoutFields } from "@/lib/api/payoutInput";
 import { logAuditEvent } from "@/lib/auditLog";
+import { syncDealCloserFromSalesRep } from "@/lib/dealCloserReassign";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -54,8 +55,15 @@ export async function PATCH(
       details: JSON.stringify({ fields: Object.keys(changes) }),
     }).catch(() => {});
 
+    // Same rule as the admin PATCH: a changed Sales Rep on a deal-imported
+    // payout moves the deal to the closer it names (lib/dealCloserReassign.ts).
+    const closerReassignment =
+      existing.sourceDealId && changes.salesRep !== undefined && changes.salesRep !== existing.salesRep
+        ? await syncDealCloserFromSalesRep(existing.sourceDealId, changes.salesRep, tokenAuditActor(auth.token))
+        : null;
+
     const updated = await findPayout(params.id);
-    return ok(updated);
+    return ok(updated, closerReassignment ? { closerReassignment } : undefined);
   } catch (err) {
     console.error("PATCH /api/v1/closer/payouts/[id] error:", err);
     return fail("internal_error", "Internal server error", 500);

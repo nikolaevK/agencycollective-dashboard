@@ -528,6 +528,13 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // provenance for the "Admin" badge. Only written by that path (insert
     // emits it conditionally); inline in the gated CREATE for a fresh DB.
     { table: "deals",                  column: "created_by_admin_id", defn: "TEXT" },
+    // Closer reassignment from the payout Sales Rep (lib/dealCloserReassign.ts):
+    // the submitting closer (written once, on the first move) + when/how the
+    // deal last moved. Only written by that path; inline in the gated CREATE
+    // for a fresh DB.
+    { table: "deals",                  column: "original_closer_id",       defn: "TEXT" },
+    { table: "deals",                  column: "closer_reassigned_at",     defn: "TEXT" },
+    { table: "deals",                  column: "closer_reassigned_source", defn: "TEXT" },
     // Multi-sub-account GHL — runtime push/pull breaks without this.
     // Must self-heal because the SCHEMA_VERSION probe below was already
     // stamped on existing deploys when this column didn't exist yet.
@@ -1157,7 +1164,10 @@ export async function migrate(): Promise<void> {
       notes           TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-      created_by_admin_id TEXT
+      created_by_admin_id TEXT,
+      original_closer_id  TEXT,
+      closer_reassigned_at TEXT,
+      closer_reassigned_source TEXT
     )
   `);
 

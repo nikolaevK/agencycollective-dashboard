@@ -26,6 +26,7 @@ import { insertDocument, MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocuments";
 import type { PayoutDocument } from "@/lib/payoutDocuments";
 import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
 import { logAuditEvent } from "@/lib/auditLog";
+import { syncDealCloserFromSalesRep } from "@/lib/dealCloserReassign";
 
 const MAX_TEXT = 500;
 const MAX_NOTES = 2000;
@@ -336,6 +337,13 @@ export async function POST(request: Request) {
       warnings.push("Client profile auto-fill failed.");
     }
 
+    // Sales Rep names a different closer than the one who submitted the deal
+    // → move the deal to them (lib/dealCloserReassign.ts). Non-blocking.
+    const closerReassignment = await syncDealCloserFromSalesRep(dealId, payout.salesRep, { adminId: auth.session.adminId, adminUsername: auth.session.username });
+    if (closerReassignment.moved === false && (closerReassignment.reason === "error" || closerReassignment.reason === "conflict")) {
+      warnings.push("The deal could not be moved to the Sales Rep's closer — re-save the Sales Rep to retry.");
+    }
+
     logAuditEvent({
       adminId: auth.session.adminId,
       adminUsername: auth.session.username,
@@ -345,7 +353,7 @@ export async function POST(request: Request) {
       details: JSON.stringify({ brandName, dealId, warnings }),
     }).catch(() => {});
 
-    return NextResponse.json({ data: payout, warnings });
+    return NextResponse.json({ data: payout, warnings, closerReassignment });
   } catch (err) {
     console.error("[admin/payouts/from-deal POST]", err);
     return NextResponse.json(

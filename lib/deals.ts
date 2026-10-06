@@ -39,6 +39,11 @@ export interface DealRecord {
   /** Admin who entered the deal from the Deal queue (POST /api/admin/deals);
    *  null for closer-portal, draft-approval and API deals. */
   createdByAdminId?: string | null;
+  /** The closer who submitted the deal, set the first time the payout Sales
+   *  Rep moved it to another closer (lib/dealCloserReassign.ts); null = never
+   *  moved. Equal to closerId when it was moved back. */
+  originalCloserId?: string | null;
+  closerReassignedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -108,6 +113,8 @@ function rowToDeal(row: Row): DealRecord {
     noRetainer: Number(row.no_retainer ?? 0) === 1,
     setterOverride: Number(row.setter_override ?? 0) === 1,
     createdByAdminId: row.created_by_admin_id != null ? String(row.created_by_admin_id) : null,
+    originalCloserId: row.original_closer_id != null ? String(row.original_closer_id) : null,
+    closerReassignedAt: row.closer_reassigned_at != null ? String(row.closer_reassigned_at) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };

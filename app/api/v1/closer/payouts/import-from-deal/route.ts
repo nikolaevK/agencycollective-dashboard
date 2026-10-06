@@ -28,6 +28,7 @@ import type { PayoutDocument } from "@/lib/payoutDocuments";
 import { autofillClientProfileFromDeal } from "@/lib/clientProfile";
 import { parsePayoutFields } from "@/lib/api/payoutInput";
 import { logAuditEvent } from "@/lib/auditLog";
+import { syncDealCloserFromSalesRep } from "@/lib/dealCloserReassign";
 
 const MAX_ATTACHED_DOCS = 50;
 const UUID_RE =
@@ -239,6 +240,13 @@ export async function POST(request: Request) {
       warnings.push("Client profile auto-fill failed.");
     }
 
+    // Sales Rep names a different closer than the one who submitted the deal
+    // → move the deal to them (lib/dealCloserReassign.ts). Non-blocking.
+    const closerReassignment = await syncDealCloserFromSalesRep(dealId, payout.salesRep, actor);
+    if (closerReassignment.moved === false && (closerReassignment.reason === "error" || closerReassignment.reason === "conflict")) {
+      warnings.push("The deal could not be moved to the Sales Rep's closer — re-save the Sales Rep to retry.");
+    }
+
     logAuditEvent({
       ...actor,
       action: "payout.import_from_deal",
@@ -247,7 +255,7 @@ export async function POST(request: Request) {
       details: JSON.stringify({ brandName, dealId, warnings }),
     }).catch(() => {});
 
-    return ok(payout, { warnings }, { status: 201 });
+    return ok(payout, { warnings, closerReassignment }, { status: 201 });
   } catch (err) {
     console.error("POST /api/v1/closer/payouts/import-from-deal error:", err);
     return fail("internal_error", "Internal server error", 500);

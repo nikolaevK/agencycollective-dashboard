@@ -95,6 +95,10 @@ export async function GET(request: Request) {
     contractStatus: contractStatuses[d.id]?.status ?? null,
     closerName: closerNameMap.get(d.closerId) ?? null,
     setterName: d.setterId ? (closerNameMap.get(d.setterId) ?? null) : null,
+    originalCloserName:
+      d.originalCloserId && d.originalCloserId !== d.closerId
+        ? (closerNameMap.get(d.originalCloserId) ?? null)
+        : null,
   }));
 
   return NextResponse.json({ data: dealsWithStatuses });

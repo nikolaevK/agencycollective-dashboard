@@ -41,6 +41,8 @@ interface DealWithInvoice extends DealPublic {
   invoiceNumber?: string | null;
   contractStatus?: string | null;
   closerName?: string | null;
+  /** Set when the payout Sales Rep moved the deal off its submitter. */
+  originalCloserName?: string | null;
 }
 
 interface RecentDealsTableProps {
@@ -410,6 +412,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                             </span>
                             {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
                             {deal.createdByAdminId && <AdminEnteredBadge />}
+                            {deal.originalCloserName && <ReassignedBadge from={deal.originalCloserName} />}
                             {deal.googleEventId && <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />}
                             {deal.closerName && (
                               <span className="relative shrink-0 text-muted-foreground group/closer">
@@ -513,6 +516,7 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                           )}
                           {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
                           {deal.createdByAdminId && <AdminEnteredBadge />}
+                          {deal.originalCloserName && <ReassignedBadge from={deal.originalCloserName} />}
                         </div>
                         {(deal.brandName || deal.website) && (
                           <div className="flex items-center gap-2 mt-0.5 min-w-0">
@@ -664,6 +668,18 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
         </div>
       )}
     </>
+  );
+}
+
+/** Deal moved off its submitter by the payout Sales Rep (lib/dealCloserReassign.ts). */
+function ReassignedBadge({ from }: { from: string }) {
+  return (
+    <span
+      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"
+      title={`Submitted by ${from} — moved to the closer named in the payout's Sales Rep`}
+    >
+      Reassigned
+    </span>
   );
 }
 
