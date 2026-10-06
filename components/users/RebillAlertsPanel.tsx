@@ -8,6 +8,9 @@ import {
   RefreshCcw,
   ChevronDown,
   CalendarClock,
+  AlertCircle,
+  Loader2,
+  RotateCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatDate } from "./format";
@@ -76,7 +79,29 @@ export function RebillAlertsPanel({
   restrictToUserIds?: Set<string> | null;
 }) {
   const router = useRouter();
-  const { data } = useRebillAlerts();
+  const { data, isError, isFetching, refetch } = useRebillAlerts();
+
+  // A failed load must not read as "nothing due" (the panel used to vanish
+  // and the summary card showed 0) — same treatment as SentInvoicesPanel.
+  if (isError && !data) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] px-4 py-3">
+        <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+        <p className="flex-1 min-w-0 text-sm text-foreground">
+          Couldn&rsquo;t load re-bill alerts.
+        </p>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50 shrink-0"
+        >
+          {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const rebills = (data?.rebills ?? []).filter(
     (r) => !restrictToUserIds || restrictToUserIds.has(r.id)

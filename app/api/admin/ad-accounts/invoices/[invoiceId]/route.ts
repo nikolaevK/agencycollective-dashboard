@@ -4,14 +4,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import {
   findAdAccountInvoice,
-  reconcileInvoiceForAdAccount,
+  getSentInvoicesForAdAccount,
+  reconcileInvoicesForAdAccount,
 } from "@/lib/adAccountInvoices";
 import {
   applyManualInvoiceUpdate,
   manualUpdateConflict,
 } from "@/lib/invoiceManualOverride";
 import { parseManualInvoicePatch } from "@/lib/api/invoiceManualPatch";
-import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
+import { requireDirectoryActor, findAdInvoiceAccountInScope } from "@/lib/api/requireAdmin";
 import { isExternalScope } from "@/lib/workspaces";
 import { resolveAdInvoiceBrand } from "@/lib/adAccountInvoiceBrand";
 import {
@@ -45,14 +46,12 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   if (!invoice)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
-  let account: AdAccount | null = null;
-  if (invoice.adAccountId) {
-    account = await findAdAccountInScope(actor.scope, invoice.adAccountId);
-    if (!account)
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  } else if (isExternalScope(actor.scope)) {
+  // Workspace gate: out-of-book accounts read as not-found; free invoices and
+  // orphans of a deleted account are internal-only.
+  const access = await findAdInvoiceAccountInScope(actor.scope, invoice);
+  if (!access.ok)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  }
+  const account: AdAccount | null = access.account;
 
   const parsed = parseManualInvoicePatch(await req.json().catch(() => null));
   if (!parsed.ok)
@@ -96,9 +95,15 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       paidPayout,
       note: body.note,
       resync: body.resync,
+      // Only write if the row still has the status pre-flighted above — a
+      // concurrent re-send may have superseded it in between.
+      expectedStatus: invoice.status,
     });
     if (!ok)
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invoice changed since you opened it — refresh and try again" },
+        { status: 409 }
+      );
 
     let updated = await findAdAccountInvoice(invoice.id);
 
@@ -115,7 +120,13 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
             if (key === norm || (!exactOnly && brandsMatch(norm, key)))
               months.push(...arr);
           }
-          updated = await reconcileInvoiceForAdAccount(updated, months);
+          // Alongside the account's other open invoices, so one payout month
+          // can't settle this row AND another one (allocateAutoPaid).
+          const reconciled = await reconcileInvoicesForAdAccount(
+            await getSentInvoicesForAdAccount(account.id),
+            months
+          );
+          updated = reconciled.find((i) => i.id === updated!.id) ?? updated;
         } catch {
           // best-effort — the directory build reconciles on next read
         }

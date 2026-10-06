@@ -38,6 +38,7 @@ import { AdAccountPaymentSettingsModal } from "./AdAccountPaymentSettingsModal";
 import { formatMoney, formatDate } from "./format";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { AdAccountDirectoryRow, AdAccountSummary } from "@/lib/adAccountDirectory";
+import { toOpenInvoiceRefs } from "./openInvoices";
 
 const PAGE_SIZE = 20;
 
@@ -67,6 +68,7 @@ function toInvoiceTarget(row: AdAccountDirectoryRow): AdAccountInvoiceTarget {
     clientName: row.clientName,
     clientEmail: row.clientEmail,
     nextRebillAt: row.schedule.nextRebillAt,
+    openInvoices: toOpenInvoiceRefs(row.sentInvoices),
   };
 }
 
@@ -96,6 +98,12 @@ export function AdAccountsDirectory() {
   const sentCount = sentData?.count ?? 0;
 
   const rows = data?.rows ?? [];
+  // The drawer reads the LIVE row: a Mark paid / Set cycle inside it refetches
+  // the directory, and the snapshot taken on open would keep showing the old
+  // "(current)" cycle and paid hint.
+  const liveInvoicesRow = invoicesRow
+    ? rows.find((r) => r.id === invoicesRow.id) ?? invoicesRow
+    : null;
   const summary = data?.summary;
 
   // Active accounts whose monthly bill is due or overdue — drives the alerts
@@ -566,14 +574,14 @@ export function AdAccountsDirectory() {
           onSent={refresh}
         />
       )}
-      {invoicesRow && (
+      {liveInvoicesRow && (
         <AdAccountInvoicesDrawer
-          accountId={invoicesRow.id}
-          accountName={invoicesRow.accountName}
-          defaultCycleAnchor={invoicesRow.schedule.nextRebillAt}
-          schedulePaid={invoicesRow.schedule.paid}
-          defaultRecipientEmail={invoicesRow.clientEmail}
-          defaultRetainerCents={invoicesRow.monthlyRetainerCents}
+          accountId={liveInvoicesRow.id}
+          accountName={liveInvoicesRow.accountName}
+          defaultCycleAnchor={liveInvoicesRow.schedule.nextRebillAt}
+          schedulePaid={liveInvoicesRow.schedule.paid}
+          defaultRecipientEmail={liveInvoicesRow.clientEmail}
+          defaultRetainerCents={liveInvoicesRow.monthlyRetainerCents}
           onClose={() => setInvoicesRow(null)}
           onChanged={refresh}
         />

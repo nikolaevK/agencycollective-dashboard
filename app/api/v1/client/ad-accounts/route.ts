@@ -8,6 +8,7 @@ import { buildAdAccountDirectory } from "@/lib/adAccountDirectory";
 import { createAdAccount, type CreateAdAccountInput } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
+import { parseBillingDateInput } from "@/lib/clientBilling";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -70,6 +71,23 @@ export async function POST(request: Request) {
       clientWorkspace = linked.workspace;
     }
 
+    // Numbers must be finite ("abc" → NaN used to reach the DB) and schedule
+    // dates real yyyy-mm-dd (or null to clear).
+    for (const key of ["adSpendFeeBps", "monthlyRetainerCents", "leadDays", "billingDay"] as const) {
+      const v = body[key];
+      if (v !== undefined && v !== null && !Number.isFinite(Number(v))) {
+        return fail("invalid_request", `${key} must be a number`, 400);
+      }
+    }
+    const extend = parseBillingDateInput(body.extendUntil);
+    if (!extend.ok) {
+      return fail("invalid_request", "extendUntil must be a real date (yyyy-mm-dd) or null", 400);
+    }
+    const lastBilled = parseBillingDateInput(body.lastBilledOverride);
+    if (!lastBilled.ok) {
+      return fail("invalid_request", "lastBilledOverride must be a real date (yyyy-mm-dd) or null", 400);
+    }
+
     // The account lands in the linked client's book, else a restricted
     // token's first book, else main (mirrors the admin create route).
     const wsRestriction = tokenWorkspaceScope(auth.token);
@@ -90,9 +108,8 @@ export async function POST(request: Request) {
       billingPaused: body.billingPaused !== undefined ? Boolean(body.billingPaused) : undefined,
       billingDay: body.billingDay !== undefined ? (body.billingDay === null ? null : Number(body.billingDay)) : undefined,
       leadDays: body.leadDays !== undefined ? Number(body.leadDays) : undefined,
-      extendUntil: body.extendUntil != null ? String(body.extendUntil) || null : undefined,
-      lastBilledOverride:
-        body.lastBilledOverride != null ? String(body.lastBilledOverride) || null : undefined,
+      extendUntil: extend.value ?? undefined,
+      lastBilledOverride: lastBilled.value ?? undefined,
     };
     const account = await createAdAccount(input);
 

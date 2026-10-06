@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { listInvoicesForUser } from "@/lib/clientRebillInvoices";
+import { withFollowUpSummaries } from "@/lib/invoiceFollowUps";
 import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
@@ -16,6 +17,10 @@ export async function GET(_req: Request, { params }: RouteContext) {
   const guard = await requireClientRouteActor(params.userId);
   if (guard.response) return guard.response;
 
-  const invoices = await listInvoicesForUser(params.userId);
+  // Each invoice carries its follow-up summary (count + latest touch).
+  const invoices = await withFollowUpSummaries(
+    "client_rebill",
+    await listInvoicesForUser(params.userId)
+  );
   return NextResponse.json({ data: { invoices } });
 }

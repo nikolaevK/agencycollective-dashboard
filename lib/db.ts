@@ -478,6 +478,27 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
      ON invoice_drafts (user_id, status) WHERE user_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_invoice_drafts_ad_account
      ON invoice_drafts (ad_account_id, status) WHERE ad_account_id IS NOT NULL`,
+    // Follow-ups on a SENT invoice (client re-bill or ad-account) — reminder
+    // emails that re-attach the originally filed PDF, plus logged manual
+    // touches (call / message / note). Append-only history keyed by
+    // (invoice_kind, invoice_id); the invoice row itself is never modified,
+    // superseded or re-sent by a follow-up (lib/invoiceFollowUps.ts). A
+    // brand-new table — self-heals without a SCHEMA_VERSION bump.
+    `CREATE TABLE IF NOT EXISTS invoice_followups (
+      id               TEXT PRIMARY KEY,
+      invoice_kind     TEXT NOT NULL,
+      invoice_id       TEXT NOT NULL,
+      channel          TEXT NOT NULL,
+      recipient_email  TEXT,
+      cc_emails        TEXT,
+      message          TEXT,
+      attached_pdf     INTEGER NOT NULL DEFAULT 0,
+      created_by       TEXT,
+      created_by_name  TEXT,
+      created_at       TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_followups_invoice
+     ON invoice_followups (invoice_kind, invoice_id, created_at DESC)`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [
@@ -619,6 +640,15 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "ad_account_invoices",     column: "paid_by_admin_id",    defn: "TEXT" },
     { table: "ad_account_invoices",     column: "manual_note",         defn: "TEXT" },
     { table: "ad_account_invoices",     column: "reconcile_locked",    defn: "INTEGER NOT NULL DEFAULT 0" },
+    // Original-send details kept on the invoice row so a follow-up reminder
+    // reaches the same people with the same branding: cc_emails (JSON array)
+    // and the Agency Profile used as the invoice/email style (NULL = default
+    // Agency Collective). Written by every send INSERT, so they must self-heal
+    // here; both gated CREATE TABLEs carry them inline for a fresh DB.
+    { table: "client_rebill_invoices",  column: "cc_emails",           defn: "TEXT" },
+    { table: "client_rebill_invoices",  column: "style_profile_id",    defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "cc_emails",           defn: "TEXT" },
+    { table: "ad_account_invoices",     column: "style_profile_id",    defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),
@@ -2176,6 +2206,8 @@ export async function migrate(): Promise<void> {
       paid_by_admin_id         TEXT,
       manual_note              TEXT,
       reconcile_locked         INTEGER NOT NULL DEFAULT 0,
+      cc_emails                TEXT,
+      style_profile_id         TEXT,
       created_at               TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
     )
@@ -2383,6 +2415,8 @@ export async function migrate(): Promise<void> {
       paid_by_admin_id          TEXT,
       manual_note               TEXT,
       reconcile_locked          INTEGER NOT NULL DEFAULT 0,
+      cc_emails                 TEXT,
+      style_profile_id          TEXT,
       created_at                TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
     )

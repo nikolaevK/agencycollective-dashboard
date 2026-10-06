@@ -14,7 +14,7 @@ import {
 
 type RebillMonthsByBrand = Map<
   string,
-  Array<{ year: number; month: number; amountDue: number }>
+  Array<{ year: number; month: number; amountDue: number; rows: number }>
 >;
 import {
   getAllClientBilling,
@@ -24,11 +24,16 @@ import {
   type RebillSchedule,
 } from "./clientBilling";
 import { businessToday } from "./businessTime";
-import { getPaidCycleMonthsByKey } from "./invoiceManualOverride";
 import {
-  getLatestActiveInvoice,
-  getLatestActiveInvoicesByUser,
-  reconcileInvoiceForUser,
+  getConsumedPayoutMonthsByKey,
+  getPaidCycleMonthsByKey,
+} from "./invoiceManualOverride";
+import {
+  getSentInvoicesForUser,
+  getSentInvoicesByUser,
+  reconcileInvoicesForUser,
+  pickActiveSentInvoice,
+  rebillPaymentUnits,
   type RebillInvoice,
 } from "./clientRebillInvoices";
 import {
@@ -93,11 +98,18 @@ export interface ClientDirectoryRow {
   billing: ClientBilling | null;
   schedule: RebillSchedule;
   /**
-   * Current sent re-bill invoice (status='sent'), if one is awaiting payment.
-   * Drives the `invoice_sent` schedule status and the dashboard's Sent
-   * Invoices panel. Null when no invoice is awaiting payment.
+   * The awaiting-payment invoice that represents this client's billing NOW:
+   * the one anchored to the current cycle (`schedule.nextRebillAt`) when
+   * there is one, else the newest still-sent invoice. Null when nothing is
+   * awaiting payment.
    */
   activeSentInvoice: RebillInvoice | null;
+  /**
+   * EVERY still-sent invoice (newest first) — a client can be awaiting
+   * payment on more than one cycle (an earlier month still unpaid, a
+   * backfill, a reopened row). Powers the Sent Invoices panel + follow-ups.
+   */
+  sentInvoices: RebillInvoice[];
   // Roster (client_profile / client_team) — additive. `profile` always set
   // (defaults applied when no row exists). For book='pepads' the computed
   // `schedule` above stays intact internally but the UI renders the manual
@@ -153,28 +165,19 @@ function matchHistories(
 }
 
 /**
- * Qualifying re-bill months for a client: REBILL-flagged payouts whose
- * amount_due matches the brand's recurring re-bill amount (its most recent
- * REBILL month — the established baseline), evaluated PER BRAND. This is the
- * single definition of "the recurring bill was actually paid" — it feeds BOTH
- * the schedule's `paidMonths` and invoice reconciliation, so a one-off
- * non-REBILL payout can never promote a sent invoice to `paid`.
+ * Qualifying re-bill payments for a client: REBILL-flagged payout months whose
+ * amount_due is the brand's recurring re-bill amount (or an exact multiple of
+ * it — a catch-up month yields one entry per cycle it covers), evaluated PER
+ * BRAND via rebillPaymentUnits. This is the single definition of "the
+ * recurring bill was actually paid" — it feeds BOTH the schedule's
+ * `paidMonths` and invoice reconciliation, so a one-off non-REBILL payout can
+ * never promote a sent invoice to `paid`.
  */
 function qualifyingRebillMonths(
   matched: BrandHistory[],
   rebillByBrand: RebillMonthsByBrand
 ): Array<{ year: number; month: number }> {
-  return matched.flatMap((h) => {
-    const months = rebillByBrand.get(h.normalizedName) ?? [];
-    if (months.length === 0) return [];
-    const sorted = [...months].sort(
-      (a, b) => a.year - b.year || a.month - b.month
-    );
-    const baseline = sorted[sorted.length - 1].amountDue;
-    return sorted
-      .filter((m) => m.amountDue === baseline)
-      .map((m) => ({ year: m.year, month: m.month }));
-  });
+  return matched.flatMap((h) => rebillPaymentUnits(rebillByBrand.get(h.normalizedName) ?? []));
 }
 
 /**
@@ -220,12 +223,12 @@ function buildRow(
   matched: BrandHistory[],
   billing: ClientBilling | null,
   /**
-   * Already-reconciled invoice for this user. Callers must run
-   * `reconcileInvoiceForUser` first so a `paid` promotion is applied before we
-   * read its status here — otherwise the schedule would still say
-   * `invoice_sent` for a cycle the payout DB has already recognised.
+   * This user's already-reconciled sent invoices (newest first). Callers must
+   * run `reconcileInvoicesForUser` on them first so a `paid` promotion is
+   * applied before we read statuses here — otherwise the schedule would still
+   * say `invoice_sent` for a cycle the payout DB has already recognised.
    */
-  activeSentInvoice: RebillInvoice | null,
+  reconciledInvoices: RebillInvoice[],
   rebillByBrand: RebillMonthsByBrand,
   profile: ClientProfile,
   team: ClientTeamMember[],
@@ -294,12 +297,10 @@ function buildRow(
     ...paidInvoiceMonths,
   ];
 
-  // Only a still-sent invoice influences the schedule status (paid/unpaid/
-  // superseded are historical records, not awaiting-payment signals).
-  const sentForSchedule =
-    activeSentInvoice && activeSentInvoice.status === "sent"
-      ? { cycleAnchor: activeSentInvoice.cycleAnchor }
-      : null;
+  // Only still-sent invoices influence the schedule status (paid/unpaid/
+  // superseded are historical records, not awaiting-payment signals). ANY of
+  // them anchored to the current cycle lights `invoice_sent`.
+  const sentInvoices = reconciledInvoices.filter((i) => i.status === "sent");
 
   // Confirmed-paid months: REBILL-flagged payouts whose amount_due matches the
   // brand's recurring re-bill amount (its most recent REBILL month — the
@@ -317,8 +318,12 @@ function buildRow(
     payoutMonths,
     paidMonths,
     today,
-    activeSentInvoice: sentForSchedule,
+    sentCycleAnchors: sentInvoices.map((i) => i.cycleAnchor),
   });
+  const activeSentInvoice = pickActiveSentInvoice(
+    sentInvoices,
+    schedule.nextRebillAt
+  );
 
   const matchedBrand =
     user.payoutBrand ?? (matched.length > 0 ? matched[0].displayBrand : null);
@@ -348,13 +353,11 @@ function buildRow(
     joinedAt,
     billing,
     schedule,
-    // Surface only a still-sent invoice. Once promoted to paid (or marked
-    // unpaid / superseded), it's no longer "current" — the panel & banner
-    // should ignore it.
-    activeSentInvoice:
-      activeSentInvoice && activeSentInvoice.status === "sent"
-        ? activeSentInvoice
-        : null,
+    // Only still-sent invoices surface. Once promoted to paid (or marked
+    // unpaid / superseded), an invoice is history — the panel & banner
+    // ignore it.
+    activeSentInvoice,
+    sentInvoices,
     profile,
     team,
     derivedPerfFee: deriveAdSpendFeeLabel(adAccounts),
@@ -401,23 +404,25 @@ async function buildClientDirectoryNow(
     allAccounts,
     histories,
     billingMap,
-    invoiceMap,
+    sentByUser,
     rebillByBrand,
     profileMap,
     teamMap,
     allAdAccounts,
     paidInvoiceMonthsByUser,
+    consumedByUser,
   ] = await Promise.all([
     readUsers(),
     readAllClientAccounts(),
     getAllBrandHistories(),
     getAllClientBilling(),
-    getLatestActiveInvoicesByUser(),
+    getSentInvoicesByUser(),
     getRebillPayoutMonthsByBrand(),
     getAllClientProfiles(),
     getAllClientTeams(),
     listAdAccounts(),
     getPaidCycleMonthsByKey("client_rebill_invoices", "user_id"),
+    getConsumedPayoutMonthsByKey("client_rebill_invoices", "user_id"),
   ]);
 
   const accountsByUser = new Map<string, ClientAccount[]>();
@@ -441,26 +446,32 @@ async function buildClientDirectoryNow(
     users.map((user) => [user.id, matchHistories(user, histories)] as const)
   );
 
-  // Pre-compute each matched-user's payout months and reconcile their active
-  // invoice (sent → paid if the cycle's payout has landed) in parallel before
-  // we build the rows. Reconciliation is best-effort: a write failure leaves
-  // the invoice as `sent` and the next directory build retries.
+  // Reconcile EVERY sent invoice of each user (sent → paid if the cycle's
+  // payout has landed) before we build the rows — an older-cycle or reopened
+  // row must get the same chance to settle as the newest one, and each payout
+  // month settles at most one of them (allocateAutoPaid).
+  // Best-effort: a write failure leaves the invoice `sent` and the next
+  // directory build retries.
   const reconciled = await Promise.all(
     users.map(async (user) => {
-      const invoice = invoiceMap.get(user.id) ?? null;
-      if (!invoice) return [user.id, null] as const;
-      const matched = matchedByUser.get(user.id) ?? [];
+      const sent = sentByUser.get(user.id) ?? [];
+      if (sent.length === 0) return [user.id, [] as RebillInvoice[]] as const;
       // Reconcile against qualifying REBILL months only — an unrelated one-off
       // payout must not mark a sent re-bill invoice as paid (mirrors the
       // schedule's paidMonths and the ad-account directory's flagged filter).
-      const updated = await reconcileInvoiceForUser(
-        invoice,
-        qualifyingRebillMonths(matched, rebillByBrand)
+      const months = qualifyingRebillMonths(
+        matchedByUser.get(user.id) ?? [],
+        rebillByBrand
       );
-      return [user.id, updated] as const;
+      // Together, so one payment settles at most one open invoice — and minus
+      // the payments this client's paid invoices already used.
+      return [
+        user.id,
+        await reconcileInvoicesForUser(sent, months, consumedByUser.get(user.id) ?? []),
+      ] as const;
     })
   );
-  const invoiceByUser = new Map(reconciled);
+  const invoicesByUser = new Map(reconciled);
 
   return users.map(
     (user) =>
@@ -469,7 +480,7 @@ async function buildClientDirectoryNow(
         accountsByUser.get(user.id) ?? [],
         matchedByUser.get(user.id) ?? [],
         billingMap.get(user.id) ?? null,
-        invoiceByUser.get(user.id) ?? null,
+        invoicesByUser.get(user.id) ?? [],
         rebillByBrand,
         profileMap.get(user.id) ?? defaultClientProfile(user.id),
         teamMap.get(user.id) ?? [],
@@ -506,31 +517,36 @@ export async function getClientDetail(
     accounts,
     histories,
     billing,
-    rawInvoice,
+    rawSent,
     rebillByBrand,
     profile,
     team,
     adAccounts,
     paidInvoiceMonthsByUser,
+    consumedByUser,
   ] = await Promise.all([
     readAccountsForUser(userId),
     getAllBrandHistories(),
     getClientBilling(userId),
-    getLatestActiveInvoice(userId),
+    getSentInvoicesForUser(userId),
     getRebillPayoutMonthsByBrand(),
     getClientProfile(userId),
     getClientTeam(userId),
     listAdAccountsForUser(userId),
     getPaidCycleMonthsByKey("client_rebill_invoices", "user_id"),
+    getConsumedPayoutMonthsByKey("client_rebill_invoices", "user_id", userId),
   ]);
 
-  // Reconcile this user's invoice against their qualifying REBILL payouts
-  // before building the row so a freshly-recognised payment promotes status
-  // before render (one-off non-REBILL payouts deliberately don't qualify).
+  // Reconcile this user's sent invoices against their qualifying REBILL
+  // payouts before building the row so a freshly-recognised payment promotes
+  // status before render (one-off non-REBILL payouts deliberately don't
+  // qualify).
   const matchedHistories = matchHistories(user, histories);
-  const invoice = await reconcileInvoiceForUser(
-    rawInvoice,
-    qualifyingRebillMonths(matchedHistories, rebillByBrand)
+  const qualifying = qualifyingRebillMonths(matchedHistories, rebillByBrand);
+  const invoices = await reconcileInvoicesForUser(
+    rawSent,
+    qualifying,
+    consumedByUser.get(userId) ?? []
   );
 
   const { row, matched } = buildRow(
@@ -538,7 +554,7 @@ export async function getClientDetail(
     accounts,
     matchedHistories,
     billing,
-    invoice,
+    invoices,
     rebillByBrand,
     profile ?? defaultClientProfile(userId),
     team,

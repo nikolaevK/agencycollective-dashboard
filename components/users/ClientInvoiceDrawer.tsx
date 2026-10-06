@@ -3,8 +3,10 @@
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Download, Eye, Loader2, Check, Save } from "lucide-react";
+import { Send, Download, Eye, Loader2, Check, Save, BellRing } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDate } from "./format";
+import { splitOpenInvoices, type OpenInvoiceRef } from "./openInvoices";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { InvoiceDrawerShell } from "@/components/invoice/InvoiceDrawerShell";
 import { InvoicePreviewDialog } from "@/components/invoice/InvoicePreviewDialog";
@@ -48,6 +50,17 @@ interface Props {
   draftId?: string | null;
   /** A draft was saved (refresh any drafts list). */
   onDraftSaved?: () => void;
+  /**
+   * The client's invoices still awaiting payment (any cycle). One for the
+   * send's cycle is replaced automatically (kept in history as Superseded);
+   * other cycles are kept unless ticked — same-month ones come pre-ticked
+   * (see splitOpenInvoices).
+   */
+  openInvoices?: OpenInvoiceRef[];
+  /** The cycle this send is recorded under (the schedule's nextRebillAt). */
+  currentCycleAnchor?: string | null;
+  /** Switch to following up on an awaiting invoice instead of re-sending. */
+  onFollowUpInstead?: (invoiceId: string) => void;
 }
 
 async function fetchPrefill(
@@ -71,7 +84,17 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draftId: initialDraftId = null, onDraftSaved }: Props) {
+export function ClientInvoiceDrawer({
+  userId,
+  clientName,
+  onClose,
+  onSent,
+  draftId: initialDraftId = null,
+  onDraftSaved,
+  openInvoices = [],
+  currentCycleAnchor = null,
+  onFollowUpInstead,
+}: Props) {
   const queryClient = useQueryClient();
   const [data, setDataRaw] = useState<InvoiceData | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("local");
@@ -95,6 +118,21 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draft
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [sent, setSent] = useState(false);
   const [savedOk, setSavedOk] = useState(true);
+  // The email went out but the lifecycle row wasn't written (no "Invoice
+  // sent" status / follow-ups until it's registered).
+  const [recordedOk, setRecordedOk] = useState(true);
+  const { replaced, others: otherOpenInvoices, sameMonthIds } = splitOpenInvoices(
+    openInvoices,
+    currentCycleAnchor
+  );
+  // Other-cycle invoices this send re-issues. Same-month ones are pre-ticked
+  // (re-seeded if the open list changes, until the admin touches a box).
+  const [replaceIds, setReplaceIds] = useState<string[]>(sameMonthIds);
+  const [replaceTouched, setReplaceTouched] = useState(false);
+  const sameMonthKey = sameMonthIds.join(",");
+  useEffect(() => {
+    if (!replaceTouched) setReplaceIds(sameMonthKey ? sameMonthKey.split(",") : []);
+  }, [sameMonthKey, replaceTouched]);
   const [dirty, setDirty] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   // The draft this drawer edits (agent-prepared, or created by "Save draft").
@@ -417,6 +455,8 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draft
       // was already sent or rejected).
       if (draftId) fd.set("draftId", draftId);
       for (const c of finalCcs) fd.append("cc", c);
+      for (const id of replaceIds)
+        if (otherOpenInvoices.some((i) => i.id === id)) fd.append("replaceInvoiceId", id);
       // Additional email attachments (transient — not filed in Documents).
       // Server re-validates count/size/extension; this is just the wire format.
       for (const file of attach.attachments) fd.append("attachments", file);
@@ -431,14 +471,15 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draft
         if (res.status === 409 && draftId) queryClient.invalidateQueries({ queryKey: ["invoice-drafts"] });
         throw new Error(j.error || `HTTP ${res.status}`);
       }
-      const ok = j.saved !== false;
-      setSavedOk(ok);
+      const ok = j.saved !== false && j.recorded !== false;
+      setSavedOk(j.saved !== false);
+      setRecordedOk(j.recorded !== false);
       setSent(true);
       setDirty(false);
       if (draftId) queryClient.invalidateQueries({ queryKey: ["invoice-drafts"] });
       onSent();
-      // Keep the drawer open if filing the copy failed so the amber notice is
-      // seen; otherwise auto-close.
+      // Keep the drawer open if filing the copy or recording the send failed
+      // so the amber notice is seen; otherwise auto-close.
       if (ok) closeTimer.current = setTimeout(close, 1800);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to send invoice.");
@@ -473,13 +514,15 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draft
         <div
           className={cn(
             "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm",
-            savedOk
+            savedOk && recordedOk
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
               : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
           )}
         >
           <Check className="h-4 w-4" />
-          {savedOk
+          {!recordedOk
+            ? "Invoice emailed, but it wasn't recorded on the billing ledger — use “Register existing” so it shows as sent."
+            : savedOk
             ? "Invoice sent and filed."
             : "Invoice emailed, but filing the copy failed."}
         </div>
@@ -576,6 +619,67 @@ export function ClientInvoiceDrawer({ userId, clientName, onClose, onSent, draft
         ) : (
           <div className="space-y-4">
             {draft && <InvoiceDraftBanner draft={draft} />}
+            {replaced.map((inv) => (
+              <div
+                key={inv.id}
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400"
+              >
+                <p>
+                  <span className="font-semibold">{inv.invoiceNumber}</span> was already sent{" "}
+                  {formatDate(inv.sentAt)} for the {formatDate(inv.cycleAnchor)} cycle and is
+                  awaiting payment. Sending this invoice replaces it — the original is kept in
+                  history as Superseded.
+                </p>
+                {onFollowUpInstead && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (dirty && !confirm("Discard your changes to this invoice?")) return;
+                      onFollowUpInstead(inv.id);
+                    }}
+                    className="mt-1.5 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-foreground"
+                  >
+                    <BellRing className="h-3 w-3" />
+                    Just chasing payment? Send a follow-up instead
+                  </button>
+                )}
+              </div>
+            ))}
+            {otherOpenInvoices.length > 0 && (
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-xs">
+                <p className="text-muted-foreground">
+                  Also awaiting payment — kept as-is unless this invoice re-issues one of them
+                  {sameMonthIds.length > 0 && " (same-month invoices are pre-selected)"}:
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {otherOpenInvoices.map((inv) => (
+                    <li key={inv.id}>
+                      <label className="flex items-start gap-2 text-foreground">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={replaceIds.includes(inv.id)}
+                          disabled={sent || busy !== null}
+                          onChange={(e) => {
+                            setReplaceTouched(true);
+                            setReplaceIds((ids) =>
+                              e.target.checked ? [...ids, inv.id] : ids.filter((x) => x !== inv.id)
+                            );
+                          }}
+                        />
+                        <span>
+                          Replace <span className="font-semibold">{inv.invoiceNumber}</span>{" "}
+                          <span className="text-muted-foreground">
+                            (cycle {formatDate(inv.cycleAnchor)}, sent {formatDate(inv.sentAt)}) — it
+                            stays in history as Superseded
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <Section title="Recipient">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

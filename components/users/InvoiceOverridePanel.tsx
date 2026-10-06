@@ -378,7 +378,9 @@ export function InvoiceOverridePanel({
           {mode === "unpaid" && (
             <div className="space-y-2">
               <p className="text-[11px] text-muted-foreground">
-                Records that this cycle went unpaid. The next bill date does not move.
+                {invoice.status === "paid"
+                  ? "Records that this cycle went unpaid. A cycle settled by hand stops counting as paid, so the next bill date can move back and the row may show as due/overdue again."
+                  : "Records that this cycle went unpaid. The next bill date does not move."}
               </p>
               {schedulePaid && (
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">

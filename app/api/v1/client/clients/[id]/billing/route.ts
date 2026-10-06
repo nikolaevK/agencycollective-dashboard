@@ -5,7 +5,11 @@ import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiTok
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import { findUser } from "@/lib/users";
 import { getClientDetail } from "@/lib/clientDirectory";
-import { upsertClientBilling, type ClientBillingInput } from "@/lib/clientBilling";
+import {
+  upsertClientBilling,
+  parseBillingDateInput,
+  type ClientBillingInput,
+} from "@/lib/clientBilling";
 import { logAuditEvent } from "@/lib/auditLog";
 
 export function OPTIONS() {
@@ -67,14 +71,17 @@ export async function PATCH(
     if (body.pauseReason !== undefined) {
       changes.pauseReason = body.pauseReason ? String(body.pauseReason).slice(0, 500) : null;
     }
-    if (body.extendUntil !== undefined) {
-      changes.extendUntil = body.extendUntil ? String(body.extendUntil) : null;
+    // Schedule dates must be real yyyy-mm-dd (or null to clear).
+    const extend = parseBillingDateInput(body.extendUntil);
+    if (!extend.ok) {
+      return fail("invalid_request", "extendUntil must be a real date (yyyy-mm-dd) or null", 400);
     }
-    if (body.lastRebilledOverride !== undefined) {
-      changes.lastRebilledOverride = body.lastRebilledOverride
-        ? String(body.lastRebilledOverride)
-        : null;
+    if (extend.value !== undefined) changes.extendUntil = extend.value;
+    const lastOverride = parseBillingDateInput(body.lastRebilledOverride);
+    if (!lastOverride.ok) {
+      return fail("invalid_request", "lastRebilledOverride must be a real date (yyyy-mm-dd) or null", 400);
     }
+    if (lastOverride.value !== undefined) changes.lastRebilledOverride = lastOverride.value;
     if (body.mrrMonthOverride !== undefined) {
       const v = body.mrrMonthOverride ? String(body.mrrMonthOverride) : null;
       if (v !== null && !/^\d{4}-\d{2}$/.test(v)) {

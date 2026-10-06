@@ -11,6 +11,7 @@ import {
   XCircle,
   Loader2,
   RotateCw,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
@@ -18,6 +19,12 @@ import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { InvoiceOverridePanel, InvoiceProvenance } from "./InvoiceOverridePanel";
+import {
+  InvoiceFollowUpDialog,
+  FollowUpButton,
+  FollowUpSummaryText,
+} from "./InvoiceFollowUpDialog";
+import { canFollowUp, type FollowUpSummary } from "@/lib/invoiceFollowUpRules";
 
 // Lazy-loaded: pulls in @react-pdf/renderer only when the admin opens the
 // invoice drawer, keeping the per-client page's initial bundle light.
@@ -32,6 +39,7 @@ const RegisterInvoiceModal = dynamic(
   { ssr: false }
 );
 import { formatMoney, formatDate } from "./format";
+import { billingDateInputValue } from "@/lib/clientBilling";
 import type { ClientBilling, RebillSchedule } from "@/lib/clientBilling";
 import type { BrandHistory } from "@/lib/payouts";
 import type { RebillInvoice } from "@/lib/clientRebillInvoices";
@@ -45,6 +53,8 @@ interface BillingResponse {
   totalRevenue: number;
   history: BrandHistory[];
   activeSentInvoice: RebillInvoice | null;
+  /** Every invoice still awaiting payment (any cycle), newest first. */
+  sentInvoices: RebillInvoice[];
 }
 
 interface FormState {
@@ -80,11 +90,14 @@ function monthLabel(year: number, month: number): string {
   });
 }
 
-async function fetchInvoiceHistory(userId: string): Promise<RebillInvoice[]> {
+/** History rows carry their follow-up summary (count + latest touch). */
+type HistoryInvoice = RebillInvoice & { followUps?: FollowUpSummary };
+
+async function fetchInvoiceHistory(userId: string): Promise<HistoryInvoice[]> {
   const res = await fetch(`/api/admin/clients/${userId}/rebill-invoices`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
-  return (json.data?.invoices as RebillInvoice[]) ?? [];
+  return (json.data?.invoices as HistoryInvoice[]) ?? [];
 }
 
 const INVOICE_STATUS_STYLES: Record<
@@ -160,6 +173,7 @@ export function ClientBillingTab({
   const [showRegister, setShowRegister] = useState(false);
   const [markingUnpaid, setMarkingUnpaid] = useState(false);
   const [unpaidError, setUnpaidError] = useState<string | null>(null);
+  const [followUpInv, setFollowUpInv] = useState<RebillInvoice | null>(null);
 
   // Re-seed from the server only while the form is clean: sending an invoice,
   // marking unpaid and every override invalidate ["client-billing"], and that
@@ -172,8 +186,8 @@ export function ClientBillingTab({
       pauseReason: b?.pauseReason ?? "",
       billingDay: b?.billingDay != null ? String(b.billingDay) : "",
       leadDays: b?.leadDays != null ? String(b.leadDays) : "5",
-      extendUntil: b?.extendUntil ?? "",
-      lastRebilledOverride: b?.lastRebilledOverride ?? "",
+      extendUntil: billingDateInputValue(b?.extendUntil),
+      lastRebilledOverride: billingDateInputValue(b?.lastRebilledOverride),
       mrrMonthOverride: b?.mrrMonthOverride ?? "",
       settingsNotes: b?.settingsNotes ?? "",
     };
@@ -339,6 +353,10 @@ export function ClientBillingTab({
                 </p>
               )}
             </div>
+            <FollowUpButton
+              onClick={() => setFollowUpInv(activeInvoice)}
+              className="sm:h-auto px-3 py-1.5 text-xs"
+            />
             <button
               onClick={handleMarkUnpaid}
               disabled={markingUnpaid}
@@ -611,11 +629,40 @@ export function ClientBillingTab({
                       )}
                     </p>
                     <InvoiceProvenance invoice={inv} />
+                    {canFollowUp(inv.status) ? (
+                      <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
+                    ) : (
+                      (inv.followUps?.count ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFollowUpInv(inv)}
+                          className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        >
+                          {inv.followUps!.count} follow-up
+                          {inv.followUps!.count !== 1 ? "s" : ""} on record
+                        </button>
+                      )
+                    )}
                   </div>
                   {inv.amountCents > 0 && (
                     <span className="text-sm font-semibold text-foreground shrink-0">
                       {formatCentsExact(inv.amountCents)}
                     </span>
+                  )}
+                  {inv.payoutDocumentId && (
+                    <a
+                      href={`/api/admin/clients/${userId}/documents/${inv.payoutDocumentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Download the invoice PDF filed at send time"
+                      className="flex h-9 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0 sm:h-auto"
+                    >
+                      <FileText className="h-3 w-3" />
+                      PDF
+                    </a>
+                  )}
+                  {canFollowUp(inv.status) && (
+                    <FollowUpButton onClick={() => setFollowUpInv(inv)} />
                   )}
                   <div className="basis-full">
                     <InvoiceOverridePanel
@@ -681,6 +728,16 @@ export function ClientBillingTab({
         <ClientInvoiceDrawer
           userId={userId}
           clientName={clientName}
+          // A send for the current cycle replaces that cycle's awaiting
+          // invoice — the drawer says so up front and offers a follow-up.
+          openInvoices={data.sentInvoices ?? []}
+          currentCycleAnchor={data.schedule.nextRebillAt}
+          onFollowUpInstead={(invoiceId) => {
+            const inv = (data.sentInvoices ?? []).find((i) => i.id === invoiceId);
+            if (!inv) return;
+            setShowInvoice(false);
+            setFollowUpInv(inv);
+          }}
           onClose={() => setShowInvoice(false)}
           onSent={() => {
             // Refresh everything the send touches: docs tab list, this tab's
@@ -697,6 +754,20 @@ export function ClientBillingTab({
         />
       )}
 
+      {followUpInv && (
+        <InvoiceFollowUpDialog
+          invoice={followUpInv}
+          subjectName={clientName}
+          endpoint={`/api/admin/clients/${userId}/rebill-invoices/${followUpInv.id}/follow-ups`}
+          fallbackEmail={clientEmail}
+          onClose={() => setFollowUpInv(null)}
+          onRecorded={() => {
+            queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
+            queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
+          }}
+        />
+      )}
+
       {showRegister && (
         <RegisterInvoiceModal
           userId={userId}
@@ -705,7 +776,13 @@ export function ClientBillingTab({
           defaultRecipientEmail={clientEmail}
           onClose={() => setShowRegister(false)}
           onRegistered={() => {
+            // A registration can light "Invoice sent" and joins the Sent
+            // Invoices panel — refresh those too, not just the history.
             queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", userId] });
+            queryClient.invalidateQueries({ queryKey: ["client-billing", userId] });
+            queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
+            queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
+            queryClient.invalidateQueries({ queryKey: ["admin-users"] });
             onChanged?.();
           }}
         />

@@ -5,6 +5,8 @@ import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiTok
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
 import { findUser } from "@/lib/users";
 import { createRebillInvoice } from "@/lib/clientRebillInvoices";
+import { findDocument, isDocumentVisibleToClient } from "@/lib/payoutDocuments";
+import { isRealYmd } from "@/lib/businessTime";
 import { logAuditEvent } from "@/lib/auditLog";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -64,6 +66,10 @@ export async function POST(
         return fail("invalid_request", "sentAt must be ISO-like (yyyy-mm-dd or timestamp)", 400);
       }
       if (DATE_RE.test(body.sentAt)) {
+        // A real calendar date only — "2026-02-31" would roll into March.
+        if (!isRealYmd(body.sentAt)) {
+          return fail("invalid_request", "sentAt is not a real calendar date", 400);
+        }
         sentAt = `${body.sentAt}T12:00:00.000Z`;
       } else {
         const d = new Date(body.sentAt);
@@ -84,10 +90,17 @@ export async function POST(
       recipientEmail = v || null;
     }
 
-    const payoutDocumentId =
-      typeof body.payoutDocumentId === "string" && body.payoutDocumentId
-        ? body.payoutDocumentId
-        : null;
+    // The linked PDF is what follow-up reminders re-attach, so it must be an
+    // invoice document that belongs to THIS client (same rule as the
+    // Documents download) — never an arbitrary id from the body.
+    let payoutDocumentId: string | null = null;
+    if (typeof body.payoutDocumentId === "string" && body.payoutDocumentId) {
+      const doc = await findDocument(body.payoutDocumentId);
+      if (!doc || doc.docType !== "invoice" || !isDocumentVisibleToClient(user, doc)) {
+        return fail("invalid_request", "payoutDocumentId is not one of this client's invoice documents", 400);
+      }
+      payoutDocumentId = doc.id;
+    }
 
     const actor = tokenAuditActor(auth.token);
     const invoice = await createRebillInvoice({

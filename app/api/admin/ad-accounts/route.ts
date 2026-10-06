@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
+import { parseBillingDateInput } from "@/lib/clientBilling";
 import { buildAdAccountDirectory } from "@/lib/adAccountDirectory";
 import { createAdAccount } from "@/lib/adAccounts";
 import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
@@ -49,6 +50,14 @@ export async function POST(request: Request) {
     clientWorkspace = user.workspace;
   }
 
+  // Schedule dates must be real yyyy-mm-dd (or null/omitted).
+  const extend = parseBillingDateInput(body.extendUntil);
+  if (!extend.ok)
+    return NextResponse.json({ error: "extendUntil must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+  const lastBilled = parseBillingDateInput(body.lastBilledOverride);
+  if (!lastBilled.ok)
+    return NextResponse.json({ error: "lastBilledOverride must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+
   // The account lands in the linked client's book, else the actor's first
   // book (scoped admins), else the main book.
   const workspace =
@@ -72,14 +81,8 @@ export async function POST(request: Request) {
     billingDay:
       typeof body.billingDay === "number" ? body.billingDay : body.billingDay === null ? null : undefined,
     leadDays: typeof body.leadDays === "number" ? body.leadDays : undefined,
-    extendUntil:
-      typeof body.extendUntil === "string" ? body.extendUntil : body.extendUntil === null ? null : undefined,
-    lastBilledOverride:
-      typeof body.lastBilledOverride === "string"
-        ? body.lastBilledOverride
-        : body.lastBilledOverride === null
-        ? null
-        : undefined,
+    extendUntil: extend.value,
+    lastBilledOverride: lastBilled.value,
   });
 
   return NextResponse.json({ data: account });

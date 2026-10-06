@@ -13,6 +13,7 @@ import {
 } from "@/lib/adAccounts";
 import { findUser } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
+import { parseBillingDateInput } from "@/lib/clientBilling";
 import type { ApiTokenRecord } from "@/lib/apiTokens";
 import type { NextResponse } from "next/server";
 
@@ -58,6 +59,23 @@ export async function PATCH(
     const body = await readJsonBody(request);
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
 
+    // Numbers must be finite ("abc" → NaN used to reach the DB) and schedule
+    // dates real yyyy-mm-dd (or null to clear).
+    for (const key of ["adSpendFeeBps", "monthlyRetainerCents", "leadDays", "billingDay"] as const) {
+      const v = body[key];
+      if (v !== undefined && v !== null && !Number.isFinite(Number(v))) {
+        return fail("invalid_request", `${key} must be a number`, 400);
+      }
+    }
+    const extend = parseBillingDateInput(body.extendUntil);
+    if (!extend.ok) {
+      return fail("invalid_request", "extendUntil must be a real date (yyyy-mm-dd) or null", 400);
+    }
+    const lastBilled = parseBillingDateInput(body.lastBilledOverride);
+    if (!lastBilled.ok) {
+      return fail("invalid_request", "lastBilledOverride must be a real date (yyyy-mm-dd) or null", 400);
+    }
+
     const changes: UpdateAdAccountInput = {};
     if (body.accountName !== undefined) {
       const accountName = String(body.accountName).trim();
@@ -69,11 +87,17 @@ export async function PATCH(
         changes.userId = null;
       } else {
         const userId = String(body.userId).trim();
-        if (!(await findUser(userId))) return fail("invalid_request", "Unknown userId", 400);
+        const linked = await findUser(userId);
+        if (!linked) return fail("invalid_request", "Unknown userId", 400);
         if (!tokenHasResource(auth.token, "client", userId)) {
           return fail("resource_forbidden", "This token is not allowed to access this client", 403);
         }
         changes.userId = userId;
+        // Keep the account in its client's book — assignment moves it (mirrors
+        // the admin PATCH). Otherwise a main-book account reassigned to a
+        // partner client stayed in 'main': invisible to the partner and
+        // billed with main-book fuzzy brand matching.
+        if (linked.workspace !== account.workspace) changes.workspace = linked.workspace;
       }
     }
     if (body.vendor !== undefined) changes.vendor = body.vendor ? String(body.vendor).trim() : null;
@@ -94,12 +118,8 @@ export async function PATCH(
       changes.billingDay = body.billingDay === null ? null : Number(body.billingDay);
     }
     if (body.leadDays !== undefined) changes.leadDays = Number(body.leadDays);
-    if (body.extendUntil !== undefined) {
-      changes.extendUntil = body.extendUntil ? String(body.extendUntil) : null;
-    }
-    if (body.lastBilledOverride !== undefined) {
-      changes.lastBilledOverride = body.lastBilledOverride ? String(body.lastBilledOverride) : null;
-    }
+    if (extend.value !== undefined) changes.extendUntil = extend.value;
+    if (lastBilled.value !== undefined) changes.lastBilledOverride = lastBilled.value;
 
     if (Object.keys(changes).length === 0) {
       return fail("invalid_request", "No changes provided", 400);

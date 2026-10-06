@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import { formatCentsExact } from "../format";
+import { BUSINESS_TIME_ZONE } from "../businessTime";
 
 export type EmailAccountId = "primary" | "secondary";
 
@@ -69,6 +71,44 @@ export function isEmailConfigured(): boolean {
     process.env.SMTP_PASS
   );
 }
+
+/** HTML-escape admin-authored text before it goes into an email body. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** A branded identity's contact email + website as linked lines ("" if none). */
+function brandContactLines(b: { email?: string; website?: string }): string {
+  const website = b.website?.trim();
+  const websiteHref = website
+    ? /^https?:\/\//i.test(website)
+      ? website
+      : `https://${website}`
+    : "";
+  return [
+    b.email
+      ? `<a href="mailto:${escapeHtml(b.email)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(b.email)}</a>`
+      : "",
+    website
+      ? `<a href="${escapeHtml(websiteHref)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(website)}</a>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("<br>");
+}
+
+const AGENCY_COLLECTIVE_FOOTER_HTML = `
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
+            <strong style="color: #333;">Agency Collective</strong><br>
+            White-Glove Advertising for Niche Verticals<br>
+            <a href="mailto:team@agencycollective.ai" style="color: #2563eb; text-decoration: none;">team@agencycollective.ai</a><br>
+            <a href="https://www.agencycollective.ai" style="color: #2563eb; text-decoration: none;">https://www.agencycollective.ai</a><br>
+            Los Angeles, CA
+          </div>`;
 
 export async function sendInvoiceEmail(
   recipientEmail: string,
@@ -210,30 +250,9 @@ export async function sendInvoiceEmail(
   // secondary-account variant, or any Agency Profile passed as `brand` by the
   // drawer send routes. Self-contained sign-off with the brand's contact
   // email/website. Fields are admin-authored but HTML-escaped regardless.
-  const escapeHtml = (s: string): string =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
   const brandedBody = (b: { name: string; email?: string; website?: string }) => {
     const name = escapeHtml(b.name);
-    const website = b.website?.trim();
-    const websiteHref = website
-      ? /^https?:\/\//i.test(website)
-        ? website
-        : `https://${website}`
-      : "";
-    const contactLines = [
-      b.email
-        ? `<a href="mailto:${escapeHtml(b.email)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(b.email)}</a>`
-        : "",
-      website
-        ? `<a href="${escapeHtml(websiteHref)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(website)}</a>`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("<br>");
+    const contactLines = brandContactLines(b);
     return `
           <p style="line-height: 1.7; margin: 0 0 16px;">
             Your latest ${name} invoice is now available and ready for payment. A copy of the invoice is attached for your records.
@@ -260,16 +279,7 @@ export async function sendInvoiceEmail(
   // Branded emails are self-contained (their own sign-off + contact), so they
   // omit the Agency Collective footer; every other variant keeps it.
   const footerHtml =
-    variant === "pepads" || options?.brand
-      ? ""
-      : `
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #888;">
-            <strong style="color: #333;">Agency Collective</strong><br>
-            White-Glove Advertising for Niche Verticals<br>
-            <a href="mailto:team@agencycollective.ai" style="color: #2563eb; text-decoration: none;">team@agencycollective.ai</a><br>
-            <a href="https://www.agencycollective.ai" style="color: #2563eb; text-decoration: none;">https://www.agencycollective.ai</a><br>
-            Los Angeles, CA
-          </div>`;
+    variant === "pepads" || options?.brand ? "" : AGENCY_COLLECTIVE_FOOTER_HTML;
 
   // Sanitise free-form attachment filenames: strip control chars + path
   // separators (no relative-path nodemailer surprises), cap at 200 chars, and
@@ -316,6 +326,118 @@ export async function sendInvoiceEmail(
     return true;
   } catch (err) {
     console.error("[invoice-email] Failed to send:", err instanceof Error ? err.message : "Unknown error");
+    return false;
+  } finally {
+    transport.close();
+  }
+}
+
+/**
+ * Follow-up reminder for an invoice that already went out (client re-bill or
+ * ad-account). Re-attaches the ORIGINALLY filed PDF when one is on file — the
+ * invoice itself (number, amount, dates) is unchanged; this only nudges the
+ * client. `message` is the admin's optional personal note (plain text,
+ * HTML-escaped). `brand` mirrors the original send's Agency Profile styling
+ * (subject, sign-off, no Agency Collective footer).
+ */
+export async function sendInvoiceFollowUpEmail(
+  recipientEmail: string,
+  params: {
+    variant: "rebill" | "adaccount";
+    invoiceNumber: string;
+    amountCents: number;
+    /** When the original invoice was sent (ISO). */
+    originalSentAt: string;
+    message?: string | null;
+    pdf?: { buffer: Buffer; fileName: string } | null;
+    cc?: string[];
+    brand?: { name: string; email?: string; website?: string };
+  }
+): Promise<boolean> {
+  const account = resolveSmtpAccount("primary");
+  if (!account) {
+    console.warn(`[invoice-email] SMTP account "primary" not configured — skipping follow-up`);
+    return false;
+  }
+
+  const safeNumber =
+    params.invoiceNumber.replace(/[\r\n\x00-\x1f]/g, "").slice(0, 100) || "Invoice";
+  const brandName =
+    (params.brand?.name ?? "").replace(/[\r\n\x00-\x1f]/g, "").trim().slice(0, 100) ||
+    "Agency Collective";
+  const subjectNoun = params.variant === "adaccount" ? "Ad Account Invoice" : "Invoice";
+  const subject = `Reminder: ${subjectNoun} #${safeNumber} — ${brandName}`;
+
+  const amount =
+    params.amountCents > 0 ? ` for <strong>${formatCentsExact(params.amountCents)}</strong>` : "";
+  const sentDate = new Date(params.originalSentAt);
+  const sentOn = isNaN(sentDate.getTime())
+    ? ""
+    : `, sent on ${sentDate.toLocaleDateString("en-US", {
+        timeZone: BUSINESS_TIME_ZONE,
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })}`;
+  const invoiceLabel = params.variant === "adaccount" ? "ad account invoice" : "invoice";
+  const attachedLine = params.pdf
+    ? " A copy of the invoice is attached for your convenience."
+    : "";
+  const personal = params.message?.trim()
+    ? `<p style="line-height: 1.7; margin: 0 0 16px;">${escapeHtml(params.message.trim()).replace(/\r?\n/g, "<br>")}</p>`
+    : "";
+  const signOff = params.brand
+    ? (() => {
+        const contact = brandContactLines(params.brand);
+        return `<p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>${escapeHtml(brandName)} Billing Team</strong>${contact ? `<br>${contact}` : ""}</p>`;
+      })()
+    : `<p style="line-height: 1.7; margin: 0 0 4px;">Best,<br><strong>Ava Morris</strong> | Billing Team</p>`;
+
+  const bodyHtml = `
+          <p style="line-height: 1.7; margin: 0 0 16px;">Hi there,</p>
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            Just a friendly reminder that ${invoiceLabel} <strong>#${escapeHtml(safeNumber)}</strong>${amount}${sentOn} is still awaiting payment.${attachedLine}
+          </p>
+          ${personal}
+          <p style="line-height: 1.7; margin: 0 0 16px;">
+            If you've already sent payment, thank you &mdash; please disregard this note. Otherwise, payment can be submitted using the details on the invoice. If you have any questions, just reply to this email and we'll be happy to help.
+          </p>
+          ${signOff}`;
+
+  const transport = nodemailer.createTransport({
+    host: account.host,
+    port: account.port,
+    secure: account.port === 465,
+    auth: { user: account.user, pass: account.pass },
+  });
+
+  try {
+    await transport.sendMail({
+      from: account.from,
+      to: recipientEmail,
+      ...(params.cc && params.cc.length > 0 ? { cc: params.cc } : {}),
+      subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #333;">
+          ${bodyHtml}
+          ${params.brand ? "" : AGENCY_COLLECTIVE_FOOTER_HTML}
+        </div>
+      `,
+      attachments: params.pdf
+        ? [
+            {
+              filename:
+                params.pdf.fileName.replace(/[\r\n\x00-\x1f]/g, "").replace(/[\\/]/g, "_").slice(0, 200) ||
+                `invoice-${safeNumber}.pdf`,
+              content: params.pdf.buffer,
+              contentType: "application/pdf",
+            },
+          ]
+        : [],
+    });
+    return true;
+  } catch (err) {
+    console.error("[invoice-email] Follow-up failed:", err instanceof Error ? err.message : "Unknown error");
     return false;
   } finally {
     transport.close();

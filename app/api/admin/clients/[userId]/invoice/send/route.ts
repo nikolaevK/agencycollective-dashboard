@@ -58,6 +58,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const pdfFile = formData.get("pdf") as File | null;
     const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim();
     const ccRaw = formData.getAll("cc").filter((v): v is string => typeof v === "string");
+    // Explicit "replace this awaiting invoice" picks (scoped to this
+    // client + status 'sent' by the write itself).
+    const replaceInvoiceIds = formData
+      .getAll("replaceInvoiceId")
+      .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+      .slice(0, 20);
 
     if (!email || !pdfFile)
       return NextResponse.json({ error: "email and pdf are required" }, { status: 400 });
@@ -160,16 +166,20 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     // billing UI uses.
     const brand = detail.row.matchedBrand ?? detail.row.displayName;
     const now = new Date();
+    // Fallback filing month = the BUSINESS-timezone month (the drawer doesn't
+    // send one) — the UTC server clock filed an evening-PT send on the last
+    // day of a month under the next month.
+    const [bizYear, bizMonth] = businessTodayYmd(now).split("-").map(Number);
     const rawMonth = Number(formData.get("payoutMonth"));
     const rawYear = Number(formData.get("payoutYear"));
     const month =
       Number.isInteger(rawMonth) && rawMonth >= 1 && rawMonth <= 12
         ? rawMonth
-        : now.getMonth() + 1;
+        : bizMonth;
     const year =
       Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100
         ? rawYear
-        : now.getFullYear();
+        : bizYear;
 
     const doc: PayoutDocument = {
       id: crypto.randomUUID(),
@@ -209,7 +219,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         ? Math.min(Math.round(rawAmount), 1_000_000_000) // 10M USD safety cap
         : 0;
     let recordId: string | null = null;
+    let recorded = true;
     try {
+      // Supersedes only a still-sent invoice for THIS cycle (a re-send);
+      // awaiting invoices for other cycles keep their status.
       const record = await createRebillInvoice({
         userId: params.userId,
         invoiceNumber: safeNumber,
@@ -218,13 +231,19 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         amountCents,
         recipientEmail: email,
         sentByAdminId: session.adminId,
+        // Kept so a follow-up reaches the same people with the same branding.
+        ccEmails,
+        // Other awaiting invoices the admin chose to replace (drawer checkboxes).
+        replaceInvoiceIds,
+        styleProfileId: emailBrand ? styleProfileId : null,
       });
       recordId = record.id;
     } catch (err) {
       console.error("[client-invoice/send] invoice record failed:", err);
-      // Email + (maybe) doc save already succeeded — surfacing partial save
-      // is enough; the next directory build won't show invoice_sent, but the
-      // admin can re-send to re-establish the record if needed.
+      // Email + (maybe) doc save already succeeded — report `recorded:false`
+      // so the drawer tells the admin to Register it (no "Invoice sent"
+      // status or follow-ups until a lifecycle row exists).
+      recorded = false;
     }
 
     // The reviewed draft is done. Best-effort — the email already went out.
@@ -240,7 +259,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       }).catch((err) => console.error("[client-invoice/send] draft stamp failed:", err));
     }
 
-    return NextResponse.json({ success: true, saved: docSaved });
+    return NextResponse.json({ success: true, saved: docSaved, recorded });
   } catch (err) {
     console.error("[client-invoice/send]", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

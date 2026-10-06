@@ -410,7 +410,9 @@ const registerInvoiceBody = obj(
     amountCents: num("Integer CENTS"),
     sentAt: str("yyyy-mm-dd or ISO timestamp"),
     recipientEmail: str(),
-    payoutDocumentId: str(),
+    payoutDocumentId: str(
+      "Optional link to the filed PDF — must be one of THIS client's invoice documents (listClientDocuments), else 400"
+    ),
   },
   ["invoiceNumber", "cycleAnchor", "amountCents"]
 );
@@ -968,7 +970,8 @@ export const openApiSpec: OpenApiSpec = {
     },
     "/client/clients/{id}/billing/invoices/register": {
       post: op("registerClientInvoice", "Register an out-of-band re-bill invoice", "client", "client:write", {
-        description: "No email — records the invoice into the re-bill lifecycle (invoice_sent).",
+        description:
+          "No email — records the invoice into the re-bill lifecycle (invoice_sent). Supersedes only a still-sent invoice for the SAME cycleAnchor; awaiting invoices for other cycles are kept.",
         parameters: [pathParam("id", "Client id")],
         requestBody: { required: true, schema: registerInvoiceBody },
       }),
@@ -1151,7 +1154,10 @@ export const openApiSpec: OpenApiSpec = {
       }),
     },
     "/client/ad-accounts/sent-invoices": {
-      get: op("listAdAccountSentInvoices", "Ad-account invoices awaiting payment", "client", "client:read"),
+      get: op("listAdAccountSentInvoices", "Ad-account invoices awaiting payment", "client", "client:read", {
+        description:
+          "Every still-sent invoice — an account can be awaiting payment on several cycles at once (one entry each).",
+      }),
     },
     "/client/ad-accounts/payment-settings": {
       get: op("getAdAccountPaymentSettings", "Ad-account payment templates", "client", "client:read"),
@@ -1238,7 +1244,10 @@ export const openApiSpec: OpenApiSpec = {
       get: op("getRebillAlerts", "Due/overdue re-bill alerts + reminders", "client", "client:read"),
     },
     "/client/sent-invoices": {
-      get: op("listClientSentInvoices", "Re-bill invoices awaiting payment", "client", "client:read"),
+      get: op("listClientSentInvoices", "Re-bill invoices awaiting payment", "client", "client:read", {
+        description:
+          "One entry per awaiting invoice ({ userId, displayName, invoice }) — a client owing on several cycles appears once per invoice.",
+      }),
     },
     "/client/team-options": {
       get: op("getTeamOptions", "Assignable admins", "client", "client:read"),

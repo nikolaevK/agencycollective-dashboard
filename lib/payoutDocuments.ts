@@ -55,6 +55,32 @@ function rowToDocument(row: Row): PayoutDocument {
   };
 }
 
+/**
+ * Whether a filed document belongs to this client — the ONE rule behind the
+ * client Documents download, invoice follow-up attachments and the re-bill
+ * register's document link (an id from a request body must never let one
+ * client's PDF be served or emailed for another):
+ *   - the doc's brand must match the client's (payout-brand link, else display
+ *     name) with the same fuzzy matcher the Documents list uses;
+ *   - cross-book isolation: a non-main client only gets docs filed under its
+ *     own book OR whose brand EXACTLY equals its internally-managed payout
+ *     link — display-name fuzzy matches never cross books ("Glow" ⊄ "Inner
+ *     Glow").
+ */
+export function isDocumentVisibleToClient(
+  user: { payoutBrand: string | null; displayName: string; workspace: string },
+  doc: Pick<PayoutDocument, "normalizedBrand" | "workspace">
+): boolean {
+  const clientNorm = normalizeBrandName(user.payoutBrand ?? user.displayName);
+  if (!clientNorm || !brandsMatch(clientNorm, doc.normalizedBrand)) return false;
+  if (user.workspace !== "main") {
+    const linkNorm = user.payoutBrand ? normalizeBrandName(user.payoutBrand) : "";
+    const exactLinked = linkNorm !== "" && doc.normalizedBrand === linkNorm;
+    if (!exactLinked && doc.workspace !== user.workspace) return false;
+  }
+  return true;
+}
+
 function blobToBuffer(raw: unknown): Buffer | null {
   if (raw == null) return null;
   if (raw instanceof ArrayBuffer) return Buffer.from(raw);

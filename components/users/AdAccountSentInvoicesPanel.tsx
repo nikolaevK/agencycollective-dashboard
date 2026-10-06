@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
 import { formatDate } from "./format";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
+import type { FollowUpSummary } from "@/lib/invoiceFollowUpRules";
+import {
+  InvoiceFollowUpDialog,
+  FollowUpButton,
+  FollowUpSummaryText,
+} from "./InvoiceFollowUpDialog";
 
 interface SentInvoice {
   id: string;
@@ -19,8 +25,12 @@ interface SentInvoice {
   recipientEmail: string | null;
   payoutDocumentId: string | null;
   sentAt: string;
+  status: string;
+  ccEmails: string[];
+  styleProfileId: string | null;
   accountName: string | null;
   clientName: string | null;
+  followUps: FollowUpSummary;
 }
 
 interface SentInvoicesData {
@@ -62,6 +72,7 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
   const { data, isLoading, isError, isFetching, refetch } = useAdAccountSentInvoices();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [followUpInv, setFollowUpInv] = useState<SentInvoice | null>(null);
 
   const invoices = data?.invoices ?? [];
 
@@ -76,14 +87,13 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
     setBusyId(inv.id);
     setRowError(null);
     try {
-      const res = await fetch(
-        `/api/admin/ad-accounts/invoices/${inv.id}/mark-unpaid`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        }
-      );
+      // Same path as the per-account drawer's Manage panel: sets the manual
+      // lock (so "Resync with payouts" is offered later) and audits it.
+      const res = await fetch(`/api/admin/ad-accounts/invoices/${inv.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "unpaid" }),
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || `HTTP ${res.status}`);
@@ -175,8 +185,9 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {inv.clientName ?? inv.recipientEmail ?? "—"} · {inv.invoiceNumber} · sent{" "}
-                  {formatDate(inv.sentAt)}
+                  {formatDate(inv.sentAt)} · cycle {formatDate(inv.cycleAnchor)}
                 </p>
+                <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
               </div>
               <div className="ml-auto flex items-center gap-2 shrink-0">
                 {inv.amountCents > 0 && (
@@ -196,6 +207,7 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
                     PDF
                   </a>
                 )}
+                <FollowUpButton onClick={() => setFollowUpInv(inv)} />
                 <button
                   type="button"
                   onClick={() => handleMarkUnpaid(inv)}
@@ -225,6 +237,22 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
             </li>
           ))}
         </ul>
+      )}
+
+      {followUpInv && (
+        <InvoiceFollowUpDialog
+          invoice={followUpInv}
+          subjectName={followUpInv.accountName ?? followUpInv.clientName ?? "Free invoice"}
+          endpoint={`/api/admin/ad-accounts/invoices/${followUpInv.id}/follow-ups`}
+          onClose={() => setFollowUpInv(null)}
+          onRecorded={() => {
+            queryClient.invalidateQueries({ queryKey: ["admin-ad-account-sent-invoices"] });
+            if (followUpInv.adAccountId)
+              queryClient.invalidateQueries({
+                queryKey: ["admin-ad-account-invoices", followUpInv.adAccountId],
+              });
+          }}
+        />
       )}
     </div>
   );

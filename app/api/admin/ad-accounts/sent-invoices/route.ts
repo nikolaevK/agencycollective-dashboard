@@ -3,8 +3,10 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { listActiveSentInvoices } from "@/lib/adAccountInvoices";
+import { withFollowUpSummaries } from "@/lib/invoiceFollowUps";
 import { requireDirectoryActor } from "@/lib/api/requireAdmin";
 import { listAdAccounts } from "@/lib/adAccounts";
+import { readUsers } from "@/lib/users";
 import { inWorkspaceScope, isExternalScope } from "@/lib/workspaces";
 
 /**
@@ -22,14 +24,22 @@ export async function GET() {
   if (actor.scope !== null) {
     // Workspace scoping: only invoices of accounts in the actor's book(s);
     // free invoices (no account) are internal-only.
-    const workspaceById = new Map(
-      (await listAdAccounts()).map((a) => [a.id, a.workspace] as const)
-    );
-    invoices = invoices.filter((inv) =>
-      inv.adAccountId
-        ? inWorkspaceScope(actor.scope, workspaceById.get(inv.adAccountId) ?? "main")
-        : !isExternalScope(actor.scope)
-    );
+    const [accounts, users] = await Promise.all([listAdAccounts(), readUsers()]);
+    const workspaceById = new Map(accounts.map((a) => [a.id, a.workspace] as const));
+    const workspaceByUser = new Map(users.map((u) => [u.id, u.workspace] as const));
+    invoices = invoices.filter((inv) => {
+      if (!inv.adAccountId) return !isExternalScope(actor.scope);
+      // Orphans of a deleted account follow their client's book (same rule as
+      // findAdInvoiceAccountInScope) — never default to 'main'.
+      const ws =
+        workspaceById.get(inv.adAccountId) ??
+        (inv.userId ? workspaceByUser.get(inv.userId) : undefined);
+      return ws !== undefined && inWorkspaceScope(actor.scope, ws);
+    });
   }
-  return NextResponse.json({ data: { invoices, count: invoices.length } });
+  // Each row carries its follow-up summary (count + latest touch).
+  const withFollowUps = await withFollowUpSummaries("ad_account", invoices);
+  return NextResponse.json({
+    data: { invoices: withFollowUps, count: withFollowUps.length },
+  });
 }

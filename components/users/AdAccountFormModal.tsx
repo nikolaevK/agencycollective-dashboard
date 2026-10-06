@@ -6,6 +6,7 @@ import { X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ClientPublic } from "./types";
 import type { AdAccountDirectoryRow } from "@/lib/adAccountDirectory";
+import { billingDateInputValue } from "@/lib/clientBilling";
 
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
@@ -81,9 +82,11 @@ export function AdAccountFormModal({
   const [leadDays, setLeadDays] = useState(
     account?.leadDays != null ? String(account.leadDays) : "5"
   );
-  const [extendUntil, setExtendUntil] = useState(account?.extendUntil ?? "");
+  // Legacy unreadable values seed as "" (a save clears them rather than
+  // re-submitting a value the API now rejects).
+  const [extendUntil, setExtendUntil] = useState(billingDateInputValue(account?.extendUntil));
   const [lastBilledOverride, setLastBilledOverride] = useState(
-    account?.lastBilledOverride ?? ""
+    billingDateInputValue(account?.lastBilledOverride)
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

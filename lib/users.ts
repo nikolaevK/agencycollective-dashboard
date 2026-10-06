@@ -493,6 +493,23 @@ export async function deleteUser(id: string): Promise<boolean> {
       console.error("[deleteUser] cleanup of invoice_drafts failed (non-fatal):", err);
     }
   }
+  // Follow-ups on the client's re-bill invoices hold recipient emails + notes.
+  // Removed explicitly, BEFORE the user row (its invoices go via FK cascade,
+  // which libSQL doesn't guarantee). Ad-account invoice follow-ups stay with
+  // the surviving account.
+  try {
+    await db.execute({
+      sql: `DELETE FROM invoice_followups
+            WHERE invoice_kind = 'client_rebill'
+              AND invoice_id IN (SELECT id FROM client_rebill_invoices WHERE user_id = ?)`,
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] cleanup of invoice_followups failed (non-fatal):", err);
+    }
+  }
 
   // Ad accounts survive a client deletion — they're standalone billable
   // entities. Just unattach them (the FK is ON DELETE SET NULL, but libSQL

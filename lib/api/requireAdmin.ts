@@ -67,6 +67,36 @@ export async function findAdAccountInScope(
 }
 
 /**
+ * Workspace gate for one ad-account INVOICE. An invoice of an account in the
+ * actor's book passes with that account. Free invoices (no account) are
+ * internal-only. Orphans whose account has since been deleted (no FK; their
+ * rows keep `ad_account_id`) used to 404 for everyone, so they could never be
+ * settled, marked or followed up — they're now gated by the book of the
+ * client snapshotted on the row, else visible to unscoped admins only (a
+ * deleted PARTNER account's invoices must not open up to main-only admins).
+ */
+export async function findAdInvoiceAccountInScope(
+  scope: WorkspaceScope,
+  invoice: { adAccountId: string | null; userId: string | null }
+): Promise<{ ok: true; account: AdAccount | null } | { ok: false }> {
+  if (invoice.adAccountId) {
+    const account = await getAdAccount(invoice.adAccountId);
+    if (account)
+      return inWorkspaceScope(scope, account.workspace)
+        ? { ok: true, account }
+        : { ok: false };
+    // Orphan of a deleted account.
+    const client = invoice.userId ? await findUser(invoice.userId) : null;
+    if (client)
+      return inWorkspaceScope(scope, client.workspace)
+        ? { ok: true, account: null }
+        : { ok: false };
+    return scope === null ? { ok: true, account: null } : { ok: false };
+  }
+  return isExternalScope(scope) ? { ok: false } : { ok: true, account: null };
+}
+
+/**
  * Guard for internal-only surfaces (Payout pool/import, Welcome Kit builder,
  * maintenance banner): an external (partner) scope — one without the main
  * book — gets 403; everyone else passes with their actor.

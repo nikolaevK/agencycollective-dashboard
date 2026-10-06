@@ -8,6 +8,7 @@ import { formatCentsExact } from "@/lib/format";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { InvoiceDraftKind, InvoiceDraftSummary } from "@/lib/invoiceDrafts";
 import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
+import { toOpenInvoiceRefs, type OpenInvoiceRef } from "./openInvoices";
 import { cn } from "@/lib/utils";
 
 // Drawers pull in @react-pdf — mount only when a draft is opened.
@@ -55,6 +56,13 @@ interface AdAccountRowLite {
   clientName: string | null;
   clientEmail: string | null;
   schedule: { nextRebillAt: string | null };
+  sentInvoices: OpenInvoiceRef[];
+}
+
+/** The slice of GET /clients/[id]/billing the client drawer's context needs. */
+interface ClientBillingLite {
+  schedule: { nextRebillAt: string | null };
+  sentInvoices?: OpenInvoiceRef[];
 }
 
 /**
@@ -75,7 +83,12 @@ export function InvoiceDraftsList({
   const queryClient = useQueryClient();
   const { data: drafts = [], isLoading, isError, refetch } = useInvoiceDrafts(filter);
   const [open, setOpen] = useState<
-    | { kind: "client_rebill"; draft: InvoiceDraftRow }
+    | {
+        kind: "client_rebill";
+        draft: InvoiceDraftRow;
+        openInvoices: OpenInvoiceRef[];
+        cycleAnchor: string | null;
+      }
     | { kind: "ad_account"; draft: InvoiceDraftRow; target: AdAccountInvoiceTarget }
     | null
   >(null);
@@ -106,14 +119,33 @@ export function InvoiceDraftsList({
 
   async function review(d: InvoiceDraftRow) {
     setRowError(null);
-    if (d.kind === "client_rebill") {
-      setOpen({ kind: "client_rebill", draft: d });
-      return;
-    }
-    // The drawer needs the account's billing context (fee, retainer, next
-    // cycle) — the same rows the Ad Accounts tab shows (shared cache).
     setBusyId(d.id);
     try {
+      if (d.kind === "client_rebill") {
+        // The client's awaiting invoices + current cycle, so the drawer warns
+        // what this send replaces — the Billing tab's query (shared cache).
+        if (!d.userId) throw new Error("Client not found");
+        const userId = d.userId;
+        const billing = await queryClient.fetchQuery<ClientBillingLite>({
+          queryKey: ["client-billing", userId],
+          queryFn: async () => {
+            const res = await fetch(`/api/admin/clients/${userId}/billing`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return (await res.json()).data;
+          },
+          staleTime: 30_000,
+        });
+        setOpen({
+          kind: "client_rebill",
+          draft: d,
+          openInvoices: toOpenInvoiceRefs(billing.sentInvoices ?? []),
+          cycleAnchor: billing.schedule.nextRebillAt,
+        });
+        return;
+      }
+      // The drawer needs the account's billing context (fee, retainer, next
+      // cycle, awaiting invoices) — the same rows the Ad Accounts tab shows
+      // (shared cache).
       const dir = await queryClient.fetchQuery<{ rows: AdAccountRowLite[] }>({
         queryKey: ["admin-ad-accounts"],
         queryFn: async () => {
@@ -137,6 +169,7 @@ export function InvoiceDraftsList({
           clientName: row.clientName,
           clientEmail: row.clientEmail,
           nextRebillAt: row.schedule.nextRebillAt,
+          openInvoices: toOpenInvoiceRefs(row.sentInvoices ?? []),
         },
       });
     } catch (e) {
@@ -320,6 +353,8 @@ export function InvoiceDraftsList({
           userId={open.draft.userId}
           clientName={open.draft.clientName ?? ""}
           draftId={open.draft.id}
+          openInvoices={open.openInvoices}
+          currentCycleAnchor={open.cycleAnchor}
           onClose={() => setOpen(null)}
           onSent={() => refreshAfterSend(open.draft)}
         />

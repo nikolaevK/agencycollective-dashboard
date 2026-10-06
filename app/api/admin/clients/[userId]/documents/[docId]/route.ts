@@ -2,8 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
-import { findDocumentWithData } from "@/lib/payoutDocuments";
-import { normalizeBrandName, brandsMatch } from "@/lib/payouts";
+import { findDocumentWithData, isDocumentVisibleToClient } from "@/lib/payoutDocuments";
 import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
@@ -31,22 +30,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const { doc, fileData } = result;
 
   // Scope: the document's brand must match this client's brand (same matcher
-  // used to list the docs), so this route only serves *this* client's files.
-  const clientNorm = normalizeBrandName(user.payoutBrand ?? user.displayName);
-  if (!clientNorm || !brandsMatch(clientNorm, doc.normalizedBrand)) {
+  // used to list the docs) with cross-book isolation, so this route only
+  // serves *this* client's files (see isDocumentVisibleToClient).
+  if (!isDocumentVisibleToClient(user, doc)) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
-  }
-
-  // Cross-book isolation (mirrors the list route): a non-main client serves
-  // documents filed under its own book, or whose brand EXACTLY matches the
-  // internally-managed payout-brand link (deal imports / Payout Tracker
-  // uploads land under 'main'). Fuzzy display-name matches never cross books.
-  if (user.workspace !== "main") {
-    const linkNorm = user.payoutBrand ? normalizeBrandName(user.payoutBrand) : "";
-    const exactLinked = linkNorm !== "" && doc.normalizedBrand === linkNorm;
-    if (!exactLinked && doc.workspace !== user.workspace) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    }
   }
 
   // RFC 5987 encoding for non-ASCII filenames

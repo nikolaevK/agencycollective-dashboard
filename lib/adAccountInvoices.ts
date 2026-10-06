@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto";
 import { getDb, ensureMigrated } from "./db";
-import { decideAutoPaid } from "./clientRebillInvoices";
+import { allocateAutoPaid, decideAutoPaid, parseCcEmails } from "./clientRebillInvoices";
 import type { AdInvoiceType } from "./adAccountInvoice";
 import type { Row } from "@libsql/client";
 import {
   manualFieldsFromRow,
   EMPTY_MANUAL_FIELDS,
+  getConsumedPayoutMonthsByKey,
   type InvoiceManualFields,
 } from "./invoiceManualOverride";
 
@@ -46,6 +47,10 @@ export interface AdAccountInvoice extends InvoiceManualFields {
   markedUnpaidAt: string | null;
   markedUnpaidByAdminId: string | null;
   markedUnpaidReason: string | null;
+  /** CC list of the original send (empty for registered/legacy rows). */
+  ccEmails: string[];
+  /** Agency Profile used as the invoice/email style (null = default AC). */
+  styleProfileId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,6 +104,9 @@ function rowToInvoice(row: Row): AdAccountInvoice {
         : null,
     markedUnpaidReason:
       row.marked_unpaid_reason != null ? String(row.marked_unpaid_reason) : null,
+    ccEmails: parseCcEmails(row.cc_emails),
+    styleProfileId:
+      row.style_profile_id != null ? String(row.style_profile_id) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
     ...manualFieldsFromRow(row),
@@ -134,6 +142,21 @@ export async function getSentInvoicesByAdAccount(): Promise<
     else map.set(inv.adAccountId, [inv]);
   }
   return map;
+}
+
+/** Every still-sent invoice of one ad account, newest first. */
+export async function getSentInvoicesForAdAccount(
+  adAccountId: string
+): Promise<AdAccountInvoice[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT * FROM ad_account_invoices
+          WHERE ad_account_id = ? AND status = 'sent'
+          ORDER BY sent_at DESC, created_at DESC`,
+    args: [adAccountId],
+  });
+  return result.rows.map(rowToInvoice);
 }
 
 /** Every invoice (all statuses) for one ad account, newest first. */
@@ -205,21 +228,33 @@ export interface CreateAdAccountInvoiceInput {
   recipientEmail?: string | null;
   sentByAdminId?: string | null;
   sentAt?: string;
+  /** CC list of the send — kept so a follow-up reaches the same people. */
+  ccEmails?: string[];
+  /** Agency Profile used as the invoice/email style (null = default AC). */
+  styleProfileId?: string | null;
   /**
-   * Whether to supersede the account's prior active `sent` invoice (default
-   * true — a fresh send replaces the current one). Backfilling a historical /
-   * backdated invoice passes false so it's recorded alongside the current one
-   * rather than demoting it.
+   * Whether to supersede the account's still-sent invoice(s) for the SAME
+   * cycle (default true — a re-send for a cycle replaces that cycle's
+   * record). Backfilling a historical / backdated invoice passes false so it's
+   * recorded alongside whatever is there. Other cycles are never touched.
    */
   supersede?: boolean;
+  /**
+   * Still-sent invoices (of THIS account, any cycle) the admin explicitly
+   * chose to replace — e.g. a corrected re-send after the cycle moved.
+   * Superseded in the same atomic batch; other accounts' ids are ignored.
+   */
+  replaceInvoiceIds?: string[];
 }
 
 /**
  * Create a sent ad-account invoice. When tied to an ad account, atomically
- * supersedes any prior `sent` row for the SAME account (a re-send mid-cycle
- * replaces the record) — unless `supersede: false` (backdated backfill).
- * Free invoices (no ad_account_id) are standalone and never supersede. Returns
- * the new row.
+ * supersedes any prior `sent` row for the SAME account AND cycle (a re-send
+ * mid-cycle replaces that cycle's record) — unless `supersede: false`
+ * (backdated backfill). Still-sent invoices for OTHER cycles keep their
+ * status: superseded is terminal, and sweeping every sent row used to destroy
+ * a registered backfill the moment the current cycle was sent. Free invoices
+ * (no ad_account_id) are standalone and never supersede. Returns the new row.
  */
 export async function createAdAccountInvoice(
   input: CreateAdAccountInvoiceInput
@@ -230,14 +265,16 @@ export async function createAdAccountInvoice(
   const now = new Date().toISOString();
   const sentAt = input.sentAt ?? now;
   const amountCents = Math.max(0, Math.round(input.amountCents));
+  const ccEmails = input.ccEmails ?? [];
 
   const insert = {
     sql: `INSERT INTO ad_account_invoices (
             id, ad_account_id, user_id, brand, invoice_number, invoice_type,
             payout_document_id, cycle_anchor, amount_cents, spend_cents, fee_bps,
             recipient_email, sent_at, sent_by_admin_id, status,
+            cc_emails, style_profile_id,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
     args: [
       id,
       input.adAccountId ?? null,
@@ -253,24 +290,34 @@ export async function createAdAccountInvoice(
       input.recipientEmail ?? null,
       sentAt,
       input.sentByAdminId ?? null,
+      ccEmails.length > 0 ? JSON.stringify(ccEmails) : null,
+      input.styleProfileId ?? null,
       now,
       now,
     ],
   };
 
+  const statements = [];
   if (input.adAccountId && input.supersede !== false) {
-    await db.batch(
-      [
-        {
-          sql: `UPDATE ad_account_invoices
-                SET status = 'superseded', reconcile_locked = 0, updated_at = ?
-                WHERE ad_account_id = ? AND status = 'sent'`,
-          args: [now, input.adAccountId],
-        },
-        insert,
-      ],
-      "write"
-    );
+    statements.push({
+      sql: `UPDATE ad_account_invoices
+            SET status = 'superseded', reconcile_locked = 0, updated_at = ?
+            WHERE ad_account_id = ? AND status = 'sent' AND cycle_anchor = ?`,
+      args: [now, input.adAccountId, input.cycleAnchor],
+    });
+  }
+  const replaceIds = [...new Set(input.replaceInvoiceIds ?? [])];
+  if (input.adAccountId && replaceIds.length > 0) {
+    statements.push({
+      sql: `UPDATE ad_account_invoices
+            SET status = 'superseded', reconcile_locked = 0, updated_at = ?
+            WHERE ad_account_id = ? AND status = 'sent'
+              AND id IN (${replaceIds.map(() => "?").join(", ")})`,
+      args: [now, input.adAccountId, ...replaceIds],
+    });
+  }
+  if (statements.length > 0) {
+    await db.batch([...statements, insert], "write");
   } else {
     await db.execute(insert);
   }
@@ -297,6 +344,8 @@ export async function createAdAccountInvoice(
     markedUnpaidAt: null,
     markedUnpaidByAdminId: null,
     markedUnpaidReason: null,
+    ccEmails,
+    styleProfileId: input.styleProfileId ?? null,
     createdAt: now,
     updatedAt: now,
     ...EMPTY_MANUAL_FIELDS,
@@ -325,15 +374,18 @@ export async function markInvoiceUnpaid(
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** Auto-promote a sent invoice to paid — called by the reconciliation pass. */
+/**
+ * Auto-promote a sent invoice to paid — called by the reconciliation pass.
+ * Returns whether the guarded UPDATE actually transitioned the row.
+ */
 async function markInvoicePaid(
   id: string,
   payoutMonth: number,
   payoutYear: number
-): Promise<void> {
+): Promise<boolean> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db.execute({
+  const result = await db.execute({
     sql: `UPDATE ad_account_invoices
           SET status = 'paid',
               paid_at = ?,
@@ -344,6 +396,7 @@ async function markInvoicePaid(
           WHERE id = ? AND status = 'sent' AND reconcile_locked = 0`,
     args: [now, payoutMonth, payoutYear, now, id],
   });
+  return (result.rowsAffected ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +422,9 @@ export async function reconcileInvoiceForAdAccount(
   if (!promote) return invoice;
 
   try {
-    await markInvoicePaid(invoice.id, promote.month, promote.year);
+    // Nothing written (row changed concurrently) → don't report it as paid.
+    if (!(await markInvoicePaid(invoice.id, promote.month, promote.year)))
+      return invoice;
   } catch (err) {
     console.warn("[ad-account-invoice] auto-paid promotion failed:", err);
     return invoice;
@@ -382,4 +437,37 @@ export async function reconcileInvoiceForAdAccount(
     paidPayoutYear: promote.year,
     paidSource: "auto",
   };
+}
+
+/**
+ * Reconcile ALL of one account's open invoices together — one "Ad Account"
+ * payout settles at most one of them (see allocateAutoPaid). Used by the
+ * directory build and every route that re-runs reconciliation.
+ * `consumedMonths` = payout months the account's paid invoices already used;
+ * when omitted they are read for this account (the directory passes its bulk
+ * read instead).
+ */
+export async function reconcileInvoicesForAdAccount(
+  invoices: AdAccountInvoice[],
+  payoutMonths: Array<{ year: number; month: number }>,
+  consumedMonths?: Array<{ year: number; month: number }>
+): Promise<AdAccountInvoice[]> {
+  const open = invoices.filter((i) => i.status === "sent");
+  if (open.length === 0) return invoices;
+  const accountId = open[0].adAccountId;
+  const consumed =
+    consumedMonths ??
+    (accountId
+      ? (
+          await getConsumedPayoutMonthsByKey("ad_account_invoices", "ad_account_id", accountId)
+        ).get(accountId)
+      : undefined) ??
+    [];
+  const alloc = allocateAutoPaid(open, payoutMonths, consumed);
+  return Promise.all(
+    invoices.map(async (inv) => {
+      const month = alloc.get(inv.id);
+      return (await reconcileInvoiceForAdAccount(inv, month ? [month] : [])) ?? inv;
+    })
+  );
 }

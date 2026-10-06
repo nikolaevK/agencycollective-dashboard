@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import {
   findRebillInvoice,
-  reconcileInvoiceForUser,
+  getSentInvoicesForUser,
+  reconcileInvoicesForUser,
 } from "@/lib/clientRebillInvoices";
 import {
   applyManualInvoiceUpdate,
@@ -84,9 +85,15 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       paidPayout,
       note: body.note,
       resync: body.resync,
+      // Only write if the row still has the status pre-flighted above — a
+      // concurrent re-send may have superseded it in between.
+      expectedStatus: invoice.status,
     });
     if (!ok)
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invoice changed since you opened it — refresh and try again" },
+        { status: 409 }
+      );
 
     let updated = await findRebillInvoice(invoice.id);
 
@@ -94,10 +101,13 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     // reconciliation right away so a matching payment settles it at once.
     if (body.resync && updated) {
       try {
-        updated = await reconcileInvoiceForUser(
-          updated,
+        // Alongside the client's other open invoices, so one payout month
+        // can't settle this row AND another one (allocateAutoPaid).
+        const reconciled = await reconcileInvoicesForUser(
+          await getSentInvoicesForUser(user.id),
           await qualifyingMonthsForUser(user)
         );
+        updated = reconciled.find((i) => i.id === updated!.id) ?? updated;
       } catch {
         // best-effort — the directory build reconciles on next read
       }

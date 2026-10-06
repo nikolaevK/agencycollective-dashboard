@@ -17,7 +17,8 @@ import {
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import {
   createAdAccountInvoice,
-  reconcileInvoiceForAdAccount,
+  getSentInvoicesForAdAccount,
+  reconcileInvoicesForAdAccount,
 } from "@/lib/adAccountInvoices";
 import { adInvoiceType, computeAdSpendFeeCents } from "@/lib/adAccountInvoice";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
@@ -96,7 +97,8 @@ export async function POST(
         return fail("invalid_request", "sentAt must be yyyy-mm-dd", 400);
       }
       const probe = new Date(`${sentDate}T12:00:00Z`);
-      if (isNaN(probe.getTime())) {
+      // Real calendar date only — "2026-02-31" would roll into March.
+      if (isNaN(probe.getTime()) || probe.toISOString().slice(0, 10) !== sentDate) {
         return fail("invalid_request", "sentAt is not a real date", 400);
       }
       sentAt = probe.toISOString();
@@ -206,7 +208,12 @@ export async function POST(
           )
             months.push(...arr);
         }
-        await reconcileInvoiceForAdAccount(invoice, months);
+        // Alongside the account's other open invoices — one payout month
+        // settles at most one of them.
+        await reconcileInvoicesForAdAccount(
+          await getSentInvoicesForAdAccount(account.id),
+          months
+        );
       } catch {
         // best-effort — the directory build will reconcile on next read
       }

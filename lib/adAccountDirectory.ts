@@ -12,11 +12,15 @@ import {
 } from "./clientBilling";
 import {
   getSentInvoicesByAdAccount,
-  reconcileInvoiceForAdAccount,
+  reconcileInvoicesForAdAccount,
   type AdAccountInvoice,
 } from "./adAccountInvoices";
+import { pickActiveSentInvoice } from "./clientRebillInvoices";
 import { listAdAccounts, type AdAccountStatus } from "./adAccounts";
-import { getPaidCycleMonthsByKey } from "./invoiceManualOverride";
+import {
+  getConsumedPayoutMonthsByKey,
+  getPaidCycleMonthsByKey,
+} from "./invoiceManualOverride";
 import { businessToday } from "./businessTime";
 import { inWorkspaceScope, type WorkspaceScope } from "./workspaces";
 
@@ -49,7 +53,10 @@ export interface AdAccountDirectoryRow {
   matchedBrand: string | null;
   // Billing schedule (monthly, same engine as client re-bill)
   schedule: RebillSchedule;
+  /** The current cycle's awaiting invoice, else the newest awaiting one. */
   activeSentInvoice: AdAccountInvoice | null;
+  /** Every still-sent (reconciled) invoice for the account, newest first. */
+  sentInvoices: AdAccountInvoice[];
 }
 
 export interface AdAccountSummary {
@@ -112,14 +119,21 @@ export async function buildAdAccountDirectory(
   // clock — otherwise statuses/dates flip a day early every evening (PT) and the
   // recomputed `nextRebillAt` won't match a just-sent invoice's `cycle_anchor`.
   const t = today ?? businessToday();
-  const [allAccounts, users, adAccountMonthsMap, sentByAccount, paidCycleByAccount] =
-    await Promise.all([
-      listAdAccounts(),
-      readUsers(),
-      getAdAccountPayoutMonthsByBrand(),
-      getSentInvoicesByAdAccount(),
-      getPaidCycleMonthsByKey("ad_account_invoices", "ad_account_id"),
-    ]);
+  const [
+    allAccounts,
+    users,
+    adAccountMonthsMap,
+    sentByAccount,
+    paidCycleByAccount,
+    consumedByAccount,
+  ] = await Promise.all([
+    listAdAccounts(),
+    readUsers(),
+    getAdAccountPayoutMonthsByBrand(),
+    getSentInvoicesByAdAccount(),
+    getPaidCycleMonthsByKey("ad_account_invoices", "ad_account_id"),
+    getConsumedPayoutMonthsByKey("ad_account_invoices", "ad_account_id"),
+  ]);
   const accounts = allAccounts.filter((a) => inWorkspaceScope(scope, a.workspace));
 
   const usersById = new Map<string, UserRecord>();
@@ -147,16 +161,19 @@ export async function buildAdAccountDirectory(
       // LIMITATION: matching is per-brand (the payout's Sales Rep flags it as an
       // "Ad Account" payment for the brand, but carries no per-account id). When
       // a brand has multiple ad accounts, a single ad-account payout satisfies
-      // every one of that brand's sent invoices — correct when one payment
+      // one sent invoice on each of that brand's accounts — correct when one payment
       // covers them all, but it can't attribute a payment to a single account.
       // This mirrors the per-brand REBILL reconciliation; the common case (one
       // ad account per client) is exact.
       const sentList = sentByAccount.get(acct.id) ?? [];
-      const reconciled = await Promise.all(
-        sentList.map((inv) => reconcileInvoiceForAdAccount(inv, payoutMonths))
+      // Together, so one payout settles at most one open invoice — and minus
+      // the payouts this account's paid invoices already used.
+      const reconciled = await reconcileInvoicesForAdAccount(
+        sentList,
+        payoutMonths,
+        consumedByAccount.get(acct.id) ?? []
       );
-      // Newest still-sent invoice drives the schedule's invoice_sent status.
-      const invoice = reconciled.find((i) => i && i.status === "sent") ?? null;
+      const stillSent = reconciled.filter((i) => i.status === "sent");
 
       // Billing starts when the account is assigned → anchor on its createdAt.
       // Per-account schedule controls (pause / billing day / lead / extend /
@@ -176,10 +193,6 @@ export async function buildAdAccountDirectory(
         createdAt: acct.createdAt,
         updatedAt: acct.updatedAt,
       };
-      const sentForSchedule =
-        invoice && invoice.status === "sent"
-          ? { cycleAnchor: invoice.cycleAnchor }
-          : null;
       // Schedule months = payouts PLUS the cycle months of paid invoices, so a
       // cycle an admin settled by hand advances the next bill and shows `paid`
       // like a payout-recognised one (lib/invoiceManualOverride.ts). Invoice
@@ -197,8 +210,12 @@ export async function buildAdAccountDirectory(
         // account shows `paid` until the next bill once one lands.
         paidMonths: scheduleMonths,
         today: t,
-        activeSentInvoice: sentForSchedule,
+        // ANY still-sent invoice anchored to the current cycle lights
+        // `invoice_sent` — picking the newest by send time let a backfill or
+        // an other-cycle send hide the current cycle's invoice.
+        sentCycleAnchors: stillSent.map((i) => i.cycleAnchor),
       });
+      const invoice = pickActiveSentInvoice(stillSent, schedule.nextRebillAt);
 
       return {
         id: acct.id,
@@ -221,8 +238,8 @@ export async function buildAdAccountDirectory(
         clientEmail: client?.email ?? null,
         matchedBrand,
         schedule,
-        activeSentInvoice:
-          invoice && invoice.status === "sent" ? invoice : null,
+        activeSentInvoice: invoice,
+        sentInvoices: stillSent,
       } satisfies AdAccountDirectoryRow;
     })
   );

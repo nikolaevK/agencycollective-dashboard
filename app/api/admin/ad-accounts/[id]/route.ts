@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
+import { parseBillingDateInput } from "@/lib/clientBilling";
 import { getAdAccount, updateAdAccount, deleteAdAccount } from "@/lib/adAccounts";
 import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
 import { inWorkspaceScope } from "@/lib/workspaces";
@@ -64,11 +65,20 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   if ("billingDay" in body)
     changes.billingDay = typeof body.billingDay === "number" ? body.billingDay : null;
   if (typeof body.leadDays === "number") changes.leadDays = body.leadDays;
-  if ("extendUntil" in body)
-    changes.extendUntil = typeof body.extendUntil === "string" ? body.extendUntil : null;
-  if ("lastBilledOverride" in body)
-    changes.lastBilledOverride =
-      typeof body.lastBilledOverride === "string" ? body.lastBilledOverride : null;
+  // Schedule dates must be real yyyy-mm-dd (or null/"" to clear) — anything
+  // else used to be stored and then mis-read by the engine.
+  if ("extendUntil" in body) {
+    const v = parseBillingDateInput(body.extendUntil);
+    if (!v.ok)
+      return NextResponse.json({ error: "extendUntil must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+    changes.extendUntil = v.value ?? null;
+  }
+  if ("lastBilledOverride" in body) {
+    const v = parseBillingDateInput(body.lastBilledOverride);
+    if (!v.ok)
+      return NextResponse.json({ error: "lastBilledOverride must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+    changes.lastBilledOverride = v.value ?? null;
+  }
 
   await updateAdAccount(params.id, changes);
   const updated = await getAdAccount(params.id);

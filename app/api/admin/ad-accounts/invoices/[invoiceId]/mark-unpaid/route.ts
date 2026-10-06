@@ -4,8 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { ensureMigrated } from "@/lib/db";
 import { findAdAccountInvoice, markInvoiceUnpaid } from "@/lib/adAccountInvoices";
-import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
-import { isExternalScope } from "@/lib/workspaces";
+import { requireDirectoryActor, findAdInvoiceAccountInScope } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
   params: { invoiceId: string };
@@ -24,12 +23,9 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   // Workspace scoping: invoices of out-of-book accounts read as not-found;
   // free invoices (no account) are internal-only.
-  if (invoice.adAccountId) {
-    if (!(await findAdAccountInScope(actor.scope, invoice.adAccountId)))
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  } else if (isExternalScope(actor.scope)) {
+  // (Orphans of a deleted account count as free invoices.)
+  if (!(await findAdInvoiceAccountInScope(actor.scope, invoice)).ok)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  }
   if (invoice.status !== "sent")
     return NextResponse.json(
       { error: `Cannot mark unpaid — invoice is ${invoice.status}` },

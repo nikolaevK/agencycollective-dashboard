@@ -81,6 +81,13 @@ export interface ManualInvoiceUpdate {
    * Mutually exclusive with `status` / `paidPayout`.
    */
   resync?: boolean;
+  /**
+   * The status the caller pre-flighted (`manualUpdateConflict`) against. When
+   * set, the UPDATE only lands if the row still has it — otherwise a send
+   * that superseded the row in between would have it resurrected as
+   * paid/sent (two live invoices for one cycle). 0 rows → caller answers 409.
+   */
+  expectedStatus?: "sent" | "paid" | "unpaid" | "superseded";
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -109,7 +116,8 @@ export function manualUpdateConflict(
 /**
  * Apply an admin override to one invoice row. Every manual status set (and a
  * payout link) locks the row against auto-reconciliation; `resync` unlocks
- * it. Returns false when no row matched the id.
+ * it. Returns false when no row matched the id (or, with `expectedStatus`,
+ * when the row's status changed since the caller read it).
  */
 export async function applyManualInvoiceUpdate(
   table: InvoiceTable,
@@ -217,12 +225,55 @@ export async function applyManualInvoiceUpdate(
   fields.push("updated_at = ?");
   args.push(now);
   args.push(id);
+  let where = "id = ?";
+  if (update.expectedStatus) {
+    where += " AND status = ?";
+    args.push(update.expectedStatus);
+  }
 
   const result = await db.execute({
-    sql: `UPDATE ${table} SET ${fields.join(", ")} WHERE id = ?`,
+    sql: `UPDATE ${table} SET ${fields.join(", ")} WHERE ${where}`,
     args,
   });
   return (result.rowsAffected ?? 0) > 0;
+}
+
+/**
+ * Payout months already USED to settle an invoice — `paid_payout_month/year`
+ * of every PAID row (auto-promoted, payout-linked, or legacy auto rows with no
+ * source), grouped by the owning key. Reconciliation removes these from the
+ * payout pool before allocating (allocateAutoPaid): otherwise a payment that
+ * settled October goes back into the pool on the next pass — October is no
+ * longer open — and settles a still-owed September too. Hand-settled rows
+ * without a payout (`paid_source='manual'`) have no payout month and consume
+ * nothing. `onlyKey` narrows the read to one owner.
+ */
+export async function getConsumedPayoutMonthsByKey(
+  table: InvoiceTable,
+  keyColumn: "user_id" | "ad_account_id",
+  onlyKey?: string
+): Promise<Map<string, Array<{ year: number; month: number }>>> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT ${keyColumn} AS k, paid_payout_year AS y, paid_payout_month AS m
+          FROM ${table}
+          WHERE status = 'paid' AND ${keyColumn} IS NOT NULL
+            AND paid_payout_year IS NOT NULL AND paid_payout_month IS NOT NULL
+            ${onlyKey !== undefined ? `AND ${keyColumn} = ?` : ""}`,
+    args: onlyKey !== undefined ? [onlyKey] : [],
+  });
+  const map = new Map<string, Array<{ year: number; month: number }>>();
+  for (const row of result.rows) {
+    const key = row.k != null ? String(row.k) : "";
+    const year = Number(row.y);
+    const month = Number(row.m);
+    if (!key || !Number.isFinite(year) || !Number.isFinite(month)) continue;
+    const arr = map.get(key);
+    if (arr) arr.push({ year, month });
+    else map.set(key, [{ year, month }]);
+  }
+  return map;
 }
 
 /**

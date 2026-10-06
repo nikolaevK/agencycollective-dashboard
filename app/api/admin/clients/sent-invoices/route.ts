@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
 import { requireDirectoryActor } from "@/lib/api/requireAdmin";
+import { withFollowUpSummaries } from "@/lib/invoiceFollowUps";
 
 /**
  * Live-computed list of clients with a re-bill invoice currently awaiting
@@ -27,15 +28,11 @@ export async function GET() {
   const invoices = rows
     // Inactive/archived clients drop out of the awaiting-payment count/panel
     // (mirrors the rebill-alerts exclusion) — their row keeps the invoice.
-    .filter(
-      (r) =>
-        r.activeSentInvoice !== null &&
-        r.status !== "inactive" &&
-        r.status !== "archived"
-    )
-    .map((r) => {
-      const inv = r.activeSentInvoice!;
-      return {
+    .filter((r) => r.status !== "inactive" && r.status !== "archived")
+    // EVERY awaiting invoice, not just the client's current one — an earlier
+    // cycle still unpaid must stay visible (and chaseable) here.
+    .flatMap((r) =>
+      r.sentInvoices.map((inv) => ({
         id: inv.id,
         userId: r.id,
         clientName: r.displayName,
@@ -46,14 +43,24 @@ export async function GET() {
         amountCents: inv.amountCents,
         sentAt: inv.sentAt,
         recipientEmail: inv.recipientEmail,
-      };
-    })
+        // Follow-up inputs: the filed PDF, original CCs + style.
+        payoutDocumentId: inv.payoutDocumentId,
+        ccEmails: inv.ccEmails,
+        styleProfileId: inv.styleProfileId,
+        status: inv.status,
+        /** Anchored to the client's current cycle (drives "Invoice sent"). */
+        isCurrentCycle: inv.cycleAnchor === r.schedule.nextRebillAt,
+      }))
+    )
     .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
+
+  // Each row carries its follow-up summary (count + latest touch).
+  const withFollowUps = await withFollowUpSummaries("client_rebill", invoices);
 
   return NextResponse.json({
     data: {
-      invoices,
-      count: invoices.length,
+      invoices: withFollowUps,
+      count: withFollowUps.length,
     },
   });
 }

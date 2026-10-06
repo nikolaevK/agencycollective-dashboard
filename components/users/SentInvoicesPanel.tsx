@@ -13,7 +13,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
+import type { FollowUpSummary } from "@/lib/invoiceFollowUpRules";
 import { formatDate } from "./format";
+import {
+  InvoiceFollowUpDialog,
+  FollowUpButton,
+  FollowUpSummaryText,
+} from "./InvoiceFollowUpDialog";
 
 interface SentInvoice {
   id: string;
@@ -26,6 +32,13 @@ interface SentInvoice {
   amountCents: number;
   sentAt: string;
   recipientEmail: string | null;
+  payoutDocumentId: string | null;
+  ccEmails: string[];
+  styleProfileId: string | null;
+  status: string;
+  /** Anchored to the client's current cycle (vs. an earlier one still owed). */
+  isCurrentCycle: boolean;
+  followUps: FollowUpSummary;
 }
 
 export interface SentInvoicesData {
@@ -92,6 +105,7 @@ export function SentInvoicesPanel({
   const { data, isLoading, isError, isFetching, refetch } = useSentInvoices();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [followUpInv, setFollowUpInv] = useState<SentInvoice | null>(null);
 
   // A failed load must not read as "nothing sent" (the panel used to vanish).
   if (isError && !data) {
@@ -152,12 +166,14 @@ export function SentInvoicesPanel({
     setBusyId(inv.id);
     setRowError(null);
     try {
+      // Same path as the Billing tab + Manage panel: sets the manual lock (so
+      // "Resync with payouts" is offered later) and writes an audit row.
       const res = await fetch(
-        `/api/admin/clients/${inv.userId}/rebill-invoices/${inv.id}/mark-unpaid`,
+        `/api/admin/clients/${inv.userId}/rebill-invoices/${inv.id}`,
         {
-          method: "POST",
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ status: "unpaid" }),
         }
       );
       if (!res.ok) {
@@ -172,6 +188,7 @@ export function SentInvoicesPanel({
         queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
         queryClient.invalidateQueries({ queryKey: ["client-billing", inv.userId] }),
+        queryClient.invalidateQueries({ queryKey: ["client-rebill-invoices", inv.userId] }),
       ]);
     } catch (e) {
       console.error("[sent-invoices] mark-unpaid failed:", e);
@@ -226,6 +243,7 @@ export function SentInvoicesPanel({
                   error={rowError?.id === inv.id ? rowError.message : null}
                   onOpenClient={() => router.push(`/dashboard/users/${inv.userId}`)}
                   onMarkUnpaid={() => handleMarkUnpaid(inv)}
+                  onFollowUp={() => setFollowUpInv(inv)}
                 />
               ))}
             </Section>
@@ -240,11 +258,27 @@ export function SentInvoicesPanel({
                   error={rowError?.id === inv.id ? rowError.message : null}
                   onOpenClient={() => router.push(`/dashboard/users/${inv.userId}`)}
                   onMarkUnpaid={() => handleMarkUnpaid(inv)}
+                  onFollowUp={() => setFollowUpInv(inv)}
                 />
               ))}
             </Section>
           )}
         </div>
+      )}
+
+      {followUpInv && (
+        <InvoiceFollowUpDialog
+          invoice={followUpInv}
+          subjectName={followUpInv.clientName}
+          endpoint={`/api/admin/clients/${followUpInv.userId}/rebill-invoices/${followUpInv.id}/follow-ups`}
+          onClose={() => setFollowUpInv(null)}
+          onRecorded={() => {
+            queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
+            queryClient.invalidateQueries({
+              queryKey: ["client-rebill-invoices", followUpInv.userId],
+            });
+          }}
+        />
       )}
     </div>
   );
@@ -273,6 +307,7 @@ function InvoiceRow({
   error,
   onOpenClient,
   onMarkUnpaid,
+  onFollowUp,
 }: {
   inv: SentInvoice;
   busy: boolean;
@@ -280,6 +315,7 @@ function InvoiceRow({
   error: string | null;
   onOpenClient: () => void;
   onMarkUnpaid: () => void;
+  onFollowUp: () => void;
 }) {
   return (
     <div className="rounded-lg border border-border/50 bg-card px-3 py-2.5">
@@ -300,12 +336,18 @@ function InvoiceRow({
             <p className="text-xs text-muted-foreground truncate">
               {inv.invoiceNumber} · sent {formatDate(inv.sentAt)} · cycle{" "}
               {formatDate(inv.cycleAnchor)}
+              {!inv.isCurrentCycle && (
+                <span className="ml-1 font-semibold text-amber-600 dark:text-amber-400">
+                  (not current cycle)
+                </span>
+              )}
             </p>
             {inv.recipientEmail && (
               <p className="text-[11px] text-muted-foreground truncate">
                 to {inv.recipientEmail}
               </p>
             )}
+            <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
           </div>
           {inv.amountCents > 0 && (
             <span className="text-sm font-semibold text-foreground shrink-0">
@@ -313,13 +355,14 @@ function InvoiceRow({
             </span>
           )}
         </button>
+        <FollowUpButton onClick={onFollowUp} className="ml-auto" />
         <button
           type="button"
           onClick={onMarkUnpaid}
           disabled={busy}
           title="Mark this period as unpaid (historical marker — schedule unaffected)"
           className={cn(
-            "ml-auto flex h-9 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 sm:h-auto",
+            "flex h-9 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 sm:h-auto",
             error
               ? "border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
               : "border-border/60 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10",

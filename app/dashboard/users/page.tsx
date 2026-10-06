@@ -57,7 +57,11 @@ function applyFilters(clients: ClientPublic[], f: ClientFilterState): ClientPubl
   return clients.filter((c) => {
     if (f.status !== "all" && c.status !== f.status) return false;
     if (f.category && c.category !== f.category) return false;
-    if (f.rebill !== "all" && c.schedule.status !== f.rebill) return false;
+    // PepAds rows show MANUAL billing chips, not the computed status — a
+    // computed-status filter must not match them (the row would read e.g.
+    // "Overdue" in the filter but show its manual chip in the table).
+    if (f.rebill !== "all" && (c.profile.book === "pepads" || c.schedule.status !== f.rebill))
+      return false;
 
     // Roster filters
     if (f.book !== "all" && c.profile.book !== f.book) return false;
@@ -216,7 +220,7 @@ export default function UsersPage() {
   });
 
   // Shared with the alerts panel via the same query key (deduped).
-  const { data: alerts } = useRebillAlerts();
+  const { data: alerts, isError: alertsError } = useRebillAlerts();
   // Same dedupe pattern — feeds the summary card + the SentInvoicesPanel.
   const { data: sentInvoices } = useSentInvoices();
 
@@ -378,7 +382,7 @@ export default function UsersPage() {
               totalClients={workspaceClients.length}
               activeClients={activeClients}
               totalMrr={totalMrr}
-              rebillsDue={visibleRebills.length}
+              rebillsDue={alertsError && !alerts ? null : visibleRebills.length}
               overdueCount={visibleRebills.filter((r) => r.status === "overdue").length}
               sentInvoices={visibleSentInvoices.length}
               onRebillsClick={() => setAlertsOpen(true)}

@@ -37,6 +37,7 @@ import type {
 import { buildAdAccountLineItems } from "@/lib/adAccountLineItem";
 import { cycleOptionsAround } from "@/lib/clientBilling";
 import { formatDate } from "./format";
+import { splitOpenInvoices, type OpenInvoiceRef } from "./openInvoices";
 
 function todayYmd(): string {
   const t = new Date();
@@ -83,6 +84,8 @@ export interface AdAccountInvoiceTarget {
   /** The account's computed next bill date — default billing cycle for the
    *  invoice; the drawer lets the admin pick a previous/future cycle. */
   nextRebillAt?: string | null;
+  /** The account's invoices still awaiting payment (any cycle). */
+  openInvoices?: OpenInvoiceRef[];
 }
 
 interface Props {
@@ -126,6 +129,19 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
   // computed next cycle (previous behaviour); any date overrides it.
   const [cycleAnchor, setCycleAnchor] = useState("");
   const cycleChoices = adAccount?.nextRebillAt ? cycleOptionsAround(adAccount.nextRebillAt) : [];
+  // The account's awaiting invoices against the cycle this send is recorded
+  // under: same cycle → replaced by the send; other cycles → kept unless
+  // ticked, same-month ones pre-ticked (the cycle date moved — a re-issue).
+  const openSplit = splitOpenInvoices(
+    adAccount?.openInvoices ?? [],
+    cycleAnchor || adAccount?.nextRebillAt || null
+  );
+  const [replaceIds, setReplaceIds] = useState<string[]>(openSplit.sameMonthIds);
+  const sameMonthKey = openSplit.sameMonthIds.join(",");
+  // Re-seeded whenever the chosen cycle (or the open list) changes.
+  useEffect(() => {
+    setReplaceIds(sameMonthKey ? sameMonthKey.split(",") : []);
+  }, [sameMonthKey]);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "download" | "send" | "save">(null);
@@ -545,6 +561,8 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
       // already sent or rejected).
       if (draftId) fd.set("draftId", draftId);
       for (const c of finalCcs) fd.append("cc", c);
+      for (const id of replaceIds)
+        if (openSplit.others.some((i) => i.id === id)) fd.append("replaceInvoiceId", id);
       for (const file of attach.attachments) fd.append("attachments", file);
 
       const res = await fetch("/api/admin/ad-accounts/invoice/send", {
@@ -569,6 +587,8 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
       // otherwise stay stale until their own refetch.
       queryClient.invalidateQueries({ queryKey: ["admin-ad-account-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["admin-ad-account-sent-invoices"] });
+      // The filed PDF also shows in the client's Documents tab.
+      queryClient.invalidateQueries({ queryKey: ["client-documents"] });
       if (draftId) queryClient.invalidateQueries({ queryKey: ["invoice-drafts"] });
       onSent();
       if (ok) closeTimer.current = setTimeout(close, 1800);
@@ -865,10 +885,54 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
                     )}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Which monthly cycle this invoice covers. The default replaces the account&rsquo;s
-                    current awaiting invoice (a re-send) and lights &ldquo;Invoice sent&rdquo;. Any
-                    other cycle is recorded alongside it — for a delayed or upcoming month.
+                    Which monthly cycle this invoice covers. It replaces only an awaiting invoice
+                    for the SAME cycle (a re-send); the default cycle lights &ldquo;Invoice
+                    sent&rdquo;. Any other cycle is recorded alongside — for a delayed or upcoming
+                    month.
                   </p>
+                  {(openSplit.replaced.length > 0 || openSplit.others.length > 0) && (
+                    <div className="mt-2 space-y-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-xs">
+                      {openSplit.replaced.map((i) => (
+                        <p key={i.id} className="text-amber-700 dark:text-amber-400">
+                          Replaces <span className="font-semibold">{i.invoiceNumber}</span> (sent{" "}
+                          {formatDate(i.sentAt)} for this cycle) — it stays in history as
+                          Superseded. To chase payment instead, use Follow up in the account&rsquo;s
+                          Invoices.
+                        </p>
+                      ))}
+                      {openSplit.others.length > 0 && (
+                        <>
+                          <p className="text-muted-foreground">
+                            Also awaiting payment — kept as-is unless this invoice re-issues one
+                            {openSplit.sameMonthIds.length > 0 &&
+                              " (same-month invoices are pre-selected)"}
+                            :
+                          </p>
+                          {openSplit.others.map((i) => (
+                            <label key={i.id} className="flex items-start gap-2 text-foreground">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={replaceIds.includes(i.id)}
+                                disabled={sent || busy !== null}
+                                onChange={(e) =>
+                                  setReplaceIds((ids) =>
+                                    e.target.checked ? [...ids, i.id] : ids.filter((x) => x !== i.id)
+                                  )
+                                }
+                              />
+                              <span>
+                                Replace <span className="font-semibold">{i.invoiceNumber}</span>{" "}
+                                <span className="text-muted-foreground">
+                                  (cycle {formatDate(i.cycleAnchor)}, sent {formatDate(i.sentAt)})
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

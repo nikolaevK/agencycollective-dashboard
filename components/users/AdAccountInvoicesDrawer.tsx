@@ -20,6 +20,12 @@ import {
   InvoiceProvenance,
   type OverridableInvoice,
 } from "./InvoiceOverridePanel";
+import {
+  InvoiceFollowUpDialog,
+  FollowUpButton,
+  FollowUpSummaryText,
+} from "./InvoiceFollowUpDialog";
+import { canFollowUp, type FollowUpSummary } from "@/lib/invoiceFollowUpRules";
 
 const FIELD =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
@@ -37,6 +43,9 @@ interface AccountInvoice extends OverridableInvoice {
   payoutDocumentId: string | null;
   sentAt: string;
   status: InvoiceStatus;
+  ccEmails: string[];
+  styleProfileId: string | null;
+  followUps?: FollowUpSummary;
 }
 
 const STATUS_STYLES: Record<InvoiceStatus, { label: string; cls: string }> = {
@@ -98,6 +107,7 @@ export function AdAccountInvoicesDrawer({
   const [registerDirty, setRegisterDirty] = useState(false);
   // Payout linking reads the ledger — hidden for external (partner) scopes.
   const { isExternal } = useAdmin();
+  const [followUpInv, setFollowUpInv] = useState<AccountInvoice | null>(null);
 
   function confirmDiscardRegister(): boolean {
     return (
@@ -238,6 +248,20 @@ export function AdAccountInvoicesDrawer({
                         )}
                       </p>
                       <InvoiceProvenance invoice={inv} />
+                      {canFollowUp(inv.status) ? (
+                        <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
+                      ) : (
+                        (inv.followUps?.count ?? 0) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setFollowUpInv(inv)}
+                            className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                          >
+                            {inv.followUps!.count} follow-up
+                            {inv.followUps!.count !== 1 ? "s" : ""} on record
+                          </button>
+                        )
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {inv.amountCents > 0 && (
@@ -256,6 +280,9 @@ export function AdAccountInvoicesDrawer({
                           <FileText className="h-3 w-3" />
                           PDF
                         </a>
+                      )}
+                      {canFollowUp(inv.status) && (
+                        <FollowUpButton onClick={() => setFollowUpInv(inv)} />
                       )}
                     </div>
                     <div className="basis-full">
@@ -277,6 +304,20 @@ export function AdAccountInvoicesDrawer({
           )}
         </div>
       </div>
+
+      {followUpInv && (
+        <InvoiceFollowUpDialog
+          invoice={followUpInv}
+          subjectName={accountName}
+          endpoint={`/api/admin/ad-accounts/invoices/${followUpInv.id}/follow-ups`}
+          fallbackEmail={defaultRecipientEmail}
+          onClose={() => setFollowUpInv(null)}
+          onRecorded={() => {
+            queryClient.invalidateQueries({ queryKey: ["admin-ad-account-invoices", accountId] });
+            queryClient.invalidateQueries({ queryKey: ["admin-ad-account-sent-invoices"] });
+          }}
+        />
+      )}
     </div>
   );
 }

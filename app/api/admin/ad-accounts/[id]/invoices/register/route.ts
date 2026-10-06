@@ -14,7 +14,8 @@ import {
 import { insertDocument, type PayoutDocument } from "@/lib/payoutDocuments";
 import {
   createAdAccountInvoice,
-  reconcileInvoiceForAdAccount,
+  getSentInvoicesForAdAccount,
+  reconcileInvoicesForAdAccount,
 } from "@/lib/adAccountInvoices";
 import { adInvoiceType, computeAdSpendFeeCents } from "@/lib/adAccountInvoice";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
@@ -84,7 +85,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       if (!DATE_RE.test(sentDate))
         return NextResponse.json({ error: "sentAt must be yyyy-mm-dd" }, { status: 400 });
       const probe = new Date(`${sentDate}T12:00:00Z`);
-      if (isNaN(probe.getTime()))
+      // Real calendar date only — "2026-02-31" would roll into March.
+      if (isNaN(probe.getTime()) || probe.toISOString().slice(0, 10) !== sentDate)
         return NextResponse.json({ error: "sentAt is not a real date" }, { status: 400 });
       sentAt = probe.toISOString();
     }
@@ -132,6 +134,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       if (!isPdf)
         return NextResponse.json({ error: "Only PDF uploads are allowed" }, { status: 400 });
       const buffer = Buffer.from(await pdfFile.arrayBuffer());
+      // Magic-byte check (as v1 does) — the type/extension are client-claimed,
+      // and this file is later served inline and re-attached to reminders.
+      if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-")
+        return NextResponse.json({ error: "Only PDF uploads are allowed" }, { status: 400 });
       const fileBrand = brand || account.accountName || "Ad Account";
       const anchor = sentDate || cycleAnchor;
       const m = anchor.match(/^(\d{4})-(\d{2})/);
@@ -157,7 +163,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       }
     }
 
-    const invoice = await createAdAccountInvoice({
+    let invoice = await createAdAccountInvoice({
       adAccountId: account.id,
       userId,
       brand,
@@ -188,7 +194,15 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
           )
             months.push(...arr);
         }
-        await reconcileInvoiceForAdAccount(invoice, months);
+        // Return the post-reconcile row so the UI doesn't show "sent" for an
+        // invoice that just settled.
+        // (Alongside the account's other open invoices — one payout month
+        // settles at most one of them.)
+        const reconciled = await reconcileInvoicesForAdAccount(
+          await getSentInvoicesForAdAccount(account.id),
+          months
+        );
+        invoice = reconciled.find((i) => i.id === invoice.id) ?? invoice;
       } catch {
         // best-effort — the directory build will reconcile on next read
       }

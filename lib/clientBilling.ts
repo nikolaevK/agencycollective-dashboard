@@ -1,4 +1,5 @@
 import { getDb, ensureMigrated } from "./db";
+import { isRealYmd } from "./businessTime";
 import type { Row } from "@libsql/client";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,14 @@ export function computeRebillSchedule(params: {
    */
   activeSentInvoice?: { cycleAnchor: string } | null;
   /**
+   * Cycle anchors of EVERY still-sent invoice (a client/account can hold
+   * several: an older cycle still awaiting payment, a backfill, a reopened
+   * row). ANY of them matching `nextRebillAt` promotes to `invoice_sent` —
+   * picking just the newest by send time let an other-cycle invoice hide the
+   * current cycle's. Combined with `activeSentInvoice` when both are given.
+   */
+  sentCycleAnchors?: string[];
+  /**
    * Months with a CONFIRMED qualifying payment (Ad-Account-flagged payout for ad
    * accounts; REBILL-flagged payout matching name + amount for clients). When
    * the latest such payment still covers today (its cycle hasn't elapsed), the
@@ -163,6 +172,10 @@ export function computeRebillSchedule(params: {
   paidMonths?: Array<{ year: number; month: number }>;
 }): RebillSchedule {
   const { anchorDate, billing, payoutMonths, activeSentInvoice } = params;
+  const sentAnchors = [
+    ...(params.sentCycleAnchors ?? []),
+    ...(activeSentInvoice ? [activeSentInvoice.cycleAnchor] : []),
+  ];
   const paidMonths = params.paidMonths ?? [];
   const today = toUtcMidnight(params.today ?? new Date());
 
@@ -281,9 +294,8 @@ export function computeRebillSchedule(params: {
     // the schedule) and is ignored. `paused`/`extended` keep precedence —
     // those are intentional exceptions to billing altogether.
     if (
-      activeSentInvoice &&
       next &&
-      activeSentInvoice.cycleAnchor === toIsoDate(next) &&
+      sentAnchors.includes(toIsoDate(next)) &&
       (status === "due" || status === "overdue" || status === "upcoming")
     ) {
       status = "invoice_sent";
@@ -338,6 +350,37 @@ export function cycleOptionsAround(
     const m = total - y * 12;
     return { offset, date: toIsoDate(billingDateFor(y, m, day)) };
   });
+}
+
+/**
+ * Parse a billing-schedule date field from a request body (extendUntil /
+ * lastRebilledOverride / lastBilledOverride): `undefined` = not provided,
+ * null/"" = clear, anything else must be a REAL calendar date — yyyy-mm-dd,
+ * or an ISO timestamp whose date part is used (exactly what the engine reads,
+ * and what older API callers sent). Unvalidated, a value like "June 5" fell
+ * back to `new Date("June 5")` (2001-06-05 — ~9,000 days overdue) and
+ * "2026-02-30" silently rolled over to March 2, moving the billing day.
+ */
+export function parseBillingDateInput(
+  value: unknown
+): { ok: true; value: string | null | undefined } | { ok: false } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== "string") return { ok: false };
+  const v = value.trim();
+  if (!v) return { ok: true, value: null };
+  const m = v.match(/^(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/);
+  return m && isRealYmd(m[1]) ? { ok: true, value: m[1] } : { ok: false };
+}
+
+/**
+ * A stored billing date as an `<input type="date">` value: the yyyy-mm-dd
+ * date part, or "" for a legacy value the engine can't read (so a form save
+ * clears it instead of re-submitting it and failing validation).
+ */
+export function billingDateInputValue(value: string | null | undefined): string {
+  const r = parseBillingDateInput(value ?? null);
+  return r.ok && r.value ? r.value : "";
 }
 
 /**

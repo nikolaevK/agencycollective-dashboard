@@ -8,7 +8,8 @@ interface ClientSummaryCardsProps {
   totalClients: number;
   activeClients: number;
   totalMrr: number; // cents
-  rebillsDue: number;
+  /** null = the alerts feed failed to load (renders "—", never a false 0). */
+  rebillsDue: number | null;
   overdueCount: number;
   sentInvoices: number;
   onRebillsClick?: () => void;
@@ -95,15 +96,19 @@ export function ClientSummaryCards({
             <p
               className={cn(
                 "text-2xl font-bold mt-1",
-                rebillsDue > 0
+                rebillsDue !== null && rebillsDue > 0
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-foreground"
               )}
             >
-              {rebillsDue}
+              {rebillsDue ?? "—"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {overdueCount > 0 ? `${overdueCount} overdue` : "none overdue"}
+              {rebillsDue === null
+                ? "couldn’t load alerts"
+                : overdueCount > 0
+                ? `${overdueCount} overdue`
+                : "none overdue"}
             </p>
           </>
         )}

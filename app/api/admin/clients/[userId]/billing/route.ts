@@ -3,7 +3,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { getClientDetail } from "@/lib/clientDirectory";
-import { upsertClientBilling, type ClientBillingInput } from "@/lib/clientBilling";
+import {
+  upsertClientBilling,
+  parseBillingDateInput,
+  type ClientBillingInput,
+} from "@/lib/clientBilling";
 import { requireClientRouteActor } from "@/lib/api/requireAdmin";
 
 interface RouteContext {
@@ -34,6 +38,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
       // getClientDetail) — drives the Billing tab's awaiting-payment banner
       // + Mark Unpaid action. Null when nothing is awaiting payment.
       activeSentInvoice: detail.row.activeSentInvoice,
+      // Every invoice still awaiting payment (any cycle, reconciled) — the
+      // send drawer's "replaces / also awaiting" context.
+      sentInvoices: detail.row.sentInvoices,
     },
   });
 }
@@ -61,12 +68,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     if (body.paused !== undefined) changes.paused = Boolean(body.paused);
     if (body.pauseReason !== undefined)
       changes.pauseReason = body.pauseReason ? String(body.pauseReason).slice(0, 500) : null;
-    if (body.extendUntil !== undefined)
-      changes.extendUntil = body.extendUntil ? String(body.extendUntil) : null;
-    if (body.lastRebilledOverride !== undefined)
-      changes.lastRebilledOverride = body.lastRebilledOverride
-        ? String(body.lastRebilledOverride)
-        : null;
+    // Schedule dates must be real yyyy-mm-dd (or null to clear) — anything
+    // else used to be stored and then mis-read by the engine.
+    const extend = parseBillingDateInput(body.extendUntil);
+    if (!extend.ok)
+      return NextResponse.json({ error: "extendUntil must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+    if (extend.value !== undefined) changes.extendUntil = extend.value;
+    const lastOverride = parseBillingDateInput(body.lastRebilledOverride);
+    if (!lastOverride.ok)
+      return NextResponse.json({ error: "lastRebilledOverride must be a real date (yyyy-mm-dd) or null" }, { status: 400 });
+    if (lastOverride.value !== undefined) changes.lastRebilledOverride = lastOverride.value;
     if (body.mrrMonthOverride !== undefined) {
       const v = body.mrrMonthOverride ? String(body.mrrMonthOverride) : null;
       if (v !== null && !/^\d{4}-\d{2}$/.test(v)) {

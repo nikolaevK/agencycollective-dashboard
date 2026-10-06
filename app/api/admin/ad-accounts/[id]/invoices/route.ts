@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { listInvoicesForAdAccount } from "@/lib/adAccountInvoices";
+import { withFollowUpSummaries } from "@/lib/invoiceFollowUps";
 import { requireDirectoryActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
 
 
@@ -23,6 +24,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
   if (!account)
     return NextResponse.json({ error: "Ad account not found" }, { status: 404 });
 
-  const invoices = await listInvoicesForAdAccount(params.id);
+  // Each invoice carries its follow-up summary (count + latest touch).
+  const invoices = await withFollowUpSummaries(
+    "ad_account",
+    await listInvoicesForAdAccount(params.id)
+  );
   return NextResponse.json({ data: { invoices } });
 }

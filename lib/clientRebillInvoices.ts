@@ -4,6 +4,7 @@ import type { Row } from "@libsql/client";
 import {
   manualFieldsFromRow,
   EMPTY_MANUAL_FIELDS,
+  getConsumedPayoutMonthsByKey,
   type InvoiceManualFields,
 } from "./invoiceManualOverride";
 
@@ -45,6 +46,10 @@ export interface RebillInvoice extends InvoiceManualFields {
   markedUnpaidAt: string | null;
   markedUnpaidByAdminId: string | null;
   markedUnpaidReason: string | null;
+  /** CC list of the original send (empty for registered/legacy rows). */
+  ccEmails: string[];
+  /** Agency Profile used as the invoice/email style (null = default AC). */
+  styleProfileId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +64,17 @@ export interface RebillInvoiceWithClient extends RebillInvoice {
 // ---------------------------------------------------------------------------
 // Row mapping
 // ---------------------------------------------------------------------------
+
+/** Defensive parse of a stored JSON string array (cc_emails). */
+export function parseCcEmails(raw: unknown): string[] {
+  if (raw == null || raw === "") return [];
+  try {
+    const v = JSON.parse(String(raw));
+    return Array.isArray(v) ? v.filter((e): e is string => typeof e === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 function rowToInvoice(row: Row): RebillInvoice {
   const status = String(row.status ?? "sent");
@@ -92,6 +108,9 @@ function rowToInvoice(row: Row): RebillInvoice {
         : null,
     markedUnpaidReason:
       row.marked_unpaid_reason != null ? String(row.marked_unpaid_reason) : null,
+    ccEmails: parseCcEmails(row.cc_emails),
+    styleProfileId:
+      row.style_profile_id != null ? String(row.style_profile_id) : null,
     createdAt: String(row.created_at || new Date().toISOString()),
     updatedAt: String(row.updated_at || new Date().toISOString()),
     ...manualFieldsFromRow(row),
@@ -117,48 +136,66 @@ export async function listInvoicesForUser(
   return result.rows.map(rowToInvoice);
 }
 
-/** Most recent sent (un-resolved) invoice for one user, or null. */
-export async function getLatestActiveInvoice(
+/**
+ * Every still-sent (awaiting payment) invoice for one user, newest first.
+ * A client can hold several — an earlier cycle still unpaid, a backfill for
+ * another cycle, a reopened row — and each must stay visible and reconcilable.
+ */
+export async function getSentInvoicesForUser(
   userId: string
-): Promise<RebillInvoice | null> {
+): Promise<RebillInvoice[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
     sql: `SELECT * FROM client_rebill_invoices
           WHERE user_id = ? AND status = 'sent'
-          ORDER BY sent_at DESC, created_at DESC LIMIT 1`,
+          ORDER BY sent_at DESC, created_at DESC`,
     args: [userId],
   });
-  return result.rows[0] ? rowToInvoice(result.rows[0]) : null;
+  return result.rows.map(rowToInvoice);
 }
 
 /**
- * Most recent sent invoice per user, for every user that has one. Used by the
- * directory aggregator so we don't do N+1 lookups.
+ * Every still-sent invoice grouped by user (newest first within each user),
+ * in one query — the directory reconciles ALL of them, not just the newest
+ * (mirrors getSentInvoicesByAdAccount), so an older-cycle or reopened row
+ * can't get stuck `sent` behind a newer one.
  */
-export async function getLatestActiveInvoicesByUser(): Promise<
-  Map<string, RebillInvoice>
+export async function getSentInvoicesByUser(): Promise<
+  Map<string, RebillInvoice[]>
 > {
   await ensureMigrated();
   const db = getDb();
-  // Window function picks the freshest sent row per user_id (same shape we use
-  // in setterStats for show/no-show resolution).
   const result = await db.execute(`
-    SELECT * FROM (
-      SELECT
-        i.*,
-        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY sent_at DESC, created_at DESC) AS rn
-      FROM client_rebill_invoices i
-      WHERE status = 'sent'
-    ) ranked
-    WHERE rn = 1
+    SELECT * FROM client_rebill_invoices
+    WHERE status = 'sent'
+    ORDER BY sent_at DESC, created_at DESC
   `);
-  const map = new Map<string, RebillInvoice>();
+  const map = new Map<string, RebillInvoice[]>();
   for (const row of result.rows) {
     const inv = rowToInvoice(row);
-    map.set(inv.userId, inv);
+    const arr = map.get(inv.userId);
+    if (arr) arr.push(inv);
+    else map.set(inv.userId, [inv]);
   }
   return map;
+}
+
+/**
+ * The sent invoice that represents a schedule's CURRENT cycle (anchor ===
+ * nextRebillAt), else the newest sent one, else null. `sent` is newest-first.
+ * Shared by both directory builders so "the active invoice" is chosen the
+ * same way the `invoice_sent` status is decided.
+ */
+export function pickActiveSentInvoice<T extends { cycleAnchor: string }>(
+  sent: T[],
+  nextRebillAt: string | null
+): T | null {
+  if (sent.length === 0) return null;
+  return (
+    (nextRebillAt ? sent.find((i) => i.cycleAnchor === nextRebillAt) : undefined) ??
+    sent[0]
+  );
 }
 
 /** Find one invoice by id (used by mark-unpaid). */
@@ -223,12 +260,31 @@ export interface CreateRebillInvoiceInput {
    * record when the tracking row itself was written.
    */
   sentAt?: string;
+  /** CC list of the send — kept so a follow-up reaches the same people. */
+  ccEmails?: string[];
+  /** Agency Profile used as the invoice/email style (null = default AC). */
+  styleProfileId?: string | null;
+  /**
+   * Supersede the user's still-sent invoice(s) for the SAME cycle (default
+   * true — a re-send for a cycle replaces that cycle's record). Invoices for
+   * OTHER cycles are never touched: superseded is terminal, so sweeping every
+   * sent row used to destroy an unrelated awaiting invoice (e.g. registering
+   * last month's backfill wiped this month's "Invoice sent").
+   */
+  supersede?: boolean;
+  /**
+   * Still-sent invoices (of THIS user, any cycle) the admin explicitly chose
+   * to replace — e.g. a corrected re-send after the cycle date moved. Marked
+   * superseded in the same atomic batch; ids of other users / non-sent rows
+   * are ignored by the WHERE clause.
+   */
+  replaceInvoiceIds?: string[];
 }
 
 /**
- * Create a new sent invoice, atomically superseding any prior `sent` row for
- * the same user (an admin re-sending mid-cycle replaces the old record — only
- * the latest is "the current invoice for this cycle"). Returns the new row.
+ * Create a new sent invoice. Atomically supersedes any prior `sent` row for
+ * the same user AND cycle (a mid-cycle re-send replaces that cycle's record);
+ * still-sent invoices for other cycles keep their status. Returns the new row.
  */
 export async function createRebillInvoice(
   input: CreateRebillInvoiceInput
@@ -239,39 +295,57 @@ export async function createRebillInvoice(
   const now = new Date().toISOString();
   const sentAt = input.sentAt ?? now;
   const amountCents = Math.max(0, Math.round(input.amountCents));
+  const ccEmails = input.ccEmails ?? [];
 
-  await db.batch(
-    [
-      {
-        sql: `UPDATE client_rebill_invoices
-              SET status = 'superseded', reconcile_locked = 0, updated_at = ?
-              WHERE user_id = ? AND status = 'sent'`,
-        args: [now, input.userId],
-      },
-      {
-        sql: `INSERT INTO client_rebill_invoices (
-                id, user_id, invoice_number, payout_document_id,
-                cycle_anchor, amount_cents, recipient_email,
-                sent_at, sent_by_admin_id, status,
-                created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)`,
-        args: [
-          id,
-          input.userId,
-          input.invoiceNumber,
-          input.payoutDocumentId ?? null,
-          input.cycleAnchor,
-          amountCents,
-          input.recipientEmail ?? null,
-          sentAt,
-          input.sentByAdminId ?? null,
-          now,
-          now,
-        ],
-      },
+  const insert = {
+    sql: `INSERT INTO client_rebill_invoices (
+            id, user_id, invoice_number, payout_document_id,
+            cycle_anchor, amount_cents, recipient_email,
+            sent_at, sent_by_admin_id, status,
+            cc_emails, style_profile_id,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
+    args: [
+      id,
+      input.userId,
+      input.invoiceNumber,
+      input.payoutDocumentId ?? null,
+      input.cycleAnchor,
+      amountCents,
+      input.recipientEmail ?? null,
+      sentAt,
+      input.sentByAdminId ?? null,
+      ccEmails.length > 0 ? JSON.stringify(ccEmails) : null,
+      input.styleProfileId ?? null,
+      now,
+      now,
     ],
-    "write"
-  );
+  };
+
+  const statements = [];
+  if (input.supersede !== false) {
+    statements.push({
+      sql: `UPDATE client_rebill_invoices
+            SET status = 'superseded', reconcile_locked = 0, updated_at = ?
+            WHERE user_id = ? AND status = 'sent' AND cycle_anchor = ?`,
+      args: [now, input.userId, input.cycleAnchor],
+    });
+  }
+  const replaceIds = [...new Set(input.replaceInvoiceIds ?? [])];
+  if (replaceIds.length > 0) {
+    statements.push({
+      sql: `UPDATE client_rebill_invoices
+            SET status = 'superseded', reconcile_locked = 0, updated_at = ?
+            WHERE user_id = ? AND status = 'sent'
+              AND id IN (${replaceIds.map(() => "?").join(", ")})`,
+      args: [now, input.userId, ...replaceIds],
+    });
+  }
+  if (statements.length > 0) {
+    await db.batch([...statements, insert], "write");
+  } else {
+    await db.execute(insert);
+  }
 
   return {
     id,
@@ -290,6 +364,8 @@ export async function createRebillInvoice(
     markedUnpaidAt: null,
     markedUnpaidByAdminId: null,
     markedUnpaidReason: null,
+    ccEmails,
+    styleProfileId: input.styleProfileId ?? null,
     createdAt: now,
     updatedAt: now,
     ...EMPTY_MANUAL_FIELDS,
@@ -325,15 +401,19 @@ export async function markInvoiceUnpaid(
   return (result.rowsAffected ?? 0) > 0;
 }
 
-/** Auto-promote a sent invoice to paid — called by the reconciliation pass. */
+/**
+ * Auto-promote a sent invoice to paid — called by the reconciliation pass.
+ * Returns whether the guarded UPDATE actually transitioned the row (false when
+ * it was locked/superseded/settled concurrently).
+ */
 async function markInvoicePaid(
   id: string,
   payoutMonth: number,
   payoutYear: number
-): Promise<void> {
+): Promise<boolean> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db.execute({
+  const result = await db.execute({
     sql: `UPDATE client_rebill_invoices
           SET status = 'paid',
               paid_at = ?,
@@ -344,6 +424,7 @@ async function markInvoicePaid(
           WHERE id = ? AND status = 'sent' AND reconcile_locked = 0`,
     args: [now, payoutMonth, payoutYear, now, id],
   });
+  return (result.rowsAffected ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +481,9 @@ export async function reconcileInvoiceForUser(
   if (!promote) return invoice;
 
   try {
-    await markInvoicePaid(invoice.id, promote.month, promote.year);
+    // Nothing written (row changed concurrently) → don't report it as paid.
+    if (!(await markInvoicePaid(invoice.id, promote.month, promote.year)))
+      return invoice;
   } catch (err) {
     console.warn("[rebill-invoice] auto-paid promotion failed:", err);
     return invoice; // caller still sees the sent invoice — next pass retries
@@ -413,4 +496,141 @@ export async function reconcileInvoiceForUser(
     paidPayoutYear: promote.year,
     paidSource: "auto",
   };
+}
+
+/** Most cycles one month's REBILL total can count for (a year of catch-up). */
+const MAX_UNITS_PER_MONTH = 12;
+
+/**
+ * Pure: a brand's REBILL months (summed amount_due + payout row count) → one
+ * entry per recurring-size payment — the pool reconciliation allocates from,
+ * and the schedule's confirmed-paid months.
+ *
+ * The recurring amount is the latest month's total — unless that month is a
+ * catch-up: an exact k× (k ≥ 2) multiple of the month before, made of at least
+ * k payout rows (k separate payments; one row at a doubled amount reads as a
+ * price change). A month whose total is an exact k× multiple of the recurring
+ * amount yields k entries, so a client paying September AND October in
+ * October settles both invoices — one summed entry per month used to settle
+ * only one, leaving September awaiting payment for good. Any other amount (a
+ * partial or one-off payment) qualifies nothing.
+ */
+export function rebillPaymentUnits(
+  months: Array<{ year: number; month: number; amountDue: number; rows?: number }>
+): Array<{ year: number; month: number }> {
+  if (months.length === 0) return [];
+  const sorted = [...months].sort((a, b) => a.year - b.year || a.month - b.month);
+  const multipleOf = (amount: number, base: number): number => {
+    const k = Math.round(amount / base);
+    return k >= 1 && amount === k * base ? k : 0;
+  };
+
+  const latest = sorted[sorted.length - 1];
+  const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  let baseline = latest.amountDue;
+  if (prev && prev.amountDue > 0) {
+    const k = multipleOf(latest.amountDue, prev.amountDue);
+    if (k >= 2 && (latest.rows ?? 1) >= k) baseline = prev.amountDue;
+  }
+
+  const out: Array<{ year: number; month: number }> = [];
+  for (const m of sorted) {
+    const units =
+      baseline > 0
+        ? Math.min(multipleOf(m.amountDue, baseline), MAX_UNITS_PER_MONTH)
+        : m.amountDue === baseline
+        ? 1
+        : 0;
+    for (let i = 0; i < units; i++) out.push({ year: m.year, month: m.month });
+  }
+  return out;
+}
+
+/**
+ * Pure: which qualifying payout month settles which OPEN invoice, when an
+ * owner (client or ad account) has several awaiting payment at once. Each
+ * payout month settles at most ONE invoice — without this, `decideAutoPaid`'s
+ * "latest payout ≥ cycle" rule let a single October payment mark both a still-
+ * owed September invoice and October's paid, silently dropping September from
+ * the Sent panel. Exact-month matches are paired first (October's payment →
+ * October's invoice); the rest go oldest cycle first to the earliest unused
+ * payout month at/after their cycle. Locked rows (manual status) are skipped —
+ * reconciliation never touches them, so they must not consume a payment.
+ * `consumedMonths` are payout months already spent on this owner's PAID
+ * invoices (getConsumedPayoutMonthsByKey) — each removes one matching pool
+ * entry first, so a payment that settled October on an earlier pass can't
+ * settle September on the next one. For a single open invoice with nothing
+ * consumed the outcome equals `decideAutoPaid`.
+ */
+export function allocateAutoPaid(
+  invoices: Array<{ id: string; cycleAnchor: string; reconcileLocked?: boolean }>,
+  payoutMonths: Array<{ year: number; month: number }>,
+  consumedMonths: Array<{ year: number; month: number }> = []
+): Map<string, { year: number; month: number }> {
+  const out = new Map<string, { year: number; month: number }>();
+  const keyOf = (y: number, m: number) => y * 12 + m;
+  const candidates = invoices
+    .filter((i) => !i.reconcileLocked)
+    .map((i) => {
+      const m = i.cycleAnchor.match(/^(\d{4})-(\d{2})/);
+      return m ? { id: i.id, key: keyOf(Number(m[1]), Number(m[2])) } : null;
+    })
+    .filter((c): c is { id: string; key: number } => c !== null)
+    .sort((a, b) => a.key - b.key);
+  const pool = payoutMonths
+    .map((p) => ({ ...p, key: keyOf(p.year, p.month), used: false }))
+    .sort((a, b) => a.key - b.key);
+  for (const c of consumedMonths) {
+    const key = keyOf(c.year, c.month);
+    const spent = pool.find((p) => !p.used && p.key === key);
+    if (spent) spent.used = true;
+  }
+
+  const unmatched: typeof candidates = [];
+  for (const c of candidates) {
+    const exact = pool.find((p) => !p.used && p.key === c.key);
+    if (exact) {
+      exact.used = true;
+      out.set(c.id, { year: exact.year, month: exact.month });
+    } else {
+      unmatched.push(c);
+    }
+  }
+  for (const c of unmatched) {
+    const next = pool.find((p) => !p.used && p.key >= c.key);
+    if (next) {
+      next.used = true;
+      out.set(c.id, { year: next.year, month: next.month });
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconcile ALL of one client's open invoices together (see
+ * allocateAutoPaid) — every reconciliation path (directory builds, resync)
+ * goes through here so one payment can't settle two invoices. `consumedMonths`
+ * = payout months the client's paid invoices already used; when omitted they
+ * are read for this client (the directory passes its bulk read instead).
+ */
+export async function reconcileInvoicesForUser(
+  invoices: RebillInvoice[],
+  payoutMonths: Array<{ year: number; month: number }>,
+  consumedMonths?: Array<{ year: number; month: number }>
+): Promise<RebillInvoice[]> {
+  const open = invoices.filter((i) => i.status === "sent");
+  if (open.length === 0) return invoices;
+  const consumed =
+    consumedMonths ??
+    (
+      await getConsumedPayoutMonthsByKey("client_rebill_invoices", "user_id", open[0].userId)
+    ).get(open[0].userId) ??
+    [];
+  const alloc = allocateAutoPaid(open, payoutMonths, consumed);
+  return Promise.all(
+    invoices.map(async (inv) => {
+      const month = alloc.get(inv.id);
+      return (await reconcileInvoiceForUser(inv, month ? [month] : [])) ?? inv;
+    })
+  );
 }

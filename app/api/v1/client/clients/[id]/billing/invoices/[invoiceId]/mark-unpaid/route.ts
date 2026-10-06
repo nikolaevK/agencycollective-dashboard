@@ -31,7 +31,9 @@ export async function POST(
     }
 
     const body = await readJsonBody(request);
-    const reason = body?.reason ? String(body.reason).slice(0, 500) : null;
+    // Strings only, trimmed (an object used to be stored as "[object Object]").
+    const reason =
+      typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) || null : null;
 
     const actor = tokenAuditActor(auth.token);
     const updated = await markInvoiceUnpaid(params.invoiceId, actor.adminId, reason);

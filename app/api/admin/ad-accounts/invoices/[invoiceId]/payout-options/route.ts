@@ -3,10 +3,9 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ensureMigrated } from "@/lib/db";
 import { findAdAccountInvoice } from "@/lib/adAccountInvoices";
-import { requireInternalActor, findAdAccountInScope } from "@/lib/api/requireAdmin";
+import { requireInternalActor, findAdInvoiceAccountInScope } from "@/lib/api/requireAdmin";
 import { listPayoutRowsForBrand } from "@/lib/payouts";
 import { resolveAdInvoiceBrand } from "@/lib/adAccountInvoiceBrand";
-import type { AdAccount } from "@/lib/adAccounts";
 
 interface RouteContext {
   params: { invoiceId: string };
@@ -27,13 +26,10 @@ export async function GET(_req: Request, { params }: RouteContext) {
   if (!invoice)
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
-  let account: AdAccount | null = null;
-  if (invoice.adAccountId) {
-    account = await findAdAccountInScope(guard.actor.scope, invoice.adAccountId);
-    if (!account)
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  }
-  const { brand, exactOnly } = await resolveAdInvoiceBrand(invoice, account);
+  const access = await findAdInvoiceAccountInScope(guard.actor.scope, invoice);
+  if (!access.ok)
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  const { brand, exactOnly } = await resolveAdInvoiceBrand(invoice, access.account);
 
   const payouts = brand ? await listPayoutRowsForBrand(brand, exactOnly) : [];
   return NextResponse.json({ data: { brand, payouts } });

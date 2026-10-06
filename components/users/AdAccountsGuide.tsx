@@ -195,9 +195,28 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
                 <Pill tone="green">Paid</Pill> once a matching payment lands (see below).
               </li>
               <li>
-                Sending a new invoice for an account <strong>replaces</strong> any previous
-                still-unpaid invoice for that account (the old one becomes
-                &ldquo;Superseded&rdquo;).
+                Sending a new invoice for the <strong>same cycle</strong> replaces that
+                cycle&rsquo;s still-unpaid invoice (the old one becomes &ldquo;Superseded&rdquo;
+                and stays in the history). Unpaid invoices for <em>other</em> cycles are never
+                touched — they keep waiting for payment — unless you tick{" "}
+                <strong>Replace</strong> next to one in the send drawer because this invoice
+                re-issues it (one from the <em>same month</em> — the cycle date moved — comes
+                pre-ticked).
+              </li>
+              <li>
+                One payment settles <strong>one</strong> awaiting invoice: when an account owes
+                on several cycles, a payout in an invoice&rsquo;s own month settles that invoice
+                first, otherwise the oldest open cycle. A payment that already settled an
+                invoice is never reused for another.
+              </li>
+              <li>
+                <strong>Chasing payment? Use Follow up, not a re-send.</strong> Every awaiting
+                invoice (in the Sent invoices panel and the account&rsquo;s Invoices history) has
+                a <strong>Follow up</strong> button: email a reminder that re-attaches the{" "}
+                <em>original</em> PDF to the original recipient and CCs (editable, with an
+                optional personal note), or log a call / message / note. The invoice itself is
+                never changed — same number, amount, sent date and cycle — and every touch is kept
+                in its history. Rows quiet for a week turn amber.
               </li>
               <li>
                 The <ReceiptText className="inline h-3.5 w-3.5" /> Invoices button on each row
@@ -332,9 +351,9 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
               Anything you set by hand is <strong>locked</strong> (a small &ldquo;manual&rdquo; tag) —
               the auto-matching leaves it alone until you Resync, so a stray payout can&rsquo;t undo
               your call. When sending a new invoice you can also pick the <strong>billing cycle</strong>{" "}
-              it covers: the default cycle replaces the account&rsquo;s current awaiting invoice
-              (a re-send), while any other cycle is recorded alongside it, like a registered
-              backdated invoice.
+              it covers: a send replaces only an awaiting invoice for that <em>same</em> cycle (a
+              re-send), so a delayed or upcoming month is recorded alongside the current one,
+              like a registered backdated invoice.
             </p>
           </Section>
 

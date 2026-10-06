@@ -23,17 +23,19 @@ export async function GET(request: Request) {
       .filter(
         (r) =>
           (!allowed || allowed.includes(r.id)) &&
-          r.activeSentInvoice !== null &&
           // Mirrors the admin sent-invoices route: inactive/archived clients
           // drop out of the awaiting-payment list.
           r.status !== "inactive" &&
           r.status !== "archived"
       )
-      .map((r) => ({
-        userId: r.id,
-        displayName: r.displayName,
-        invoice: r.activeSentInvoice,
-      }))
+      // One entry per awaiting invoice — a client can owe on several cycles.
+      .flatMap((r) =>
+        r.sentInvoices.map((invoice) => ({
+          userId: r.id,
+          displayName: r.displayName,
+          invoice,
+        }))
+      )
       .sort((a, b) =>
         String(b.invoice?.sentAt ?? "").localeCompare(String(a.invoice?.sentAt ?? ""))
       );

@@ -136,7 +136,22 @@ export function RegisterInvoiceModal({
         num = fromName;
         filled.invoiceNumber = fromName;
       }
-      const created = doc.createdAt?.slice(0, 10);
+      // The admin's LOCAL calendar day of the filing (createdAt is a zone-less
+      // SQLite UTC stamp — taking its date part read an evening-PT filing as
+      // the next day/month). Mark it UTC before converting.
+      const rawCreated = doc.createdAt ?? "";
+      const createdDate = rawCreated
+        ? new Date(
+            /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(rawCreated) &&
+            !/[zZ]|[+-]\d{2}:?\d{2}$/.test(rawCreated)
+              ? rawCreated.replace(" ", "T") + "Z"
+              : rawCreated
+          )
+        : null;
+      const created =
+        createdDate && !isNaN(createdDate.getTime())
+          ? `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, "0")}-${String(createdDate.getDate()).padStart(2, "0")}`
+          : null;
       if (created && /^\d{4}-\d{2}-\d{2}$/.test(created)) {
         sent = created;
         filled.sentDate = created;

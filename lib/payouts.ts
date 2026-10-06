@@ -817,13 +817,14 @@ export function isAdAccountSalesRep(salesRep: string | null): boolean {
 }
 
 /**
- * Per-brand REBILL-flagged payout months WITH their summed amount_due (cents),
- * grouped by normalized brand. Powers the Client Directory's `paid` status: a
- * REBILL payout whose amount_due matches the client's expected recurring amount
- * confirms the cycle is paid. Keyed by `normalizeBrandName(brand)`.
+ * Per-brand REBILL-flagged payout months WITH their summed amount_due (cents)
+ * and how many payout rows made up that sum, grouped by normalized brand.
+ * Powers the Client Directory's `paid` status: a REBILL payout whose amount_due
+ * matches the client's expected recurring amount confirms the cycle is paid.
+ * Keyed by `normalizeBrandName(brand)`.
  */
 export async function getRebillPayoutMonthsByBrand(): Promise<
-  Map<string, Array<{ year: number; month: number; amountDue: number }>>
+  Map<string, Array<{ year: number; month: number; amountDue: number; rows: number }>>
 > {
   await ensureMigrated();
   const db = getDb();
@@ -831,7 +832,7 @@ export async function getRebillPayoutMonthsByBrand(): Promise<
     `SELECT brand_name, payout_month, payout_year, amount_due, sales_rep FROM payouts`
   );
   // Sum amount_due per (brand, year, month) across REBILL rows.
-  const byKey = new Map<string, { year: number; month: number; amountDue: number }>();
+  const byKey = new Map<string, { year: number; month: number; amountDue: number; rows: number }>();
   const brandKeys = new Map<string, Set<string>>(); // norm → set of "year-month"
   for (const row of result.rows) {
     const salesRep = row.sales_rep != null ? String(row.sales_rep) : null;
@@ -844,8 +845,10 @@ export async function getRebillPayoutMonthsByBrand(): Promise<
     const key = `${norm}|${year}-${month}`;
     const existing = byKey.get(key);
     const amountDue = Number(row.amount_due ?? 0);
-    if (existing) existing.amountDue += amountDue;
-    else byKey.set(key, { year, month, amountDue });
+    if (existing) {
+      existing.amountDue += amountDue;
+      existing.rows += 1;
+    } else byKey.set(key, { year, month, amountDue, rows: 1 });
     let set = brandKeys.get(norm);
     if (!set) {
       set = new Set();
@@ -853,9 +856,9 @@ export async function getRebillPayoutMonthsByBrand(): Promise<
     }
     set.add(`${year}-${month}`);
   }
-  const map = new Map<string, Array<{ year: number; month: number; amountDue: number }>>();
+  const map = new Map<string, Array<{ year: number; month: number; amountDue: number; rows: number }>>();
   for (const [norm, set] of brandKeys) {
-    const arr: Array<{ year: number; month: number; amountDue: number }> = [];
+    const arr: Array<{ year: number; month: number; amountDue: number; rows: number }> = [];
     for (const ym of set) {
       const entry = byKey.get(`${norm}|${ym}`);
       if (entry) arr.push(entry);

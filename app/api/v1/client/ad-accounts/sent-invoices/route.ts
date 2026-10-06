@@ -19,7 +19,11 @@ export async function GET(request: Request) {
     let invoices = await listActiveSentInvoices();
     const allowed = allowedResourceIds(auth.token, "client");
     if (allowed) {
-      invoices = invoices.filter((i) => !i.userId || allowed.includes(i.userId));
+      // A resource-restricted token sees only its clients' invoices. Free /
+      // unattached-account invoices (no client) are NOT in its grant — they
+      // used to leak to every restricted token (number, amount, recipient),
+      // unlike the single-item routes, which 403 them.
+      invoices = invoices.filter((i) => i.userId != null && allowed.includes(i.userId));
     }
     return ok(invoices);
   } catch (err) {
