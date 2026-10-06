@@ -166,7 +166,12 @@ export async function readDealsByCloser(closerId: string, limit = 500): Promise<
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
-    sql: `SELECT * FROM deals WHERE closer_id = ? ORDER BY created_at DESC LIMIT ${Math.max(1, Math.floor(limit))}`,
+    // Ordered by the date the lists display (closing date, else added day) —
+    // a deal entered early but closed later (or moved in from another
+    // closer) otherwise sinks below everything added after it.
+    sql: `SELECT * FROM deals WHERE closer_id = ?
+          ORDER BY COALESCE(closing_date, SUBSTR(created_at, 1, 10)) DESC, created_at DESC
+          LIMIT ${Math.max(1, Math.floor(limit))}`,
     args: [closerId],
   });
   return result.rows.map(rowToDeal);
