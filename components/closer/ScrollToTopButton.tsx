@@ -71,12 +71,12 @@ export function ScrollToTopButton({ threshold = 400, className }: Props) {
       type="button"
       onClick={scrollToTop}
       aria-label="Scroll to top"
-      // fixed + bottom-20 sm:bottom-6: clears the mobile bottom-nav
-      // (~64–80px tall) and sits comfortably in the corner on desktop.
+      // fixed + bottom-24 sm:bottom-6: clears the mobile bottom-nav
+      // (~72px + safe-area inset) and sits comfortably in the corner on desktop.
       // pointer-events-none while hidden so it doesn't intercept clicks
       // when invisible.
       className={cn(
-        "fixed right-4 sm:right-6 bottom-20 sm:bottom-6 z-30",
+        "fixed right-4 sm:right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] sm:bottom-6 z-30",
         "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-lg",
         "transition-all duration-200 hover:bg-accent",
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none",

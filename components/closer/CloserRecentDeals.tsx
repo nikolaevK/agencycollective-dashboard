@@ -116,8 +116,8 @@ function EditDealModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-card rounded-t-2xl">
           <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
           <button
             onClick={requestClose}
@@ -127,7 +127,7 @@ function EditDealModal({
             <span className="sr-only">Close</span>&times;
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <UnifiedDealForm
             key={deal.id}
             mode="edit"
@@ -306,7 +306,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden md:block max-h-[60vh] overflow-auto">
+          <div className="hidden md:block max-h-[60dvh] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/50 dark:border-white/[0.06]">
@@ -406,44 +406,60 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
             </table>
           </div>
 
-          {/* Mobile cards */}
-          <div className="md:hidden max-h-[60vh] overflow-y-auto divide-y divide-border/50 dark:divide-white/[0.06]">
+          {/* Mobile cards — stacked rows: the badge/amount/actions cluster
+              used to sit beside the name as one non-shrinking row, which
+              squeezed the client name to nothing and overflowed the card. */}
+          <div className="md:hidden max-h-[60dvh] overflow-y-auto overscroll-contain divide-y divide-border/50 dark:divide-white/[0.06]">
             {filtered.map((deal) => (
-              <div key={deal.id} className="p-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+              <div key={deal.id} className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">{deal.clientName}</p>
-                    {deal.notes && (
-                      <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
-                        <StickyNote className="h-3 w-3" />
-                      </button>
+                    {(deal.brandName || deal.website) && (
+                      <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                        {deal.brandName && <span className="min-w-0 truncate text-xs text-muted-foreground">{deal.brandName}</span>}
+                        {deal.website && (
+                          <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-primary hover:underline truncate max-w-[150px]">
+                            {deal.website.replace(/^https?:\/\//, "")}
+                          </a>
+                        )}
+                      </div>
                     )}
-                    {deal.serviceCategory && (
-                      <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500" title="View services">
-                        <Briefcase className="h-3 w-3" />
+                    {deal.setterName && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                        Set by {deal.setterName}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {formatDate(deal.closingDate || deal.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="mr-1 text-sm font-semibold text-foreground">
+                      {formatCents(deal.dealValue)}
+                    </span>
+                    {!readOnly && (
+                    <button
+                      onClick={() => setEditDeal(deal)}
+                      aria-label="Edit deal"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    )}
+                    {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
+                      <button
+                        onClick={() => handleDelete(deal)}
+                        disabled={deletingIds.has(deal.id)}
+                        aria-label="Delete deal"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </div>
-                  {(deal.brandName || deal.website) && (
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {deal.brandName && <span className="text-xs text-muted-foreground">{deal.brandName}</span>}
-                      {deal.website && (
-                        <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[150px]">
-                          {deal.website.replace(/^https?:\/\//, "")}
-                        </a>
-                      )}
-                    </div>
-                  )}
-                  {deal.setterName && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Set by {deal.setterName}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {formatDate(deal.closingDate || deal.createdAt)}
-                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <DealStatusBadge status={deal.status} compact />
                   {deal.invoiceStatus && (
                     <DealInvoiceStatusBadge status={deal.invoiceStatus} />
@@ -459,26 +475,24 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                   )}>
                     {deal.paidStatus === "paid" ? "Paid" : "Unpaid"}
                   </span>
-                  <span className="text-sm font-semibold text-foreground">
-                    {formatCents(deal.dealValue)}
-                  </span>
-                  {!readOnly && (
-                  <button
-                    onClick={() => setEditDeal(deal)}
-                    aria-label="Edit deal"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                  )}
-                  {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
+                  {deal.notes && (
                     <button
-                      onClick={() => handleDelete(deal)}
-                      disabled={deletingIds.has(deal.id)}
-                      aria-label="Delete deal"
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      type="button"
+                      onClick={() => setInfoModal({ type: "notes", deal })}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 text-xs font-medium text-amber-700 dark:text-amber-400"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <StickyNote className="h-3.5 w-3.5" />
+                      Notes
+                    </button>
+                  )}
+                  {deal.serviceCategory && (
+                    <button
+                      type="button"
+                      onClick={() => setInfoModal({ type: "services", deal })}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/5 px-2.5 text-xs font-medium text-violet-700 dark:text-violet-400"
+                    >
+                      <Briefcase className="h-3.5 w-3.5" />
+                      Services
                     </button>
                   )}
                 </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,13 @@ const tabs = [
 
 export function CloserSubNav() {
   const pathname = usePathname();
+  const activeRef = useRef<HTMLAnchorElement>(null);
+
+  // The tab row scrolls sideways on phones — keep the active tab in view
+  // (otherwise e.g. "GHL Contacts" is selected but scrolled off-screen).
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
 
   return (
     <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 mb-6 overflow-x-auto">
@@ -27,6 +35,7 @@ export function CloserSubNav() {
           <Link
             key={tab.href}
             href={tab.href}
+            ref={isActive ? activeRef : undefined}
             className={cn(
               "px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
               isActive

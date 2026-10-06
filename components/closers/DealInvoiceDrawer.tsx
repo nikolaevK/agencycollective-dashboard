@@ -744,7 +744,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
             {dealNotes && (
               <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
                 <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
-                <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{dealNotes}</p>
+                <p className="text-xs text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">{dealNotes}</p>
               </div>
             )}
 
@@ -769,7 +769,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                       type="button"
                       onClick={() => switchToInvoice(inv.id)}
                       className={cn(
-                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-7",
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-8 sm:pr-7",
                         activeInvoiceId === inv.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -785,7 +785,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleDeleteAdditional(inv); }}
                       disabled={deletingId === inv.id}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 sm:right-1.5 sm:p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
                       title="Delete invoice"
                       aria-label={`Delete invoice ${inv.invoiceNumber}`}
                     >
@@ -1554,7 +1554,7 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
             renders in-page, transparent with dark text (unreadable on dark). */}
         <div
           className={cn(
-            "flex-1 overflow-auto",
+            "min-h-0 flex-1 overflow-auto overscroll-contain",
             token && !switchingToEdit && "bg-white text-neutral-900"
           )}
         >

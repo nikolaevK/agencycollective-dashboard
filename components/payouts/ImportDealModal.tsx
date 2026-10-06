@@ -94,10 +94,10 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative z-10 flex w-full md:max-w-2xl max-h-[90vh] flex-col rounded-t-2xl md:rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl md:mx-4">
+      <div className="relative z-10 flex w-full md:max-w-2xl max-h-[90dvh] flex-col rounded-t-2xl md:rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl md:mx-4">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border/50 dark:border-white/[0.06] px-6 py-4">
-          <div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 dark:border-white/[0.06] px-6 py-4">
+          <div className="min-w-0">
             <h3 className="text-lg font-semibold text-foreground">
               Import from Deal
             </h3>
@@ -109,14 +109,14 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Search */}
-        <div className="px-6 pt-4">
+        <div className="shrink-0 px-6 pt-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -130,7 +130,7 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-2">
           {isLoading && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Loading deals…

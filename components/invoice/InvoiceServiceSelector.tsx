@@ -87,7 +87,7 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
               trigger wasn't at the left edge). sm+: anchored dropdown. */}
           <div
             className={cn(
-              "fixed inset-x-4 bottom-4 z-50 max-h-[60vh] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-80 sm:max-h-72",
+              "fixed inset-x-4 bottom-4 z-50 max-h-[60dvh] overscroll-contain overflow-y-auto rounded-lg border border-border bg-popover shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-80 sm:max-h-72",
               align === "right" ? "sm:right-0" : "sm:left-0"
             )}
           >

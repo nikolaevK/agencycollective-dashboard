@@ -39,7 +39,7 @@ export function TeamTrendChart({ data }: Props) {
   const hasData = data.some((p) => p.closedRevenue > 0 || p.paidRevenue > 0);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
+    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
       <div className="flex items-center justify-between gap-2 mb-5">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-violet-500" />

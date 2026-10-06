@@ -54,7 +54,7 @@ export default function CloserDetailPage() {
           {isLoading ? (
             <HeaderSkeleton />
           ) : data ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <div className="h-12 w-12 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
                 {data.closer.avatarPath ? (
                   <img
@@ -75,13 +75,13 @@ export default function CloserDetailPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-2xl lg:text-3xl font-black text-foreground">
+                  <h2 className="text-2xl lg:text-3xl font-black text-foreground break-words min-w-0">
                     {data.closer.displayName}
                   </h2>
                   <CloserStatusBadge status={data.closer.status} />
                   <CloserRoleBadge role={data.closer.role} />
                 </div>
-                <p className="text-sm text-muted-foreground mt-0.5">
+                <p className="text-sm text-muted-foreground mt-0.5 truncate">
                   {data.closer.email}
                 </p>
               </div>

@@ -62,7 +62,7 @@ export function TeamOutputChart({ closerBreakdowns }: TeamOutputChartProps) {
   const chartHeight = Math.min(Math.max(sorted.length * 44, 200), 400);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
+    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
       <div className="flex items-center gap-2 mb-5">
         <BarChart3 className="h-5 w-5 text-violet-500" />
         <h3 className="text-base font-semibold text-foreground">Team Output</h3>

@@ -69,7 +69,7 @@ export function InvoiceSavedList({ open, onClose, onLoad, onImport }: Props) {
       />
 
       {/* Modal */}
-      <div className="fixed inset-x-4 top-[10%] z-[60] mx-auto max-w-lg max-h-[70vh] flex flex-col rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl overflow-hidden">
+      <div className="fixed inset-x-4 top-[10%] z-[60] mx-auto max-w-lg max-h-[70dvh] flex flex-col rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border/50 px-5 py-4">
           <h3 className="text-lg font-semibold text-foreground">

@@ -157,20 +157,20 @@ function NewAccountRow({ account }: { account: RebillAccount }) {
 function NewAccountsView({ metrics, month, year }: { metrics: RebillMetrics; month: number; year: number }) {
   return (
     <>
-      <div className="flex items-center justify-between px-6 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <UserPlus className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-border/50">
+        <div className="flex min-w-0 items-center gap-2">
+          <UserPlus className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
           <span className="text-sm font-medium text-foreground">
             {metrics.newAccountCount} new account
             {metrics.newAccountCount !== 1 ? "s" : ""} in{" "}
             {monthLabel(month, year)}
           </span>
         </div>
-        <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+        <span className="shrink-0 text-sm font-bold text-blue-600 dark:text-blue-400">
           {formatCents(metrics.newAccountRevenue)}
         </span>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto">
+      <div className="min-h-0 max-h-[60dvh] overflow-y-auto overscroll-contain">
         {metrics.newAccounts.length === 0 ? (
           <p className="px-6 py-8 text-sm text-muted-foreground text-center">
             No new accounts this month
@@ -188,20 +188,20 @@ function NewAccountsView({ metrics, month, year }: { metrics: RebillMetrics; mon
 function RebillAccountsView({ metrics, month, year }: { metrics: RebillMetrics; month: number; year: number }) {
   return (
     <>
-      <div className="flex items-center justify-between px-6 py-3 bg-violet-50/50 dark:bg-violet-950/20 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <RefreshCcw className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-violet-50/50 dark:bg-violet-950/20 border-b border-border/50">
+        <div className="flex min-w-0 items-center gap-2">
+          <RefreshCcw className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
           <span className="text-sm font-medium text-foreground">
             {metrics.rebillAccountCount} rebilled account
             {metrics.rebillAccountCount !== 1 ? "s" : ""} in{" "}
             {monthLabel(month, year)}
           </span>
         </div>
-        <span className="text-sm font-bold text-violet-600 dark:text-violet-400">
+        <span className="shrink-0 text-sm font-bold text-violet-600 dark:text-violet-400">
           {formatCents(metrics.rebillAccountRevenue)}
         </span>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto">
+      <div className="min-h-0 max-h-[60dvh] overflow-y-auto overscroll-contain">
         {metrics.rebilledAccounts.length === 0 ? (
           <p className="px-6 py-8 text-sm text-muted-foreground text-center">
             No rebilled accounts this month
@@ -235,16 +235,16 @@ function ForecastView({
 
   return (
     <>
-      <div className="flex items-center justify-between px-6 py-3 bg-cyan-50/50 dark:bg-cyan-950/20 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-cyan-50/50 dark:bg-cyan-950/20 border-b border-border/50">
+        <div className="flex min-w-0 items-center gap-2">
+          <TrendingUp className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
           <span className="text-sm font-medium text-foreground">
             Forecast for {monthLabel(nextMonth, nextYear)}
           </span>
         </div>
       </div>
 
-      <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
+      <div className="min-h-0 p-6 space-y-5 max-h-[60dvh] overflow-y-auto overscroll-contain">
         {forecast.limitedData && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 px-4 py-3">
             <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -345,24 +345,25 @@ export function RebillDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
       <div
         className={cn(
-          "relative w-full mx-4 rounded-2xl border border-border bg-card shadow-2xl overflow-hidden",
+          "relative flex w-full max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden",
           view === "rebill" ? "max-w-2xl" : "max-w-lg"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground">
             {titles[view]}
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
           >
             <X className="h-4 w-4" />

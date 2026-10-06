@@ -91,9 +91,10 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
         <button
           onClick={onClose}
+          aria-label="Back"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -104,7 +105,7 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
       </div>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-5 pb-28">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5">
         <form id="closer-mobile-form" onSubmit={handleSubmit} className="space-y-5">
           {/* Error */}
           {error && (
@@ -234,7 +235,7 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
       </div>
 
       {/* Fixed Bottom Bar */}
-      <div className="border-t border-border bg-card px-4 py-3 flex items-center gap-3">
+      <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center gap-3">
         <button
           type="button"
           onClick={onClose}

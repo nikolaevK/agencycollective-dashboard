@@ -254,7 +254,7 @@ export default function AdminDealsPage() {
               </select>
             </div>
           </div>
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -264,7 +264,7 @@ export default function AdminDealsPage() {
               className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
             />
           </div>
-          <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+          <div className="flex max-w-full gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
             {filters.map((f) => (
               <button
                 key={f.value}
@@ -280,7 +280,7 @@ export default function AdminDealsPage() {
               </button>
             ))}
           </div>
-          <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+          <div className="flex max-w-full gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
             {paidFilters.map((f) => (
               <button
                 key={f.value}
@@ -342,7 +342,7 @@ function StatCard({
   return (
     <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={cn("text-2xl font-bold mt-1 truncate", valueClass ?? "text-foreground")}>{value}</p>
+      <p className={cn("text-xl sm:text-2xl font-bold mt-1 truncate tabular-nums", valueClass ?? "text-foreground")}>{value}</p>
       {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );

@@ -119,7 +119,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
   const moneyValue = (c: CloserBreakdown) => (paidSort ? c.paidRevenue : c.revenue);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
+    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
       <div className="flex items-center justify-between gap-2 mb-5">
         <div className="flex items-center gap-2">
           <Trophy className="h-5 w-5 text-amber-500" />
@@ -244,7 +244,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                   className="rounded-lg border border-border/30 dark:border-white/[0.04] bg-muted/20 dark:bg-white/[0.02] p-4"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <RankBadge rank={rank} />
                       <div
                         className={cn(
@@ -259,7 +259,7 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-3">
                     <span className="text-sm font-semibold text-foreground tabular-nums">
                       {formatCents(moneyValue(closer))}
                       {paidSort && (

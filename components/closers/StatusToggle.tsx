@@ -42,7 +42,7 @@ export function StatusToggle({ closerId, status }: { closerId: string; status: s
     <button
       onClick={toggle}
       disabled={toggling}
-      className="flex items-center gap-2 group"
+      className="flex items-center gap-2 group py-2 -my-2"
       title={isActive ? "Deactivate closer" : "Activate closer"}
     >
       <div className={cn(

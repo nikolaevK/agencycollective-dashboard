@@ -140,7 +140,7 @@ export function DealDraftsPanel() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-foreground">{d.fields.clientName}</span>
+                      <span className="min-w-0 max-w-full truncate text-sm font-semibold text-foreground">{d.fields.clientName}</span>
                       <span className="text-sm font-medium tabular-nums text-foreground">{formatCents(d.fields.dealValue)}</span>
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_CHIP[d.status])}>
                         {d.status}

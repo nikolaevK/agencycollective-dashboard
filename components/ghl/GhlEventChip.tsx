@@ -70,7 +70,7 @@ export function GhlEventChip({
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 transition-colors",
+        "inline-flex max-w-full items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 transition-colors",
         className
       )}
       title={`GHL contact (${sub.label})`}
@@ -87,8 +87,8 @@ export function GhlEventChip({
       </span>
       <span className="truncate max-w-[10rem]">{ref.name ?? ref.email ?? "(unnamed)"}</span>
       {ref.tags[0] && (
-        <Badge variant="secondary" className="px-1 py-0 text-[9px]">
-          {ref.tags[0]}
+        <Badge variant="secondary" className="max-w-[6rem] px-1 py-0 text-[9px]">
+          <span className="truncate">{ref.tags[0]}</span>
         </Badge>
       )}
       <ExternalLink className="h-2.5 w-2.5 opacity-60" />

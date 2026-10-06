@@ -63,7 +63,7 @@ export function CloserPagination({
         of <span className="font-medium text-foreground">{total}</span> closers
       </p>
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-center gap-1">
         {/* Previous */}
         <button
           onClick={() => setPage(page - 1)}

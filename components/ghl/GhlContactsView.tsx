@@ -219,7 +219,7 @@ function GhlContactsViewInner({
     <div
       className={
         "flex flex-col rounded-xl border border-border/60 bg-card overflow-hidden " +
-        "h-[calc(100vh-15rem)] md:flex-row"
+        "h-[calc(100dvh-9rem)] min-h-[26rem] md:h-[calc(100dvh-15rem)] md:flex-row"
       }
     >
       <div className="md:w-80 lg:w-96 shrink-0 border-b border-border/60 md:border-b-0 md:border-r md:h-full h-full min-w-0">
@@ -277,7 +277,7 @@ function GhlContactsViewInner({
           <button
             type="button"
             onClick={() => setSelectedId(null)}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <ChevronLeft className="h-4 w-4" />
             Contacts

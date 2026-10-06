@@ -90,7 +90,7 @@ export function AddEditCloserModal({ closer, onClose, onSaved }: Props) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="relative w-full max-w-lg mx-4 max-h-[90dvh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4 rounded-t-2xl">
           <h2 className="text-lg font-semibold text-foreground">
@@ -98,6 +98,7 @@ export function AddEditCloserModal({ closer, onClose, onSaved }: Props) {
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
           >
             <X className="h-4 w-4" />

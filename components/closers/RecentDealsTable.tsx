@@ -94,7 +94,7 @@ function PaidStatusBadge({ deal, adminMode }: { deal: DealWithInvoice; adminMode
       onClick={adminMode ? toggle : undefined}
       disabled={toggling}
       className={cn(
-        "inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-60",
+        "inline-flex items-center gap-1 shrink-0 px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-60",
         isPaid
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
           : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
@@ -175,7 +175,7 @@ function DealActionsDropdown({
       <div
         ref={menuRef}
         className="fixed z-[61] w-40 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100"
-        style={{ top: pos.top, left: Math.max(8, pos.left) }}
+        style={{ top: pos.top, left: Math.max(8, Math.min(pos.left, window.innerWidth - 168)) }}
       >
         <button
           onClick={() => { onClose(); onEdit(deal); }}
@@ -261,8 +261,8 @@ function EditDealModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-border bg-card rounded-t-2xl">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-card rounded-t-2xl">
           <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
           <button
             onClick={requestClose}
@@ -273,7 +273,7 @@ function EditDealModal({
             <span aria-hidden>&times;</span>
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <UnifiedDealForm
             key={deal.id}
             mode="edit"
@@ -365,8 +365,8 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
 
   return (
     <>
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
-        <h3 className="text-sm font-semibold text-foreground mb-6">
+      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
+        <h3 className="text-sm font-semibold text-foreground mb-4 sm:mb-6">
           {title}
         </h3>
 
@@ -501,43 +501,60 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
               {recentDeals.map((deal) => (
                 <div key={deal.id} className="rounded-lg border border-border/50 dark:border-white/[0.06] bg-background/50 p-4">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-foreground text-sm truncate">{deal.clientName}</span>
+                          {deal.clientUserId ? (
+                            <Link href={`/dashboard/users/${deal.clientUserId}`} className="min-w-0 truncate font-medium text-foreground text-sm">
+                              {deal.clientName}
+                            </Link>
+                          ) : (
+                            <span className="min-w-0 truncate font-medium text-foreground text-sm">{deal.clientName}</span>
+                          )}
                           {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
                           {deal.createdByAdminId && <AdminEnteredBadge />}
-                          {deal.closerName && (
-                            <span className="relative shrink-0 text-muted-foreground group/closer">
-                              <UserRound className="h-3 w-3" />
-                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-foreground text-background text-[10px] font-medium whitespace-nowrap opacity-0 pointer-events-none group-hover/closer:opacity-100 transition-opacity z-50">
-                                {deal.closerName}
-                              </span>
-                            </span>
-                          )}
-                          {deal.notes && (
-                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500" title="View notes">
-                              <StickyNote className="h-3 w-3" />
-                            </button>
-                          )}
-                          {deal.serviceCategory && (
-                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500" title="View services">
-                              <Briefcase className="h-3 w-3" />
-                            </button>
-                          )}
                         </div>
                         {(deal.brandName || deal.website) && (
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {deal.brandName && <span className="text-xs text-muted-foreground">{deal.brandName}</span>}
+                          <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                            {deal.brandName && <span className="min-w-0 truncate text-xs text-muted-foreground">{deal.brandName}</span>}
                             {deal.website && (
-                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[150px]">
+                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-primary hover:underline truncate max-w-[150px]">
                                 {deal.website.replace(/^https?:\/\//, "")}
                               </a>
                             )}
                           </div>
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground">{formatDealDate(deal.closingDate || deal.createdAt)}</span>
+                      {/* Touch has no hover: the closer name is shown inline
+                          here instead of the desktop hover tooltip. */}
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {formatDealDate(deal.closingDate || deal.createdAt)}
+                        {deal.closerName && <> · {deal.closerName}</>}
+                      </p>
+                      {(deal.notes || deal.serviceCategory) && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {deal.notes && (
+                            <button
+                              type="button"
+                              onClick={() => setInfoModal({ type: "notes", deal })}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+                            >
+                              <StickyNote className="h-3.5 w-3.5" />
+                              Notes
+                            </button>
+                          )}
+                          {deal.serviceCategory && (
+                            <button
+                              type="button"
+                              onClick={() => setInfoModal({ type: "services", deal })}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/5 px-2.5 text-xs font-medium text-violet-700 dark:text-violet-400"
+                            >
+                              <Briefcase className="h-3.5 w-3.5" />
+                              Services
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {adminMode && (
                       <DealActionsCell
@@ -547,9 +564,9 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                       />
                     )}
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold text-foreground text-sm">{formatCents(deal.dealValue)}</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                    <div className="flex min-w-0 items-center justify-end gap-1.5 flex-wrap">
                       <DealStatusBadge status={deal.status} />
                       {deal.invoiceStatus && (
                         <DealInvoiceStatusBadge

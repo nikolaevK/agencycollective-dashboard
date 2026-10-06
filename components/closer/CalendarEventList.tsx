@@ -461,7 +461,7 @@ export function CalendarEventList({
                         <button
                           type="button"
                           onClick={() => toggleExpanded(event.id)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                          className="inline-flex items-center gap-1 py-1.5 sm:py-0 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
                         >
                           <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
                           {isOpen ? "Hide details" : "Details"}
@@ -538,9 +538,9 @@ export function CalendarEventList({
                         {setterClaim.clientEmail && (
                           <a
                             href={`mailto:${setterClaim.clientEmail}`}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground break-all"
                           >
-                            <Mail className="h-3 w-3" />
+                            <Mail className="h-3 w-3 shrink-0" />
                             {setterClaim.clientEmail}
                           </a>
                         )}
@@ -569,7 +569,7 @@ export function CalendarEventList({
                                 <button
                                   type="button"
                                   onClick={() => toggleNotesExpanded(event.id)}
-                                  className="mt-1 text-[11px] font-medium text-primary hover:underline"
+                                  className="mt-1 py-1 sm:py-0 text-[11px] font-medium text-primary hover:underline"
                                 >
                                   {isOpen ? "Show less" : "Show more"}
                                 </button>

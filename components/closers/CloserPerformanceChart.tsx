@@ -238,7 +238,7 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
   const hasData = chartData.some((p) => p.closed > 0 || p.paid > 0);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
+    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
         <div className="flex items-baseline gap-2">
           <h3 className="text-sm font-semibold text-foreground">Performance Trends</h3>

@@ -313,7 +313,7 @@ export function GhlContactList(props: Props) {
       </div>
 
       {/* List body */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {props.error ? (
           <ErrorState message={props.error.message} />
         ) : props.isLoading ? (
@@ -877,8 +877,8 @@ const ContactRow = memo(function ContactRow({
           )}
           {stageIndicator}
           {contact.tags.slice(0, 2).map((t) => (
-            <Badge key={t} variant="secondary" className="text-[10px] py-0 px-1.5">
-              {t}
+            <Badge key={t} variant="secondary" className="max-w-[8rem] text-[10px] py-0 px-1.5">
+              <span className="truncate">{t}</span>
             </Badge>
           ))}
           {contact.tags.length > 2 && (

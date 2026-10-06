@@ -113,9 +113,9 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
-      <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto">
+      <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto overscroll-contain">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-card border-b border-border px-4 sm:px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <FileSignature className="h-5 w-5" />
             Contract
@@ -130,7 +130,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -184,7 +184,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
                 {contract.clientEmail && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Client Email</p>
-                    <p className="text-sm text-foreground mt-0.5">{contract.clientEmail}</p>
+                    <p className="text-sm text-foreground mt-0.5 break-all">{contract.clientEmail}</p>
                   </div>
                 )}
 
@@ -227,7 +227,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
               {/* Actions */}
               {isAdmin && (
                 <div className="pt-4 border-t border-border/50 space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {contract.status !== "signed" && (
                       <button
                         onClick={handleResend}
@@ -266,7 +266,7 @@ export function DealContractDrawer({ dealId, clientEmail, onClose, isAdmin }: Pr
 function RecipientNote({ email, className }: { email?: string | null; className?: string }) {
   return email ? (
     <p className={cn("text-xs text-muted-foreground", className)}>
-      Sends to <span className="font-medium text-foreground">{email}</span>
+      Sends to <span className="font-medium text-foreground break-all">{email}</span>
     </p>
   ) : (
     <p className={cn("text-xs text-amber-600 dark:text-amber-400", className)}>

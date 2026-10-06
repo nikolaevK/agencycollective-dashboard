@@ -418,7 +418,9 @@ export default function PayoutsPage() {
 
   return (
     <DashboardShell wide>
-      <div className="space-y-6">
+      {/* pb-28 on phones: the stacked FABs (bottom-20 → 9.25rem + 3rem) would
+          otherwise sit over the last payout card when scrolled to the end. */}
+      <div className="space-y-6 pb-28 md:pb-0">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>

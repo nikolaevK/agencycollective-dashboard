@@ -1105,12 +1105,12 @@ function DeleteConfirm({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onCancel}
       />
-      <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card p-6 shadow-xl mx-4">
+      <div className="relative z-10 w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto break-words rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card p-6 shadow-xl">
         <h4 className="text-lg font-semibold text-foreground">Delete Payout</h4>
         <p className="text-sm text-muted-foreground mt-2">
           Are you sure you want to delete the payout for{" "}
@@ -1152,16 +1152,20 @@ function DetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card p-6 shadow-xl mx-4">
-        <h4 className="text-sm font-semibold text-foreground">{brandName}</h4>
-        <p className="text-xs text-muted-foreground mb-3">{label}</p>
-        <p className="text-sm text-foreground whitespace-pre-wrap">{content}</p>
-        <div className="flex justify-end mt-4">
+      <div className="relative z-10 flex w-full max-w-md max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl">
+        <div className="shrink-0 px-6 pt-6">
+          <h4 className="text-sm font-semibold text-foreground break-words">{brandName}</h4>
+          <p className="text-xs text-muted-foreground mb-3">{label}</p>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6">
+          <p className="text-sm text-foreground whitespace-pre-wrap break-words">{content}</p>
+        </div>
+        <div className="flex shrink-0 justify-end px-6 pb-6 pt-4">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -1532,11 +1536,11 @@ export function PayoutTable({
                   <span>&middot;</span>
                   <span>{formatDate(p.dateJoined)}</span>
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
                   {p.pointOfContact && (
                     <button
                       onClick={() => setPocId(p.id)}
-                      className="inline-flex items-center gap-1 text-xs text-sky-500 hover:text-sky-600 transition-colors"
+                      className="inline-flex items-center gap-1 py-1 text-xs text-sky-500 hover:text-sky-600 transition-colors"
                     >
                       <UserCircle className="h-3 w-3" />
                       View POC
@@ -1545,7 +1549,7 @@ export function PayoutTable({
                   {p.service && (
                     <button
                       onClick={() => setServiceId(p.id)}
-                      className="inline-flex items-center gap-1 text-xs text-violet-500 hover:text-violet-600 transition-colors"
+                      className="inline-flex items-center gap-1 py-1 text-xs text-violet-500 hover:text-violet-600 transition-colors"
                     >
                       <Briefcase className="h-3 w-3" />
                       View Service
@@ -1553,7 +1557,7 @@ export function PayoutTable({
                   )}
                   <button
                     onClick={() => onViewDocs(p.brandName)}
-                    className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 transition-colors"
+                    className="inline-flex items-center gap-1 py-1 text-xs text-blue-500 hover:text-blue-600 transition-colors"
                   >
                     <FileText className="h-3 w-3" />
                     Docs
@@ -1677,7 +1681,7 @@ export function PayoutTable({
               <div className="mt-3 pt-3 border-t border-border/50 dark:border-white/[0.06] flex items-center gap-1.5">
                 <button
                   onClick={() => setNotesId(p.id)}
-                  className="inline-flex items-center gap-1 text-xs text-amber-500 hover:text-amber-600 transition-colors"
+                  className="inline-flex items-center gap-1 py-1 text-xs text-amber-500 hover:text-amber-600 transition-colors"
                 >
                   <StickyNote className="h-3 w-3" />
                   View Notes

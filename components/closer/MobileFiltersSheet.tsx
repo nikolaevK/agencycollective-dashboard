@@ -37,7 +37,7 @@ export function MobileFiltersSheet({ activeCount, children }: Props) {
           <button
             type="button"
             className={cn(
-              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
               activeCount > 0
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted/50 text-foreground hover:bg-muted"
@@ -52,7 +52,7 @@ export function MobileFiltersSheet({ activeCount, children }: Props) {
             )}
           </button>
         </DialogTrigger>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md rounded-xl overscroll-contain">
           <DialogHeader>
             <DialogTitle>Filters</DialogTitle>
           </DialogHeader>

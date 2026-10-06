@@ -443,7 +443,7 @@ export function AddEditPayoutModal({
                   if (e.key === "Enter") { e.preventDefault(); handleAddVertical(); }
                   if (e.key === "Escape") { setAddingVertical(false); setNewVerticalName(""); }
                 }}
-                className={inputClass}
+                className={cn(inputClass, "min-w-0")}
                 placeholder="New vertical name..."
               />
               <button
@@ -627,7 +627,7 @@ export function AddEditPayoutModal({
                 if (e.key === "Enter") { e.preventDefault(); handleAddRep(); }
                 if (e.key === "Escape") { setAddingRep(false); setNewRepName(""); }
               }}
-              className={inputClass}
+              className={cn(inputClass, "min-w-0")}
               placeholder="New rep name..."
             />
             <button
@@ -691,7 +691,7 @@ export function AddEditPayoutModal({
                   if (e.key === "Enter") { e.preventDefault(); handleAddReferral(); }
                   if (e.key === "Escape") { setAddingReferral(false); setNewReferralName(""); }
                 }}
-                className={inputClass}
+                className={cn(inputClass, "min-w-0")}
                 placeholder="New referral name..."
               />
               <button
@@ -857,7 +857,7 @@ export function AddEditPayoutModal({
                 <select
                   value={party.name}
                   onChange={(e) => updateSplitParty(idx, "name", e.target.value)}
-                  className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                  className="flex-1 min-w-0 h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
                 >
                   <option value="">Select party...</option>
                   {salesRepOptions.map((opt) => (
@@ -869,7 +869,7 @@ export function AddEditPayoutModal({
                     <option value={party.name}>{party.name}</option>
                   )}
                 </select>
-                <div className="relative w-20">
+                <div className="relative w-20 shrink-0">
                   <input
                     type="number"
                     min="0"
@@ -954,7 +954,8 @@ export function AddEditPayoutModal({
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <button
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+            aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -968,12 +969,12 @@ export function AddEditPayoutModal({
           onSubmit={handleSubmit}
           className="flex flex-1 flex-col overflow-hidden"
         >
-          <div className="flex-1 overflow-y-auto px-4 py-5 pb-28 space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5 pb-28 space-y-5">
             {imported ? importedView : formFields}
           </div>
 
           {/* Mobile fixed bottom bar */}
-          <div className="border-t border-border bg-card px-4 py-3 flex items-center gap-3">
+          <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center gap-3">
             {imported ? (
               <button
                 type="button"
@@ -1010,7 +1011,7 @@ export function AddEditPayoutModal({
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
           onClick={onClose}
         />
-        <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl mx-4">
+        <div className="relative z-10 w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl mx-4">
           {/* Desktop header */}
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 dark:border-white/[0.06] bg-card px-6 py-4 rounded-t-2xl">
             <h3 className="text-lg font-semibold text-foreground">

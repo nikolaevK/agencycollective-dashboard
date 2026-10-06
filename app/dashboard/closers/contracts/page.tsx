@@ -237,28 +237,28 @@ export default function ContractTemplatesPage() {
                 <div className="flex items-center gap-1 border-t border-border/50 pt-3">
                   <button
                     onClick={() => setPreviewTemplateId(tmpl.docusealTemplateId)}
-                    className="h-8 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
                   >
                     <Eye className="h-3.5 w-3.5" />
                     Preview
                   </button>
                   <button
                     onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); setBuilderLocalId(tmpl.id); }}
-                    className="h-8 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
                   >
                     <Hammer className="h-3.5 w-3.5" />
                     Builder
                   </button>
                   <button
                     onClick={() => { setEditingId(tmpl.id); setShowForm(true); }}
-                    className="h-8 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(tmpl.id)}
-                    className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors shrink-0"
+                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors shrink-0"
                     title="Delete template"
                     aria-label={`Delete ${tmpl.name}`}
                   >
@@ -404,12 +404,12 @@ function TemplateFormModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground">
             {editId ? "Edit Template" : "Add Contract Template"}
           </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">&times;</button>
+          <button onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-lg text-xl leading-none text-muted-foreground hover:bg-accent hover:text-foreground">&times;</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
@@ -464,7 +464,7 @@ function TemplateFormModal({
             </p>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer">
             <input
               type="checkbox"
               checked={isDefault}
@@ -532,13 +532,13 @@ function TemplateFieldPreview({
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto">
+      <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto overscroll-contain">
         <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <Eye className="h-5 w-5" />
             Template Fields
           </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -580,14 +580,14 @@ function TemplateFieldPreview({
                     {template.fields.map((field, i) => {
                       const typeColor = FIELD_TYPE_COLORS[field.type || "text"] || FIELD_TYPE_COLORS.text;
                       return (
-                        <div key={i} className="rounded-lg border border-border/50 p-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{field.name}</p>
+                        <div key={i} className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground break-words">{field.name}</p>
                             {field.role && (
                               <p className="text-[10px] text-muted-foreground mt-0.5">Role: {field.role}</p>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex shrink-0 items-center gap-1.5">
                             {field.required && (
                               <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400">
                                 Required
@@ -671,13 +671,13 @@ function UploadTemplateModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={close} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Upload Contract Document
           </h3>
-          <button onClick={close} disabled={uploading} className="text-muted-foreground hover:text-foreground disabled:opacity-50">&times;</button>
+          <button onClick={close} disabled={uploading} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-lg text-xl leading-none text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50">&times;</button>
         </div>
         <form onSubmit={handleUpload} className="p-6 space-y-4">
           <div>
@@ -714,7 +714,7 @@ function UploadTemplateModal({
                 {file ? (
                   <>
                     <FileSignature className="h-8 w-8 text-primary mb-2" />
-                    <p className="text-sm font-medium text-foreground">{file.name}</p>
+                    <p className="max-w-full px-4 text-sm font-medium text-foreground truncate">{file.name}</p>
                     <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
                   </>
                 ) : (
@@ -823,19 +823,21 @@ function TemplateBuilderModal({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
-        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <Hammer className="h-5 w-5" />
-          {templateId ? `Edit Template: ${templateName || `#${templateId}`}` : "Build New Template"}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3 shrink-0">
+        <h2 className="min-w-0 text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
+          <Hammer className="h-5 w-5 shrink-0" />
+          <span className="truncate">
+            {templateId ? `Edit Template: ${templateName || `#${templateId}`}` : "Build New Template"}
+          </span>
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <button
             onClick={() => { handleSaved(); }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Done
           </button>
-          <button onClick={() => { handleSaved(); }} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={() => { handleSaved(); }} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>

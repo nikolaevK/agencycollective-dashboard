@@ -69,9 +69,13 @@ function CardActionsDropdown({
   useEffect(() => {
     if (!anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
+    // Flip above the button when the menu (~3 rows) would run off the bottom
+    // of the visible viewport — the last card sits near the fixed BottomNav.
+    const MENU_H = 124;
+    const below = rect.bottom + 4;
     setPos({
-      top: rect.bottom + 4,
-      left: rect.right - 192,
+      top: below + MENU_H > window.innerHeight - 8 ? Math.max(8, rect.top - MENU_H - 4) : below,
+      left: Math.min(rect.right - 192, window.innerWidth - 192 - 8),
     });
   }, [anchorRef]);
 
@@ -133,7 +137,8 @@ function CardActionsButton({
       <button
         ref={btnRef}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+        aria-label={`Actions for ${closer.displayName}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>

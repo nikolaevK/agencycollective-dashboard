@@ -27,14 +27,14 @@ export function GoogleConnectCard({ connected, email, isAdmin }: Props) {
     return (
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/15">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/15">
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Google Calendar Connected</p>
               {email && (
-                <p className="text-xs text-muted-foreground mt-0.5">{email}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 break-all">{email}</p>
               )}
             </div>
           </div>
@@ -42,7 +42,7 @@ export function GoogleConnectCard({ connected, email, isAdmin }: Props) {
             <button
               onClick={handleDisconnect}
               disabled={isPending}
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+              className="flex shrink-0 items-center gap-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
             >
               <Unplug className="h-3.5 w-3.5" />
               Disconnect

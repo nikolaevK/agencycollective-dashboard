@@ -92,7 +92,8 @@ export default function ClosersManagePage() {
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      {/* Extra bottom room on phones so the FAB never covers the pagination. */}
+      <div className="space-y-6 pb-16 md:pb-0">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -149,6 +150,7 @@ export default function ClosersManagePage() {
         {/* Mobile FAB */}
         <button
           onClick={openCreate}
+          aria-label="Add new closer"
           className="md:hidden fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg hover:opacity-90 transition-opacity"
         >
           <Plus className="h-6 w-6" />

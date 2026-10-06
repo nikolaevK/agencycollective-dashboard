@@ -31,7 +31,7 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh 
   return (
     <AdminProvider value={adminData}>
       <AdminPresenceHeartbeat />
-      <div className="flex h-screen overflow-hidden">
+      <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden">
         {/* Mobile backdrop */}
         {sidebarOpen && (
           <div

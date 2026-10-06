@@ -86,9 +86,9 @@ function NewDealModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-new-deal-title"
-        className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto overscroll-contain"
+        className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-border bg-card rounded-t-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-card rounded-t-2xl">
           <h3 id="admin-new-deal-title" className="text-lg font-semibold text-foreground">
             New deal
           </h3>
@@ -102,7 +102,7 @@ function NewDealModal({
             <span aria-hidden>&times;</span>
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <UnifiedDealForm
             mode="create"
             context="admin"

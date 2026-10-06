@@ -191,7 +191,7 @@ function UploadArea({
           />
         </div>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
           type="file"
@@ -292,14 +292,14 @@ export function BrandDocumentsModal({
   const invoiceCount = docs.filter((d) => d.docType === "invoice").length;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative w-full mx-4 max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+      <div className="relative flex w-full max-w-lg max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-border">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold text-foreground truncate">
               Documents
@@ -310,6 +310,7 @@ export function BrandDocumentsModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors shrink-0"
           >
             <X className="h-4 w-4" />
@@ -317,7 +318,7 @@ export function BrandDocumentsModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-4 pt-3 pb-1">
+        <div className="flex shrink-0 gap-1 px-4 pt-3 pb-1">
           {tabs.map((t) => {
             const count = t.value === "project_scope" ? scopeCount : invoiceCount;
             return (
@@ -338,7 +339,7 @@ export function BrandDocumentsModal({
         </div>
 
         {/* Content */}
-        <div className="max-h-[55vh] overflow-y-auto">
+        <div className="min-h-0 max-h-[55dvh] overflow-y-auto overscroll-contain">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -361,7 +362,7 @@ export function BrandDocumentsModal({
 
         {/* Delete confirmation banner */}
         {deleteConfirm && (
-          <div className="px-4 py-2 bg-destructive/10 border-t border-border/50 flex items-center justify-between">
+          <div className="shrink-0 px-4 py-2 bg-destructive/10 border-t border-border/50 flex items-center justify-between gap-2">
             <p className="text-xs text-destructive">
               Click delete again to confirm removal
             </p>
@@ -375,7 +376,7 @@ export function BrandDocumentsModal({
         )}
 
         {/* Upload */}
-        <div className="border-t border-border">
+        <div className="shrink-0 border-t border-border">
           <UploadArea
             key={tab}
             docType={tab}

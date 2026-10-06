@@ -229,7 +229,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
       <div
         className={cn(
-          "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
+          "min-w-0 max-w-[80%] rounded-2xl px-3 py-2 text-sm",
           isOutbound
             ? "bg-blue-500 text-white rounded-br-sm"
             : "bg-muted text-foreground rounded-bl-sm"
