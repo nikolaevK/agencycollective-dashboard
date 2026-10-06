@@ -12,8 +12,9 @@ import { logAuditEvent } from "./auditLog";
  * quota, commission, leaderboard all follow it); the submitter is kept in
  * `original_closer_id` (written once). Attendance rows are NOT moved — the
  * show belongs to whoever took the call. A Sales Rep that doesn't name exactly
- * one ACTIVE closer (splits, REBILL/Ad Account markers, unknown or inactive
- * names) leaves the deal where it is.
+ * one ACTIVE closer (blank, splits, REBILL/Ad Account markers, unknown or
+ * inactive names) sends a previously moved deal back to its submitter and
+ * leaves a never-moved deal where it is.
  *
  * Callers run this AFTER the payout write and only for payouts linked to a
  * deal (`source_deal_id`). It never throws — the payout is already saved.
@@ -32,7 +33,11 @@ export async function syncDealCloserFromSalesRep(
     const [deal, closers] = await Promise.all([findDeal(dealId), readClosers()]);
     if (!deal) return { moved: false, reason: "not_found" };
 
-    const toCloserId = matchCloserBySalesRep(salesRep, closers);
+    // No single active closer named (blank, split, marker, unknown, inactive):
+    // a deal an earlier Sales Rep moved goes back to its submitter — even an
+    // inactive one, since that restores rather than assigns. Never-moved
+    // deals stay put.
+    const toCloserId = matchCloserBySalesRep(salesRep, closers) ?? deal.originalCloserId ?? null;
     if (!toCloserId) return { moved: false, reason: "no_match" };
     if (toCloserId === deal.closerId) return { moved: false, reason: "unchanged" };
 
