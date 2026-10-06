@@ -564,9 +564,31 @@ export interface PayoutPoolEntry {
 }
 
 /**
+ * Payout brands no client's directory row consumes. A brand is claimed exactly
+ * when `matchHistories` attributes it to some client — the SAME rule that
+ * drives MRR/revenue/schedule — so the pool can neither hide a brand nobody
+ * bills (e.g. client "Nextgen" linked to "NextGen Peptides" must not swallow
+ * "NextGen BioLabs" via a display-name substring) nor offer one that a
+ * client already counts (importing it would double-count its payouts).
+ */
+export function unclaimedBrandHistories(
+  users: UserRecord[],
+  histories: BrandHistory[]
+): BrandHistory[] {
+  const claimed = new Set<string>();
+  for (const u of users) {
+    for (const h of matchHistories(u, histories)) claimed.add(h.normalizedName);
+  }
+  return histories.filter((h) => !claimed.has(h.normalizedName));
+}
+
+/**
  * Payout brands with no matching client yet, optionally filtered to those whose
  * date_joined falls within [since, until] (yyyy-mm-dd, inclusive). Powers the
  * "add client from the Payout DB" picker (defaults to the past week in the UI).
+ * A brand with no date_joined is windowed by its first payout month instead —
+ * Payout Month is set explicitly (not derived from Date Joined), so an undated
+ * new brand would otherwise be invisible under every date window.
  */
 export async function getPayoutPool(opts?: {
   since?: string | null;
@@ -577,34 +599,18 @@ export async function getPayoutPool(opts?: {
     getAllBrandHistories(),
   ]);
 
-  // Normalized keys already claimed by a client (explicit link or fuzzy name).
-  const claimed = new Set<string>();
-  for (const u of users) {
-    if (u.payoutBrand) claimed.add(normalizeBrandName(u.payoutBrand));
-    const nameNorm = normalizeBrandName(u.displayName);
-    if (nameNorm) claimed.add(nameNorm);
-  }
-
   const since = opts?.since ?? null;
   const until = opts?.until ?? null;
 
   const pool: PayoutPoolEntry[] = [];
-  for (const h of histories) {
-    // Skip if any claimed key matches this brand.
-    let isClaimed = claimed.has(h.normalizedName);
-    if (!isClaimed) {
-      for (const key of claimed) {
-        if (brandsMatch(key, h.normalizedName)) {
-          isClaimed = true;
-          break;
-        }
-      }
-    }
-    if (isClaimed) continue;
-
+  for (const h of unclaimedBrandHistories(users, histories)) {
     const dj = datePart(h.earliestDateJoined);
-    if (since && (!dj || dj < since)) continue;
-    if (until && (!dj || dj > until)) continue;
+    const first = h.months[0];
+    const windowDate =
+      dj ??
+      (first ? `${first.year}-${String(first.month).padStart(2, "0")}-01` : null);
+    if (since && (!windowDate || windowDate < since)) continue;
+    if (until && (!windowDate || windowDate > until)) continue;
 
     pool.push({
       brandName: h.displayBrand,

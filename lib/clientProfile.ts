@@ -628,8 +628,11 @@ export async function autofillClientProfileFromDeal(
   if (!website && services.length === 0) return { warnings };
 
   // Resolve the target client: explicit id → deal link → brand match
-  // (mirrors the directory's matchHistories priority: explicit payout_brand
-  // first, then display name, exact before fuzzy).
+  // (mirrors the directory's matchHistories: a linked client is matched by its
+  // payout_brand ONLY — its display name never claims another brand, e.g.
+  // "Nextgen" linked to "NextGen Peptides" must not catch "NextGen BioLabs";
+  // the display name counts only for unlinked clients; partner books match by
+  // exact link only; exact before fuzzy).
   let userId = opts?.resolvedUserId ?? deal.clientUserId ?? null;
   if (!userId) {
     const brandSource = deal.brandName?.trim() || deal.clientName;
@@ -639,21 +642,20 @@ export async function autofillClientProfileFromDeal(
       return { warnings };
     }
     const users = await readUsers();
-    const exact = users.filter(
-      (u) =>
-        (u.payoutBrand && normalizeBrandName(u.payoutBrand) === norm) ||
-        normalizeBrandName(u.displayName) === norm
-    );
+    const exact = users.filter((u) => {
+      const linkNorm = u.payoutBrand ? normalizeBrandName(u.payoutBrand) : "";
+      if (linkNorm) return linkNorm === norm;
+      return u.workspace === "main" && normalizeBrandName(u.displayName) === norm;
+    });
     if (exact.length === 1) {
       userId = exact[0].id;
     } else if (exact.length === 0) {
       const fuzzy = users.filter((u) => {
+        if (u.workspace !== "main") return false;
         const linkNorm = u.payoutBrand ? normalizeBrandName(u.payoutBrand) : "";
+        if (linkNorm) return brandsMatch(linkNorm, norm);
         const nameNorm = normalizeBrandName(u.displayName);
-        return (
-          (linkNorm && brandsMatch(linkNorm, norm)) ||
-          (nameNorm && brandsMatch(nameNorm, norm))
-        );
+        return !!nameNorm && brandsMatch(nameNorm, norm);
       });
       if (fuzzy.length === 1) {
         userId = fuzzy[0].id;
