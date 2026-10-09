@@ -469,7 +469,28 @@ export async function deleteUser(id: string): Promise<boolean> {
   // Explicit cleanup of Client Directory child rows. libSQL FK cascade is not
   // guaranteed to fire (see CLAUDE.md), so we don't rely on it for these
   // additive tables. Best-effort + tolerant of a not-yet-migrated DB.
-  for (const table of ["client_notes", "client_billing", "client_profile", "client_team"]) {
+  // Asset bytes first — the chunk rows are found through client_assets.
+  try {
+    await db.execute({
+      sql: "DELETE FROM client_asset_chunks WHERE asset_id IN (SELECT id FROM client_assets WHERE user_id = ?)",
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] cleanup of client_asset_chunks failed (non-fatal):", err);
+    }
+  }
+  for (const table of [
+    "client_notes",
+    "client_billing",
+    "client_profile",
+    "client_team",
+    "client_assets",
+    "client_onboarding",
+    "client_onboarding_selections",
+    "client_onboarding_access",
+  ]) {
     try {
       await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [id] });
     } catch (err) {

@@ -499,6 +499,105 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_invoice_followups_invoice
      ON invoice_followups (invoice_kind, invoice_id, created_at DESC)`,
+    // Client onboarding questionnaire (portal → Onboarding → Questionnaire;
+    // lib/clientOnboarding.ts, vocab in lib/onboardingForm.ts). Normalized:
+    // one row of scalar answers per client (money in CENTS, percentages in
+    // BPS), multi-select answers one row per chosen value, platform access one
+    // row per platform. Every read/write is per client, served by the PKs.
+    // Brand-new tables — self-heal without a SCHEMA_VERSION bump.
+    `CREATE TABLE IF NOT EXISTS client_onboarding (
+      user_id              TEXT PRIMARY KEY,
+      status               TEXT NOT NULL DEFAULT 'draft',
+      brand_name           TEXT,
+      website              TEXT,
+      hero_product         TEXT,
+      main_contact         TEXT,
+      ad_approver          TEXT,
+      monthly_revenue      TEXT,
+      ad_spend_now_cents   INTEGER,
+      roas_now             TEXT,
+      ad_spend_start_cents INTEGER,
+      ad_spend_90d_cents   INTEGER,
+      primary_goal         TEXT,
+      target               TEXT,
+      win_90d              TEXT,
+      aov_cents            INTEGER,
+      cogs_cents           INTEGER,
+      shipping_cents       INTEGER,
+      fulfillment_cents    INTEGER,
+      processing_bps       INTEGER,
+      other_cents          INTEGER,
+      refunds_bps          INTEGER,
+      repeat_purchase      TEXT,
+      store_platform       TEXT,
+      access_contact       TEXT,
+      website_manager      TEXT,
+      assets_url           TEXT,
+      notes                TEXT,
+      submitted_at         TEXT,
+      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS client_onboarding_selections (
+      user_id   TEXT NOT NULL,
+      question  TEXT NOT NULL,
+      value     TEXT NOT NULL,
+      PRIMARY KEY (user_id, question, value)
+    )`,
+    `CREATE TABLE IF NOT EXISTS client_onboarding_access (
+      user_id   TEXT NOT NULL,
+      platform  TEXT NOT NULL,
+      status    TEXT NOT NULL,
+      PRIMARY KEY (user_id, platform)
+    )`,
+    // Client assets — portal "My Brand" (section 'brand': brand book, product
+    // photos, Drive links; client + admin upload) and "Ad Creatives" (section
+    // 'creative'; admin upload, client view). lib/clientAssets.ts.
+    // client_assets is METADATA ONLY — the bytes live in client_asset_chunks,
+    // so a gallery listing never touches a blob page (no overflow-chain walk,
+    // no INDEXED BY needed). Originals are stored in ≤3 MB chunks (uploads
+    // stay under Vercel's 4.5 MB body cap; downloads stream one chunk at a
+    // time); 'thumb'/'preview' are small server-made WebP variants (seq 0).
+    `CREATE TABLE IF NOT EXISTS client_assets (
+      id               TEXT PRIMARY KEY,
+      user_id          TEXT NOT NULL,
+      section          TEXT NOT NULL,
+      category         TEXT NOT NULL,
+      media_type       TEXT NOT NULL,
+      title            TEXT NOT NULL,
+      file_name        TEXT,
+      mime_type        TEXT,
+      file_size        INTEGER NOT NULL DEFAULT 0,
+      chunk_size       INTEGER NOT NULL DEFAULT 0,
+      chunk_count      INTEGER NOT NULL DEFAULT 0,
+      width            INTEGER,
+      height           INTEGER,
+      duration_ms      INTEGER,
+      has_thumb        INTEGER NOT NULL DEFAULT 0,
+      has_preview      INTEGER NOT NULL DEFAULT 0,
+      link_url         TEXT,
+      status           TEXT NOT NULL DEFAULT 'ready',
+      uploaded_by_role TEXT NOT NULL,
+      uploaded_by_id   TEXT,
+      uploaded_by_name TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Gallery pages (user, section, ready) newest-first with an (created_at,
+    // id) keyset cursor; also the per-client media-type counts + stale-upload
+    // sweep (prefix user_id).
+    `CREATE INDEX IF NOT EXISTS idx_client_assets_owner
+     ON client_assets (user_id, section, status, created_at DESC, id DESC)`,
+    // Abandoned-upload sweep across ALL clients — partial, so it only ever
+    // holds the few in-progress rows.
+    `CREATE INDEX IF NOT EXISTS idx_client_assets_uploading
+     ON client_assets (created_at, id) WHERE status = 'uploading'`,
+    `CREATE TABLE IF NOT EXISTS client_asset_chunks (
+      asset_id  TEXT NOT NULL,
+      variant   TEXT NOT NULL,
+      seq       INTEGER NOT NULL,
+      data      BLOB NOT NULL,
+      PRIMARY KEY (asset_id, variant, seq)
+    )`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

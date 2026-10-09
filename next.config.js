@@ -15,6 +15,8 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.docuseal.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
+      // blob: — the Ad Creatives uploader reads a poster frame from the local video file.
+      "media-src 'self' blob:",
       "font-src 'self' https://fonts.gstatic.com",
       "worker-src 'self' blob:",
       "connect-src 'self' data: https://graph.facebook.com https://fonts.googleapis.com https://fonts.gstatic.com https://docuseal.com https://*.docuseal.com",

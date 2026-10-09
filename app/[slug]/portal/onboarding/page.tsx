@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Megaphone,
   Mail,
@@ -19,6 +20,8 @@ import {
   useToggleOnboardingStep,
 } from "@/hooks/useOnboardingProgress";
 import { ALL_STEP_IDS as VALID_STEP_IDS } from "@/lib/onboarding-steps";
+import { OnboardingQuestionnaire } from "@/components/onboarding/OnboardingQuestionnaire";
+import { useOnboardingForm } from "@/hooks/useOnboardingForm";
 
 /* ------------------------------------------------------------------ */
 /*  Types & Data                                                       */
@@ -501,7 +504,7 @@ function MilestoneSummary({
 /*  Main content                                                       */
 /* ------------------------------------------------------------------ */
 
-function OnboardingContent() {
+function SetupChecklist() {
   const { data, isLoading } = useOnboardingProgress();
   const { mutate: toggle, variables: pendingStep } = useToggleOnboardingStep();
 
@@ -526,91 +529,168 @@ function OnboardingContent() {
   }
 
   return (
-    <DashboardShell>
-      <div className="space-y-8">
-        {/* Header Section */}
-        <div className="mb-12">
-          <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-portal-on-surface mb-2">
-                Onboarding Checklist
-              </h1>
-              <p className="text-portal-secondary-text max-w-2xl">
-                Complete these steps to ensure your advertising ecosystem is
-                fully optimized and integrated with the Agency Collective
-                framework.
-              </p>
+    <div className="space-y-8">
+      {/* Header Section */}
+      <div className="mb-12">
+        <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-portal-on-surface mb-2">
+              Onboarding Checklist
+            </h1>
+            <p className="text-portal-secondary-text max-w-2xl">
+              Complete these steps to ensure your advertising ecosystem is
+              fully optimized and integrated with the Agency Collective
+              framework.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-4xl font-light text-primary">
+              {isLoading ? "\u2014" : `${progress}%`}
             </div>
-            <div className="text-right">
-              <div className="text-4xl font-light text-primary">
-                {isLoading ? "\u2014" : `${progress}%`}
-              </div>
-              <div className="text-xs font-bold text-portal-secondary-dim uppercase tracking-wider">
-                Overall Progress
-              </div>
+            <div className="text-xs font-bold text-portal-secondary-dim uppercase tracking-wider">
+              Overall Progress
             </div>
           </div>
+        </div>
 
-          {/* Progress bar */}
-          <div className="h-3 w-full bg-portal-surface-low rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${progress}%`,
-                background:
-                  "linear-gradient(90deg, hsl(263 70% 52%) 0%, hsl(261 100% 77%) 100%)",
-              }}
+        {/* Progress bar */}
+        <div className="h-3 w-full bg-portal-surface-low rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${progress}%`,
+              background:
+                "linear-gradient(90deg, hsl(263 70% 52%) 0%, hsl(261 100% 77%) 100%)",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Bento Grid */}
+      <div className="grid grid-cols-12 gap-5 md:gap-8">
+        {/* Left Column */}
+        <div className="col-span-12 lg:col-span-4 space-y-8">
+          <MilestoneSummary completedSteps={completedSteps} />
+
+          {/* Need Assistance Card */}
+          <div className="relative overflow-hidden bg-primary p-6 md:p-8 rounded-xl text-white">
+            <div className="relative z-10">
+              <h3 className="text-lg font-bold mb-2">Need Assistance?</h3>
+              <p className="text-sm opacity-80 leading-relaxed">
+                Reach out in your dedicated Slack channel and our team will
+                help you through any step.
+              </p>
+            </div>
+            <MessageCircle
+              className="absolute -right-8 -bottom-8 opacity-10"
+              size={120}
             />
           </div>
         </div>
 
-        {/* Bento Grid */}
-        <div className="grid grid-cols-12 gap-5 md:gap-8">
-          {/* Left Column */}
-          <div className="col-span-12 lg:col-span-4 space-y-8">
-            <MilestoneSummary completedSteps={completedSteps} />
-
-            {/* Need Assistance Card */}
-            <div className="relative overflow-hidden bg-primary p-6 md:p-8 rounded-xl text-white">
-              <div className="relative z-10">
-                <h3 className="text-lg font-bold mb-2">Need Assistance?</h3>
-                <p className="text-sm opacity-80 leading-relaxed">
-                  Reach out in your dedicated Slack channel and our team will
-                  help you through any step.
-                </p>
-              </div>
-              <MessageCircle
-                className="absolute -right-8 -bottom-8 opacity-10"
-                size={120}
-              />
-            </div>
-          </div>
-
-          {/* Right Column */}
-          <div className="col-span-12 lg:col-span-8 space-y-10">
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className="h-24 animate-pulse rounded-xl bg-muted/60"
-                  />
-                ))}
-              </div>
-            ) : (
-              SECTIONS.map((section) => (
-                <SectionBlock
-                  key={section.id}
-                  section={section}
-                  completedSteps={completedSteps}
-                  onToggle={handleToggle}
-                  pendingStepId={
-                    typeof pendingStep === "string" ? pendingStep : null
-                  }
+        {/* Right Column */}
+        <div className="col-span-12 lg:col-span-8 space-y-10">
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="h-24 animate-pulse rounded-xl bg-muted/60"
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            SECTIONS.map((section) => (
+              <SectionBlock
+                key={section.id}
+                section={section}
+                completedSteps={completedSteps}
+                onToggle={handleToggle}
+                pendingStepId={
+                  typeof pendingStep === "string" ? pendingStep : null
+                }
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type OnboardingTab = "questionnaire" | "checklist";
+
+function OnboardingContent() {
+  const searchParams = useSearchParams();
+  const form = useOnboardingForm();
+  const progress = useOnboardingProgress();
+  const linked = searchParams.get("tab");
+  const [picked, setPicked] = useState<OnboardingTab | null>(
+    linked === "questionnaire" || linked === "checklist" ? linked : null
+  );
+  // The questionnaire leads until it's submitted. Decided ONCE when the form
+  // first loads — submitting must not yank the client off the confirmation.
+  useEffect(() => {
+    if (picked === null && form.data) {
+      setPicked(form.data.status === "submitted" ? "checklist" : "questionnaire");
+    }
+  }, [picked, form.data]);
+  const tab: OnboardingTab =
+    picked ?? (form.data?.status === "submitted" ? "checklist" : "questionnaire");
+  const stepsDone = Object.keys(progress.data?.completedSteps ?? {}).length;
+
+  const tabs: { id: OnboardingTab; label: string; badge: string }[] = [
+    {
+      id: "questionnaire",
+      label: "Questionnaire",
+      badge: form.data?.status === "submitted" ? "Submitted" : "Start here",
+    },
+    { id: "checklist", label: "Setup checklist", badge: `${stepsDone}/${VALID_STEP_IDS.length}` },
+  ];
+
+  return (
+    <DashboardShell>
+      <div className="space-y-8">
+        <div
+          role="tablist"
+          aria-label="Onboarding"
+          className="grid grid-cols-2 gap-1 rounded-xl bg-portal-surface-low p-1 sm:inline-grid sm:w-auto"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setPicked(t.id)}
+              className={cn(
+                "flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:px-5",
+                tab === t.id
+                  ? "bg-portal-surface-lowest text-primary shadow-sm"
+                  : "text-portal-secondary-text hover:text-portal-on-surface"
+              )}
+            >
+              {t.label}
+              <span
+                className={cn(
+                  "hidden rounded-full px-1.5 py-0.5 text-[10px] font-bold sm:inline",
+                  t.id === "questionnaire" && form.data?.status === "submitted"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    : "bg-primary/10 text-primary"
+                )}
+              >
+                {t.badge}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Both stay mounted so switching tabs never drops unsaved answers. */}
+        <div hidden={tab !== "questionnaire"}>
+          <OnboardingQuestionnaire />
+        </div>
+        <div hidden={tab !== "checklist"}>
+          <SetupChecklist />
         </div>
       </div>
     </DashboardShell>

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame, Palette, Clapperboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
@@ -16,6 +16,7 @@ interface UserSidebarProps {
 export function UserSidebar({ displayName, isOpen = false, onClose }: UserSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const qc = useQueryClient();
 
   // Extract slug from URL: "/{slug}/portal/..."
   const slug = pathname.split("/")[1] ?? "";
@@ -64,6 +65,11 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/?portal=client");
+    // The QueryClient lives in the root layout and survives the soft
+    // navigation into the next login — drop this client's cached data
+    // (e.g. the questionnaire, cached with staleTime: Infinity) so the next
+    // client on this browser never sees or autosaves it.
+    qc.clear();
   }
 
   return (
@@ -128,6 +134,28 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
         >
           <ClipboardCheck className="h-4 w-4 shrink-0" />
           <span>Onboarding</span>
+        </Link>
+        <Link
+          href={`/${slug}/portal/brand`}
+          onClick={onClose}
+          className={cn(
+            "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+            pathname.includes("/portal/brand") && "active"
+          )}
+        >
+          <Palette className="h-4 w-4 shrink-0" />
+          <span>My Brand</span>
+        </Link>
+        <Link
+          href={`/${slug}/portal/creatives`}
+          onClick={onClose}
+          className={cn(
+            "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+            pathname.includes("/portal/creatives") && "active"
+          )}
+        >
+          <Clapperboard className="h-4 w-4 shrink-0" />
+          <span>Ad Creatives</span>
         </Link>
         <Link
           href={`/${slug}/portal/overview`}

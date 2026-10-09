@@ -42,6 +42,9 @@ import { ClientAdAccountsTab } from "@/components/users/ClientAdAccountsTab";
 import { ClientDocumentsTab } from "@/components/users/ClientDocumentsTab";
 import { ClientNotesTab } from "@/components/users/ClientNotesTab";
 import { ClientSettingsTab } from "@/components/users/ClientSettingsTab";
+import { ClientOnboardingTab } from "@/components/users/ClientOnboardingTab";
+import { BrandAssetsPanel } from "@/components/assets/BrandAssetsPanel";
+import { CreativesGallery } from "@/components/assets/CreativesGallery";
 import { formatDate as formatDay } from "@/components/users/format";
 import {
   CHIP_BASE,
@@ -63,6 +66,9 @@ interface ClientProfilePageProps {
 
 type DetailTab =
   | "overview"
+  | "onboarding"
+  | "brand"
+  | "creatives"
   | "billing"
   | "adAccounts"
   | "documents"
@@ -71,6 +77,9 @@ type DetailTab =
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "onboarding", label: "Onboarding" },
+  { id: "brand", label: "My Brand" },
+  { id: "creatives", label: "Ad Creatives" },
   { id: "billing", label: "Billing" },
   { id: "adAccounts", label: "Ad Accounts" },
   { id: "documents", label: "Documents" },
@@ -648,6 +657,13 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
           </div>
         )}
 
+        {tab === "onboarding" && <ClientOnboardingTab userId={params.userId} />}
+        {tab === "brand" && (
+          <BrandAssetsPanel apiBase={`/api/admin/clients/${params.userId}/assets`} viewer="admin" />
+        )}
+        {tab === "creatives" && (
+          <CreativesGallery apiBase={`/api/admin/clients/${params.userId}/assets`} canUpload />
+        )}
         {tab === "billing" && (
           <ClientBillingTab
             userId={params.userId}
