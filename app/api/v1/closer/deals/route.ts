@@ -19,6 +19,7 @@ import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { logAuditEvent } from "@/lib/auditLog";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
+import { scheduleDealPrepSync } from "@/lib/dealPrep";
 import { isValidEmail } from "@/lib/invoice/email";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -194,6 +195,7 @@ export async function POST(request: Request) {
     // with an invoice to review. Idempotent and best-effort — never fails
     // the create. Nothing is sent.
     await ensureDealPaperwork(deal, auth.token.id);
+    scheduleDealPrepSync(deal.id, "closed");
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),

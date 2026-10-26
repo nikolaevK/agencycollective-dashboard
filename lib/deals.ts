@@ -374,6 +374,8 @@ export async function deleteDeal(id: string): Promise<boolean> {
   await db.execute({ sql: "DELETE FROM deal_additional_invoices WHERE deal_id = ?", args: [id] });
   await db.execute({ sql: "DELETE FROM deal_contracts WHERE deal_id = ?", args: [id] });
   await db.execute({ sql: "DELETE FROM deal_additional_contracts WHERE deal_id = ?", args: [id] });
+  await db.execute({ sql: "DELETE FROM deal_agent_preps WHERE deal_id = ?", args: [id] });
+  await db.execute({ sql: "DELETE FROM deal_prep_exemplars WHERE deal_id = ?", args: [id] });
   const result = await db.execute({
     sql: "DELETE FROM deals WHERE id = ?",
     args: [id],

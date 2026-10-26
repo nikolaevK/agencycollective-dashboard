@@ -1,4 +1,4 @@
-import { getDb, ensureMigrated } from "./db";
+import { getDb, ensureMigrated, isUniqueViolation } from "./db";
 import type { Row } from "@libsql/client";
 
 // ---------------------------------------------------------------------------
@@ -256,11 +256,6 @@ export class DuplicateMetaAccountEmailError extends Error {
   constructor() {
     super("An account with this email already exists");
   }
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /unique constraint|constraint failed/i.test(msg);
 }
 
 export async function createMetaAccount(input: MetaAccountInput): Promise<MetaAccount> {

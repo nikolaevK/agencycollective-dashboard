@@ -159,6 +159,21 @@ export async function updateDealInvoice(
 
 }
 
+/**
+ * Keep the deal's invoice addressed to the deal's client email (the deal edit
+ * paths). Writes only when the address actually changed: every write bumps
+ * updated_at, which the deal-prep agent reads as a person editing paperwork.
+ */
+export async function syncDealInvoiceEmail(dealId: string, clientEmail: string | null): Promise<void> {
+  const invoice = await findDealInvoiceByDealId(dealId);
+  if (!invoice) return;
+  const email = clientEmail || "";
+  const invoiceData = invoice.invoiceData;
+  if ((invoice.clientEmail ?? "") === email && (invoiceData.receiver?.email ?? "") === email) return;
+  invoiceData.receiver.email = email;
+  await updateDealInvoice(invoice.id, { clientEmail, invoiceData: JSON.stringify(invoiceData) });
+}
+
 export async function getDealInvoicePdf(id: string): Promise<Buffer | null> {
   await ensureMigrated();
   const db = getDb();

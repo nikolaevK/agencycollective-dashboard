@@ -8,6 +8,8 @@ import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { RecentDealsTable } from "@/components/closers/RecentDealsTable";
 import { DealDraftsPanel } from "@/components/closers/DealDraftsPanel";
 import { AdminNewDeal } from "@/components/closers/AdminNewDeal";
+import { DealPrepPlaybookButton } from "@/components/closers/DealPrepPlaybook";
+import type { DealAgentPrepBadgeData } from "@/components/closers/DealAgentPrepBadge";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
@@ -20,8 +22,9 @@ import { appendTimeFrameParams, buildTimeFrame, type TimeFrame } from "@/lib/tim
 // admin only ever pivots between closed and pending_signature here.
 type StatusFilter = "all" | "closed" | "pending_signature";
 // "needs_review" short-circuits the paid check — it matches deals whose
-// invoice is still a draft awaiting admin approval.
-type PaidFilter = "all" | "paid" | "unpaid" | "needs_review";
+// invoice is still a draft awaiting admin approval. "agent_ready" = the
+// deal-prep agent finished preparing it (ready, or flagged for input).
+type PaidFilter = "all" | "paid" | "unpaid" | "needs_review" | "agent_ready";
 
 interface AdminDeal extends DealPublic {
   invoiceStatus?: string | null;
@@ -29,6 +32,7 @@ interface AdminDeal extends DealPublic {
   contractStatus?: string | null;
   closerName?: string | null;
   setterName?: string | null;
+  agentPrep?: DealAgentPrepBadgeData | null;
 }
 
 interface TeamStatsEnvelope {
@@ -39,6 +43,10 @@ interface TeamStatsEnvelope {
 
 function needsReview(d: AdminDeal): boolean {
   return d.invoiceStatus === "draft";
+}
+
+function agentReady(d: AdminDeal): boolean {
+  return d.agentPrep?.status === "ready" || d.agentPrep?.status === "needs_input";
 }
 
 /** Build a list of selectable months going back N months from now. The
@@ -137,6 +145,7 @@ export default function AdminDealsPage() {
     let result = baseFiltered;
     if (statusFilter !== "all") result = result.filter((d) => d.status === statusFilter);
     if (paidFilter === "needs_review") result = result.filter(needsReview);
+    else if (paidFilter === "agent_ready") result = result.filter(agentReady);
     else if (paidFilter !== "all") result = result.filter((d) => d.paidStatus === paidFilter);
     return result;
   }, [baseFiltered, statusFilter, paidFilter]);
@@ -145,6 +154,7 @@ export default function AdminDealsPage() {
   const statusBase = useMemo(() => {
     if (paidFilter === "all") return baseFiltered;
     if (paidFilter === "needs_review") return baseFiltered.filter(needsReview);
+    if (paidFilter === "agent_ready") return baseFiltered.filter(agentReady);
     return baseFiltered.filter((d) => d.paidStatus === paidFilter);
   }, [baseFiltered, paidFilter]);
   const paidBase = useMemo(() => {
@@ -157,6 +167,7 @@ export default function AdminDealsPage() {
   const paidCount = paidBase.filter((d) => d.paidStatus === "paid").length;
   const unpaidCount = paidBase.filter((d) => d.paidStatus === "unpaid").length;
   const reviewCount = paidBase.filter(needsReview).length;
+  const agentReadyCount = paidBase.filter(agentReady).length;
   // List-level review count (independent of any pill selection) — shown
   // below the metrics row so admin always sees "what's waiting on me" for
   // the visible month.
@@ -172,6 +183,10 @@ export default function AdminDealsPage() {
     { value: "paid", label: "Paid", count: paidCount },
     { value: "unpaid", label: "Unpaid", count: unpaidCount },
     { value: "needs_review", label: "Needs review", count: reviewCount },
+    // Only once the agent has prepared something — no empty pill otherwise.
+    ...(agentReadyCount > 0 || paidFilter === "agent_ready"
+      ? [{ value: "agent_ready" as const, label: "Agent ready", count: agentReadyCount }]
+      : []),
   ];
 
   // Headline metrics — sourced from /closers/stats so they reflect the
@@ -195,6 +210,7 @@ export default function AdminDealsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <DealPrepPlaybookButton />
             <AdminNewDeal />
             <button
               onClick={() => {
@@ -291,7 +307,13 @@ export default function AdminDealsPage() {
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
-                title={f.value === "needs_review" ? "Deals with invoice awaiting admin review" : undefined}
+                title={
+                  f.value === "needs_review"
+                    ? "Deals with invoice awaiting admin review"
+                    : f.value === "agent_ready"
+                      ? "Invoice + contract prepared by the deal-prep agent — review and send"
+                      : undefined
+                }
               >
                 {f.label} ({f.count})
               </button>

@@ -115,6 +115,12 @@ const BASE64_DOWNLOAD: OpenApiParameter[] = [
     { type: "integer" }
   ),
 ];
+/** Opt-in compact invoice responses (the embedded logo alone is ~470 KB). */
+const INVOICE_VIEW = q(
+  "view",
+  'Set to "summary" to get { id, invoiceNumber, status, additional, totalCents, invoice: InvoiceSpec (CENTS) } without the embedded logo — recommended for agents',
+  { type: "string", enum: ["summary"] }
+);
 /** JSON-upload fields accepted by every multipart operation. */
 const fileBase64 = (accept: string): OpenApiSchema =>
   str(`Base64-encoded file content — the JSON alternative to the multipart \`file\` field. ${accept}`);
@@ -557,40 +563,143 @@ export const openApiSpec: OpenApiSpec = {
         parameters: [pathParam("id", "Deal draft id")],
       }),
     },
+    "/closer/deals/{id}/prep-context": {
+      get: op("getDealPrepContext", "Everything to prepare a deal's paperwork", "closer", "closer:read", {
+        description:
+          "START HERE when asked to prepare a deal. One read with: instructions (the procedure), playbook (the agency's pricing/contract rules), the deal + closer notes, its draft invoices (summary view, CENTS) and contracts, the invoice-preset and contract-template catalogs, examples (what was actually SENT for the most similar recent deals, incl. each contract's edits vs its base template), lessons (reviewers' corrections of earlier agent work), today (business date) and prep.inputHash (echo it to submitDealPrep). 409 = skip this deal without editing it: a person edited its paperwork (it is never overwritten — the prep turns stale until an admin re-runs the agent), its invoice was already sent, or there is nothing to prepare.",
+        parameters: [pathParam("id", "Deal id")],
+      }),
+    },
+    "/closer/deals/{id}/prep": {
+      post: op("submitDealPrep", "Report a prepared deal back to the dashboard", "closer", "closer:write", {
+        description:
+          "Call LAST, after editing the deal's draft invoices and contract scopes. Lights the Deal queue badge (\"Agent ready\" / \"Needs input\") and shows your summary + flags to the reviewer at the top of the invoice drawer. Nothing is sent. 409 when the deal changed while you worked (inputHash mismatch — a fresh run was queued) or its invoice was already sent.",
+        parameters: [pathParam("id", "Deal id")],
+        requestBody: {
+          required: true,
+          schema: obj(
+            {
+              status: { type: "string", enum: ["ready", "needs_input"], description: "needs_input = a person must decide something before sending" },
+              summary: str("Markdown for the reviewer: each invoice + contract and why (quote the notes). ≤10000 chars"),
+              flags: arr(
+                obj(
+                  {
+                    severity: { type: "string", enum: ["info", "warning", "blocker"] },
+                    message: str("≤1000 chars"),
+                  },
+                  ["severity", "message"]
+                )
+              ),
+              inputHash: str("prep.inputHash from getDealPrepContext"),
+            },
+            ["status", "summary", "inputHash"]
+          ),
+        },
+      }),
+    },
+    "/closer/deal-preps": {
+      get: op("listDealPreps", "Deal-prep queue", "closer", "closer:read", {
+        description:
+          "Deals the prep agent works on, with clientName/dealValueCents. status: queued (awaiting prep — oldest first; ALSO lists closed deals from the last 30 days with a draft invoice the agent never prepared, so status=queued is a run's work list) | dispatched (an automatic run is working) | ready | needs_input | failed (trigger error or the run never reported back) | stale (a person edited the paperwork — left to people until an admin re-runs the agent) | sent.",
+        parameters: [...PAGINATION, q("status", "queued | dispatched | ready | needs_input | failed | stale | sent")],
+      }),
+    },
     "/closer/deals/{id}/invoices": {
       get: op("getDealInvoices", "Deal invoice records", "closer", "closer:read", {
         description: "Primary + additional invoice records. No email sending in v1.",
-        parameters: [pathParam("id", "Deal id")],
+        parameters: [pathParam("id", "Deal id"), INVOICE_VIEW],
       }),
     },
     "/closer/deals/{id}/invoices/additional": {
       post: op("createAdditionalInvoice", "Create an additional invoice draft", "closer", "closer:write", {
         description:
           "A draft a person sends from the deal's invoice drawer (never emailed by the API). Pass `invoice` (InvoiceSpec, CENTS) to start from a copy of the primary invoice (new `items` replace its lines and drop its discount unless you pass one), or a full `invoiceData` (dollars). Requires the deal's primary invoice (closed deal); max 10 per deal. Totals are recomputed; the printed number is the allocated one.",
-        parameters: [pathParam("id", "Deal id")],
+        parameters: [pathParam("id", "Deal id"), INVOICE_VIEW],
         requestBody: {
           required: true,
           schema: obj({ invoiceData: anyObj("Full InvoiceData object (dollar amounts)"), invoice: invoiceSpecSchema }),
         },
       }),
       delete: op("deleteAdditionalInvoice", "Delete an additional invoice", "closer", "closer:delete", {
+        description: "Drafts only — 409 once sent (a sent invoice is the record of what was emailed).",
         parameters: [pathParam("id", "Deal id"), { ...q("invoiceId", "Additional invoice id"), required: true }],
       }),
     },
     "/closer/deals/{id}/contracts": {
       get: op("getDealContracts", "Deal contract records + statuses", "closer", "closer:read", {
-        description: "Read-only; DocuSeal send/sync is excluded from v1.",
+        description:
+          "Primary + additional contract records. Sending / resending / syncing with DocuSeal stays in the dashboard; unsent contracts can be prepared with createDealContract, updateDealContract and the scope operations.",
         parameters: [pathParam("id", "Deal id")],
+      }),
+      post: op("createDealContract", "Add a contract to a deal", "closer", "closer:write", {
+        description:
+          "Adds an UNSENT contract (a person sends it with the invoice). The deal's first contract becomes its primary; later ones are additional contracts (max 10). Closed deals only. Returns the new contract's scope (getDealContractScope shape).",
+        parameters: [pathParam("id", "Deal id")],
+        requestBody: {
+          required: true,
+          schema: obj({ contractTemplateId: { ...str("Template id from listContractTemplates (null = none yet)"), nullable: true } }, ["contractTemplateId"]),
+        },
+      }),
+    },
+    "/closer/deal-contracts/{id}": {
+      patch: op("updateDealContract", "Change an unsent contract's template", "closer", "closer:write", {
+        description:
+          "Sets the contract's template (null = no contract) and drops any per-deal scope customization — the scope restarts from the new base template. 409 once the contract was sent. Returns the contract's scope.",
+        parameters: [pathParam("id", "Contract id (primary or additional)")],
+        requestBody: {
+          required: true,
+          schema: obj({ contractTemplateId: { ...str("Template id from listContractTemplates, or null"), nullable: true } }, ["contractTemplateId"]),
+        },
+      }),
+      delete: op("deleteDealContract", "Delete an unsent additional contract", "closer", "closer:delete", {
+        description: "Additional contracts only, and only before they were sent (409 after). The primary contract can be emptied with updateDealContract(contractTemplateId: null).",
+        parameters: [pathParam("id", "Additional contract id")],
+      }),
+    },
+    "/closer/deal-contracts/{id}/scope": {
+      get: op("getDealContractScope", "A contract's scope (DocuSeal template fields)", "closer", "closer:read", {
+        description:
+          "The DocuSeal template the contract will be sent from — this deal's own copy once customized, else the base — with its documents (in order) and every field: uuid, type, document (0-based index into documents), page (0-based within that document), x/y/w/h (fractions of the page), value (the text printed on the PDF), hint (likely role: retainer / percentage / threshold / clause / monthly price / client field …), editable, removable.",
+        parameters: [pathParam("id", "Contract id (primary or additional)")],
+      }),
+      patch: op("updateDealContractScope", "Customize an unsent contract's scope", "closer", "closer:write", {
+        description:
+          "Edits this deal's OWN copy of the template (made on first edit; the base template and other deals are never affected) — the same thing an admin does in the contract editor. edits: change the printed value of read-only agency text; remove: drop agency text or client initials/date (e.g. an addendum that doesn't apply); add: a new read-only text box (value required) or client initials/date at a page position. Signatures and client-filled fields are protected. { reset: true } drops the customization. 409 once sent. Returns the updated scope.",
+        parameters: [pathParam("id", "Contract id (primary or additional)")],
+        requestBody: {
+          required: true,
+          schema: obj({
+            edits: arr(obj({ uuid: str("Field uuid from getDealContractScope"), value: str("Exact text to print"), fontSize: num("Optional 6–24") }, ["uuid", "value"])),
+            remove: arr(str("Field uuid")),
+            add: arr(
+              obj(
+                {
+                  type: { type: "string", enum: ["text", "initials", "date"] },
+                  document: num("0-based document index (default 0)"),
+                  page: num("0-based page index within the document"),
+                  x: { type: "number", description: "Left edge, fraction of page width (0–1)" },
+                  y: { type: "number", description: "Top edge, fraction of page height (0–1)" },
+                  w: { type: "number", description: "Width, fraction of page width" },
+                  h: { type: "number", description: "Height, fraction of page height" },
+                  value: str("Required for text: the read-only text to print"),
+                  fontSize: num("Optional 6–24"),
+                },
+                ["type", "page", "x", "y", "w", "h"]
+              )
+            ),
+            reset: bool("true = drop this deal's customization and use the base template again"),
+          }),
+        },
       }),
     },
     "/closer/deal-invoices/{id}": {
       get: op("getDealInvoice", "Get an invoice record", "closer", "closer:read", {
-        parameters: [pathParam("id", "Invoice id (primary or additional)")],
+        parameters: [pathParam("id", "Invoice id (primary or additional)"), INVOICE_VIEW],
       }),
       patch: op("updateDealInvoice", "Update an invoice record", "closer", "closer:write", {
         description:
-          "Edit a deal invoice draft — never emails. `invoice` (InvoiceSpec, CENTS) is applied over the current invoice (or over `invoiceData` when both are given). status \"sent\" only registers an out-of-band send; leave drafts for a person to send from the dashboard. Totals are recomputed; the printed number stays the record's.",
-        parameters: [pathParam("id", "Invoice id")],
+          "Edit a deal invoice draft — never emails. `invoice` (InvoiceSpec, CENTS) is applied over the current invoice (or over `invoiceData` when both are given). status \"sent\" only registers an out-of-band send; leave drafts for a person to send from the dashboard. Totals are recomputed; the printed number stays the record's. 409 once sent: a sent invoice is read-only.",
+        parameters: [pathParam("id", "Invoice id"), INVOICE_VIEW],
         requestBody: {
           required: true,
           schema: obj({

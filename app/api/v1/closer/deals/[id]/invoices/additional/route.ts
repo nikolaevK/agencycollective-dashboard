@@ -4,8 +4,7 @@ export const runtime = "nodejs";
 import crypto from "crypto";
 import { authenticateApiRequest, tokenAuditActor } from "@/lib/api/requireApiToken";
 import { ok, fail, corsPreflight, readJsonBody } from "@/lib/api/respond";
-import { tokenHasResource } from "@/lib/apiScopes";
-import { findDeal } from "@/lib/deals";
+import { gateDeal } from "@/lib/api/dealPrepApi";
 import { findDealInvoiceByDealId, generateInvoiceNumber } from "@/lib/dealInvoices";
 import {
   insertAdditionalInvoice,
@@ -15,23 +14,10 @@ import {
 } from "@/lib/dealAdditionalInvoices";
 import { logAuditEvent } from "@/lib/auditLog";
 import { applyInvoiceSpec, normalizeApiInvoiceData, parseInvoiceSpec } from "@/lib/invoice/invoiceSpec";
+import { summarizeDealInvoice, wantsSummary } from "@/lib/dealInvoiceSummary";
 
 export function OPTIONS() {
   return corsPreflight();
-}
-
-async function gateDeal(
-  auth: { token: Parameters<typeof tokenHasResource>[0] },
-  dealId: string
-) {
-  const deal = await findDeal(dealId);
-  if (!deal) return { error: fail("not_found", "Deal not found", 404) };
-  if (!tokenHasResource(auth.token, "closer", deal.closerId)) {
-    return {
-      error: fail("resource_forbidden", "This token is not allowed to access this closer", 403),
-    };
-  }
-  return { deal };
 }
 
 /**
@@ -49,7 +35,7 @@ export async function POST(
   if (!auth.ok) return auth.response;
 
   try {
-    const gate = await gateDeal(auth, params.id);
+    const gate = await gateDeal(auth.token, params.id);
     if (gate.error) return gate.error;
 
     const body = await readJsonBody(request);
@@ -108,6 +94,7 @@ export async function POST(
     }).catch(() => {});
 
     const record = await findAdditionalInvoice(id);
+    if (record && wantsSummary(request)) return ok(summarizeDealInvoice(record, true), undefined, { status: 201 });
     return ok(record, undefined, { status: 201 });
   } catch (err) {
     console.error("POST /api/v1/closer/deals/[id]/invoices/additional error:", err);
@@ -115,7 +102,7 @@ export async function POST(
   }
 }
 
-/** Delete an additional invoice: ?invoiceId=<id>. */
+/** Delete an additional invoice draft: ?invoiceId=<id> (409 once sent — it's the record of what was emailed). */
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
@@ -124,7 +111,7 @@ export async function DELETE(
   if (!auth.ok) return auth.response;
 
   try {
-    const gate = await gateDeal(auth, params.id);
+    const gate = await gateDeal(auth.token, params.id);
     if (gate.error) return gate.error;
 
     const invoiceId = new URL(request.url).searchParams.get("invoiceId");
@@ -133,6 +120,9 @@ export async function DELETE(
     const invoice = await findAdditionalInvoice(invoiceId);
     if (!invoice || invoice.dealId !== params.id) {
       return fail("not_found", "Invoice not found on this deal", 404);
+    }
+    if (invoice.status !== "draft") {
+      return fail("conflict", "This invoice was already sent — it can't be deleted", 409);
     }
 
     await deleteAdditionalInvoice(invoiceId);

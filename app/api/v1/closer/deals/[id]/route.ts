@@ -13,9 +13,10 @@ import {
 } from "@/lib/deals";
 import { isSetterTier } from "@/lib/appointments";
 import { setEventAttendance } from "@/lib/eventAttendance";
-import { findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
+import { syncDealInvoiceEmail } from "@/lib/dealInvoices";
 import { logAuditEvent } from "@/lib/auditLog";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
+import { scheduleDealPrepSync } from "@/lib/dealPrep";
 import { HOUSE_CLOSER_ID } from "@/lib/closers";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -164,17 +165,7 @@ export async function PATCH(
     await updateDeal(params.id, changes);
 
     // Keep the linked invoice's receiver email in sync (first-party).
-    if (changes.clientEmail !== undefined) {
-      const invoice = await findDealInvoiceByDealId(params.id);
-      if (invoice) {
-        const invoiceData = invoice.invoiceData;
-        invoiceData.receiver.email = changes.clientEmail || "";
-        await updateDealInvoice(invoice.id, {
-          clientEmail: changes.clientEmail,
-          invoiceData: JSON.stringify(invoiceData),
-        });
-      }
-    }
+    if (changes.clientEmail !== undefined) await syncDealInvoiceEmail(params.id, changes.clientEmail);
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),
@@ -190,6 +181,7 @@ export async function PATCH(
     if (updated && changes.status === "closed") {
       await ensureDealPaperwork(updated, auth.token.id);
     }
+    scheduleDealPrepSync(params.id, changes.status === "closed" ? "closed" : "deal changed");
     return ok(updated);
   } catch (err) {
     console.error("PATCH /api/v1/closer/deals/[id] error:", err);

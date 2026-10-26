@@ -208,7 +208,7 @@ export async function docusealUpdateTemplate(
   );
 }
 
-const ArchiveSubmissionResponseSchema = z.object({
+const ArchiveResponseSchema = z.object({
   id: z.number(),
   archived_at: z.string().nullable().optional(),
 }).passthrough();
@@ -245,9 +245,27 @@ export async function archiveSupersededSubmission(
 export async function docusealArchiveSubmission(
   submissionId: number
 ): Promise<{ id: number; archived_at?: string | null }> {
+  return docusealArchive(`/submissions/${submissionId}`, "Submission");
+}
+
+/**
+ * Archive a DocuSeal template (DELETE /templates/{id} — reversible, existing
+ * submissions keep their own copy). Used for per-deal template copies that no
+ * contract points at any more.
+ */
+export async function docusealArchiveTemplate(
+  templateId: number
+): Promise<{ id: number; archived_at?: string | null }> {
+  return docusealArchive(`/templates/${templateId}`, "Template");
+}
+
+async function docusealArchive(
+  path: string,
+  label: string
+): Promise<{ id: number; archived_at?: string | null }> {
   const base = getApiUrl();
   const key = getApiKey();
-  const url = `${base}/submissions/${submissionId}`;
+  const url = `${base}${path}`;
 
   const retries = 3;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -262,7 +280,7 @@ export async function docusealArchiveSubmission(
         throw new DocuSealAuthError();
       }
       if (response.status === 404) {
-        throw new DocuSealApiError("Submission not found", 404);
+        throw new DocuSealApiError(`${label} not found`, 404);
       }
       if (response.status === 429) {
         const retryAfter = parseInt(response.headers.get("Retry-After") || "60", 10);
@@ -279,7 +297,7 @@ export async function docusealArchiveSubmission(
         throw new DocuSealApiError(String(msg), response.status);
       }
 
-      const parsed = ArchiveSubmissionResponseSchema.safeParse(body);
+      const parsed = ArchiveResponseSchema.safeParse(body);
       if (!parsed.success) {
         throw new DocuSealApiError(`Response validation failed: ${parsed.error.message}`, 0);
       }

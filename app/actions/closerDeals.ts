@@ -17,6 +17,7 @@ import { insertDealContract } from "@/lib/dealContracts";
 import { parseServiceCategory } from "@/lib/serviceCategory";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 import { sendPushToAllAdmins } from "@/lib/pushNotifications";
+import { scheduleDealPrepSync } from "@/lib/dealPrep";
 
 const VALID_STATUSES: DealStatus[] = ["closed", "not_closed", "pending_signature", "rescheduled", "follow_up"];
 
@@ -207,6 +208,8 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
     } catch (err) {
       console.error("[createDealAction] Push failed:", err);
     }
+    // Hand the deal to the deal-prep agent (no-op unless configured).
+    scheduleDealPrepSync(id, "closed");
   }
 
   return {};
@@ -289,6 +292,9 @@ export async function updateDealAction(formData: FormData): Promise<{ error?: st
     const updated = await findDeal(id);
     if (updated) await ensureDealPaperwork(updated, session.closerId);
   }
+  // Queue a newly closed deal, or re-run / stale its prep when the notes,
+  // value or services changed (no-op otherwise).
+  scheduleDealPrepSync(id, changes.status === "closed" ? "closed" : "deal changed");
 
   revalidatePath("/closer/dashboard");
   return {};

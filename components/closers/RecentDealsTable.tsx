@@ -18,6 +18,7 @@ import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
 import { DealInfoModal } from "@/components/shared/DealInfoModal";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
+import { DealAgentPrepBadge, type DealAgentPrepBadgeData } from "@/components/closers/DealAgentPrepBadge";
 // Lazy-loaded: the review drawers only mount when an admin opens a specific
 // deal, and DealInvoiceDrawer pulls in @react-pdf/renderer — keeping them out
 // of the initial bundle for every page that renders this table.
@@ -43,6 +44,8 @@ interface DealWithInvoice extends DealPublic {
   closerName?: string | null;
   /** Set when the payout Sales Rep moved the deal off its submitter. */
   originalCloserName?: string | null;
+  /** Deal-prep agent state (admin queue only; null once the invoice is sent). */
+  agentPrep?: DealAgentPrepBadgeData | null;
 }
 
 interface RecentDealsTableProps {
@@ -458,6 +461,9 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                               isAdmin={adminMode}
                             />
                           )}
+                          {adminMode && deal.status === "closed" && (
+                            <DealAgentPrepBadge prep={deal.agentPrep} onClick={() => setInvoiceSnap(deal)} />
+                          )}
                           {deal.contractStatus && (
                             // Intentional: a pending contract has no DocuSeal
                             // submission yet — it's picked and sent together
@@ -578,6 +584,9 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                           onClick={adminMode ? () => setInvoiceSnap(deal) : undefined}
                           isAdmin={adminMode}
                         />
+                      )}
+                      {adminMode && deal.status === "closed" && (
+                        <DealAgentPrepBadge prep={deal.agentPrep} onClick={() => setInvoiceSnap(deal)} />
                       )}
                       {deal.contractStatus && (
                         <span

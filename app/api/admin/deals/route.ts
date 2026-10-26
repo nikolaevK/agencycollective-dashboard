@@ -15,7 +15,7 @@ import {
   bestEffortSyncShowedDidntClose,
   bestEffortSyncActiveClient,
 } from "@/lib/ghlCrmSync";
-import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
+import { getDealInvoiceStatuses, syncDealInvoiceEmail } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
 import { isSetterTier } from "@/lib/appointments";
@@ -24,6 +24,7 @@ import { requireDealReviewer } from "@/lib/api/dealDraftActor";
 import { parseDealDraftFields } from "@/lib/dealDraftFields";
 import { checkDealDraftReferences } from "@/lib/dealDraftApproval";
 import { createAdminDeal } from "@/lib/dealCreation";
+import { scheduleDealPrepSync, getDealPrepBadges } from "@/lib/dealPrep";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -80,10 +81,11 @@ export async function GET(request: Request) {
 
   // Attach invoice/contract statuses and closer names
   const dealIds = deals.map((d) => d.id);
-  const [invoiceStatuses, contractStatuses, closers] = await Promise.all([
+  const [invoiceStatuses, contractStatuses, closers, prepBadges] = await Promise.all([
     getDealInvoiceStatuses(dealIds),
     getDealContractStatuses(dealIds),
     readClosers({ includeSystem: true }),
+    getDealPrepBadges(dealIds),
   ]);
   // closers list already contains setter-role rows (setters live in the
   // closers table), so one name map covers both closer_id and setter_id.
@@ -93,6 +95,8 @@ export async function GET(request: Request) {
     invoiceStatus: invoiceStatuses[d.id]?.status ?? null,
     invoiceNumber: invoiceStatuses[d.id]?.invoiceNumber ?? null,
     contractStatus: contractStatuses[d.id]?.status ?? null,
+    // Deal-prep agent state — only meaningful while the invoice is a draft.
+    agentPrep: invoiceStatuses[d.id]?.status === "draft" ? (prepBadges[d.id] ?? null) : null,
     closerName: closerNameMap.get(d.closerId) ?? null,
     setterName: d.setterId ? (closerNameMap.get(d.setterId) ?? null) : null,
     originalCloserName:
@@ -295,17 +299,7 @@ export async function PATCH(request: Request) {
     }
 
     // Sync email to linked invoice when clientEmail changes
-    if (changes.clientEmail !== undefined) {
-      const invoice = await findDealInvoiceByDealId(id);
-      if (invoice) {
-        const invoiceData = invoice.invoiceData;
-        invoiceData.receiver.email = changes.clientEmail || "";
-        await updateDealInvoice(invoice.id, {
-          clientEmail: changes.clientEmail,
-          invoiceData: JSON.stringify(invoiceData),
-        });
-      }
-    }
+    if (changes.clientEmail !== undefined) await syncDealInvoiceEmail(id, changes.clientEmail);
 
     logAuditEvent({
       adminId: admin.id,
@@ -325,6 +319,7 @@ export async function PATCH(request: Request) {
     if (updated && changes.status === "closed") {
       await ensureDealPaperwork(updated, admin.id);
     }
+    scheduleDealPrepSync(id, changes.status === "closed" ? "closed" : "deal changed");
 
     return NextResponse.json({ data: updated });
   } catch (err) {

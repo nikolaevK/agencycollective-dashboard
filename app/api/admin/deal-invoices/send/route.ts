@@ -13,6 +13,7 @@ import { generateContractFromDeal, fetchDocusealTemplate } from "@/lib/dealContr
 import { archiveSupersededSubmission } from "@/lib/docuseal/client";
 import { findDeal, updateDeal, type DealRecord } from "@/lib/deals";
 import type { DocuSealTemplate } from "@/lib/docuseal/schemas";
+import { scheduleRecordDealSent } from "@/lib/dealPrep";
 
 // One entry per contract to send: primary (deal_contracts row) or an
 // additional contract (deal_additional_contracts row). `id` is the row id in
@@ -345,6 +346,11 @@ export async function POST(req: NextRequest) {
       sendContracts(targets, contractContextPromise, email, invoice.dealId)
         .then((r) => { contractsMs = Date.now() - tEmail; return r; }),
     ]);
+
+    // What went out becomes a worked example for the deal-prep agent (with the
+    // reviewer's corrections when the agent prepared it). Background, and only
+    // once the primary invoice is recorded as sent; never affects this response.
+    if (dbResults[0]?.status === "fulfilled") scheduleRecordDealSent(invoice.dealId);
 
     const dbFailures = dbResults.filter((r) => r.status === "rejected");
     if (dbFailures.length > 0) {

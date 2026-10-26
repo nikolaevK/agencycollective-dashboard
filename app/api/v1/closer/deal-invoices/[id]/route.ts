@@ -13,6 +13,7 @@ import {
 import { logAuditEvent } from "@/lib/auditLog";
 import { applyInvoiceSpec, normalizeApiInvoiceData, parseInvoiceSpec } from "@/lib/invoice/invoiceSpec";
 import type { InvoiceData } from "@/types/invoice";
+import { summarizeDealInvoice, wantsSummary } from "@/lib/dealInvoiceSummary";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -41,6 +42,7 @@ export async function GET(
   if (deal && !tokenHasResource(auth.token, "closer", deal.closerId)) {
     return fail("resource_forbidden", "This token is not allowed to access this closer", 403);
   }
+  if (wantsSummary(request)) return ok(summarizeDealInvoice(found.record, found.additional));
   return ok({ ...found.record, additional: found.additional });
 }
 
@@ -49,6 +51,7 @@ export async function GET(
  * sends email): { invoiceData? (object), invoice? (InvoiceSpec, CENTS —
  * applied over the current or given invoiceData), status? ("draft"|"sent") }.
  * Totals are recomputed and the printed number is pinned to the record's.
+ * 409 once sent: a sent invoice is read-only.
  */
 export async function PATCH(
   request: Request,
@@ -68,6 +71,14 @@ export async function PATCH(
 
     const body = await readJsonBody(request);
     if (!body) return fail("invalid_request", "Invalid JSON body", 400);
+    // A sent invoice is the record of what was emailed: no edits, no reverting
+    // it to a draft (re-asserting "sent" is a harmless no-op).
+    if (
+      found.record.status !== "draft" &&
+      (body.invoiceData !== undefined || (body.invoice !== undefined && body.invoice !== null) || (body.status !== undefined && body.status !== "sent"))
+    ) {
+      return fail("conflict", "This invoice was already sent — it's read-only", 409);
+    }
 
     const changes: { invoiceData?: string; status?: string } = {};
     let data: InvoiceData | null = null;
@@ -114,6 +125,7 @@ export async function PATCH(
     }).catch(() => {});
 
     const updated = await locate(params.id);
+    if (updated && wantsSummary(request)) return ok(summarizeDealInvoice(updated.record, updated.additional));
     return ok(updated ? { ...updated.record, additional: updated.additional } : null);
   } catch (err) {
     console.error("PATCH /api/v1/closer/deal-invoices/[id] error:", err);

@@ -37,6 +37,18 @@ export function getDb(): Client {
   return _client;
 }
 
+/** A UNIQUE / constraint failure from libSQL (a concurrent insert won). */
+export function isUniqueViolation(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /unique constraint|constraint failed/i.test(msg);
+}
+
+/** `column IN (?, …)` plus its args for a parameterized filter. An empty list matches nothing. */
+export function sqlIn(column: string, values: readonly string[]): { sql: string; args: string[] } {
+  if (values.length === 0) return { sql: "0", args: [] };
+  return { sql: `${column} IN (${values.map(() => "?").join(", ")})`, args: [...values] };
+}
+
 /**
  * Ensure migration has run before executing queries.
  * Safe to call from any server-side code — deduplicates concurrent calls.
@@ -499,6 +511,48 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_invoice_followups_invoice
      ON invoice_followups (invoice_kind, invoice_id, created_at DESC)`,
+    // Deal-prep agent (lib/dealPrep.ts): one row per closed deal the agent
+    // pre-builds paperwork for (draft invoices + per-deal DocuSeal scope
+    // clones). Drives the Deal queue "Agent ready" badge. input_hash = the
+    // deal fields the run used — a change re-queues or stales it;
+    // prepared_snapshot = what the agent left (diffed against what was sent).
+    `CREATE TABLE IF NOT EXISTS deal_agent_preps (
+      deal_id           TEXT PRIMARY KEY,
+      status            TEXT NOT NULL DEFAULT 'queued',
+      input_hash        TEXT NOT NULL,
+      reason            TEXT,
+      attempts          INTEGER NOT NULL DEFAULT 0,
+      dispatched_at     TEXT,
+      run_started_at    TEXT,
+      finished_at       TEXT,
+      session_url       TEXT,
+      summary           TEXT,
+      flags             TEXT,
+      error             TEXT,
+      prepared_snapshot TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_deal_agent_preps_status
+     ON deal_agent_preps (status, updated_at DESC)`,
+    // What actually went out for a deal (captured on every invoice send, and
+    // backfilled from history): invoice lines + each contract's per-deal
+    // DocuSeal edits vs its base template. The agent's worked examples;
+    // corrections = the reviewer's changes to an agent-prepared deal.
+    `CREATE TABLE IF NOT EXISTS deal_prep_exemplars (
+      deal_id          TEXT PRIMARY KEY,
+      client_name      TEXT,
+      deal_value       INTEGER NOT NULL DEFAULT 0,
+      industry         TEXT,
+      service_category TEXT,
+      notes            TEXT,
+      paperwork        TEXT NOT NULL,
+      corrections      TEXT,
+      source           TEXT NOT NULL DEFAULT 'send',
+      captured_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_deal_prep_exemplars_captured
+     ON deal_prep_exemplars (captured_at DESC)`,
     // Client onboarding questionnaire (portal → Onboarding → Questionnaire;
     // lib/clientOnboarding.ts, vocab in lib/onboardingForm.ts). Normalized:
     // one row of scalar answers per client (money in CENTS, percentages in
@@ -755,6 +809,10 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     { table: "client_rebill_invoices",  column: "style_profile_id",    defn: "TEXT" },
     { table: "ad_account_invoices",     column: "cc_emails",           defn: "TEXT" },
     { table: "ad_account_invoices",     column: "style_profile_id",    defn: "TEXT" },
+    // Deal-prep agent: when the current run passed its start gate (lib/dealPrep.ts
+    // assertDealPreparable) — its later context reads must not mistake the run's
+    // own edits for a person's. Table is in CRITICAL_TABLE_DDL (inline there).
+    { table: "deal_agent_preps",        column: "run_started_at",      defn: "TEXT" },
   ];
   // ── Probe: every table's columns in ONE read round-trip ────────────────
   // PRAGMA table_info on a missing table returns zero rows (not an error),

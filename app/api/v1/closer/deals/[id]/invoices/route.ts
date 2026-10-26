@@ -7,12 +7,14 @@ import { tokenHasResource } from "@/lib/apiScopes";
 import { findDeal } from "@/lib/deals";
 import { findDealInvoiceByDealId } from "@/lib/dealInvoices";
 import { findAdditionalInvoicesByDealId } from "@/lib/dealAdditionalInvoices";
+import { summarizeDealInvoice, wantsSummary } from "@/lib/dealInvoiceSummary";
 
 export function OPTIONS() {
   return corsPreflight();
 }
 
-/** Invoice records for a deal (primary + additional). No email sending. */
+/** Invoice records for a deal (primary + additional). No email sending.
+ *  ?view=summary drops the embedded logo and returns InvoiceSpec-shaped CENTS. */
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -30,5 +32,11 @@ export async function GET(
     findDealInvoiceByDealId(params.id),
     findAdditionalInvoicesByDealId(params.id),
   ]);
+  if (wantsSummary(request)) {
+    return ok({
+      primary: primary ? summarizeDealInvoice(primary, false) : null,
+      additional: additional.map((a) => summarizeDealInvoice(a, true)),
+    });
+  }
   return ok({ primary, additional });
 }

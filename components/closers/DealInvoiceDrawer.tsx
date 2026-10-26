@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, lazy, Suspense, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense, type ReactNode } from "react";
 import { X, Download, Eye, Send, Loader2, Save, AlertTriangle, Plus, Trash2, FileCheck, FileSignature, ExternalLink, Pencil, RefreshCw, RotateCw } from "lucide-react";
 import { pdf } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import { LineItemsEditor } from "@/components/invoice/LineItemsEditor";
 import { CcChipsInput, useCcField } from "@/components/invoice/CcChipsInput";
 import { DiscountField } from "@/components/invoice/InvoiceChargesForm";
 import { InvoiceNotesFields } from "@/components/invoice/InvoiceNotesFields";
+import { DealAgentPrepPanel } from "@/components/closers/DealAgentPrepPanel";
 import { calculateTotals, formatCurrencyValue } from "@/lib/invoice/validation";
 import { isValidEmail } from "@/lib/invoice/email";
 import type { DiscountDetails, InvoiceData, InvoiceItem, PaymentInfo, PaymentType } from "@/types/invoice";
@@ -250,6 +251,28 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
     setClientEmailRaw(invoice.clientEmail || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoice, agencyConfig, dealPaymentType]);
+
+  // The deal-prep agent finished while this drawer was open: load what it
+  // wrote — unless the admin has unsaved edits, which are never overwritten.
+  const handleAgentPrepared = useCallback(async () => {
+    if (!dealId) return;
+    if (dirty) {
+      setMsg({ type: "error", text: "The agent finished while you had unsaved edits — save or discard them, then reopen this deal to load its version." });
+      return;
+    }
+    if (primaryDataRef.current) setInvoiceDataRaw(primaryDataRef.current);
+    setActiveInvoiceId(null);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["deal-invoice", dealId] }),
+      queryClient.invalidateQueries({ queryKey: ["deal-additional-invoices", dealId] }),
+      queryClient.invalidateQueries({ queryKey: ["deal-contract", dealId] }),
+      queryClient.invalidateQueries({ queryKey: ["deal-additional-contracts", dealId] }),
+    ]);
+    // The sync effect above only ADDS unseen additional invoices — reseed all.
+    const fresh = queryClient.getQueryData<AdditionalInvoiceRecord[]>(["deal-additional-invoices", dealId]) ?? [];
+    setAddlData(new Map(fresh.map((inv) => [inv.id, withTotals(inv.invoiceData)])));
+    setMsg({ type: "success", text: "Loaded the agent's prepared invoices and contracts" });
+  }, [dealId, dirty, queryClient]);
 
   // Esc from the drawer is handled by InvoiceDrawerShell (nesting-aware).
 
@@ -730,6 +753,8 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
         {invoiceData && (
           <div className="space-y-4">
+            <DealAgentPrepPanel dealId={dealId} invoiceSent={isSent} onPrepared={handleAgentPrepared} />
+
             {/* Mismatch warning — primary invoice only */}
             {activeInvoiceId === null && mismatch && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">

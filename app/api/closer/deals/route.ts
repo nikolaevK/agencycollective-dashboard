@@ -9,9 +9,10 @@ import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails, 
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
-import { getDealInvoiceStatuses, findDealInvoiceByDealId, updateDealInvoice } from "@/lib/dealInvoices";
+import { getDealInvoiceStatuses, syncDealInvoiceEmail } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
+import { scheduleDealPrepSync } from "@/lib/dealPrep";
 
 export async function GET() {
   // Closer-only: setters share the c_sess cookie but have no deals surface.
@@ -130,17 +131,7 @@ export async function PATCH(request: Request) {
     }
 
     // Sync email to linked invoice when clientEmail changes
-    if (changes.clientEmail !== undefined) {
-      const invoice = await findDealInvoiceByDealId(id);
-      if (invoice) {
-        const invoiceData = invoice.invoiceData;
-        invoiceData.receiver.email = changes.clientEmail || "";
-        await updateDealInvoice(invoice.id, {
-          clientEmail: changes.clientEmail,
-          invoiceData: JSON.stringify(invoiceData),
-        });
-      }
-    }
+    if (changes.clientEmail !== undefined) await syncDealInvoiceEmail(id, changes.clientEmail);
 
     const updated = await findDeal(id);
 
@@ -150,6 +141,7 @@ export async function PATCH(request: Request) {
     if (updated && changes.status === "closed") {
       await ensureDealPaperwork(updated, session.closerId);
     }
+    scheduleDealPrepSync(id, changes.status === "closed" ? "closed" : "deal changed");
 
     return NextResponse.json({ data: updated });
   } catch (err) {

@@ -3,6 +3,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
+import { z } from "zod";
+import { DEAL_PREP_DEFAULT_BATCH, DEAL_PREP_SKIP_RULE, prepareDealPrompt, prepareDealsPrompt } from "@/lib/dealPrepPrompts";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { verifyApiToken, type ApiTokenRecord } from "@/lib/apiTokens";
 import { RESOURCE_KEYS, type ScopeKey } from "@/lib/apiScopes";
@@ -25,6 +27,7 @@ import {
  */
 
 const TOOLS = buildMcpTools();
+const BATCH_MAX = 25;
 
 const SERVER_INSTRUCTIONS = `Agency Collective admin API — every tool maps 1:1 to a REST operation under /api/v1, gated by this token's scopes.
 
@@ -43,6 +46,8 @@ Drafts → human approval (deals & invoices): agents PREPARE, people APPROVE. No
 - Extra invoice on an existing deal → createAdditionalInvoice; adjust a deal's draft invoice → updateDealInvoice. Both stay drafts until a person sends them from the invoice drawer.
 - The optional "invoice" field (InvoiceSpec) is CENTS: { items: [{ name, description?, quantity?, unitPriceCents }], discount: { type: "amount"|"percentage", value }, invoiceDate, dueDate, terms, paymentTerms, notes, billToName } — sender, payment details and logo are filled in automatically. Add a "note" telling the reviewer why.
 - Pending drafts can be revised (update…Draft) or withdrawn (delete…Draft); reviewed drafts are read-only history.
+
+Deal prep (a closed deal's paperwork, prepared IN PLACE for a person to review + send; prompts prepare_deals / prepare_deal start a run): start with getDealPrepContext(dealId) — it returns the procedure, the agency playbook, the closer's notes, the draft invoices/contracts and what was actually sent for similar deals — then edit invoices (updateDealInvoice / createAdditionalInvoice with view: "summary"), contracts (createDealContract / updateDealContract) and their DocuSeal scopes (getDealContractScope → updateDealContractScope, which edits this deal's own copy of the template), and finish with submitDealPrep. ${DEAL_PREP_SKIP_RULE} A person's edits are never overwritten. listDealPreps(status: "queued") lists deals awaiting prep — recently closed deals never prepared, plus deals re-queued because they changed or a person asked for a re-run.
 
 Workspaces (books): clients and ad accounts belong to a workspace ("main" = the primary Agency Collective book; partner books exist for outside teams). A token may be restricted to specific workspaces — it then only sees those books' clients, ad accounts, billing and documents (out-of-book ids answer resource_forbidden), and cross-brand internal surfaces like the payout pool are unavailable. createClient accepts an optional workspace field (defaults to the token's book when restricted, else "main").
 
@@ -90,6 +95,32 @@ const handler = createMcpHandler(
           ],
         };
       }
+    );
+
+    // Manual deal-prep runs: pick a prompt in the Claude client instead of
+    // typing the procedure. Prompt arguments are strings per the MCP spec.
+    server.registerPrompt(
+      "prepare_deals",
+      {
+        title: "Prepare deals awaiting review",
+        description: `Prepare the draft invoices + contract scopes of the deals awaiting prep (oldest first, ${DEAL_PREP_DEFAULT_BATCH} per run by default). Nothing is sent.`,
+        argsSchema: { limit: z.string().optional().describe(`How many deals this run (1–${BATCH_MAX}, default ${DEAL_PREP_DEFAULT_BATCH})`) },
+      },
+      ({ limit }) => {
+        const n = Math.min(Math.max(Number.parseInt(limit ?? "", 10) || DEAL_PREP_DEFAULT_BATCH, 1), BATCH_MAX);
+        return { messages: [{ role: "user" as const, content: { type: "text" as const, text: prepareDealsPrompt(n) } }] };
+      }
+    );
+    server.registerPrompt(
+      "prepare_deal",
+      {
+        title: "Prepare one deal",
+        description: "Prepare one deal's draft invoices + contract scopes by deal id (any closed deal, including older ones). Nothing is sent.",
+        argsSchema: { dealId: z.string().describe("Deal id (see listDealPreps or listDeals)") },
+      },
+      ({ dealId }) => ({
+        messages: [{ role: "user" as const, content: { type: "text" as const, text: prepareDealPrompt(dealId.trim()) } }],
+      })
     );
 
     for (const tool of TOOLS) {

@@ -8,6 +8,7 @@ import { ensureDealPaperwork } from "./dealPaperwork";
 import { findDealInvoiceByDealId, updateDealInvoice } from "./dealInvoices";
 import { applyInvoiceSpec, type InvoiceSpec } from "./invoice/invoiceSpec";
 import type { DealDraftFields } from "./dealDraftFields";
+import { scheduleDealPrepSync } from "./dealPrep";
 
 // ---------------------------------------------------------------------------
 // Dashboard-side deal creation — the closer-portal semantics (setter credit,
@@ -132,6 +133,7 @@ export async function finishDealCreation(
     ]);
   }
 
+  scheduleDealPrepSync(deal.id, "closed");
   return { deal, invoiceId, warnings };
 }
 
