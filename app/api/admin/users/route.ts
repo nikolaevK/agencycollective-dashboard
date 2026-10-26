@@ -5,6 +5,7 @@ import { deleteUser } from "@/lib/users";
 import { ensureMigrated } from "@/lib/db";
 import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
 import { requireDirectoryActor, findClientInScope } from "@/lib/api/requireAdmin";
+import { schedulePeptideAiSync } from "@/lib/peptideAi";
 
 export async function GET(request: Request) {
   const actor = await requireDirectoryActor();
@@ -66,6 +67,7 @@ export async function DELETE(request: Request) {
     if (!deleted) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+    schedulePeptideAiSync(id);
 
     return NextResponse.json({ ok: true });
   } catch {

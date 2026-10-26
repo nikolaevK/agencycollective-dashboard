@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame, Palette, Clapperboard } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame, Palette, Clapperboard, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
@@ -37,22 +37,24 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
     refetchIntervalInBackground: false,
   });
 
-  // Per-client portal nav visibility (AI Analyst + Design Board). Lightweight
+  // Per-client portal nav visibility (AI Analyst, Design Board, Peptide AI). Lightweight
   // (one DB row, no Meta API) so it polls far more often than the metrics
   // overview — an admin enabling a feature surfaces here within ~60s / on focus
   // instead of being stuck behind the overview's 5-min stale window.
   const { data: navConfig } = useQuery<{
     analystEnabled: boolean;
     designBoardVisible: boolean;
+    peptideAiVisible: boolean;
   }>({
     queryKey: ["portal-nav-config"],
     queryFn: async () => {
       const res = await fetch("/api/portal/nav-config");
-      if (!res.ok) return { analystEnabled: true, designBoardVisible: false };
+      if (!res.ok) return { analystEnabled: true, designBoardVisible: false, peptideAiVisible: false };
       const json = await res.json();
       return {
         analystEnabled: Boolean(json.data?.analystEnabled ?? true),
         designBoardVisible: Boolean(json.data?.designBoardVisible ?? false),
+        peptideAiVisible: Boolean(json.data?.peptideAiVisible ?? false),
       };
     },
     staleTime: 30_000,
@@ -61,6 +63,7 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
   });
   const analystEnabled = navConfig?.analystEnabled ?? true;
   const designBoardVisible = navConfig?.designBoardVisible ?? false;
+  const peptideAiVisible = navConfig?.peptideAiVisible ?? false;
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -192,6 +195,19 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           >
             <Frame className="h-4 w-4 shrink-0" />
             <span>Design Board</span>
+          </Link>
+        )}
+        {peptideAiVisible && (
+          <Link
+            href={`/${slug}/portal/peptide-ai`}
+            onClick={onClose}
+            className={cn(
+              "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+              pathname.includes("/portal/peptide-ai") && "active"
+            )}
+          >
+            <FlaskConical className="h-4 w-4 shrink-0" />
+            <span>Peptide AI</span>
           </Link>
         )}
         <Link

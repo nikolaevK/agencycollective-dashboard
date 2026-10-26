@@ -500,6 +500,22 @@ export async function deleteUser(id: string): Promise<boolean> {
       }
     }
   }
+  // Peptide AI access is NOT deleted but marked: the row stays until Peptide
+  // AI confirms the client's account there is switched off (lib/peptideAi.ts
+  // — schedulePeptideAiSync, retried from the admin Peptide AI view), so a
+  // deletion made while Peptide AI was unreachable can't leave it running.
+  try {
+    await db.execute({
+      sql: `INSERT INTO client_peptide_ai (user_id, enabled, deleted_at) VALUES (?, 0, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET enabled = 0, deleted_at = datetime('now')`,
+      args: [id],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      console.error("[deleteUser] marking client_peptide_ai failed (non-fatal):", err);
+    }
+  }
   // The client's re-bill drafts go with them. Ad-account drafts stay: they
   // belong to the account (which survives, unattached) — their user_id is
   // only who owned it when drafted, possibly a different client by now.

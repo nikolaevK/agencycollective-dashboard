@@ -236,6 +236,21 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       expires_at       TEXT NOT NULL,
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // Per-client Peptide AI access (lib/peptideAi.ts). No row = the defaults:
+    // enabled, default monthly budget. cap_cents NULL = the default budget.
+    // anchor_day = reset day pinned for a client with no billing dates.
+    // deleted_at = the client was deleted: the row stays as a marker until
+    // Peptide AI confirms the account is switched off (deleteUser sets it).
+    // Same lifecycle as roster_options above: self-heals WITHOUT a
+    // SCHEMA_VERSION bump, a brand-new table that touches no existing rows.
+    `CREATE TABLE IF NOT EXISTS client_peptide_ai (
+      user_id    TEXT PRIMARY KEY,
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      cap_cents  INTEGER,
+      anchor_day INTEGER,
+      deleted_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
     // Meta Accounts Directory — inventory of aged FB accounts being provisioned
     // and warmed into Meta ad accounts (lib/metaAccounts.ts). Same lifecycle as
     // roster_options/ad_platform_options above: self-heals WITHOUT a

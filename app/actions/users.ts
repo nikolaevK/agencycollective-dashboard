@@ -19,6 +19,7 @@ import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { logAuditEvent } from "@/lib/auditLog";
 import { isFigmaUrl } from "@/lib/figma";
+import { peptideAiInputsChanged, schedulePeptideAiSync } from "@/lib/peptideAi";
 import {
   workspaceScopeOf,
   inWorkspaceScope,
@@ -325,6 +326,8 @@ export async function updateUserAction(formData: FormData): Promise<{ error?: st
   }
 
   await updateUser(id, changes);
+  // Status, name and join date feed the client's Peptide AI policy (churned = off, reset day).
+  if (peptideAiInputsChanged(user, changes)) schedulePeptideAiSync(id);
 
   // Audit-log workspace (book) moves — they change which team can see the
   // client, so the trail matters more than for ordinary field edits.
@@ -412,6 +415,7 @@ export async function deleteUserAction(id: string): Promise<{ error?: string }> 
 
   const deleted = await deleteUser(id);
   if (!deleted) return { error: "User not found" };
+  schedulePeptideAiSync(id);
 
   revalidatePath("/dashboard/users");
   return {};

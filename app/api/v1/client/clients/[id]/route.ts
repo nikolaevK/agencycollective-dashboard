@@ -14,6 +14,7 @@ import {
 } from "@/lib/users";
 import { logAuditEvent } from "@/lib/auditLog";
 import { tokenIsExternal } from "@/lib/apiScopes";
+import { peptideAiInputsChanged, schedulePeptideAiSync } from "@/lib/peptideAi";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -121,6 +122,8 @@ export async function PATCH(
       return fail("invalid_request", "No changes provided", 400);
     }
     await updateUser(params.id, changes);
+    // Status, name and join date feed the client's Peptide AI policy (churned = off, reset day).
+    if (peptideAiInputsChanged(existing, changes)) schedulePeptideAiSync(params.id);
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),
@@ -154,6 +157,7 @@ export async function DELETE(
     if (!existing) return fail("not_found", "Client not found", 404);
 
     await deleteUser(params.id);
+    schedulePeptideAiSync(params.id);
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),

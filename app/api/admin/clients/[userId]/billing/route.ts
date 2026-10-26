@@ -9,6 +9,7 @@ import {
   type ClientBillingInput,
 } from "@/lib/clientBilling";
 import { requireClientRouteActor } from "@/lib/api/requireAdmin";
+import { schedulePeptideAiSync } from "@/lib/peptideAi";
 
 interface RouteContext {
   params: { userId: string };
@@ -94,6 +95,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       changes.settingsNotes = body.settingsNotes ? String(body.settingsNotes).slice(0, 5000) : null;
 
     await upsertClientBilling(params.userId, changes);
+    // Pausing billing switches Peptide AI off; the billing day (or the "last
+    // billed" override's day) is its reset day.
+    if (changes.paused !== undefined || changes.billingDay !== undefined || changes.lastRebilledOverride !== undefined) {
+      schedulePeptideAiSync(params.userId);
+    }
 
     const detail = await getClientDetail(params.userId);
     return NextResponse.json({

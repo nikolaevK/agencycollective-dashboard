@@ -23,6 +23,7 @@ import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAle
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
 import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
+import { PeptideAiUsageTab } from "@/components/users/PeptideAiUsageTab";
 import { InvoiceDraftsPanel, useInvoiceDrafts } from "@/components/users/InvoiceDraftsList";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import dynamic from "next/dynamic";
@@ -40,7 +41,7 @@ import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { ClientPublic } from "@/components/users/types";
 
-type TabId = "clients" | "adAccounts" | "support" | "welcomeKit";
+type TabId = "clients" | "adAccounts" | "support" | "welcomeKit" | "peptideAi";
 
 async function fetchClients(): Promise<ClientPublic[]> {
   const res = await fetch("/api/admin/users");
@@ -321,6 +322,9 @@ export default function UsersPage() {
               >
                 Support
               </TabButton>
+              <TabButton active={tab === "peptideAi"} onClick={() => setTab("peptideAi")}>
+                Peptide AI
+              </TabButton>
               {!admin.isExternal && (
                 <TabButton active={tab === "welcomeKit"} onClick={() => setTab("welcomeKit")}>
                   Welcome Kit
@@ -441,6 +445,8 @@ export default function UsersPage() {
         {tab === "adAccounts" && <AdAccountsDirectory />}
 
         {tab === "support" && <UsersSupportTab />}
+
+        {tab === "peptideAi" && <PeptideAiUsageTab />}
 
         {tab === "welcomeKit" && !admin.isExternal && <WelcomeKitBuilder />}
       </div>

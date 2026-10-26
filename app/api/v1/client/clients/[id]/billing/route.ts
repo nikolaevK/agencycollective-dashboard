@@ -11,6 +11,7 @@ import {
   type ClientBillingInput,
 } from "@/lib/clientBilling";
 import { logAuditEvent } from "@/lib/auditLog";
+import { schedulePeptideAiSync } from "@/lib/peptideAi";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -100,6 +101,11 @@ export async function PATCH(
       return fail("invalid_request", "No changes provided", 400);
     }
     await upsertClientBilling(params.id, changes);
+    // Pausing billing switches Peptide AI off; the billing day (or the "last
+    // billed" override's day) is its reset day.
+    if (changes.paused !== undefined || changes.billingDay !== undefined || changes.lastRebilledOverride !== undefined) {
+      schedulePeptideAiSync(params.id);
+    }
 
     logAuditEvent({
       ...tokenAuditActor(auth.token),

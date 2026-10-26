@@ -18,6 +18,7 @@ import { updateUserAction } from "@/app/actions/users";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { ChipMultiSelect } from "./ChipMultiSelect";
+import { ClientPeptideAiCard } from "./ClientPeptideAiCard";
 import { TeamPicker } from "./TeamPicker";
 import {
   STAGE_CHIP_CLS,
@@ -258,6 +259,8 @@ export function ClientSettingsTab({
           </span>
         </div>
       </div>
+
+      <ClientPeptideAiCard userId={client.id} clientStatus={client.status} />
 
       {/* Payout link */}
       <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
