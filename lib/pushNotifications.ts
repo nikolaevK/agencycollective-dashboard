@@ -97,7 +97,23 @@ function fixFcmEndpoint(endpoint: string): string {
 
 export async function sendPushToAllAdmins(payload: NotificationPayload): Promise<void> {
   if (!configureVapid()) return;
+  await sendToSubscriptions(await readAllPushSubscriptions(), payload);
+}
+
+/** Push to the listed admins only (e.g. internal admins, not partner books). */
+export async function sendPushToAdmins(adminIds: Set<string>, payload: NotificationPayload): Promise<void> {
+  if (!configureVapid() || adminIds.size === 0) return;
   const subscriptions = await readAllPushSubscriptions();
+  await sendToSubscriptions(
+    subscriptions.filter((s) => adminIds.has(s.adminId)),
+    payload
+  );
+}
+
+async function sendToSubscriptions(
+  subscriptions: PushSubscriptionRecord[],
+  payload: NotificationPayload
+): Promise<void> {
   if (subscriptions.length === 0) return;
 
   const body = JSON.stringify(payload);

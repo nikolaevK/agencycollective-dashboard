@@ -667,6 +667,89 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
       data      BLOB NOT NULL,
       PRIMARY KEY (asset_id, variant, seq)
     )`,
+    // Portal "More from Agency Collective" (lib/portalOffers.ts, rules in
+    // lib/portalOfferRules.ts): the admin-managed catalog of our other
+    // services, what each client opened, and their Request Info / Book a Call
+    // leads. Images (logos, covers, the page header) live in their own table
+    // so catalog reads never touch a blob; the page's copy + colors are the
+    // agency_config value 'portal_offers_page' (overrides only). Brand-new
+    // tables — self-heal without a SCHEMA_VERSION bump.
+    `CREATE TABLE IF NOT EXISTS portal_offers (
+      id           TEXT PRIMARY KEY,
+      slug         TEXT NOT NULL UNIQUE,
+      title        TEXT NOT NULL,
+      tagline      TEXT NOT NULL DEFAULT '',
+      category     TEXT NOT NULL DEFAULT '',
+      body         TEXT NOT NULL DEFAULT '',
+      highlights   TEXT NOT NULL DEFAULT '[]',
+      badge        TEXT,
+      links        TEXT NOT NULL DEFAULT '[]',
+      cta_type     TEXT NOT NULL DEFAULT 'request_info',
+      cta_label    TEXT,
+      cta_url      TEXT,
+      accent       TEXT NOT NULL DEFAULT '#6d28d9',
+      featured     INTEGER NOT NULL DEFAULT 0,
+      active       INTEGER NOT NULL DEFAULT 0,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      logo_version  INTEGER,
+      cover_version INTEGER,
+      published_at TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // owner_id = an offer id (kind 'logo' | 'cover') or 'page' (kind 'hero').
+    // version = the ?v= of the image's URL (the serve route only answers the
+    // current one); stored before the BLOB so reading it never touches it.
+    `CREATE TABLE IF NOT EXISTS portal_offer_images (
+      owner_id     TEXT NOT NULL,
+      kind         TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      version      INTEGER NOT NULL,
+      data         BLOB NOT NULL,
+      PRIMARY KEY (owner_id, kind)
+    )`,
+    `CREATE TABLE IF NOT EXISTS portal_offer_views (
+      user_id         TEXT NOT NULL,
+      offer_id        TEXT NOT NULL,
+      view_count      INTEGER NOT NULL DEFAULT 1,
+      link_clicks     INTEGER NOT NULL DEFAULT 0,
+      first_viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_viewed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, offer_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_portal_offer_views_offer
+     ON portal_offer_views (offer_id)`,
+    // When a client last opened the catalog — drives the sidebar "New" pill.
+    `CREATE TABLE IF NOT EXISTS portal_offer_seen (
+      user_id TEXT PRIMARY KEY,
+      seen_at TEXT NOT NULL
+    )`,
+    // offer_title is a snapshot: a lead outlives a renamed or deleted offer.
+    `CREATE TABLE IF NOT EXISTS portal_offer_requests (
+      id              TEXT PRIMARY KEY,
+      offer_id        TEXT NOT NULL,
+      offer_title     TEXT NOT NULL,
+      user_id         TEXT NOT NULL,
+      kind            TEXT NOT NULL,
+      contact_email   TEXT,
+      contact_phone   TEXT,
+      message         TEXT,
+      status          TEXT NOT NULL DEFAULT 'new',
+      note            TEXT,
+      updated_by_name TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_portal_offer_requests_status
+     ON portal_offer_requests (status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_portal_offer_requests_created
+     ON portal_offer_requests (created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_portal_offer_requests_user
+     ON portal_offer_requests (user_id, created_at DESC)`,
+    // One OPEN request per client per offer — a double click or a second tab
+    // can't file the lead twice.
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_portal_offer_requests_open
+     ON portal_offer_requests (user_id, offer_id) WHERE status IN ('new', 'contacted')`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

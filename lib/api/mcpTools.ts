@@ -31,7 +31,13 @@ export interface McpToolDef {
   bodyParams: string[];
 }
 
+/** `nullable: true` fields accept null too (e.g. "null hides it" / "null = none"). */
 function schemaToZod(schema: OpenApiSchema | undefined): ZodTypeAny {
+  const zod = baseSchemaToZod(schema);
+  return schema?.nullable ? zod.nullable() : zod;
+}
+
+function baseSchemaToZod(schema: OpenApiSchema | undefined): ZodTypeAny {
   if (!schema) return z.any();
   if (schema.enum && schema.enum.length > 0) {
     return z.enum(schema.enum as [string, ...string[]]);
@@ -144,7 +150,11 @@ export function toolDescription(operation: FlatOperation): string {
     );
   }
   if (operation["x-multipart"]) {
-    parts.push("Send the file content base64-encoded via fileBase64.");
+    parts.push(
+      operation.requestBody?.schema.properties?.imageUrl
+        ? "Send the file content base64-encoded via fileBase64, or an https imageUrl for the server to download."
+        : "Send the file content base64-encoded via fileBase64."
+    );
   }
   return parts.join(" ");
 }

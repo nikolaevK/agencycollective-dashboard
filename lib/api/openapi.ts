@@ -1,4 +1,12 @@
 import type { ScopeKey } from "@/lib/apiScopes";
+import {
+  DEFAULT_OFFER_PAGE,
+  HIDEABLE_OFFER_PAGE_FIELDS,
+  OFFER_IMAGE_MAX_BYTES,
+  OFFER_LIMITS,
+  OFFER_PAGE_LIMITS,
+  type OfferPageSettings,
+} from "@/lib/portalOfferRules";
 
 /**
  * Hand-authored OpenAPI 3.1 spec for the external API — the single source of
@@ -136,6 +144,110 @@ function op(
 }
 
 /* ── Reusable body schemas ──────────────────────────────────────────── */
+
+/* Portal cross-sell ("More from Agency Collective") — caps come from lib/portalOfferRules. */
+const OL = OFFER_LIMITS;
+const mb = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
+const offerBody = (required?: string[]): OpenApiSchema =>
+  obj(
+    {
+      title: str(`Service name (≤${OL.title} chars) — required on create. The portal URL slug is derived from it once, at create`),
+      tagline: str(`One-liner pitch on the card and under the title (≤${OL.tagline})`),
+      category: str(`Category chip clients filter by (≤${OL.category}), e.g. "Agencies" — reuse the existing ones (see listOffers)`),
+      badge: { ...str(`Optional pill on the card (≤${OL.badge}), e.g. "New" or "Popular"; "" or null removes it`), nullable: true },
+      body: str(
+        `Full pitch on the service page — Markdown: ## headings, **bold**, - bullet lists, [links](https://…); no raw HTML; ≤${OL.body} chars`
+      ),
+      highlights: {
+        ...arr(
+          obj(
+            {
+              stat: { ...str(`Optional big number (≤${OL.highlightStat}), e.g. "$40M+" or "3x"`), nullable: true },
+              text: str(`The line (≤${OL.highlightText})`),
+            },
+            ["text"]
+          )
+        ),
+        description: `Proof points, ≤${OL.highlights}; replaces the whole list. Points WITH a stat become number tiles — the first 3 headline the service page and the first also shows on the card; points without one are check-mark lines.`,
+      },
+      links: {
+        ...arr(obj({ label: str(`Button text (≤${OL.linkLabel})`), url: str("https:// only") }, ["label", "url"])),
+        description: `Extra buttons under the main one (website, pricing, a deck), ≤${OL.links}; replaces the whole list. Clicks are tracked per client.`,
+      },
+      ctaType: {
+        type: "string",
+        enum: ["request_info", "book_call"],
+        description: "Main button: request_info opens a short form (default); book_call opens ctaUrl AND files the lead",
+      },
+      ctaLabel: { ...str(`Main button text (≤${OL.ctaLabel}); empty = "Request info" / "Book a call"`), nullable: true },
+      ctaUrl: { ...str("Booking page (https) — book_call only; required before a book_call service can go live"), nullable: true },
+      featured: bool(
+        "The ONE catalog spotlight. A live featured service replaces the current spotlight; a featured draft takes over when it's published"
+      ),
+      active: bool(
+        'true = live in every client\'s portal (publish, or restore a retired one — clients see it as "New"); false = hidden (a draft, or retired once it was live). Default false'
+      ),
+    },
+    required
+  );
+
+/** Where each page-design text appears (typed so a new field can't go undocumented). */
+const OFFER_PAGE_FIELD_DOCS: Record<keyof OfferPageSettings, string> = {
+  navLabel: "Tab name — the sidebar link and the service page's back link",
+  heroEyebrow: "Catalog header: small pill above the title",
+  heroTitle: "Catalog header: title, first line",
+  heroTitleHighlight: "Catalog header: title, second line (purple)",
+  heroSubtitle: "Catalog header: subtitle",
+  featuredLabel: "Catalog: label on the featured spotlight",
+  learnMoreLabel: "Catalog: link text on each card",
+  allFilterLabel: 'Catalog: the "All" category chip',
+  requestedBadge: "Catalog: badge on services the client already asked about",
+  emptyText: "Catalog: text shown when nothing is live",
+  highlightsHeading: "Service page: proof points heading",
+  exploreHeading: "Service page: heading above other services",
+  ctaEyebrow: "Request panel: small label",
+  ctaHeading: "Request panel: heading",
+  ctaBodyRequest: "Request panel: text on Request info services",
+  ctaBodyBooking: "Request panel: text on Book a call services",
+  ctaFootnote: "Request panel: footnote",
+  formIntro: "Request form: intro",
+  formEmailLabel: "Request form: email field label",
+  formPhoneLabel: "Request form: phone field label",
+  formMessageLabel: "Request form: message field label",
+  formMessagePlaceholder: "Request form: message placeholder",
+  formSubmit: "Request form: send button",
+  requestSentLabel: "After a request: confirmation (the date follows)",
+  requestSuccess: "After a request: follow-up line",
+  bookingSuccess: "After Book a call: confirmation",
+  bookingSuccessBody: "After Book a call: follow-up line",
+  bookingLinkLabel: "After Book a call: link back to the booking page",
+};
+
+const offerPagePatchBody: OpenApiSchema = obj(
+  Object.fromEntries(
+    (Object.keys(DEFAULT_OFFER_PAGE) as (keyof OfferPageSettings)[]).map((key) => {
+      const hideable = HIDEABLE_OFFER_PAGE_FIELDS.includes(key);
+      const schema: OpenApiSchema = {
+        type: "string",
+        ...(hideable ? { nullable: true } : {}),
+        description:
+          `${OFFER_PAGE_FIELD_DOCS[key]}. Default: "${DEFAULT_OFFER_PAGE[key]}". ≤${OFFER_PAGE_LIMITS[key]} chars; ` +
+          `"" restores the default${hideable ? "; null hides it" : ""}.`,
+      };
+      return [key, schema];
+    })
+  )
+);
+
+/** Image upload body: base64 bytes OR a public URL the server downloads. */
+const offerImageBody = (sizeCap: string): OpenApiSchema =>
+  obj({
+    fileBase64: fileBase64(`PNG, JPEG or WebP, ${sizeCap}. Send this OR imageUrl.`),
+    imageUrl: str(
+      "Alternative to fileBase64: an https:// URL of the image (public hosts only, ≤3 redirects, 10 s). SVG/GIF aren't accepted — use a PNG/JPEG/WebP version (sites often have one, e.g. their og:image or apple-touch-icon)"
+    ),
+    fileName: str("Optional file name"),
+  });
 
 /** Meta account writable fields. Credential fields are write-only (redacted from every read). */
 const metaAccountBody = (required?: string[]): OpenApiSchema =>
@@ -440,7 +552,7 @@ export const openApiSpec: OpenApiSpec = {
   servers: [{ url: "/api/v1", description: "This deployment" }],
   tags: [
     { name: "closer", description: "Closers page: closers, deals, payouts, attendance" },
-    { name: "client", description: "Client Directory: clients, billing, ad accounts, welcome kit" },
+    { name: "client", description: "Client Directory: clients, billing, ad accounts, welcome kit, portal cross-sell (services catalog, page design, leads)" },
     { name: "media", description: "Media Buyers: documents, folders, reads, activity" },
     { name: "sops", description: "SOPs: documents, folders, deterministic import" },
     { name: "audit", description: "Audit Log: read-only trail of admin + API actions" },
@@ -1368,6 +1480,124 @@ export const openApiSpec: OpenApiSpec = {
           required: true,
           schema: obj({ enabled: bool(), message: str("≤500 chars") }, ["enabled"]),
         },
+      }),
+    },
+
+    /* ── Portal cross-sell ("More from Agency Collective") ───────────── */
+    "/client/offers": {
+      get: op("listOffers", "List the portal cross-sell services", "client", "client:read", {
+        description:
+          'The agency\'s other services clients see under "More from Agency Collective" in their portal, in display order — drafts and retired ones too. Each has lifecycle (live | draft | retired), slug, logoUrl/coverUrl, and stats { viewers, views, linkClicks, openRequests, requests }. Internal-only: tokens restricted to partner books get 403.',
+        parameters: [
+          ...PAGINATION,
+          q("status", "live | draft | retired", { type: "string", enum: ["live", "draft", "retired"] }),
+          q("category", "Exact category (case-insensitive)"),
+        ],
+      }),
+      post: op("createOffer", "Create a portal cross-sell service", "client", "client:write", {
+        description:
+          "Creates a hidden DRAFT unless active: true (live for every client at once). Recommended: create the draft, add its logo/cover with uploadOfferImage, review with getOffer, then publish with updateOffer { active: true }. Over-long text, too many proof points or links → 400 (nothing is cut).",
+        requestBody: { required: true, schema: offerBody(["title"]) },
+      }),
+    },
+    "/client/offers/order": {
+      put: op("reorderOffers", "Reorder the portal cross-sell catalog", "client", "client:write", {
+        description: "ids go first, in that order; services not listed keep their relative order after them. Returns the full new order.",
+        requestBody: { required: true, schema: obj({ ids: arr(str("Service id")) }, ["ids"]) },
+      }),
+    },
+    "/client/offers/page": {
+      get: op("getOfferPage", "Portal cross-sell page design", "client", "client:read", {
+        description:
+          'Every client-facing word outside the service cards (sidebar tab name, catalog header, labels, request panel + form, confirmations) and the header image. settings = what clients see; overrides = what was changed (null = hidden); defaults; hideable (fields that can be hidden); limits (max chars). "{service}" in a text is replaced with the service\'s title.',
+      }),
+      patch: op("updateOfferPage", "Change portal cross-sell page text", "client", "client:write", {
+        description:
+          'Merge — only the fields sent change. A string sets the text, "" restores the default, null hides a hideable element. Unknown fields or over-long text → 400. "{service}" is replaced with the service\'s title.',
+        requestBody: { required: true, schema: offerPagePatchBody },
+      }),
+      delete: op("resetOfferPage", "Reset the portal cross-sell page design", "client", "client:delete", {
+        description: "Every text back to its default and the header image removed.",
+      }),
+    },
+    "/client/offers/page/image": {
+      post: op("uploadOfferPageImage", "Upload the cross-sell catalog header image", "client", "client:write", {
+        "x-multipart": true,
+        description: `Shown right of the catalog header (hidden on phones). PNG / JPEG / WebP ≤${mb(OFFER_IMAGE_MAX_BYTES.hero)}, type read from the bytes. Returns the new public url.`,
+        requestBody: { required: true, schema: offerImageBody(`≤${mb(OFFER_IMAGE_MAX_BYTES.hero)}`) },
+      }),
+      delete: op("deleteOfferPageImage", "Remove the cross-sell catalog header image", "client", "client:delete"),
+    },
+    "/client/offers/{id}": {
+      get: op("getOffer", "One portal cross-sell service", "client", "client:read", {
+        parameters: [pathParam("id", "Service id")],
+      }),
+      patch: op("updateOffer", "Edit, publish or retire a portal cross-sell service", "client", "client:write", {
+        description:
+          "Partial — only the fields sent change. active: true publishes (or restores) it for every client; active: false takes it down (history and leads are kept). highlights / links replace the whole list.",
+        parameters: [pathParam("id", "Service id")],
+        requestBody: { required: true, schema: offerBody() },
+      }),
+      delete: op("deleteOffer", "Delete a portal cross-sell service for good", "client", "client:delete", {
+        description:
+          "Its images and view counts go with it; past leads keep its title. To take it down but keep its history, use updateOffer with active: false.",
+        parameters: [pathParam("id", "Service id")],
+      }),
+    },
+    "/client/offers/{id}/images/{kind}": {
+      post: op("uploadOfferImage", "Upload a cross-sell service's logo or cover", "client", "client:write", {
+        "x-multipart": true,
+        description: `logo (≤${mb(OFFER_IMAGE_MAX_BYTES.logo)}) sits on a white tile that widens for wordmarks — a transparent PNG wordmark or a square icon both work; without one the card shows initials. cover (≤${mb(OFFER_IMAGE_MAX_BYTES.cover)}) is an optional wide image on the card and the service page. PNG / JPEG / WebP, type read from the bytes. Returns the new public url (it changes on every upload).`,
+        parameters: [
+          pathParam("id", "Service id"),
+          { ...pathParam("kind", "logo | cover"), schema: { type: "string", enum: ["logo", "cover"] } },
+        ],
+        requestBody: {
+          required: true,
+          schema: offerImageBody(`logo ≤${mb(OFFER_IMAGE_MAX_BYTES.logo)}, cover ≤${mb(OFFER_IMAGE_MAX_BYTES.cover)}`),
+        },
+      }),
+      delete: op("deleteOfferImage", "Remove a cross-sell service's logo or cover", "client", "client:delete", {
+        parameters: [
+          pathParam("id", "Service id"),
+          { ...pathParam("kind", "logo | cover"), schema: { type: "string", enum: ["logo", "cover"] } },
+        ],
+      }),
+    },
+    "/client/offer-requests": {
+      get: op("listOfferRequests", "Portal cross-sell leads", "client", "client:read", {
+        description:
+          "Request info / Book a call leads clients filed from the portal, newest first: every open lead + the 300 most recent closed ones. Each has offerId/offerTitle, userId/clientName/workspace, kind, contactEmail/contactPhone, message, status (new | contacted | won | lost), note, viewCount (how often the client opened that service). Nothing is ever emailed to the client. A client-restricted token sees only its clients' leads.",
+        parameters: [
+          ...PAGINATION,
+          q("status", "open (= new + contacted) | new | contacted | won | lost", {
+            type: "string",
+            enum: ["open", "new", "contacted", "won", "lost"],
+          }),
+          q("offerId", "Service id"),
+          q("clientId", "Client id"),
+        ],
+      }),
+    },
+    "/client/offer-requests/{id}": {
+      patch: op("updateOfferRequest", "Work a portal cross-sell lead", "client", "client:write", {
+        description:
+          "Set its status and/or an internal note (never shown to the client). Reopening (new / contacted) while the client has another open request for the same service → 409.",
+        parameters: [pathParam("id", "Request id")],
+        requestBody: {
+          required: true,
+          schema: obj({
+            status: { type: "string", enum: ["new", "contacted", "won", "lost"] },
+            note: { ...str(`Internal note (≤${OL.message}); null clears it`), nullable: true },
+          }),
+        },
+      }),
+    },
+    "/client/clients/{id}/offer-activity": {
+      get: op("getClientOfferActivity", "A client's portal cross-sell activity", "client", "client:read", {
+        description:
+          "Which cross-sell services this client opened in their portal (viewCount, linkClicks, first/last viewed) and every request they filed — call prep.",
+        parameters: [pathParam("id", "Client id")],
       }),
     },
 

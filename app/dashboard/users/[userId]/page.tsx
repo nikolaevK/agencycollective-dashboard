@@ -34,6 +34,7 @@ import type { ClientPublic } from "@/components/users/types";
 import type { ClientAccount } from "@/lib/clientAccounts";
 import type { InsightMetrics, TimeSeriesDataPoint } from "@/types/dashboard";
 import { OnboardingProgressCard } from "@/components/users/OnboardingProgressCard";
+import { ClientOfferActivityCard } from "@/components/offers/admin/ClientOfferActivityCard";
 import { MrrDetailModal } from "@/components/users/MrrDetailModal";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
@@ -606,6 +607,9 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
 
         {tab === "overview" && (
           <div className="space-y-6">
+            {/* Call prep: which of our other services they've been looking at */}
+            {!isExternal && <ClientOfferActivityCard userId={params.userId} />}
+
             {/* Onboarding Progress */}
             <OnboardingProgressCard userId={params.userId} />
 

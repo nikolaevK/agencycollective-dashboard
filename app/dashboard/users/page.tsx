@@ -25,6 +25,8 @@ import { UsersSupportTab } from "@/components/users/UsersSupportTab";
 import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
 import { PeptideAiUsageTab } from "@/components/users/PeptideAiUsageTab";
 import { InvoiceDraftsPanel, useInvoiceDrafts } from "@/components/users/InvoiceDraftsList";
+import { CrossSellTab } from "@/components/offers/admin/CrossSellTab";
+import { useNewOfferRequestCount } from "@/components/offers/admin/OfferRequestsInbox";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import dynamic from "next/dynamic";
 // Lazy-loaded: the builder pulls in react-markdown (via WelcomeKitRenderer)
@@ -41,7 +43,7 @@ import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { ClientPublic } from "@/components/users/types";
 
-type TabId = "clients" | "adAccounts" | "support" | "welcomeKit" | "peptideAi";
+type TabId = "clients" | "adAccounts" | "support" | "welcomeKit" | "peptideAi" | "crossSell";
 
 async function fetchClients(): Promise<ClientPublic[]> {
   const res = await fetch("/api/admin/users");
@@ -169,10 +171,12 @@ export default function UsersPage() {
   // Invoice drafts awaiting review (agent-prepared or saved from a drawer).
   const [draftsOpen, setDraftsOpen] = useState(false);
   const { data: pendingDrafts = [] } = useInvoiceDrafts();
-  // Push notifications deep-link here with ?drafts=1.
+  // Push notifications deep-link here with ?drafts=1 / ?tab=crossSell.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("drafts") === "1") setDraftsOpen(true);
-  }, []);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("drafts") === "1") setDraftsOpen(true);
+    if (params.get("tab") === "crossSell" && !admin.isExternal) setTab("crossSell");
+  }, [admin.isExternal]);
   function closeDrafts() {
     setDraftsOpen(false);
     // Drop the deep-link param (keeping the rest) so a reload/Back doesn't reopen the panel.
@@ -203,6 +207,9 @@ export default function UsersPage() {
     refetchInterval: 90_000,
     refetchIntervalInBackground: false,
   });
+
+  // Portal service requests (More from Agency Collective) — "New" badge on the Cross-sell tab.
+  const newOfferRequests = useNewOfferRequestCount(!admin.isExternal);
 
   const {
     data: clients = [],
@@ -330,6 +337,15 @@ export default function UsersPage() {
                   Welcome Kit
                 </TabButton>
               )}
+              {!admin.isExternal && (
+                <TabButton
+                  active={tab === "crossSell"}
+                  onClick={() => setTab("crossSell")}
+                  badge={newOfferRequests}
+                >
+                  Cross-sell
+                </TabButton>
+              )}
             </div>
             {!admin.isExternal && <MaintenanceToggle />}
             {(tab === "clients" || tab === "adAccounts") && (
@@ -449,6 +465,8 @@ export default function UsersPage() {
         {tab === "peptideAi" && <PeptideAiUsageTab />}
 
         {tab === "welcomeKit" && !admin.isExternal && <WelcomeKitBuilder />}
+
+        {tab === "crossSell" && !admin.isExternal && <CrossSellTab newRequests={newOfferRequests} />}
       </div>
 
       {/* Mobile FAB */}

@@ -490,6 +490,9 @@ export async function deleteUser(id: string): Promise<boolean> {
     "client_onboarding",
     "client_onboarding_selections",
     "client_onboarding_access",
+    "portal_offer_views",
+    "portal_offer_seen",
+    "portal_offer_requests",
   ]) {
     try {
       await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [id] });

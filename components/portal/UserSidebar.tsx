@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame, Palette, Clapperboard, FlaskConical } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, BookOpen, LogOut, X, MessageSquare, Sparkles, Frame, Palette, Clapperboard, FlaskConical, Gem } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 
@@ -37,7 +38,8 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
     refetchIntervalInBackground: false,
   });
 
-  // Per-client portal nav visibility (AI Analyst, Design Board, Peptide AI). Lightweight
+  // Per-client portal nav visibility (AI Analyst, Design Board, Peptide AI,
+  // More from Agency Collective). Lightweight
   // (one DB row, no Meta API) so it polls far more often than the metrics
   // overview — an admin enabling a feature surfaces here within ~60s / on focus
   // instead of being stuck behind the overview's 5-min stale window.
@@ -45,16 +47,30 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
     analystEnabled: boolean;
     designBoardVisible: boolean;
     peptideAiVisible: boolean;
+    moreVisible: boolean;
+    moreNew: boolean;
+    moreLabel: string;
   }>({
     queryKey: ["portal-nav-config"],
     queryFn: async () => {
       const res = await fetch("/api/portal/nav-config");
-      if (!res.ok) return { analystEnabled: true, designBoardVisible: false, peptideAiVisible: false };
+      if (!res.ok)
+        return {
+          analystEnabled: true,
+          designBoardVisible: false,
+          peptideAiVisible: false,
+          moreVisible: false,
+          moreNew: false,
+          moreLabel: "",
+        };
       const json = await res.json();
       return {
         analystEnabled: Boolean(json.data?.analystEnabled ?? true),
         designBoardVisible: Boolean(json.data?.designBoardVisible ?? false),
         peptideAiVisible: Boolean(json.data?.peptideAiVisible ?? false),
+        moreVisible: Boolean(json.data?.moreVisible ?? false),
+        moreNew: Boolean(json.data?.moreNew ?? false),
+        moreLabel: String(json.data?.moreLabel ?? ""),
       };
     },
     staleTime: 30_000,
@@ -64,6 +80,15 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
   const analystEnabled = navConfig?.analystEnabled ?? true;
   const designBoardVisible = navConfig?.designBoardVisible ?? false;
   const peptideAiVisible = navConfig?.peptideAiVisible ?? false;
+  const onMore = pathname.includes("/portal/more");
+  // Opening the catalog itself clears "New" server-side (a single service's
+  // page doesn't); clear the cached flag too so it doesn't come back on the
+  // next page until the next poll.
+  const onCatalog = /\/portal\/more\/?$/.test(pathname);
+  useEffect(() => {
+    if (onCatalog) qc.setQueryData<typeof navConfig>(["portal-nav-config"], (old) => (old ? { ...old, moreNew: false } : old));
+  }, [onCatalog, qc]);
+  const moreNew = (navConfig?.moreNew ?? false) && !onCatalog;
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -208,6 +233,24 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           >
             <FlaskConical className="h-4 w-4 shrink-0" />
             <span>Peptide AI</span>
+          </Link>
+        )}
+        {navConfig?.moreVisible && (
+          <Link
+            href={`/${slug}/portal/more`}
+            onClick={onClose}
+            className={cn(
+              "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+              onMore && "active"
+            )}
+          >
+            <Gem className="h-4 w-4 shrink-0" />
+            <span className="flex-1 leading-snug">{navConfig.moreLabel || "More from Agency Collective"}</span>
+            {moreNew && (
+              <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white">
+                New
+              </span>
+            )}
           </Link>
         )}
         <Link

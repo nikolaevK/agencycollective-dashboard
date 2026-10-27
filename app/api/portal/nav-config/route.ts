@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
 import { getPeptideAiSetting, isPeptideAiConfigured } from "@/lib/peptideAi";
+import { getOfferNavState } from "@/lib/portalOffers";
 
 /**
- * Per-client portal nav visibility (AI Analyst, Design Board, Peptide AI) for the sidebar.
+ * Per-client portal nav visibility (AI Analyst, Design Board, Peptide AI, More
+ * from Agency Collective) for the sidebar.
  * Deliberately lightweight — one user row, no Meta API — so it can poll far more
  * often than the metrics `user/overview`. That keeps admin changes (granting AI
  * Analyst access, setting a Design Board link) surfacing within ~60s instead of
@@ -25,6 +27,12 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const [offers, peptideAi] = await Promise.all([
+    // Non-critical: a failed read just hides the tab for this poll.
+    getOfferNavState(user.id).catch(() => ({ visible: false, hasNew: false, label: "" })),
+    isPeptideAiConfigured() ? getPeptideAiSetting(user.id) : null,
+  ]);
+
   return NextResponse.json(
     {
       data: {
@@ -34,7 +42,12 @@ export async function GET() {
         designBoardVisible: user.designBoardEnabled && Boolean(user.designBoardUrl),
         // Hidden only when an admin switched it off; a paused or churned
         // client still sees the tab, which explains why it's unavailable.
-        peptideAiVisible: isPeptideAiConfigured() && (await getPeptideAiSetting(user.id)).enabled,
+        peptideAiVisible: Boolean(peptideAi?.enabled),
+        // Shown once at least one service is live; "New" until the client
+        // opens the catalog after another one goes live.
+        moreVisible: offers.visible,
+        moreNew: offers.hasNew,
+        moreLabel: offers.label,
       },
     },
     { headers: { "Cache-Control": "private, max-age=30" } }
