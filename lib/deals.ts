@@ -2,6 +2,7 @@ import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
 import { isSetterTier, type SetterTier } from "./appointments";
 import { businessTodayYmd } from "./businessTime";
+import type { DealDayRow } from "./metricSeries";
 
 export type DealStatus = "closed" | "not_closed" | "pending_signature" | "rescheduled" | "follow_up";
 
@@ -508,19 +509,7 @@ export function previousWindowBounds(
   };
 }
 
-/**
- * The single close-rate definition: closed / (closed + pending + in-flight),
- * one decimal. Every surface (team card, overview delta, leaderboard) must
- * call this — hand-copied variants drifted in rounding before.
- */
-export function computeCloseRate(
-  closedCount: number,
-  pendingCount: number,
-  inFlightCount: number
-): number {
-  const total = closedCount + pendingCount + inFlightCount;
-  return total > 0 ? Math.round((closedCount / total) * 1000) / 10 : 0;
-}
+export { computeCloseRate } from "./closeRate";
 
 /**
  * Current-calendar-month bucket for one closer, in the BUSINESS timezone
@@ -812,4 +801,43 @@ export async function getTeamMonthlyTrend(months = 12): Promise<TeamMonthlyTrend
     });
   }
   return series;
+}
+
+/**
+ * Per-day, per-closer deal sums for the Sales Overview card trend lines
+ * (bucketed by lib/metricSeries.ts). Effective date and CASE definitions are
+ * aggregateBucket's — keep them in lockstep, so the buckets of a window add
+ * up to that window's card totals.
+ */
+export async function getDealDayRows(since: string, until: string): Promise<DealDayRow[]> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT
+            COALESCE(closing_date, substr(created_at,1,10)) AS day,
+            closer_id,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN deal_value ELSE 0 END), 0) AS closed_revenue,
+            COALESCE(SUM(CASE WHEN status IN ('closed', 'pending_signature') AND paid_status = 'paid' THEN deal_value ELSE 0 END), 0) AS paid_revenue,
+            COALESCE(SUM(CASE WHEN status = 'closed' AND IFNULL(paid_status, 'unpaid') = 'unpaid' THEN deal_value ELSE 0 END), 0) AS outstanding_revenue,
+            COALESCE(SUM(CASE WHEN status = 'pending_signature' THEN deal_value ELSE 0 END), 0) AS pending_pipeline,
+            COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_count,
+            COALESCE(SUM(CASE WHEN status = 'pending_signature' THEN 1 ELSE 0 END), 0) AS pending_count,
+            COALESCE(SUM(CASE WHEN status IN ('rescheduled', 'follow_up', 'not_closed') THEN 1 ELSE 0 END), 0) AS in_flight_count
+          FROM deals
+          WHERE COALESCE(closing_date, substr(created_at,1,10)) >= ?
+            AND COALESCE(closing_date, substr(created_at,1,10)) <= ?
+          GROUP BY day, closer_id`,
+    args: [since, until],
+  });
+  return result.rows.map((row) => ({
+    day: String(row.day),
+    closerId: String(row.closer_id),
+    closedRevenue: Number(row.closed_revenue ?? 0),
+    paidRevenue: Number(row.paid_revenue ?? 0),
+    outstandingRevenue: Number(row.outstanding_revenue ?? 0),
+    pendingPipeline: Number(row.pending_pipeline ?? 0),
+    closedCount: Number(row.closed_count ?? 0),
+    pendingCount: Number(row.pending_count ?? 0),
+    inFlightCount: Number(row.in_flight_count ?? 0),
+  }));
 }

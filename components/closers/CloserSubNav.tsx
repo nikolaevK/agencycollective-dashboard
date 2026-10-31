@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +18,9 @@ const tabs = [
 export function CloserSubNav() {
   const pathname = usePathname();
   const activeRef = useRef<HTMLAnchorElement>(null);
+  // The clicked tab, until its page mounts its own nav — so the pill starts
+  // sliding on click instead of after the next page has loaded.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   // The tab row scrolls sideways on phones — keep the active tab in view
   // (otherwise e.g. "GHL Contacts" is selected but scrolled off-screen).
@@ -31,11 +34,19 @@ export function CloserSubNav() {
   // Route tabs: each trigger is a Link, so navigation (incl. cmd-click /
   // middle-click) stays plain anchor behavior; Tabs only drives the styling.
   return (
-    <Tabs value={activeHref} className="mb-6 overflow-x-auto">
-      <TabsList>
+    <Tabs value={pendingHref ?? activeHref} className="mb-6 overflow-x-auto">
+      <TabsList sliding="closers-subnav">
         {tabs.map((tab) => (
           <TabsTrigger key={tab.href} value={tab.href} asChild>
-            <Link href={tab.href} ref={tab.href === activeHref ? activeRef : undefined}>
+            <Link
+              href={tab.href}
+              ref={tab.href === activeHref ? activeRef : undefined}
+              onClick={(e) => {
+                // New-tab / modified clicks don't navigate this page.
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                setPendingHref(tab.href);
+              }}
+            >
               {tab.label}
             </Link>
           </TabsTrigger>

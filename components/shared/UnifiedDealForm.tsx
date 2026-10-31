@@ -8,7 +8,7 @@ import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
 import { INDUSTRIES, DEAL_STATUSES, PAYMENT_TYPES } from "@/components/closers/types";
 import { parseServiceCategory, serializeServiceCategory } from "@/lib/serviceCategory";
 import { createDealAction } from "@/app/actions/closerDeals";
-import { SETTER_TIERS, SETTER_TIER_LABELS, type SetterTier } from "@/lib/appointments";
+import { SETTER_TIERS, SETTER_TIER_LABELS, type SetterTier } from "@/lib/appointmentRules";
 import type { CreatedDeal } from "@/lib/dealCreation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

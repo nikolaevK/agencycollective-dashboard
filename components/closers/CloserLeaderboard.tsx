@@ -22,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCents } from "@/components/closers/types";
-import { computeCloseRate } from "@/lib/deals";
+import { computeCloseRate } from "@/lib/closeRate";
 
 interface CloserBreakdown {
   closerId: string;

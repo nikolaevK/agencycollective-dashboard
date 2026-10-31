@@ -225,21 +225,13 @@ function ForecastView({
   month: number;
   year: number;
 }) {
-  // Next month from the selected month
-  let nextMonth = month + 1;
-  let nextYear = year;
-  if (nextMonth > 12) {
-    nextMonth = 1;
-    nextYear++;
-  }
-
   return (
     <>
       <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-muted/50 border-y">
         <div className="flex min-w-0 items-center gap-2">
           <TrendingUp className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-sm font-medium">
-            Forecast for {monthLabel(nextMonth, nextYear)}
+            Forecast for {monthLabel(month, year)}
           </span>
         </div>
       </div>

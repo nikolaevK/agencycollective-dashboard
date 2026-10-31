@@ -12,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
-import { SETTER_TIER_LABELS } from "@/lib/appointments";
+import { SETTER_TIER_LABELS } from "@/lib/appointmentRules";
 import type { SetterMetricBucket, SetterTierBreakdown } from "@/lib/setterStats";
 import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";

@@ -32,7 +32,7 @@ import {
   POST_CALL_LABELS,
   type PreCallStatus,
   type PostCallStatus,
-} from "@/lib/appointments";
+} from "@/lib/appointmentRules";
 import type { CalendarEvent, AttendeeResponseStatus } from "@/components/closer/CalendarEventList";
 import { formatCents } from "@/components/closers/types";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";

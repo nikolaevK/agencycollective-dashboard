@@ -8,7 +8,7 @@ import type { Row } from "@libsql/client";
 
 export type DocType = "project_scope" | "invoice";
 
-export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+export { MAX_DOCUMENT_SIZE_BYTES } from "./payoutDocumentRules";
 
 /** Metadata columns (excludes file_data BLOB) */
 const META_COLUMNS = `id, normalized_brand, brand_name, doc_type, file_name,

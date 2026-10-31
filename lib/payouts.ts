@@ -1077,6 +1077,185 @@ export async function getRebillMetrics(
 }
 
 // ---------------------------------------------------------------------------
+// Trends (Payout Tracker card trend lines + Insights)
+// ---------------------------------------------------------------------------
+
+export interface PayoutMonthPoint {
+  month: number;
+  year: number;
+  /** getPayoutSummary's numbers for this month. */
+  totalDue: number;
+  totalPaid: number;
+  unpaidAmount: number;
+  undistributedAmount: number;
+  /** The New / Rebilled cards' numbers (same brand-group classification). */
+  newAccountRevenue: number;
+  newAccountCount: number;
+  rebillAccountRevenue: number;
+  rebillAccountCount: number;
+  /** Revenue mix for the stacked chart — sums to totalDue. */
+  mix: PayoutRevenueMix;
+}
+
+export interface PayoutRevenueMix {
+  /** Rows flagged "Ad Account" in Sales Rep. */
+  adAccount: number;
+  /** Other rows of a brand that has a REBILL row this month. */
+  rebill: number;
+  /** Everything else. */
+  new: number;
+}
+
+export interface PayoutBreakdownItem {
+  name: string;
+  amountDue: number;
+  amountPaid: number;
+  count: number;
+}
+
+export interface PayoutTrends {
+  /** 12 months, oldest first, ending with the requested month. */
+  months: PayoutMonthPoint[];
+  /** The requested month's brands (fuzzy brand key), biggest first. */
+  brands: PayoutBreakdownItem[];
+  /** The requested month's new business (the mix's "New" stream) per sales
+   *  rep, biggest first. */
+  salesReps: PayoutBreakdownItem[];
+}
+
+/**
+ * Row-level revenue mix. Unlike the New / Rebilled cards (whole brand groups,
+ * so an ad-account payment from a rebilling brand counts as rebill and one
+ * from any other brand as new), ad-account payments get their own stream.
+ */
+export function payoutRevenueMix(records: PayoutRecord[]): PayoutRevenueMix {
+  const streamOf = payoutStreams(records);
+  const mix: PayoutRevenueMix = { adAccount: 0, rebill: 0, new: 0 };
+  for (const r of records) mix[streamOf(r)] += r.amountDue;
+  return mix;
+}
+
+/** Which mix stream a row of this month belongs to. */
+function payoutStreams(records: PayoutRecord[]): (r: PayoutRecord) => keyof PayoutRevenueMix {
+  const rebillBrands = new Set<string>();
+  for (const r of records) {
+    const norm = normalizeBrandName(r.brandName);
+    if (norm && isRebillSalesRep(r.salesRep)) rebillBrands.add(norm);
+  }
+  return (r) => {
+    if (isAdAccountSalesRep(r.salesRep)) return "adAccount";
+    const norm = normalizeBrandName(r.brandName);
+    return (norm ? rebillBrands.has(norm) : isRebillSalesRep(r.salesRep)) ? "rebill" : "new";
+  };
+}
+
+/** Sums rows per key (null key = skip), biggest amount due first. The first
+ *  row's label names the group. */
+export function payoutBreakdown(
+  records: PayoutRecord[],
+  keyOf: (r: PayoutRecord) => { key: string; label: string } | null
+): PayoutBreakdownItem[] {
+  const groups = new Map<string, PayoutBreakdownItem>();
+  for (const r of records) {
+    const k = keyOf(r);
+    if (!k) continue;
+    const g = groups.get(k.key);
+    if (g) {
+      g.amountDue += r.amountDue;
+      g.amountPaid += r.amountPaid;
+      g.count += 1;
+    } else {
+      groups.set(k.key, { name: k.label, amountDue: r.amountDue, amountPaid: r.amountPaid, count: 1 });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => b.amountDue - a.amountDue);
+}
+
+export function brandBreakdown(records: PayoutRecord[]): PayoutBreakdownItem[] {
+  return payoutBreakdown(records, (r) => {
+    const label = r.brandName.trim();
+    return { key: normalizeBrandName(r.brandName) || label.toLowerCase(), label };
+  });
+}
+
+/** The mix's "New" stream per rep — a rebilling brand's other rows (upsells)
+ *  and Ad Account rows aren't new business. */
+export function salesRepBreakdown(records: PayoutRecord[]): PayoutBreakdownItem[] {
+  const streamOf = payoutStreams(records);
+  return payoutBreakdown(records, (r) => {
+    if (streamOf(r) !== "new") return null;
+    const label = r.salesRep?.trim() || "Unassigned";
+    return { key: label.toLowerCase(), label };
+  });
+}
+
+/**
+ * 12 months ending with (month, year) for the Payout Tracker's card trend
+ * lines and Insights, from ONE indexed read of only the columns used (the
+ * row-value range uses idx_payouts_month_year). Each month's totals are
+ * getPayoutSummary's sums (all four columns are NOT NULL, so plain sums
+ * match the SQL), and its rows go through getRebillMetrics' classification.
+ */
+export async function getPayoutTrends(month: number, year: number): Promise<PayoutTrends> {
+  await ensureMigrated();
+  const db = getDb();
+  const endIdx = year * 12 + (month - 1);
+  const startIdx = endIdx - 11;
+
+  const rows = await db.execute({
+    sql: `SELECT payout_year, payout_month, brand_name, sales_rep, amount_due, amount_paid, is_paid, pay_distributed
+          FROM payouts
+          WHERE (payout_year, payout_month) >= (?, ?) AND (payout_year, payout_month) <= (?, ?)`,
+    args: [Math.floor(startIdx / 12), (startIdx % 12) + 1, year, month],
+  });
+
+  const recordsByIdx = new Map<number, PayoutRecord[]>();
+  for (const row of rows.rows) {
+    const rec = rowToPayout(row);
+    const idx = rec.payoutYear * 12 + rec.payoutMonth - 1;
+    const arr = recordsByIdx.get(idx);
+    if (arr) arr.push(rec);
+    else recordsByIdx.set(idx, [rec]);
+  }
+
+  const months: PayoutMonthPoint[] = [];
+  for (let idx = startIdx; idx <= endIdx; idx++) {
+    const records = recordsByIdx.get(idx) ?? [];
+    let totalDue = 0;
+    let totalPaid = 0;
+    let undistributed = 0;
+    for (const r of records) {
+      totalDue += r.amountDue;
+      totalPaid += r.amountPaid;
+      if (r.isPaid && r.payDistributed !== "Yes") undistributed += r.amountPaid;
+    }
+    // The prior-history map only feeds the per-account warnings, never the
+    // counts or revenue, so an empty one gives the cards' exact numbers.
+    const metrics = classifyMonth(records, new Map());
+    months.push({
+      month: (idx % 12) + 1,
+      year: Math.floor(idx / 12),
+      totalDue,
+      totalPaid,
+      unpaidAmount: totalDue - totalPaid,
+      undistributedAmount: undistributed,
+      newAccountRevenue: metrics.newAccountRevenue,
+      newAccountCount: metrics.newAccountCount,
+      rebillAccountRevenue: metrics.rebillAccountRevenue,
+      rebillAccountCount: metrics.rebillAccountCount,
+      mix: payoutRevenueMix(records),
+    });
+  }
+
+  const selected = recordsByIdx.get(endIdx) ?? [];
+  return {
+    months,
+    brands: brandBreakdown(selected),
+    salesReps: salesRepBreakdown(selected),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Forecasting
 // ---------------------------------------------------------------------------
 

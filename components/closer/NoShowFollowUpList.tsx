@@ -22,7 +22,7 @@ import {
   POST_CALL_LABELS,
   type PreCallStatus,
   type PostCallStatus,
-} from "@/lib/appointments";
+} from "@/lib/appointmentRules";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -6,10 +6,19 @@ import { findAdmin } from "@/lib/admins";
 import {
   getTeamStats,
   getTeamMonthlyTrend,
+  getDealDayRows,
   previousWindowBounds,
   computeCloseRate,
 } from "@/lib/deals";
-import { getTeamShowRate } from "@/lib/eventAttendance";
+import { getAttendanceDayRows, getTeamShowRate } from "@/lib/eventAttendance";
+import { businessTodayYmd } from "@/lib/businessTime";
+import {
+  bucketRanges,
+  bucketize,
+  lastMonthsRanges,
+  seriesGranularity,
+  type OverviewTrends,
+} from "@/lib/metricSeries";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -29,7 +38,17 @@ export async function GET(request: Request) {
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
   const prevBounds = since && until ? previousWindowBounds(since, until) : null;
 
-  const [stats, lifetimeShow, windowResult, previousShowResult, monthlyTrend] =
+  // Card trend lines — only the Sales Overview asks (`trends=1`); the other
+  // callers of this route skip the two extra scans. One day-row read covers
+  // the last 12 months AND the window + its previous period.
+  const withTrends = searchParams.get("trends") === "1";
+  const lifetimeRanges = lastMonthsRanges(businessTodayYmd(), 12);
+  const lifetimeSince = lifetimeRanges[0].start;
+  const lifetimeUntil = lifetimeRanges[lifetimeRanges.length - 1].end;
+  const seriesSince = [lifetimeSince, prevBounds?.since ?? since ?? lifetimeSince].sort()[0];
+  const seriesUntil = [lifetimeUntil, until ?? lifetimeUntil].sort()[1];
+
+  const [stats, lifetimeShow, windowResult, previousShowResult, monthlyTrend, dealRows, attendanceRows] =
     await Promise.all([
       getTeamStats({ since, until }),
       // Show metrics from event_attendance (every mark, with or without a
@@ -39,6 +58,8 @@ export async function GET(request: Request) {
       since && until ? getTeamShowRate({ since, until }) : null,
       prevBounds ? getTeamShowRate(prevBounds) : null,
       getTeamMonthlyTrend(),
+      withTrends ? getDealDayRows(seriesSince, seriesUntil) : null,
+      withTrends ? getAttendanceDayRows(lifetimeSince, lifetimeUntil) : null,
     ]);
   const windowShow = windowResult ?? lifetimeShow;
 
@@ -84,6 +105,32 @@ export async function GET(request: Request) {
   const w = stats.window;
   const closeRate = computeCloseRate(w.closedCount, w.pendingCount, w.inFlightCount);
 
+  let trends: OverviewTrends | null = null;
+  if (dealRows && attendanceRows) {
+    const granularity = since && until ? seriesGranularity(since, until) : null;
+    trends = {
+      lifetime: {
+        buckets: bucketize(lifetimeRanges, dealRows, attendanceRows),
+        topPerformer: topPerformer
+          ? bucketize(
+              lifetimeRanges,
+              dealRows.filter((r) => r.closerId === topPerformer.closerId)
+            )
+          : null,
+      },
+      window:
+        since && until && granularity
+          ? {
+              granularity,
+              current: bucketize(bucketRanges(since, until, granularity), dealRows),
+              previous: prevBounds
+                ? bucketize(bucketRanges(prevBounds.since, prevBounds.until, granularity), dealRows)
+                : null,
+            }
+          : null,
+    };
+  }
+
   return NextResponse.json({
     data: {
       lifetime: stats.lifetime,
@@ -94,6 +141,7 @@ export async function GET(request: Request) {
       topPerformer,
       closerBreakdowns: stats.closerBreakdowns,
       monthlyTrend,
+      trends,
     },
   });
 }

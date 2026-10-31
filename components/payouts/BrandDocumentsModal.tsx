@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DocType, PayoutDocument } from "@/lib/payoutDocuments";
-import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocuments";
+import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocumentRules";
 
 interface BrandDocumentsModalProps {
   open: boolean;

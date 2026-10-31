@@ -30,7 +30,7 @@ export default function ClosersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["closers-stats", timeFrame.key, timeFrame.since ?? "", timeFrame.until ?? ""],
     queryFn: async () => {
-      const url = appendTimeFrameParams("/api/admin/closers/stats", timeFrame);
+      const url = appendTimeFrameParams("/api/admin/closers/stats?trends=1", timeFrame);
       const r = await fetch(url);
       if (!r.ok) throw new Error("Failed to fetch stats");
       const d = await r.json();
@@ -99,6 +99,7 @@ function OverviewSkeleton() {
             <CardContent className="space-y-2">
               <Skeleton className="h-8 w-28" />
               <Skeleton className="h-3 w-32" />
+              <Skeleton className="!mt-4 h-16 w-full" />
             </CardContent>
           </Card>
         ))}

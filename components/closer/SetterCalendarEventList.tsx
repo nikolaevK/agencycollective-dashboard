@@ -32,7 +32,7 @@ import {
   POST_CALL_BADGE,
   POST_CALL_LABELS,
   POST_CALL_STATUSES,
-} from "@/lib/appointments";
+} from "@/lib/appointmentRules";
 import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
 
 interface Props {

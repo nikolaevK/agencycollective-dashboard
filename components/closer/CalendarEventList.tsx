@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 import {
   PRE_CALL_LABELS,
   POST_CALL_LABELS,
-  type AppointmentIndexEntry,
   type PostCallStatus,
   type PreCallStatus,
-} from "@/lib/appointments";
+} from "@/lib/appointmentRules";
+import type { AppointmentIndexEntry } from "@/lib/appointments";
 import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -160,6 +160,17 @@ const POST_CALL_TONE: Record<PostCallStatus, BadgeTone> = {
   disqualified: "danger",
   no_answer: "warning",
 };
+
+// The calendar is read at a glance, so its green/red chips get a stronger
+// outline than the kit's default tone.
+const CALENDAR_OUTLINE: Partial<Record<BadgeTone, string>> = {
+  success: "border-emerald-500/50 dark:border-emerald-400/45",
+  danger: "border-red-500/50 dark:border-red-400/45",
+};
+
+function CalendarStatusBadge({ tone, className, ...props }: React.ComponentProps<typeof StatusBadge>) {
+  return <StatusBadge tone={tone} className={cn(tone && CALENDAR_OUTLINE[tone], className)} {...props} />;
+}
 
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const groups = new Map<string, CalendarEvent[]>();
@@ -376,7 +387,7 @@ export function CalendarEventList({
                     className={cn(
                       "flex-1 min-w-0 p-4 transition-colors",
                       isLinked
-                        ? "ring-emerald-500/40 dark:ring-emerald-500/40"
+                        ? "ring-emerald-500/60 dark:ring-emerald-400/50"
                         : "hover:bg-muted/30"
                     )}
                   >
@@ -399,7 +410,7 @@ export function CalendarEventList({
                             </Badge>
                           )}
                           {isLinked && (
-                            <StatusBadge tone="success">Deal Linked</StatusBadge>
+                            <CalendarStatusBadge tone="success">Deal Linked</CalendarStatusBadge>
                           )}
                           {setterClaim && (
                             <Badge variant="outline" className="gap-1 font-medium">
@@ -408,9 +419,9 @@ export function CalendarEventList({
                             </Badge>
                           )}
                           {STATUS_PILL[event.status] && (
-                            <StatusBadge tone={STATUS_PILL[event.status].tone}>
+                            <CalendarStatusBadge tone={STATUS_PILL[event.status].tone}>
                               {STATUS_PILL[event.status].label}
-                            </StatusBadge>
+                            </CalendarStatusBadge>
                           )}
                         </div>
                       </div>
@@ -525,9 +536,9 @@ export function CalendarEventList({
                                         {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                       </a>
                                       {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                        <StatusBadge tone={RESPONSE_BADGE[a.responseStatus].tone}>
+                                        <CalendarStatusBadge tone={RESPONSE_BADGE[a.responseStatus].tone}>
                                           {RESPONSE_BADGE[a.responseStatus].label}
-                                        </StatusBadge>
+                                        </CalendarStatusBadge>
                                       )}
                                     </li>
                                   ))}
@@ -544,12 +555,12 @@ export function CalendarEventList({
                   {setterClaim && (
                     <div className="mt-3 pt-3 border-t space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge tone={PRE_CALL_TONE[setterClaim.preCallStatus] ?? "neutral"}>
+                        <CalendarStatusBadge tone={PRE_CALL_TONE[setterClaim.preCallStatus] ?? "neutral"}>
                           Pre: {PRE_CALL_LABELS[setterClaim.preCallStatus]}
-                        </StatusBadge>
-                        <StatusBadge tone={POST_CALL_TONE[setterClaim.postCallStatus] ?? "neutral"}>
+                        </CalendarStatusBadge>
+                        <CalendarStatusBadge tone={POST_CALL_TONE[setterClaim.postCallStatus] ?? "neutral"}>
                           Post: {POST_CALL_LABELS[setterClaim.postCallStatus]}
-                        </StatusBadge>
+                        </CalendarStatusBadge>
                         {setterClaim.clientName && setterClaim.clientName !== event.title && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <User className="h-3 w-3" />
@@ -765,9 +776,9 @@ export function CalendarEventList({
                     // Desktop stays inline.
                     return (
                       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center items-start gap-2 mt-3 pt-3 border-t">
-                        <StatusBadge tone={eventAttendance === "showed" ? "success" : "danger"} className="shrink-0">
+                        <CalendarStatusBadge tone={eventAttendance === "showed" ? "success" : "danger"} className="shrink-0">
                           {eventAttendance === "showed" ? "Showed" : "No Show"}
-                        </StatusBadge>
+                        </CalendarStatusBadge>
                         {canReassign && closers && (
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground w-full sm:w-auto">
                             <span className="shrink-0">Attributed to:</span>

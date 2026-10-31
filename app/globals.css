@@ -36,11 +36,13 @@
 
     /* chart-1/2 = the closed/paid revenue pair: blue + emerald, validated
        (lightness band, chroma, CVD + normal-vision separation, >= 3:1 on the
-       card) in BOTH modes. Re-run the palette checks before changing them. */
+       card) in BOTH modes. Re-run the palette checks before changing them.
+       chart-3/4 = amber + magenta, validated with chart-1 as the Payout
+       revenue-mix trio (new / ad account / rebill), all pairs, both modes. */
     --chart-1: 213 68% 50%;
     --chart-2: 161 94% 30%;
-    --chart-3: 0 0% 32.2%;
-    --chart-4: 0 0% 25%;
+    --chart-3: 39 100% 35.3%;
+    --chart-4: 332 55% 55.5%;
     --chart-5: 0 0% 14.9%;
 
     --radius: 0.625rem;
@@ -104,8 +106,8 @@
 
     --chart-1: 213 77% 56%;
     --chart-2: 161 82% 35%;
-    --chart-3: 0 0% 32.2%;
-    --chart-4: 0 0% 25%;
+    --chart-3: 40 100% 39.4%;
+    --chart-4: 330 55% 58.6%;
     --chart-5: 0 0% 14.9%;
 
     /* Portal — MD3-style tokens (Dark Mode), desaturated to neutral */

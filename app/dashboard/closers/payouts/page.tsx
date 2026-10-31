@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { Search, Plus, Calendar, ChevronDown, FileDown } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
@@ -15,16 +16,28 @@ import { ImportDealModal } from "@/components/payouts/ImportDealModal";
 import type { ImportableDeal } from "@/components/payouts/ImportDealModal";
 import { RebillDetailModal } from "@/components/payouts/RebillDetailModal";
 import { BrandDocumentsModal } from "@/components/payouts/BrandDocumentsModal";
-import type { PayoutRecord, PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
+import { PayoutRevenueMixChart } from "@/components/payouts/PayoutRevenueMixChart";
+import { PayoutConcentrationCard, PayoutSalesRepCard } from "@/components/payouts/PayoutBreakdownCards";
+import type {
+  PayoutRecord,
+  PayoutSummary,
+  RebillMetrics,
+  ForecastData,
+  PayoutTrends,
+} from "@/lib/payouts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type PaidFilter = "all" | "paid" | "unpaid";
+type PayoutView = "payouts" | "insights";
 
 /* ── Date presets relative to today ─────────────────────────────── */
 function getDatePresets() {
@@ -235,6 +248,7 @@ export default function PayoutsPage() {
   const [rebillModalOpen, setRebillModalOpen] = useState(false);
   const [rebillModalView, setRebillModalView] = useState<MetricCardType>("new");
   const [docsModalBrand, setDocsModalBrand] = useState<string | null>(null);
+  const [view, setView] = useState<PayoutView>("payouts");
 
   const queryClient = useQueryClient();
 
@@ -329,6 +343,20 @@ export default function PayoutsPage() {
     staleTime: 60_000,
   });
 
+  // 12 months ending with the selected month: card trend lines + Insights.
+  const { data: trends, isError: trendsError } = useQuery<PayoutTrends>({
+    queryKey: ["admin-payouts-trends", month, year],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/payouts/trends?month=${month}&year=${year}`);
+      if (!res.ok) throw new Error("Failed to fetch payout trends");
+      const json = await res.json();
+      return json.data;
+    },
+    staleTime: 60_000,
+    // Keep the lines on screen while another month loads (no layout jump).
+    placeholderData: keepPreviousData,
+  });
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["admin-payouts", month, year] });
     queryClient.invalidateQueries({
@@ -337,6 +365,8 @@ export default function PayoutsPage() {
     queryClient.invalidateQueries({
       queryKey: ["admin-payouts-rebill", month, year],
     });
+    // Every cached 12-month window containing this month, not just this one.
+    queryClient.invalidateQueries({ queryKey: ["admin-payouts-trends"] });
     // Keep the deal importer in sync — a just-imported deal must show as "Imported".
     queryClient.invalidateQueries({ queryKey: ["importable-deals"] });
   };
@@ -473,96 +503,142 @@ export default function PayoutsPage() {
           rebillMetrics={rebillData?.metrics}
           forecast={rebillData?.forecast}
           rebillLoading={rebillLoading}
+          trends={trends}
+          monthName={format(new Date(year, month - 1, 1), "MMMM")}
           onCardClick={(card) => {
             setRebillModalView(card);
             setRebillModalOpen(true);
           }}
         />
 
-        {/* Search + filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by brand name..."
-              className="pl-9"
-            />
-          </div>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={paidFilter}
-            // Radix reports "" when the active pill is clicked again; the
-            // old pills just re-selected it, so ignore that.
-            onValueChange={(v) => {
-              if (v) setPaidFilter(v as PaidFilter);
-            }}
-            aria-label="Payment status"
-            className="overflow-x-auto"
+        {/* Panels inherit the page's type (TabsContent defaults to text-sm). */}
+        <Tabs value={view} onValueChange={(v) => setView(v as PayoutView)} className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="payouts">Ledger</TabsTrigger>
+            <TabsTrigger value="insights">Insights</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="insights" className="text-[length:inherit] leading-[inherit]">
+            {trends ? (
+              <div className="space-y-6">
+                <PayoutRevenueMixChart months={trends.months} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <PayoutConcentrationCard
+                    brands={trends.brands}
+                    monthLabel={format(new Date(year, month - 1, 1), "MMMM yyyy")}
+                  />
+                  <PayoutSalesRepCard
+                    reps={trends.salesReps}
+                    monthLabel={format(new Date(year, month - 1, 1), "MMMM yyyy")}
+                  />
+                </div>
+              </div>
+            ) : trendsError ? (
+              <Card>
+                <CardContent className="p-12 md:p-12 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Couldn&apos;t load insights. Try again in a moment.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Skeleton className="h-[380px] w-full rounded-3xl" />
+            )}
+          </TabsContent>
+
+          {/* Kept mounted while Insights is open: switching back doesn't
+              rebuild the table or reset its state. */}
+          <TabsContent
+            value="payouts"
+            forceMount
+            className="space-y-6 text-[length:inherit] leading-[inherit] data-[state=inactive]:hidden"
           >
-            {paidFilters.map((f) => (
-              <ToggleGroupItem key={f.value} value={f.value} className="px-3">
-                {f.label} ({f.count})
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
+            {/* Search + filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by brand name..."
+                  className="pl-9"
+                />
+              </div>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={paidFilter}
+                // Radix reports "" when the active pill is clicked again; the
+                // old pills just re-selected it, so ignore that.
+                onValueChange={(v) => {
+                  if (v) setPaidFilter(v as PaidFilter);
+                }}
+                aria-label="Payment status"
+                className="overflow-x-auto"
+              >
+                {paidFilters.map((f) => (
+                  <ToggleGroupItem key={f.value} value={f.value} className="px-3">
+                    {f.label} ({f.count})
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
 
-        {/* Date filter dropdown */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <DateJoinedPicker
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            open={dateOpen}
-            showCustom={showCustomDate}
-            customFrom={customFrom}
-            customTo={customTo}
-            onToggle={() => setDateOpen(!dateOpen)}
-            onClose={() => setDateOpen(false)}
-            onToggleCustom={() => setShowCustomDate(!showCustomDate)}
-            onCustomFrom={setCustomFrom}
-            onCustomTo={setCustomTo}
-            onApplyCustom={() => {
-              if (customFrom && customTo && customFrom <= customTo) {
-                setDateFrom(customFrom);
-                setDateTo(customTo);
-                setDateOpen(false);
-              }
-            }}
-            onSelectPreset={(from, to) => {
-              setDateFrom(from);
-              setDateTo(to);
-              setShowCustomDate(false);
-              setDateOpen(false);
-            }}
-            onClear={() => {
-              setDateFrom("");
-              setDateTo("");
-              setCustomFrom("");
-              setCustomTo("");
-              setDateOpen(false);
-            }}
-          />
-        </div>
+            {/* Date filter dropdown */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <DateJoinedPicker
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                open={dateOpen}
+                showCustom={showCustomDate}
+                customFrom={customFrom}
+                customTo={customTo}
+                onToggle={() => setDateOpen(!dateOpen)}
+                onClose={() => setDateOpen(false)}
+                onToggleCustom={() => setShowCustomDate(!showCustomDate)}
+                onCustomFrom={setCustomFrom}
+                onCustomTo={setCustomTo}
+                onApplyCustom={() => {
+                  if (customFrom && customTo && customFrom <= customTo) {
+                    setDateFrom(customFrom);
+                    setDateTo(customTo);
+                    setDateOpen(false);
+                  }
+                }}
+                onSelectPreset={(from, to) => {
+                  setDateFrom(from);
+                  setDateTo(to);
+                  setShowCustomDate(false);
+                  setDateOpen(false);
+                }}
+                onClear={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                  setCustomFrom("");
+                  setCustomTo("");
+                  setDateOpen(false);
+                }}
+              />
+            </div>
 
-        {/* Table */}
-        <PayoutTable
-          payouts={filtered}
-          isLoading={isLoading}
-          onEdit={handleEdit}
-          onViewDocs={setDocsModalBrand}
-          onRefresh={refresh}
-          salesRepOptions={salesRepOptions}
-          onSalesRepsChanged={refreshSalesReps}
-          verticalOptions={verticalOptions}
-          onVerticalsChanged={refreshVerticals}
-          referralOptions={referralOptions}
-          onReferralsChanged={refreshReferrals}
-        />
+            {/* Table */}
+            <PayoutTable
+              payouts={filtered}
+              isLoading={isLoading}
+              onEdit={handleEdit}
+              onViewDocs={setDocsModalBrand}
+              onRefresh={refresh}
+              salesRepOptions={salesRepOptions}
+              onSalesRepsChanged={refreshSalesReps}
+              verticalOptions={verticalOptions}
+              onVerticalsChanged={refreshVerticals}
+              referralOptions={referralOptions}
+              onReferralsChanged={refreshReferrals}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Mobile FABs */}

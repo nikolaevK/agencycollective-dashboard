@@ -1,10 +1,19 @@
 "use client";
 
 import { Award, Clock, DollarSign, FileText, Target, Trophy, UserCheck, Wallet } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { formatCents } from "@/components/closers/types";
+import { MetricSparkline } from "@/components/shared/MetricSparkline";
 import { TrendDelta } from "@/components/shared/TrendDelta";
-import { computeCloseRate, type DealMetricBucket } from "@/lib/deals";
+import { computeCloseRate } from "@/lib/closeRate";
+import type { DealMetricBucket } from "@/lib/deals";
+import {
+  ratePct,
+  runningTotal,
+  type OverviewTrends,
+  type SeriesBucket,
+} from "@/lib/metricSeries";
 
 interface TopPerformer {
   closerId: string;
@@ -20,6 +29,8 @@ interface OverviewStats {
   previous?: DealMetricBucket | null;
   closeRate: number; // already computed from window
   topPerformer: TopPerformer | null;
+  /** Card trend lines (requested with `trends=1`). */
+  trends?: OverviewTrends | null;
 }
 
 interface CloserOverviewMetricsProps {
@@ -34,10 +45,73 @@ interface MetricCard {
   subtitle: string;
   icon: React.ElementType;
   delta?: React.ReactNode;
+  trend?: CardTrend;
 }
+
+type CardTrend = Omit<React.ComponentProps<typeof MetricSparkline>, "label">;
+
+// Theme chart pair (globals.css), same mapping as the Revenue Trend chart.
+const CLOSED_COLOR = "hsl(var(--chart-1))";
+const PAID_COLOR = "hsl(var(--chart-2))";
+const asCount = (v: number) => String(v);
+const asPct = (v: number) => `${v}%`;
 
 function bucketCloseRate(b: DealMetricBucket): number {
   return computeCloseRate(b.closedCount, b.pendingCount, b.inFlightCount);
+}
+
+/** Lifetime cards: one value per month over the last 12 months. */
+function monthlyTrend(
+  buckets: SeriesBucket[] | null | undefined,
+  pick: (b: SeriesBucket) => number | null,
+  color: string,
+  fmt: (v: number) => string
+): CardTrend | undefined {
+  if (!buckets || buckets.length < 2) return undefined;
+  return {
+    points: buckets.map((b) => ({ label: format(parseISO(b.start), "MMM yyyy"), value: pick(b) })),
+    color,
+    format: fmt,
+    caption: "Last 12 months",
+    hint: "Per month",
+  };
+}
+
+/** Time-frame cards: the value accumulated through each bucket, so the line
+ *  ends at the card's number; the previous period runs dashed behind it. */
+function windowTrend(
+  w: OverviewTrends["window"] | undefined,
+  values: (buckets: SeriesBucket[]) => (number | null)[],
+  color: string,
+  fmt: (v: number) => string
+): CardTrend | undefined {
+  if (!w || w.current.length < 2) return undefined;
+  const current = values(w.current);
+  const previous = w.previous ? values(w.previous) : null;
+  // A longer previous period (Jan's 31 days vs Feb's 28) has buckets past the
+  // current window's end: the last aligned point carries its full total, so
+  // the dashed line ends where the Δ chip's baseline is.
+  if (previous && previous.length > current.length) {
+    previous[current.length - 1] = previous[previous.length - 1];
+  }
+  const day = (ymd: string) => format(parseISO(ymd), w.granularity === "month" ? "MMM yyyy" : "MMM d");
+  return {
+    points: w.current.map((b, i) => ({
+      label: `Through ${day(b.end)}`,
+      value: current[i],
+      previous: previous ? (previous[i] ?? null) : undefined,
+    })),
+    color,
+    format: fmt,
+    caption: `${day(w.current[0].start)} – ${day(w.current[w.current.length - 1].end)}`,
+    hint: "Cumulative",
+  };
+}
+
+function runningCloseRate(buckets: SeriesBucket[]): (number | null)[] {
+  const closed = runningTotal(buckets, (b) => b.closedCount);
+  const opportunities = runningTotal(buckets, (b) => b.closedCount + b.pendingCount + b.inFlightCount);
+  return closed.map((c, i) => ratePct(c, opportunities[i]));
 }
 
 /**
@@ -47,12 +121,15 @@ function bucketCloseRate(b: DealMetricBucket): number {
  * active selection (lifetime == window).
  */
 export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: CloserOverviewMetricsProps) {
+  const months = stats.trends?.lifetime.buckets;
+  const win = stats.trends?.window;
   const lifetimeCards: MetricCard[] = [
     {
       label: "Total closed deals",
       value: String(stats.lifetime.closedCount),
       subtitle: `${formatCents(stats.lifetime.closedRevenue)} closed revenue`,
       icon: Award,
+      trend: monthlyTrend(months, (b) => b.closedCount, CLOSED_COLOR, asCount),
     },
     {
       label: "Paid revenue",
@@ -62,6 +139,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
           ? `${formatCents(stats.lifetime.outstandingRevenue)} outstanding`
           : "Fully collected",
       icon: Wallet,
+      trend: monthlyTrend(months, (b) => b.paidRevenue, PAID_COLOR, formatCents),
     },
     {
       label: "Top performer",
@@ -70,6 +148,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
         ? `${formatCents(stats.topPerformer.paidRevenue)} paid`
         : "No deals yet",
       icon: Trophy,
+      trend: monthlyTrend(stats.trends?.lifetime.topPerformer, (b) => b.paidRevenue, PAID_COLOR, formatCents),
     },
     {
       label: "Show rate",
@@ -81,6 +160,12 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
           : "No data yet";
       })(),
       icon: UserCheck,
+      trend: monthlyTrend(
+        months,
+        (b) => ratePct(b.showCount, b.showCount + b.noShowCount),
+        CLOSED_COLOR,
+        asPct
+      ),
     },
   ];
 
@@ -91,6 +176,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.closedRevenue),
       subtitle: `${stats.window.closedCount} deal${stats.window.closedCount === 1 ? "" : "s"} closed`,
       icon: DollarSign,
+      trend: windowTrend(win, (bs) => runningTotal(bs, (b) => b.closedRevenue), CLOSED_COLOR, formatCents),
       delta: (
         <TrendDelta
           current={stats.window.closedRevenue}
@@ -103,6 +189,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.paidRevenue),
       subtitle: "Cash collected",
       icon: Wallet,
+      trend: windowTrend(win, (bs) => runningTotal(bs, (b) => b.paidRevenue), PAID_COLOR, formatCents),
       delta: (
         <TrendDelta current={stats.window.paidRevenue} previous={previous?.paidRevenue} />
       ),
@@ -112,6 +199,7 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.outstandingRevenue),
       subtitle: "Closed but unpaid",
       icon: Clock,
+      trend: windowTrend(win, (bs) => runningTotal(bs, (b) => b.outstandingRevenue), CLOSED_COLOR, formatCents),
       delta: (
         <TrendDelta
           current={stats.window.outstandingRevenue}
@@ -132,12 +220,14 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       // aggregated for an honest denominator.
       subtitle: `${stats.window.closedCount} closed of ${stats.window.closedCount + stats.window.pendingCount + stats.window.inFlightCount} opportunities`,
       icon: Target,
+      trend: windowTrend(win, runningCloseRate, CLOSED_COLOR, asPct),
     },
     {
       label: "Pending pipeline",
       value: formatCents(stats.window.pendingPipeline),
       subtitle: `${stats.window.pendingCount} awaiting signature`,
       icon: FileText,
+      trend: windowTrend(win, (bs) => runningTotal(bs, (b) => b.pendingPipeline), CLOSED_COLOR, formatCents),
     },
   ];
 
@@ -183,6 +273,7 @@ function Section({
                   {card.delta}
                 </div>
                 <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
+                {card.trend && <MetricSparkline label={card.label} {...card.trend} />}
               </CardContent>
             </Card>
           );

@@ -37,7 +37,7 @@ import {
   SETTER_TIERS,
   SETTER_TIER_LABELS,
   SETTER_TIER_PAYOUT_HINT,
-} from "@/lib/appointments";
+} from "@/lib/appointmentRules";
 
 interface Props {
   event: CalendarEvent;
