@@ -3,14 +3,30 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  X,
   FileText,
   Upload,
   Trash2,
   Download,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DocType, PayoutDocument } from "@/lib/payoutDocuments";
 import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/payoutDocuments";
 
@@ -63,10 +79,10 @@ function DocumentRow({
   const isDeleting = deleting === doc.id;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-0 group">
-      <FileText className="h-5 w-5 text-red-500 dark:text-red-400 shrink-0" />
+    <div className="flex items-center gap-3 px-6 py-3 border-b last:border-0 group">
+      <FileText className="size-4 text-muted-foreground shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">
+        <p className="text-sm font-medium truncate">
           {doc.fileName}
         </p>
         <p className="text-xs text-muted-foreground">
@@ -77,27 +93,35 @@ function DocumentRow({
         </p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <a
-          href={`/api/admin/payouts/documents/${doc.id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          title="Download"
+        <Button
+          asChild
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground"
         >
-          <Download className="h-4 w-4" />
-        </a>
-        <button
+          <a
+            href={`/api/admin/payouts/documents/${doc.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download"
+          >
+            <Download />
+          </a>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={() => onDelete(doc.id)}
           disabled={isDeleting}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           title="Delete"
         >
           {isDeleting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <Trash2 className="h-4 w-4" />
+            <Trash2 />
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -166,28 +190,32 @@ function UploadArea({
   };
 
   return (
-    <div className="px-4 py-3 space-y-2">
+    <div className="px-6 py-4 space-y-3">
       {docType === "invoice" && (
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground">Period:</label>
-          <select
-            value={tagMonth}
-            onChange={(e) => setTagMonth(Number(e.target.value))}
-            className="h-9 sm:h-7 rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground"
+          <Label className="text-muted-foreground">Period:</Label>
+          <Select
+            value={String(tagMonth)}
+            onValueChange={(v) => setTagMonth(Number(v))}
           >
-            <option value={0}>—</option>
-            {MONTH_NAMES.map((m, i) => (
-              <option key={i} value={i + 1}>{m}</option>
-            ))}
-          </select>
-          <input
+            <SelectTrigger className="h-8 w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">—</SelectItem>
+              {MONTH_NAMES.map((m, i) => (
+                <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
             type="number"
             value={tagYear || ""}
             onChange={(e) => setTagYear(Number(e.target.value))}
             placeholder="Year"
             min={2000}
             max={2100}
-            className="h-9 sm:h-7 w-20 rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground"
+            className="h-8 w-24"
           />
         </div>
       )}
@@ -202,22 +230,19 @@ function UploadArea({
             if (f) handleUpload(f);
           }}
         />
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className={cn(
-            "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-            "border border-input bg-background text-foreground hover:bg-accent",
-            uploading && "opacity-50"
-          )}
         >
           {uploading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <Upload className="h-3.5 w-3.5" />
+            <Upload />
           )}
           Upload PDF
-        </button>
+        </Button>
         {error && (
           <p className="text-xs text-destructive">{error}</p>
         )}
@@ -292,57 +317,48 @@ export function BrandDocumentsModal({
   const invoiceCount = docs.filter((d) => d.docType === "invoice").length;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div className="relative flex w-full max-w-lg max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+      >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-border">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-foreground truncate">
-              Documents
-            </h3>
-            <p className="text-sm text-muted-foreground truncate">
-              {brandName}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-2 pr-14 min-w-0">
+          <DialogTitle className="truncate">
+            Documents
+          </DialogTitle>
+          <DialogDescription className="truncate">
+            {brandName}
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex shrink-0 gap-1 px-4 pt-3 pb-1">
-          {tabs.map((t) => {
-            const count = t.value === "project_scope" ? scopeCount : invoiceCount;
-            return (
-              <button
-                key={t.value}
-                onClick={() => { setTab(t.value); setDeleteConfirm(null); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  tab === t.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t.label} ({count})
-              </button>
-            );
-          })}
+        <div className="shrink-0 px-6 pt-2 pb-2">
+          <Tabs value={tab}>
+            <TabsList>
+              {tabs.map((t) => {
+                const count = t.value === "project_scope" ? scopeCount : invoiceCount;
+                return (
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    onClick={() => { setTab(t.value); setDeleteConfirm(null); }}
+                  >
+                    {t.label} ({count})
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Content */}
         <div className="min-h-0 max-h-[55dvh] overflow-y-auto overscroll-contain">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : filtered.length === 0 ? (
             <p className="px-6 py-8 text-sm text-muted-foreground text-center">
@@ -362,21 +378,22 @@ export function BrandDocumentsModal({
 
         {/* Delete confirmation banner */}
         {deleteConfirm && (
-          <div className="shrink-0 px-4 py-2 bg-destructive/10 border-t border-border/50 flex items-center justify-between gap-2">
+          <div className="shrink-0 px-6 py-2 bg-destructive/10 border-t flex items-center justify-between gap-2">
             <p className="text-xs text-destructive">
               Click delete again to confirm removal
             </p>
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => setDeleteConfirm(null)}
-              className="text-xs text-muted-foreground hover:text-foreground"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Upload */}
-        <div className="shrink-0 border-t border-border">
+        <div className="shrink-0 border-t">
           <UploadArea
             key={tab}
             docType={tab}
@@ -386,7 +403,7 @@ export function BrandDocumentsModal({
             onUploaded={handleUploaded}
           />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

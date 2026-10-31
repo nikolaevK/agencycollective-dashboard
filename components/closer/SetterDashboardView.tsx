@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { SetterBentoGrid } from "@/components/closer/SetterBentoGrid";
 import { SetterFollowUpList } from "@/components/closer/SetterFollowUpList";
 import { SetterRecentDeals } from "@/components/closer/SetterRecentDeals";
@@ -19,6 +18,8 @@ import type { SetterFollowUp, SetterRecentDeal, SetterStats } from "@/lib/setter
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // Post-call states that count as a successful re-engagement. Anything else
 // (needs_followup, not_called, no_answer, disqualified) stays in the active
@@ -144,7 +145,7 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Welcome back, {setter.displayName.split(" ")[0]}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -153,13 +154,12 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
           </p>
         </div>
         {!readOnly && (
-          <Link
-            href="/closer/setter/appointments"
-            className="hidden sm:inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-primary/30 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            Go to Appointments
-          </Link>
+          <Button asChild variant="outline" className="hidden sm:inline-flex">
+            <Link href="/closer/setter/appointments">
+              <CalendarPlus />
+              Go to Appointments
+            </Link>
+          </Button>
         )}
       </div>
 
@@ -180,7 +180,7 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       {/* Follow-up queue */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-foreground">Follow-up queue</h2>
+          <h2 className="text-sm font-medium">Follow-up queue</h2>
           <span className="text-xs text-muted-foreground">
             {followUps.length < stats.followUpCount
               ? `Showing ${followUps.length} of ${stats.followUpCount} outstanding`
@@ -192,7 +192,7 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
 
       {/* Successful recoveries */}
       <section className="mb-8">
-        <h2 className="text-sm font-semibold text-foreground mb-3">Successful recoveries</h2>
+        <h2 className="text-sm font-medium mb-3">Successful recoveries</h2>
         <PaginatedFollowUpList
           items={recoveredNoShows}
           variant="setter"
@@ -206,7 +206,7 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       {/* Deals credited to the setter */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-foreground">Deals credited to you</h2>
+          <h2 className="text-sm font-medium">Deals credited to you</h2>
           <span className="text-xs text-muted-foreground">
             {stats.lifetime.dealsLinked} total
           </span>
@@ -217,23 +217,27 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       {/* Active no-show follow-ups — date-window pills above, then
           search/sort/pagination handled by PaginatedFollowUpList. */}
       <section>
-        <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
-        <div className="flex items-center gap-2 flex-wrap mb-4">
+        <h2 className="text-sm font-medium mb-3">No-show follow-ups</h2>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={String(noShowWindow)}
+          // Radix reports "" when the active item is clicked again; a window
+          // can't be deselected, so ignore that.
+          onValueChange={(v) => {
+            const choice = WINDOW_CHOICES.find((c) => String(c.value) === v);
+            if (choice) setNoShowWindow(choice.value);
+          }}
+          aria-label="No-show window"
+          className="flex-wrap justify-start mb-4"
+        >
           {WINDOW_CHOICES.map((c) => (
-            <button
-              key={String(c.value)}
-              onClick={() => setNoShowWindow(c.value)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                noShowWindow === c.value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted/50 text-muted-foreground hover:text-foreground"
-              )}
-            >
+            <ToggleGroupItem key={String(c.value)} value={String(c.value)} className="px-3">
               {c.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         <PaginatedFollowUpList
           items={filteredActiveNoShows}
@@ -250,13 +254,15 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
 
       {/* Mobile FAB — hidden in read-only admin view. */}
       {!readOnly && (
-        <Link
-          href="/closer/setter/appointments"
-          className="md:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg shadow-primary/25 active:scale-95 transition-transform"
-          aria-label="Appointments"
+        <Button
+          asChild
+          size="icon-lg"
+          className="md:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 size-14 rounded-full shadow-lg [&_svg:not([class*='size-'])]:size-6"
         >
-          <CalendarPlus className="h-6 w-6" />
-        </Link>
+          <Link href="/closer/setter/appointments" aria-label="Appointments">
+            <CalendarPlus className="size-5" />
+          </Link>
+        </Button>
       )}
 
       {/* Inline status editor for no-show follow-ups */}

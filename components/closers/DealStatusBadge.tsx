@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { BadgeDot, badgeVariants, type BadgeTone } from "@/components/ui/badge";
 
 /**
  * Single source of truth for deal-status chips — four component-local copies
@@ -12,6 +13,15 @@ export const DEAL_STATUS_STYLES: Record<string, string> = {
   pending_signature: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
   rescheduled: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
   follow_up: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
+};
+
+/** Status tone per deal status (outline Badge pattern). */
+const DEAL_STATUS_TONES: Record<string, BadgeTone> = {
+  closed: "success",
+  not_closed: "danger",
+  pending_signature: "warning",
+  rescheduled: "warning",
+  follow_up: "info",
 };
 
 const FULL_LABELS: Record<string, string> = {
@@ -35,14 +45,10 @@ export function DealStatusBadge({
   compact?: boolean;
 }) {
   const labels = compact ? COMPACT_LABELS : FULL_LABELS;
+  const tone = DEAL_STATUS_TONES[status] ?? DEAL_STATUS_TONES.follow_up;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide whitespace-nowrap",
-        compact ? "text-[10px]" : "text-[9px]",
-        DEAL_STATUS_STYLES[status] ?? DEAL_STATUS_STYLES.follow_up
-      )}
-    >
+    <span className={cn(badgeVariants({ variant: "outline", tone }), "gap-1.5 font-medium")}>
+      <BadgeDot tone={tone} />
       {labels[status] ?? status}
     </span>
   );

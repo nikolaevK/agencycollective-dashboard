@@ -1,9 +1,29 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, ChevronLeft, Plus, Trash2, FileCheck2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PayoutRecord, SplitParty } from "@/lib/payouts";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+// Radix SelectItem can't hold "" — the empty "Select …" option maps to this.
+const NONE = "__none__";
+// The "+ Add new …" option value (unchanged from the native <select>).
+const ADD_NEW = "__add_new__";
 
 const PERIOD_MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -393,20 +413,17 @@ export function AddEditPayoutModal({
     setSplitDetails(distributeEvenly(updated));
   };
 
-  const inputClass =
-    "flex h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
-
   const formFields = (
     <>
       {error && (
-        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+        <div className="rounded-2xl bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {isImport && (
-        <div className="flex items-start gap-2.5 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm text-foreground">
-          <FileCheck2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+        <div className="flex items-start gap-2.5 rounded-2xl bg-muted/50 p-4 text-sm">
+          <FileCheck2 className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
           <span>
             Importing from a signed deal — the signed scope &amp; invoice PDF
             will be attached to this brand&apos;s documents on save.
@@ -416,25 +433,24 @@ export function AddEditPayoutModal({
 
       {/* Brand Name + Vertical */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Brand Name *
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
             value={brandName}
             onChange={(e) => setBrandName(e.target.value)}
-            className={inputClass}
             placeholder="e.g. Pure Core Peptide"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Vertical
-          </label>
+          </Label>
           {addingVertical ? (
             <div className="flex gap-2">
-              <input
+              <Input
                 ref={newVerticalRef}
                 type="text"
                 value={newVerticalName}
@@ -443,107 +459,112 @@ export function AddEditPayoutModal({
                   if (e.key === "Enter") { e.preventDefault(); handleAddVertical(); }
                   if (e.key === "Escape") { setAddingVertical(false); setNewVerticalName(""); }
                 }}
-                className={cn(inputClass, "min-w-0")}
+                className="min-w-0"
                 placeholder="New vertical name..."
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={handleAddVertical}
                 disabled={!newVerticalName.trim()}
-                className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
               >
                 Add
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => { setAddingVertical(false); setNewVerticalName(""); }}
-                className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <select
-              value={vertical}
-              onChange={(e) => {
-                if (e.target.value === "__add_new__") {
+            <Select
+              value={vertical || NONE}
+              onValueChange={(v) => {
+                if (v === ADD_NEW) {
                   setAddingVertical(true);
                 } else {
-                  setVertical(e.target.value);
+                  setVertical(v === NONE ? "" : v);
                 }
               }}
-              className={inputClass}
             >
-              <option value="">Select vertical...</option>
-              {verticalOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-              {vertical && !verticalOptions.includes(vertical) && (
-                <option value={vertical}>{vertical}</option>
-              )}
-              <option value="__add_new__">+ Add new vertical...</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select vertical..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Select vertical...</SelectItem>
+                {verticalOptions.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+                {vertical && !verticalOptions.includes(vertical) && (
+                  <SelectItem value={vertical}>{vertical}</SelectItem>
+                )}
+                <SelectItem value={ADD_NEW}>+ Add new vertical...</SelectItem>
+              </SelectContent>
+            </Select>
           )}
         </div>
       </div>
 
       {/* POC + Service */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Point of Contact
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
             value={pointOfContact}
             onChange={(e) => setPointOfContact(e.target.value)}
-            className={inputClass}
             placeholder="Contact name"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Service
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
             value={service}
             onChange={(e) => setService(e.target.value)}
-            className={inputClass}
             placeholder="e.g. Buy Or Die, Ads + Creatives"
           />
         </div>
       </div>
 
       {/* Payout period — which month this row is booked under */}
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1.5">
+      <div className="grid gap-2">
+        <Label>
           Payout Month
-        </label>
+        </Label>
         <div className="grid grid-cols-2 gap-3">
-          <select
-            value={payoutMonth}
-            onChange={(e) => setPayoutMonth(Number(e.target.value))}
-            className={inputClass}
+          <Select
+            value={String(payoutMonth)}
+            onValueChange={(v) => setPayoutMonth(Number(v))}
           >
-            {PERIOD_MONTHS.map((name, i) => (
-              <option key={name} value={i + 1}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <input
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIOD_MONTHS.map((name, i) => (
+                <SelectItem key={name} value={String(i + 1)}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
             type="number"
             min={2000}
             max={2100}
             value={payoutYear}
             onChange={(e) => setPayoutYear(e.target.value)}
-            className={inputClass}
           />
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The month this payment is booked under — past or upcoming.
           {isEdit
             ? " Changing it moves the row to that month."
@@ -555,70 +576,66 @@ export function AddEditPayoutModal({
 
       {/* Dates */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Date Joined
-          </label>
-          <input
-            type="date"
+          </Label>
+          <DatePicker
             value={dateJoined}
-            onChange={(e) => setDateJoined(e.target.value)}
-            className={inputClass}
+            onValueChange={setDateJoined}
+            aria-label="Date Joined"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             1st Day Ad Spend
-          </label>
-          <input
-            type="date"
+          </Label>
+          <DatePicker
             value={firstDayAdSpend}
-            onChange={(e) => setFirstDayAdSpend(e.target.value)}
-            className={inputClass}
+            onValueChange={setFirstDayAdSpend}
+            aria-label="1st Day Ad Spend"
           />
         </div>
       </div>
 
       {/* Amount Due + Amount Paid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Amount Due ($)
-          </label>
-          <input
+          </Label>
+          <Input
             type="number"
             step="0.01"
             min="0"
             value={amountDue}
             onChange={(e) => setAmountDue(e.target.value)}
-            className={inputClass}
             placeholder="0.00"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Amount Paid ($)
-          </label>
-          <input
+          </Label>
+          <Input
             type="number"
             step="0.01"
             min="0"
             value={amountPaid}
             onChange={(e) => setAmountPaid(e.target.value)}
-            className={inputClass}
             placeholder="0.00"
           />
         </div>
       </div>
 
       {/* Sales Rep (select) */}
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1.5">
+      <div className="grid gap-2">
+        <Label>
           Sales Rep
-        </label>
+        </Label>
         {addingRep ? (
           <div className="flex gap-2">
-            <input
+            <Input
               ref={newRepRef}
               type="text"
               value={newRepName}
@@ -627,62 +644,66 @@ export function AddEditPayoutModal({
                 if (e.key === "Enter") { e.preventDefault(); handleAddRep(); }
                 if (e.key === "Escape") { setAddingRep(false); setNewRepName(""); }
               }}
-              className={cn(inputClass, "min-w-0")}
+              className="min-w-0"
               placeholder="New rep name..."
             />
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={handleAddRep}
               disabled={!newRepName.trim()}
-              className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
             >
               Add
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => { setAddingRep(false); setNewRepName(""); }}
-              className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="flex gap-2">
-            <select
-              value={salesRep}
-              onChange={(e) => {
-                if (e.target.value === "__add_new__") {
+            <Select
+              value={salesRep || NONE}
+              onValueChange={(v) => {
+                if (v === ADD_NEW) {
                   setAddingRep(true);
                 } else {
-                  setSalesRep(e.target.value);
+                  setSalesRep(v === NONE ? "" : v);
                 }
               }}
-              className={inputClass}
             >
-              <option value="">Select sales rep...</option>
-              {salesRepOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-              {salesRep && !salesRepOptions.includes(salesRep) && (
-                <option value={salesRep}>{salesRep}</option>
-              )}
-              <option value="__add_new__">+ Add new rep...</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select sales rep..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Select sales rep...</SelectItem>
+                {salesRepOptions.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+                {salesRep && !salesRepOptions.includes(salesRep) && (
+                  <SelectItem value={salesRep}>{salesRep}</SelectItem>
+                )}
+                <SelectItem value={ADD_NEW}>+ Add new rep...</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>
 
       {/* Referral + Percentage */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Referral
-          </label>
+          </Label>
           {addingReferral ? (
             <div className="flex gap-2">
-              <input
+              <Input
                 ref={newReferralRef}
                 type="text"
                 value={newReferralName}
@@ -691,62 +712,65 @@ export function AddEditPayoutModal({
                   if (e.key === "Enter") { e.preventDefault(); handleAddReferral(); }
                   if (e.key === "Escape") { setAddingReferral(false); setNewReferralName(""); }
                 }}
-                className={cn(inputClass, "min-w-0")}
+                className="min-w-0"
                 placeholder="New referral name..."
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={handleAddReferral}
                 disabled={!newReferralName.trim()}
-                className="px-4 h-11 rounded-lg text-sm font-medium text-primary border border-input hover:bg-accent transition-colors disabled:opacity-50"
               >
                 Add
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => { setAddingReferral(false); setNewReferralName(""); }}
-                className="px-3 h-11 rounded-lg text-sm text-muted-foreground hover:bg-accent transition-colors"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <select
-              value={referral}
-              onChange={(e) => {
-                if (e.target.value === "__add_new__") {
+            <Select
+              value={referral || NONE}
+              onValueChange={(v) => {
+                if (v === ADD_NEW) {
                   setAddingReferral(true);
                 } else {
-                  setReferral(e.target.value);
+                  setReferral(v === NONE ? "" : v);
                 }
               }}
-              className={inputClass}
             >
-              <option value="">Select referral...</option>
-              {referralOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-              {referral && !referralOptions.includes(referral) && (
-                <option value={referral}>{referral}</option>
-              )}
-              <option value="__add_new__">+ Add new referral...</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select referral..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Select referral...</SelectItem>
+                {referralOptions.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+                {referral && !referralOptions.includes(referral) && (
+                  <SelectItem value={referral}>{referral}</SelectItem>
+                )}
+                <SelectItem value={ADD_NEW}>+ Add new referral...</SelectItem>
+              </SelectContent>
+            </Select>
           )}
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Referral %
-          </label>
-          <input
+          </Label>
+          <Input
             type="number"
             min="0"
             max="100"
             step="1"
             value={referralPct}
             onChange={(e) => setReferralPct(e.target.value)}
-            className={inputClass}
             placeholder="e.g. 10"
           />
         </div>
@@ -754,73 +778,70 @@ export function AddEditPayoutModal({
 
       {/* Toggles */}
       <div className="flex flex-wrap gap-6">
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
+        <Label className="cursor-pointer font-normal">
+          <Checkbox
             checked={isSigned}
-            onChange={(e) => setIsSigned(e.target.checked)}
-            className="h-4 w-4 rounded border-border accent-primary"
+            onCheckedChange={(c) => setIsSigned(c === true)}
           />
           Signed
-        </label>
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
+        </Label>
+        <Label className="cursor-pointer font-normal">
+          <Checkbox
             checked={isPaid}
-            onChange={(e) => setIsPaid(e.target.checked)}
-            className="h-4 w-4 rounded border-border accent-primary"
+            onCheckedChange={(c) => setIsPaid(c === true)}
           />
           Paid
-        </label>
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
+        </Label>
+        <Label className="cursor-pointer font-normal">
+          <Checkbox
             checked={addedToSlack}
-            onChange={(e) => setAddedToSlack(e.target.checked)}
-            className="h-4 w-4 rounded border-border accent-primary"
+            onCheckedChange={(c) => setAddedToSlack(c === true)}
           />
           Added to Slack
-        </label>
+        </Label>
       </div>
 
       {/* Pay Distributed + Date */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Pay Distributed
-          </label>
-          <select
+          </Label>
+          <Select
             value={payDistributed}
-            onChange={(e) => setPayDistributed(e.target.value)}
-            className={inputClass}
+            onValueChange={(v) => setPayDistributed(v)}
           >
-            <option value="No">No</option>
-            <option value="Yes">Yes</option>
-            <option value="Hold Til Full Pay">Hold Til Full Pay</option>
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="No">No</SelectItem>
+              <SelectItem value="Yes">Yes</SelectItem>
+              <SelectItem value="Hold Til Full Pay">Hold Til Full Pay</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
+        <div className="grid gap-2">
+          <Label>
             Distribution Date
-          </label>
-          <input
-            type="date"
+          </Label>
+          <DatePicker
             value={payDistributedDate}
-            onChange={(e) => setPayDistributedDate(e.target.value)}
-            className={inputClass}
+            onValueChange={setPayDistributedDate}
+            aria-label="Distribution Date"
           />
         </div>
       </div>
 
       {/* Commission Split */}
       <div className="space-y-3">
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
+        <Label className="cursor-pointer font-normal">
+          <Checkbox
             checked={commissionSplit}
-            onChange={(e) => {
-              setCommissionSplit(e.target.checked);
-              if (e.target.checked && splitDetails.length < 2) {
+            onCheckedChange={(c) => {
+              const checked = c === true;
+              setCommissionSplit(checked);
+              if (checked && splitDetails.length < 2) {
                 const rep1 = salesRepOptions[0] ?? "";
                 const rep2 = salesRepOptions[1] ?? "";
                 setSplitDetails(distributeEvenly([
@@ -829,20 +850,19 @@ export function AddEditPayoutModal({
                 ]));
               }
             }}
-            className="h-4 w-4 rounded border-border accent-primary"
           />
           Commission Split
-        </label>
+        </Label>
 
         {commissionSplit && (
-          <div className="rounded-lg border border-border/50 dark:border-white/[0.06] bg-muted/20 p-4 space-y-3">
+          <div className="rounded-2xl bg-muted/50 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <p className="text-sm font-medium">
                 Split Parties
               </p>
               <span
                 className={cn(
-                  "text-xs font-medium",
+                  "text-xs font-medium tabular-nums",
                   splitPctTotal === 100
                     ? "text-emerald-600 dark:text-emerald-400"
                     : "text-amber-600 dark:text-amber-400"
@@ -854,69 +874,76 @@ export function AddEditPayoutModal({
 
             {splitDetails.map((party, idx) => (
               <div key={idx} className="flex gap-2 items-center">
-                <select
-                  value={party.name}
-                  onChange={(e) => updateSplitParty(idx, "name", e.target.value)}
-                  className="flex-1 min-w-0 h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                <Select
+                  value={party.name || NONE}
+                  onValueChange={(v) => updateSplitParty(idx, "name", v === NONE ? "" : v)}
                 >
-                  <option value="">Select party...</option>
-                  {salesRepOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                  {party.name && !salesRepOptions.includes(party.name) && (
-                    <option value={party.name}>{party.name}</option>
-                  )}
-                </select>
+                  <SelectTrigger className="flex-1 min-w-0 bg-background">
+                    <SelectValue placeholder="Select party..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Select party...</SelectItem>
+                    {salesRepOptions.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                    {party.name && !salesRepOptions.includes(party.name) && (
+                      <SelectItem value={party.name}>{party.name}</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
                 <div className="relative w-20 shrink-0">
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     max="100"
                     value={party.pct || ""}
                     onChange={(e) => updateSplitParty(idx, "pct", e.target.value)}
                     placeholder="0"
-                    className="h-9 w-full rounded-lg border border-input bg-background px-3 pr-7 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+                    className="bg-background pr-7"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                     %
                   </span>
                 </div>
                 {splitDetails.length > 2 && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => removeSplitParty(idx)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    aria-label="Remove party"
+                    className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 )}
               </div>
             ))}
 
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={addSplitParty}
-              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
             >
-              <Plus className="h-3 w-3" />
+              <Plus />
               Add Party
-            </button>
+            </Button>
           </div>
         )}
       </div>
 
       {/* Payment Notes */}
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1.5">
+      <div className="grid gap-2">
+        <Label>
           Payment Notes
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           value={paymentNotes}
           onChange={(e) => setPaymentNotes(e.target.value)}
           rows={3}
-          className={cn(inputClass, "h-auto resize-none")}
           placeholder="Wire details, partial payments, etc."
         />
       </div>
@@ -925,13 +952,13 @@ export function AddEditPayoutModal({
 
   const importedView = (
     <div className="space-y-4">
-      <div className="flex items-start gap-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-sm text-foreground">
-        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+      <div className="flex items-start gap-2.5 rounded-2xl bg-muted/50 p-4 text-sm">
+        <CheckCircle2 className="size-4 mt-0.5 shrink-0 text-emerald-500" />
         <span>Payout created and imported from the signed deal.</span>
       </div>
-      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+      <div className="rounded-2xl bg-muted/50 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
           Some documents need a manual upload
         </div>
         <ul className="mt-2 list-disc pl-8 space-y-1 text-sm text-muted-foreground">
@@ -946,20 +973,26 @@ export function AddEditPayoutModal({
     </div>
   );
 
-  return (
+  // Portaled to <body> at z-50 (was in-tree at z-[60]) so the shadcn
+  // Select / DatePicker popovers — which portal to <body> at z-50 when
+  // opened — stack above it, while it still covers the mobile BottomNav.
+  // Open/close mechanics are unchanged.
+  return createPortal(
     <>
       {/* Mobile: full-screen form */}
-      <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
+      <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
         {/* Mobile header */}
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <button
+        <div className="flex items-center gap-3 border-b px-4 py-3">
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+            className="shrink-0 text-muted-foreground"
           >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <h3 className="text-lg font-semibold text-foreground">
+            <ChevronLeft className="size-5" />
+          </Button>
+          <h3 className="text-lg font-semibold tracking-tight">
             {isEdit ? "Edit Payout" : isImport ? "Import from Deal" : "Add Payout"}
           </h3>
         </div>
@@ -969,36 +1002,40 @@ export function AddEditPayoutModal({
           onSubmit={handleSubmit}
           className="flex flex-1 flex-col overflow-hidden"
         >
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5 pb-28 space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5 pb-28 space-y-4">
             {imported ? importedView : formFields}
           </div>
 
           {/* Mobile fixed bottom bar */}
-          <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center gap-3">
+          <div className="shrink-0 border-t bg-background px-4 py-3 flex items-center gap-3">
             {imported ? (
-              <button
+              <Button
                 type="button"
+                size="lg"
                 onClick={onClose}
-                className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                className="flex-1"
               >
                 Done
-              </button>
+              </Button>
             ) : (
               <>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="lg"
                   onClick={onClose}
-                  className="flex-1 h-11 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  size="lg"
                   disabled={saving}
-                  className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1"
                 >
                   {saving ? "Saving..." : isEdit ? "Save Changes" : isImport ? "Import Payout" : "Add Payout"}
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -1006,65 +1043,68 @@ export function AddEditPayoutModal({
       </div>
 
       {/* Desktop: centered dialog */}
-      <div className="hidden md:flex fixed inset-0 z-[60] items-center justify-center">
+      <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center">
         <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          className={dialogOverlayClass}
           onClick={onClose}
         />
-        <div className="relative z-10 w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl mx-4">
+        <div
+          className={cn(
+            dialogPanelClass,
+            "relative z-50 w-full max-w-2xl max-h-[90dvh] overflow-y-auto mx-4"
+          )}
+        >
           {/* Desktop header */}
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 dark:border-white/[0.06] bg-card px-6 py-4 rounded-t-2xl">
-            <h3 className="text-lg font-semibold text-foreground">
+          <div className="sticky top-0 z-10 flex items-center justify-between bg-popover px-6 pt-6 pb-4">
+            <h3 className="text-base font-medium leading-none">
               {isEdit ? "Edit Payout" : isImport ? "Import from Deal" : "Add Payout"}
             </h3>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onClose}
-              className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="Close"
+              className="bg-secondary"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
 
           {/* Desktop form */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="px-6 pb-6 pt-2 space-y-4">
             {imported ? importedView : formFields}
 
             {/* Desktop actions */}
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-2 pt-2">
               {imported ? (
-                <button
+                <Button
                   type="button"
                   onClick={onClose}
-                  className="px-5 py-2 rounded-lg text-sm font-medium text-white ac-gradient shadow-lg shadow-primary/20 transition-all"
                 >
                   Done
-                </button>
+                </Button>
               ) : (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={saving}
-                    className={cn(
-                      "px-5 py-2 rounded-lg text-sm font-medium text-white transition-all",
-                      "ac-gradient shadow-lg shadow-primary/20",
-                      saving && "opacity-60 cursor-not-allowed"
-                    )}
                   >
                     {saving ? "Saving..." : isEdit ? "Save Changes" : isImport ? "Import Payout" : "Add Payout"}
-                  </button>
+                  </Button>
                 </>
               )}
             </div>
           </form>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

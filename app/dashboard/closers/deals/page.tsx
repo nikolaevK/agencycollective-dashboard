@@ -13,6 +13,13 @@ import type { DealAgentPrepBadgeData } from "@/components/closers/DealAgentPrepB
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DealMetricBucket } from "@/lib/deals";
 import { cn } from "@/lib/utils";
 import { appendTimeFrameParams, buildTimeFrame, type TimeFrame } from "@/lib/timeFrame";
@@ -200,11 +207,11 @@ export default function AdminDealsPage() {
   const queueTotal = queueClosedCount + queuePendingCount;
 
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-2xl lg:text-3xl font-black text-foreground">Deal queue</h2>
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Deal queue</h2>
             <p className="text-sm text-muted-foreground mt-1">
               Closed and pending-signature deals across your sales team. In-flight deals stay with the closer.
             </p>
@@ -212,17 +219,17 @@ export default function AdminDealsPage() {
           <div className="flex items-center gap-2">
             <DealPrepPlaybookButton />
             <AdminNewDeal />
-            <button
+            <Button
+              variant="outline"
               onClick={() => {
                 queryClient.invalidateQueries({ queryKey: ["admin-deals"] });
                 queryClient.invalidateQueries({ queryKey: ["admin-deal-queue-metrics"] });
               }}
               disabled={isFetching}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              <RefreshCw className={cn(isFetching && "animate-spin")} />
               Refresh
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -230,18 +237,18 @@ export default function AdminDealsPage() {
 
         {/* Metrics time frame (independent from deal-list month). */}
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">Metrics window</p>
+          <p className="text-sm font-medium mb-2">Metrics window</p>
           <TimeFrameSelector value={metricsFrame} onChange={setMetricsFrame} />
         </div>
 
         {/* Stats row — sourced from /closers/stats with the metrics frame. */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
           <StatCard label="In your queue" value={String(queueTotal)} sub="closed + pending" />
-          <StatCard label="Closed" value={String(queueClosedCount)} valueClass="text-emerald-600 dark:text-emerald-400" />
-          <StatCard label="Pending" value={String(queuePendingCount)} valueClass="text-amber-600 dark:text-amber-400" sub="awaiting signature" />
+          <StatCard label="Closed" value={String(queueClosedCount)} dot="bg-emerald-500" />
+          <StatCard label="Pending" value={String(queuePendingCount)} dot="bg-amber-500" sub="awaiting signature" />
           <StatCard label="Closed revenue" value={formatCents(closedRevenue)} sub="this window" />
-          <StatCard label="Paid revenue" value={formatCents(paidRevenue)} valueClass="text-emerald-600 dark:text-emerald-400" sub="cash collected" />
-          <StatCard label="Outstanding" value={formatCents(outstanding)} valueClass="text-amber-600 dark:text-amber-400" sub={`${reviewQueueCount} need review`} />
+          <StatCard label="Paid revenue" value={formatCents(paidRevenue)} dot="bg-emerald-500" sub="cash collected" />
+          <StatCard label="Outstanding" value={formatCents(outstanding)} dot="bg-amber-500" sub={`${reviewQueueCount} need review`} />
         </div>
 
         {/* Agent-proposed deals awaiting approval (v1 / MCP createDealDraft).
@@ -252,61 +259,57 @@ export default function AdminDealsPage() {
             Per-month browsing was the pre-revamp UX; restored so admin can
             audit any month's deals without changing the metrics row above. */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="deals-month" className="text-xs font-medium text-muted-foreground">
-              Deals from
-            </label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <select
-                id="deals-month"
-                value={dealsMonth}
-                onChange={(e) => setDealsMonth(e.target.value)}
-                className="flex h-10 rounded-lg border border-input bg-background pl-10 pr-8 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow appearance-none cursor-pointer"
-              >
+          <div className="grid gap-2">
+            <Label htmlFor="deals-month">Deals from</Label>
+            <Select value={dealsMonth} onValueChange={(v) => setDealsMonth(v)}>
+              <SelectTrigger id="deals-month" className="w-auto min-w-[12rem] gap-2">
+                <Calendar className="size-4 shrink-0 text-muted-foreground" />
+                <SelectValue className="flex-1 text-left" />
+              </SelectTrigger>
+              <SelectContent>
                 {monthOptions.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                 ))}
-              </select>
-            </div>
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by client, brand, closer or invoice #..."
-              className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+              className="pl-9"
             />
           </div>
-          <div className="flex max-w-full gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={statusFilter}
+            onValueChange={(v) => { if (v) setStatusFilter(v as StatusFilter); }}
+            className="max-w-full overflow-x-auto"
+          >
             {filters.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setStatusFilter(f.value)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
-                  statusFilter === f.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <ToggleGroupItem key={f.value} value={f.value} className="px-3">
                 {f.label} ({f.count})
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
-          <div className="flex max-w-full gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+          </ToggleGroup>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={paidFilter}
+            onValueChange={(v) => { if (v) setPaidFilter(v as PaidFilter); }}
+            className="max-w-full overflow-x-auto"
+          >
             {paidFilters.map((f) => (
-              <button
+              <ToggleGroupItem
                 key={f.value}
-                onClick={() => setPaidFilter(f.value)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
-                  paidFilter === f.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
+                value={f.value}
+                className="px-3"
                 title={
                   f.value === "needs_review"
                     ? "Deals with invoice awaiting admin review"
@@ -316,32 +319,35 @@ export default function AdminDealsPage() {
                 }
               >
                 {f.label} ({f.count})
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
         </div>
 
         {/* Deals table */}
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-16 rounded-xl bg-muted/50 animate-pulse" />
+              <Skeleton key={i} className="h-16 w-full" />
             ))}
           </div>
         ) : isLoadingError ? (
           // Only when nothing has loaded yet — a failed background refetch
           // keeps showing the last good list rather than "No deals yet".
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-12 text-center">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">Couldn&apos;t load deals.</p>
-            <button
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-              Retry
-            </button>
-          </div>
+          <Card>
+            <CardContent className="p-12 md:p-12 text-center">
+              <p className="text-sm font-medium text-destructive">Couldn&apos;t load deals.</p>
+              <Button
+                variant="outline"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="mt-3"
+              >
+                <RefreshCw className={cn(isFetching && "animate-spin")} />
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <RecentDealsTable deals={filtered} adminMode={true} title="Deals" />
         )}
@@ -354,18 +360,26 @@ function StatCard({
   label,
   value,
   sub,
-  valueClass,
+  dot,
 }: {
   label: string;
   value: string;
   sub?: string;
-  valueClass?: string;
+  /** Status dot color (e.g. bg-emerald-500) — keeps the old good/attention cue. */
+  dot?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={cn("text-xl sm:text-2xl font-bold mt-1 truncate tabular-nums", valueClass ?? "text-foreground")}>{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
+    <Card>
+      <CardHeader className="pb-2 md:pb-2">
+        <CardDescription className="flex items-center gap-1.5">
+          {dot && <span className={cn("size-1.5 shrink-0 rounded-full", dot)} />}
+          {label}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        <div className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums truncate">{value}</div>
+        {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
+      </CardContent>
+    </Card>
   );
 }

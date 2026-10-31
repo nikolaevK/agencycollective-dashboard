@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const tabs = [
   { href: "/dashboard/closers", label: "Overview", exact: true },
@@ -25,28 +25,22 @@ export function CloserSubNav() {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname]);
 
+  const activeHref =
+    tabs.find((tab) => (tab.exact ? pathname === tab.href : pathname.startsWith(tab.href)))?.href ?? "";
+
+  // Route tabs: each trigger is a Link, so navigation (incl. cmd-click /
+  // middle-click) stays plain anchor behavior; Tabs only drives the styling.
   return (
-    <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 mb-6 overflow-x-auto">
-      {tabs.map((tab) => {
-        const isActive = tab.exact
-          ? pathname === tab.href
-          : pathname.startsWith(tab.href);
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            ref={isActive ? activeRef : undefined}
-            className={cn(
-              "px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
-    </div>
+    <Tabs value={activeHref} className="mb-6 overflow-x-auto">
+      <TabsList>
+        {tabs.map((tab) => (
+          <TabsTrigger key={tab.href} value={tab.href} asChild>
+            <Link href={tab.href} ref={tab.href === activeHref ? activeRef : undefined}>
+              {tab.label}
+            </Link>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }

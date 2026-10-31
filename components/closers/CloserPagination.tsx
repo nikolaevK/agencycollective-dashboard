@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface CloserPaginationProps {
   page: number;
@@ -57,55 +57,57 @@ export function CloserPagination({
     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
       <p className="text-sm text-muted-foreground">
         Showing{" "}
-        <span className="font-medium text-foreground">
+        <span className="font-medium text-foreground tabular-nums">
           {start}-{end}
         </span>{" "}
-        of <span className="font-medium text-foreground">{total}</span> closers
+        of <span className="font-medium text-foreground tabular-nums">{total}</span> closers
       </p>
 
       <div className="flex flex-wrap items-center justify-center gap-1">
         {/* Previous */}
-        <button
+        <Button
+          variant="outline"
+          size="icon-sm"
           onClick={() => setPage(page - 1)}
           disabled={page <= 1}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          aria-label="Previous page"
         >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
+          <ChevronLeft />
+        </Button>
 
         {/* Page Numbers */}
         {getPageNumbers().map((p, i) =>
           p === "ellipsis" ? (
             <span
               key={`ellipsis-${i}`}
-              className="flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
+              className="flex size-8 items-center justify-center text-sm text-muted-foreground"
             >
               ...
             </span>
           ) : (
-            <button
+            <Button
               key={p}
+              variant={page === p ? "default" : "ghost"}
+              size="icon-sm"
               onClick={() => setPage(p)}
-              className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-lg text-sm font-medium transition-colors",
-                page === p
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent"
-              )}
+              aria-current={page === p ? "page" : undefined}
+              className="tabular-nums"
             >
               {p}
-            </button>
+            </Button>
           )
         )}
 
         {/* Next */}
-        <button
+        <Button
+          variant="outline"
+          size="icon-sm"
           onClick={() => setPage(page + 1)}
           disabled={page >= totalPages}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          aria-label="Next page"
         >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+          <ChevronRight />
+        </Button>
       </div>
     </div>
   );

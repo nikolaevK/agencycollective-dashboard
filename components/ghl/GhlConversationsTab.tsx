@@ -12,6 +12,9 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useGhlContactConversations,
   useGhlConversationMessages,
@@ -56,7 +59,7 @@ export function GhlConversationsTab({ contactId, users }: Props) {
   if (threads.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
-        <MessageSquare className="h-8 w-8 opacity-40" />
+        <MessageSquare className="size-8 opacity-40" />
         <p className="text-sm">No conversations for this contact.</p>
       </div>
     );
@@ -93,33 +96,40 @@ function ThreadSwitcher({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 border-b border-border/40 pb-2 mb-3">
-      {threads.map((t) => {
-        const Icon = channelIcon(t.lastMessageType ?? t.type);
-        const active = t.id === activeId;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onSelect(t.id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-              active
-                ? "border-foreground/40 bg-foreground/10 text-foreground"
-                : "border-border bg-background text-muted-foreground hover:text-foreground"
-            )}
-            title={channelLabel(t.lastMessageType ?? t.type) + (t.lastMessageDate ? ` · last ${formatRelative(t.lastMessageDate)}` : "")}
-          >
-            <Icon className="h-3 w-3" />
-            {channelLabel(t.lastMessageType ?? t.type)}
-            {t.unreadCount > 0 && (
-              <span className="rounded-full bg-foreground/15 px-1.5 text-[10px]">
-                {t.unreadCount}
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className="border-b pb-2 mb-3">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={activeId ?? ""}
+        // Radix reports "" when the active thread is clicked again; a thread
+        // can't be deselected, so ignore that.
+        onValueChange={(v) => {
+          if (v) onSelect(v);
+        }}
+        aria-label="Conversation threads"
+        className="flex-wrap justify-start"
+      >
+        {threads.map((t) => {
+          const Icon = channelIcon(t.lastMessageType ?? t.type);
+          return (
+            <ToggleGroupItem
+              key={t.id}
+              value={t.id}
+              className="h-7 gap-1.5 px-2.5 text-xs"
+              title={channelLabel(t.lastMessageType ?? t.type) + (t.lastMessageDate ? ` · last ${formatRelative(t.lastMessageDate)}` : "")}
+            >
+              <Icon className="size-3" />
+              {channelLabel(t.lastMessageType ?? t.type)}
+              {t.unreadCount > 0 && (
+                <Badge variant="outline" className="h-4 bg-background px-1.5 text-[10px] tabular-nums">
+                  {t.unreadCount}
+                </Badge>
+              )}
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
     </div>
   );
 }
@@ -184,11 +194,11 @@ function MessageStream({
 function DaySeparator({ iso }: { iso: string }) {
   return (
     <div className="my-3 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border/40" />
+      <Separator className="flex-1" />
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {formatDayLabel(iso)}
       </span>
-      <div className="h-px flex-1 bg-border/40" />
+      <Separator className="flex-1" />
     </div>
   );
 }
@@ -220,18 +230,18 @@ const MessageBubble = memo(function MessageBubble({
         className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px]",
           isOutbound
-            ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+            ? "bg-primary/10 text-foreground"
             : "bg-muted text-muted-foreground"
         )}
         title={channelLabel(msg.type)}
       >
-        <Icon className="h-3.5 w-3.5" />
+        <Icon className="size-3.5" />
       </div>
       <div
         className={cn(
           "min-w-0 max-w-[80%] rounded-2xl px-3 py-2 text-sm",
           isOutbound
-            ? "bg-blue-500 text-white rounded-br-sm"
+            ? "bg-primary text-primary-foreground rounded-br-sm"
             : "bg-muted text-foreground rounded-bl-sm"
         )}
       >
@@ -257,7 +267,7 @@ const MessageBubble = memo(function MessageBubble({
                       rel="noopener noreferrer"
                       className={cn(
                         "underline decoration-dotted",
-                        isOutbound ? "text-white/90" : "text-foreground"
+                        isOutbound ? "text-primary-foreground/90" : "text-foreground"
                       )}
                     >
                       attachment {i + 1}
@@ -266,7 +276,7 @@ const MessageBubble = memo(function MessageBubble({
                     <span
                       className={cn(
                         "italic",
-                        isOutbound ? "text-white/70" : "text-muted-foreground"
+                        isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"
                       )}
                       title={url}
                     >
@@ -281,7 +291,7 @@ const MessageBubble = memo(function MessageBubble({
         <div
           className={cn(
             "mt-1 flex items-center gap-1.5 text-[10px]",
-            isOutbound ? "text-white/70 justify-end" : "text-muted-foreground"
+            isOutbound ? "text-primary-foreground/70 justify-end" : "text-muted-foreground"
           )}
         >
           <span>{formatTime(msg.dateAdded)}</span>
@@ -419,7 +429,7 @@ function formatRelative(iso: string): string {
 function LoadingState() {
   return (
     <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
+      <Loader2 className="size-4 animate-spin" />
       Loading conversation…
     </div>
   );
@@ -427,9 +437,9 @@ function LoadingState() {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+    <div className="rounded-2xl bg-destructive/10 p-4 text-sm">
       <div className="flex items-center gap-2 text-destructive font-medium">
-        <AlertTriangle className="h-4 w-4" />
+        <AlertTriangle className="size-4" />
         Couldn’t load conversation
       </div>
       <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{message}</p>

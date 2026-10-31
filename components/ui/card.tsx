@@ -1,11 +1,14 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
+// shadcn "Luma" card look (24px radius, faint ring + soft shadow, no border)
+// on the classic header/content padding API the existing callers use.
+
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-xl bg-card text-card-foreground shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden", className)}
+      className={cn("overflow-hidden rounded-[min(calc(var(--radius)*2.6),24px)] bg-card text-sm text-card-foreground shadow ring-1 ring-foreground/5 dark:ring-foreground/10", className)}
       {...props}
     />
   )
@@ -27,7 +30,7 @@ const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HT
   ({ className, ...props }, ref) => (
     <h3
       ref={ref}
-      className={cn("text-2xl font-semibold leading-none tracking-tight", className)}
+      className={cn("text-base font-medium leading-snug", className)}
       {...props}
     />
   )

@@ -30,7 +30,7 @@ export function InvoiceTotalsSummary({ details }: { details: InvoiceDetails }) {
     v?.amountType === "percentage" ? ` (${v.amount}%)` : "";
 
   return (
-    <div className="space-y-1 border-t border-border pt-3">
+    <div className="space-y-1.5 border-t pt-3">
       {(details.discountDetails || details.taxDetails || details.shippingDetails) && (
         <>
           <div className="flex items-center justify-between text-sm">
@@ -66,7 +66,7 @@ export function InvoiceTotalsSummary({ details }: { details: InvoiceDetails }) {
       )}
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-foreground">Total</span>
-        <span className="text-lg font-bold tabular-nums text-foreground">{fmt(totalAmount)}</span>
+        <span className="text-lg font-semibold tracking-tight tabular-nums text-foreground">{fmt(totalAmount)}</span>
       </div>
     </div>
   );

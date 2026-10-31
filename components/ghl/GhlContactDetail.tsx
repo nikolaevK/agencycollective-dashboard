@@ -20,7 +20,11 @@ import {
   DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   useGhlContactNotes,
   useGhlContactAppointments,
@@ -50,10 +54,10 @@ type Tab = "notes" | "appointments" | "messages" | "opportunities" | "tags";
 
 const noteMarkdownComponents = {
   h1: (p: { children?: React.ReactNode }) => (
-    <h1 className="text-base font-bold text-foreground mt-3 mb-2 first:mt-0">{p.children}</h1>
+    <h1 className="text-base font-semibold text-foreground mt-3 mb-2 first:mt-0">{p.children}</h1>
   ),
   h2: (p: { children?: React.ReactNode }) => (
-    <h2 className="text-sm font-bold text-foreground mt-3 mb-2 first:mt-0">{p.children}</h2>
+    <h2 className="text-sm font-semibold text-foreground mt-3 mb-2 first:mt-0">{p.children}</h2>
   ),
   h3: (p: { children?: React.ReactNode }) => (
     <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-3 mb-1 first:mt-0">{p.children}</h3>
@@ -102,49 +106,44 @@ function userName(users: Record<string, GhlUser>, id?: string | null): string | 
 export function GhlContactDetail({ contact, users, pipelines, workflows }: Props) {
   const [tab, setTab] = useState<Tab>("notes");
 
+  // Local view switch. Only the active pane is mounted (Radix TabsContent
+  // unmounts inactive panels), same as the conditional rendering before.
   return (
-    <div className="flex h-full flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(v) => setTab(v as Tab)}
+      className="flex h-full flex-col"
+    >
       <Header contact={contact} users={users} />
 
-      <div className="flex border-b border-border/60 px-4 overflow-x-auto">
-        {(["notes", "appointments", "messages", "opportunities", "tags"] as Tab[]).map((key) => (
-          <TabButton
-            key={key}
-            active={tab === key}
-            onClick={() => setTab(key)}
-            label={labelFor(key, contact)}
-          />
-        ))}
+      <div className="shrink-0 border-b px-4 py-3 overflow-x-auto">
+        <TabsList>
+          {(["notes", "appointments", "messages", "opportunities", "tags"] as Tab[]).map((key) => (
+            <TabsTrigger key={key} value={key}>
+              {labelFor(key, contact)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
-        {tab === "notes" && <NotesPane contactId={contact.id} users={users} />}
-        {tab === "appointments" && <AppointmentsPane contactId={contact.id} users={users} />}
-        {tab === "messages" && <GhlConversationsTab contactId={contact.id} users={users} />}
-        {tab === "opportunities" && (
+        <TabsContent value="notes">
+          <NotesPane contactId={contact.id} users={users} />
+        </TabsContent>
+        <TabsContent value="appointments">
+          <AppointmentsPane contactId={contact.id} users={users} />
+        </TabsContent>
+        <TabsContent value="messages">
+          <GhlConversationsTab contactId={contact.id} users={users} />
+        </TabsContent>
+        <TabsContent value="opportunities">
           <OpportunitiesPane contact={contact} pipelines={pipelines} />
-        )}
-        {tab === "tags" && (
+        </TabsContent>
+        <TabsContent value="tags">
           <TagsPane contact={contact} users={users} workflows={workflows} />
-        )}
+        </TabsContent>
       </div>
-    </div>
-  );
-}
-
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "relative px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {label}
-      {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-foreground" />}
-    </button>
+    </Tabs>
   );
 }
 
@@ -175,7 +174,11 @@ function countLabel(label: string, n: number): React.ReactNode {
   return (
     <span className="inline-flex items-center gap-1.5">
       {label}
-      {n > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{n}</span>}
+      {n > 0 && (
+        <Badge variant="outline" className="h-4 px-1.5 text-[10px] tabular-nums text-current">
+          {n}
+        </Badge>
+      )}
     </span>
   );
 }
@@ -193,26 +196,26 @@ function Header({ contact, users }: { contact: GhlContact; users: Record<string,
   const assigned = userName(users, contact.assignedTo);
 
   return (
-    <div className="border-b border-border/60 p-4 sm:p-5">
+    <div className="shrink-0 border-b p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg sm:text-xl font-bold text-foreground truncate">{name}</h2>
+          <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground truncate">{name}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             {assigned && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <User className="h-3.5 w-3.5" />
+                <User className="size-3.5" />
                 Assigned to <span className="text-foreground font-medium">{assigned}</span>
               </span>
             )}
             {contact.source && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Globe className="h-3.5 w-3.5" />
+                <Globe className="size-3.5" />
                 {contact.source}
               </span>
             )}
             {contact.dnd && (
-              <Badge variant="warning" className="inline-flex items-center gap-1">
-                <BellOff className="h-3 w-3" />
+              <Badge variant="outline" className="gap-1 font-medium">
+                <BellOff className="text-amber-500" />
                 DND
               </Badge>
             )}
@@ -263,7 +266,7 @@ function Field({
         muted ? "text-muted-foreground/80" : "text-muted-foreground"
       )}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="size-4 shrink-0" />
       <span className="truncate">{value}</span>
     </span>
   );
@@ -331,8 +334,8 @@ function NoteComposer({ contactId }: { contactId: string }) {
   };
 
   return (
-    <div className="rounded-lg border border-border/50 bg-card p-3">
-      <textarea
+    <div className="space-y-2">
+      <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
@@ -344,9 +347,9 @@ function NoteComposer({ contactId }: { contactId: string }) {
         placeholder="Add a note… (⌘/Ctrl + Enter to save)"
         rows={3}
         disabled={create.isPending}
-        className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="resize-y"
       />
-      <div className="mt-2 flex items-center justify-end gap-3">
+      <div className="flex items-center justify-end gap-3">
         {create.isError && (
           <span className="text-xs text-destructive truncate">
             {(create.error as Error).message}
@@ -355,18 +358,14 @@ function NoteComposer({ contactId }: { contactId: string }) {
         <span className="text-[10px] text-muted-foreground/60 tabular-nums">
           {body.length}
         </span>
-        <button
+        <Button
           type="button"
+          size="sm"
           onClick={submit}
           disabled={!body.trim() || create.isPending}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            "bg-foreground text-background hover:opacity-90",
-            "disabled:opacity-40 disabled:cursor-not-allowed"
-          )}
         >
           {create.isPending ? "Adding…" : "Add note"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -379,15 +378,15 @@ const NoteCard = memo(function NoteCard({ note, author }: { note: GhlContactNote
   // re-render of the parent.
   const cleaned = useMemo(() => cleanGhlNoteBody(note.body), [note.body]);
   return (
-    <li className="rounded-lg border border-border/50 bg-card p-4">
+    <li className="rounded-2xl bg-muted/50 p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-2">
         <span className="inline-flex items-center gap-1">
-          <StickyNote className="h-3.5 w-3.5" />
+          <StickyNote className="size-3.5" />
           {formatDateTime(note.dateAdded)}
         </span>
         {author && (
           <span className="inline-flex items-center gap-1">
-            <User className="h-3 w-3" />
+            <User className="size-3" />
             {author}
           </span>
         )}
@@ -430,20 +429,21 @@ function AppointmentsPane({ contactId, users }: { contactId: string; users: Reco
   );
 }
 
-const STATUS_VARIANTS: Record<string, string> = {
-  confirmed: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-  showed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  show: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  noshow: "bg-red-500/15 text-red-700 dark:text-red-400",
-  "no-show": "bg-red-500/15 text-red-700 dark:text-red-400",
-  cancelled: "bg-slate-500/15 text-slate-700 dark:text-slate-400",
-  canceled: "bg-slate-500/15 text-slate-700 dark:text-slate-400",
-  new: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  invalid: "bg-slate-500/15 text-slate-700 dark:text-slate-400",
+// Status-badge tones (badge itself is the shared outline pill).
+const STATUS_TONES: Record<string, BadgeTone> = {
+  confirmed: "info",
+  showed: "success",
+  show: "success",
+  noshow: "danger",
+  "no-show": "danger",
+  cancelled: "neutral",
+  canceled: "neutral",
+  new: "warning",
+  invalid: "neutral",
 };
 
-function statusClass(status: string): string {
-  return STATUS_VARIANTS[status.toLowerCase()] ?? "bg-muted text-muted-foreground";
+function statusTone(status: string): BadgeTone {
+  return STATUS_TONES[status.toLowerCase()] ?? "neutral";
 }
 
 const AppointmentCard = memo(function AppointmentCard({
@@ -454,7 +454,7 @@ const AppointmentCard = memo(function AppointmentCard({
   closer: string | null;
 }) {
   return (
-    <li className="rounded-lg border border-border/50 bg-card p-4">
+    <li className="rounded-2xl bg-muted/50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="font-medium text-foreground truncate">
@@ -465,20 +465,15 @@ const AppointmentCard = memo(function AppointmentCard({
           </p>
         </div>
         {appt.appointmentStatus && (
-          <span
-            className={cn(
-              "shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-              statusClass(appt.appointmentStatus)
-            )}
-          >
+          <StatusBadge tone={statusTone(appt.appointmentStatus)} className="shrink-0">
             {appt.appointmentStatus}
-          </span>
+          </StatusBadge>
         )}
       </div>
       <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground sm:grid-cols-2">
         {closer && (
           <span className="inline-flex items-center gap-1">
-            <User className="h-3 w-3" />
+            <User className="size-3" />
             <span className="truncate">
               Assigned to <span className="text-foreground font-medium">{closer}</span>
             </span>
@@ -486,13 +481,13 @@ const AppointmentCard = memo(function AppointmentCard({
         )}
         {appt.address && (
           <span className="inline-flex items-center gap-1">
-            <MapPin className="h-3 w-3" />
+            <MapPin className="size-3" />
             <span className="truncate">{appt.address}</span>
           </span>
         )}
         {appt.meetingLocationType && (
           <span className="inline-flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
+            <Calendar className="size-3" />
             <span className="truncate">{appt.meetingLocationType}</span>
           </span>
         )}
@@ -533,17 +528,17 @@ const OpportunityCard = memo(function OpportunityCard({ opp, pipelines }: { opp:
   const p = pipelines.find((p) => p.id === opp.pipelineId);
   const stage = p?.stages.find((s) => s.id === opp.pipelineStageId);
   const status = (opp.status ?? "open").toLowerCase();
-  const statusColor =
+  const tone: BadgeTone =
     status === "won"
-      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+      ? "success"
       : status === "lost"
-      ? "bg-red-500/15 text-red-700 dark:text-red-400"
+      ? "danger"
       : status === "abandoned"
-      ? "bg-slate-500/15 text-slate-700 dark:text-slate-400"
-      : "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+      ? "neutral"
+      : "info";
 
   return (
-    <li className="rounded-lg border border-border/50 bg-card p-4">
+    <li className="rounded-2xl bg-muted/50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="font-medium text-foreground truncate">
@@ -554,19 +549,14 @@ const OpportunityCard = memo(function OpportunityCard({ opp, pipelines }: { opp:
             {stage?.name ? ` · ${stage.name}` : ""}
           </p>
         </div>
-        <span
-          className={cn(
-            "shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-            statusColor
-          )}
-        >
+        <StatusBadge tone={tone} className="shrink-0">
           {opp.status ?? "open"}
-        </span>
+        </StatusBadge>
       </div>
       <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground sm:grid-cols-2">
         {opp.monetaryValue !== null && (
           <span className="inline-flex items-center gap-1">
-            <DollarSign className="h-3 w-3" />
+            <DollarSign className="size-3" />
             <span className="text-foreground font-medium">
               {opp.monetaryValue.toLocaleString(undefined, {
                 style: "currency",
@@ -577,13 +567,13 @@ const OpportunityCard = memo(function OpportunityCard({ opp, pipelines }: { opp:
         )}
         {opp.source && (
           <span className="inline-flex items-center gap-1">
-            <Globe className="h-3 w-3" />
+            <Globe className="size-3" />
             <span className="truncate">{opp.source}</span>
           </span>
         )}
         {opp.updatedAt && (
           <span className="inline-flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
+            <Calendar className="size-3" />
             Updated {formatRelative(opp.updatedAt)}
           </span>
         )}
@@ -611,8 +601,8 @@ function TagsPane({
   return (
     <div className="space-y-6">
       <section>
-        <h3 className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Tag className="h-4 w-4" /> Tags
+        <h3 className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-foreground">
+          <Tag className="size-4 text-muted-foreground" /> Tags
         </h3>
         {contact.tags.length === 0 ? (
           <p className="text-sm text-muted-foreground">No tags.</p>
@@ -628,8 +618,8 @@ function TagsPane({
       </section>
 
       <section>
-        <h3 className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-          <WorkflowIcon className="h-4 w-4" /> Active workflows
+        <h3 className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-foreground">
+          <WorkflowIcon className="size-4 text-muted-foreground" /> Active workflows
         </h3>
         {enrolledWorkflows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -642,8 +632,8 @@ function TagsPane({
         ) : (
           <div className="flex flex-wrap gap-2">
             {enrolledWorkflows.map((w) => (
-              <Badge key={w.id} variant="secondary" className="inline-flex items-center gap-1">
-                <WorkflowIcon className="h-3 w-3" />
+              <Badge key={w.id} variant="secondary" className="gap-1">
+                <WorkflowIcon />
                 {w.name}
               </Badge>
             ))}
@@ -652,7 +642,7 @@ function TagsPane({
       </section>
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Details</h3>
+        <h3 className="mb-2 text-sm font-medium text-foreground">Details</h3>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
           <Detail label="Source" value={contact.source} />
           <Detail label="Type" value={contact.type} />
@@ -670,7 +660,7 @@ function TagsPane({
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/30 py-1">
+    <div className="flex justify-between gap-4 border-b py-1.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-foreground text-right truncate">{value || "—"}</dd>
     </div>
@@ -731,10 +721,10 @@ function PaneSkeleton() {
   return (
     <ul className="space-y-3">
       {[1, 2, 3].map((i) => (
-        <li key={i} className="rounded-lg border border-border/50 bg-card p-4">
-          <div className="h-3 w-24 animate-pulse rounded bg-muted mb-3" />
-          <div className="h-4 w-full animate-pulse rounded bg-muted mb-2" />
-          <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+        <li key={i} className="rounded-2xl border p-4">
+          <Skeleton className="h-3 w-24 mb-3" />
+          <Skeleton className="h-4 w-full mb-2" />
+          <Skeleton className="h-4 w-3/4" />
         </li>
       ))}
     </ul>
@@ -744,7 +734,7 @@ function PaneSkeleton() {
 function Empty({ icon: Icon, message }: { icon: typeof Calendar; message: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
-      <Icon className="h-8 w-8 opacity-40" />
+      <Icon className="size-8 opacity-40" />
       <p className="text-sm">{message}</p>
     </div>
   );
@@ -753,9 +743,9 @@ function Empty({ icon: Icon, message }: { icon: typeof Calendar; message: string
 function ErrorBox({ message }: { message: string }) {
   const isConfig = /not configured/i.test(message);
   return (
-    <div className="m-4 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+    <div className="m-4 rounded-2xl bg-destructive/10 p-4 text-sm">
       <div className="flex items-center gap-2 text-destructive font-medium">
-        <AlertTriangle className="h-4 w-4" />
+        <AlertTriangle className="size-4" />
         {isConfig ? "GHL not connected" : "Something went wrong"}
       </div>
       <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{message}</p>

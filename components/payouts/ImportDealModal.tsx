@@ -6,6 +6,10 @@ import { X, Search, FileText, FileCheck2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/format";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 export interface ImportableDeal {
   dealId: string;
@@ -65,7 +69,7 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
 
   if (!open) return null;
 
-  const Badge = ({
+  const DocBadge = ({
     ok,
     label,
     Icon,
@@ -74,57 +78,57 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
     label: string;
     Icon: typeof FileText;
   }) => (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium",
-        ok
-          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          : "bg-muted text-muted-foreground"
-      )}
-    >
-      <Icon className="h-3 w-3" />
+    <Badge variant="outline" className="gap-1 font-medium">
+      <Icon className={ok ? "text-emerald-500" : "text-muted-foreground"} />
       {label}
       {ok ? " ✓" : " —"}
-    </span>
+    </Badge>
   );
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className={dialogOverlayClass}
         onClick={onClose}
       />
-      <div className="relative z-10 flex w-full md:max-w-2xl max-h-[90dvh] flex-col rounded-t-2xl md:rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl md:mx-4">
+      <div
+        className={cn(
+          dialogPanelClass,
+          "relative z-50 flex w-full md:max-w-2xl max-h-[90dvh] flex-col rounded-b-none md:rounded-b-4xl md:mx-4"
+        )}
+      >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 dark:border-white/[0.06] px-6 py-4">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-foreground">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-6">
+          <div className="min-w-0 space-y-1.5">
+            <h3 className="text-base font-medium leading-none">
               Import from Deal
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-sm text-muted-foreground">
               Closed deals that are signed or marked paid. Any signed scope &
               invoice attach automatically.
             </p>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="shrink-0 bg-secondary"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         {/* Search */}
         <div className="shrink-0 px-6 pt-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by client, brand, or closer..."
-              className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+              className="pl-9"
             />
           </div>
         </div>
@@ -157,15 +161,15 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
                 disabled={disabled}
                 onClick={() => onPick(deal)}
                 className={cn(
-                  "w-full text-left rounded-lg border p-3 transition-colors",
+                  "w-full text-left rounded-2xl border p-3 outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
                   disabled
-                    ? "border-border/50 bg-muted/30 opacity-60 cursor-not-allowed"
-                    : "border-border/50 dark:border-white/[0.06] hover:border-primary/50 hover:bg-accent/40"
+                    ? "bg-muted/30 opacity-60 cursor-not-allowed"
+                    : "hover:bg-muted/50"
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate">
+                    <p className="font-medium truncate">
                       {deal.brandName || deal.clientName}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
@@ -175,24 +179,24 @@ export function ImportDealModal({ open, onClose, onPick }: ImportDealModalProps)
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="font-semibold text-foreground">
+                    <p className="font-semibold tabular-nums">
                       {formatCents(deal.dealValue)}
                     </p>
                     {deal.paidStatus === "paid" && (
-                      <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                         Paid
                       </span>
                     )}
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Badge ok={deal.isSigned} label="Scope" Icon={FileCheck2} />
-                  <Badge ok={deal.hasInvoice} label="Invoice" Icon={FileText} />
+                  <DocBadge ok={deal.isSigned} label="Scope" Icon={FileCheck2} />
+                  <DocBadge ok={deal.hasInvoice} label="Invoice" Icon={FileText} />
                   {disabled && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                      <Check className="h-3 w-3" />
+                    <Badge variant="secondary" className="gap-1 font-medium">
+                      <Check />
                       Imported
-                    </span>
+                    </Badge>
                   )}
                 </div>
               </button>

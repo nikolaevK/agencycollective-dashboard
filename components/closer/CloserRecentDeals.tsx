@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DealStatusBadge } from "@/components/closers/DealStatusBadge";
-import { Link2, Pencil, StickyNote, Briefcase, Search, Trash2 } from "lucide-react";
+import { Link2, Pencil, StickyNote, Briefcase, Search, Trash2, X } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 import type { DealPublic } from "@/components/closers/types";
 import type { DealStatus } from "@/lib/deals";
@@ -14,6 +14,23 @@ import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBa
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { format, startOfWeek, startOfMonth } from "date-fns";
+import { useToast } from "@/components/providers/ToastProvider";
+import { StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 type RangeFilter = "all" | "week" | "month";
 
@@ -88,6 +105,14 @@ const DELETABLE_STATUSES: ReadonlySet<DealStatus> = new Set([
   "not_closed",
 ]);
 
+function PaidBadge({ paidStatus }: { paidStatus: string }) {
+  return (
+    <StatusBadge tone={paidStatus === "paid" ? "success" : "danger"}>
+      {paidStatus === "paid" ? "Paid" : "Unpaid"}
+    </StatusBadge>
+  );
+}
+
 /* ── Edit Deal Modal ── (same guards as the admin one in RecentDealsTable) */
 function EditDealModal({
   deal,
@@ -100,12 +125,13 @@ function EditDealModal({
 }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   // Backdrop / × / Escape are easy to hit by accident — confirm before
   // throwing edits away, and never close mid-save (the result would be lost).
-  function requestClose() {
+  async function requestClose() {
     if (saving) return;
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (dirty && !(await confirm({ title: "Discard unsaved changes?", destructive: true, confirmText: "Discard" }))) return;
     onClose();
   }
 
@@ -114,18 +140,23 @@ function EditDealModal({
   useEscapeKey(requestClose);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={requestClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
-        <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-card rounded-t-2xl">
-          <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
-          <button
+    // z-50 (not above it) so the portaled discard confirm + any Radix
+    // popovers inside the form stack on top of this modal.
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className={dialogOverlayClass} onClick={requestClose} />
+      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b bg-popover">
+          <h3 className="text-base font-medium">Edit Deal</h3>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
             disabled={saving}
-            className="-mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40"
+            className="-mr-2"
           >
-            <span className="sr-only">Close</span>&times;
-          </button>
+            <span className="sr-only">Close</span>
+            <X />
+          </Button>
         </div>
         <div className="p-4 sm:p-6">
           <UnifiedDealForm
@@ -140,6 +171,7 @@ function EditDealModal({
           />
         </div>
       </div>
+      {dialog}
     </div>
   );
 }
@@ -163,6 +195,8 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
   // re-enable each other's buttons mid-flight.
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(new Set());
   const queryClient = useQueryClient();
+  const { toastError } = useToast();
+  const { confirm, dialog } = useConfirm();
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -199,7 +233,15 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
 
   async function handleDelete(deal: DealPublic) {
     if (!DELETABLE_STATUSES.has(deal.status)) return;
-    if (!window.confirm(`Delete the deal for ${deal.clientName}? This cannot be undone.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete the deal for ${deal.clientName}?`,
+        description: "This cannot be undone.",
+        destructive: true,
+        confirmText: "Delete",
+      }))
+    )
+      return;
     setDeletingIds((prev) => new Set(prev).add(deal.id));
     try {
       const res = await fetch(`/api/closer/deals?id=${encodeURIComponent(deal.id)}`, {
@@ -207,7 +249,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        window.alert(json.error ?? "Failed to delete deal.");
+        toastError(json.error ?? "Failed to delete deal.");
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["closer-stats"] });
@@ -215,7 +257,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
     } catch {
       // Network failure / abort. Without this catch the rejection escapes,
       // the button quietly re-enables, and the user sees no feedback at all.
-      window.alert("Couldn't reach the server. Check your connection and try again.");
+      toastError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setDeletingIds((prev) => {
         const next = new Set(prev);
@@ -227,41 +269,42 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
 
   return (
     <>
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card">
-      <div className="p-5 border-b border-border/50 dark:border-white/[0.06] space-y-3">
+    <Card>
+      <CardHeader className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-foreground">Deals</h3>
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <CardTitle>Deals</CardTitle>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {showingCount === totalCount ? `${totalCount}` : `${showingCount} of ${totalCount}`}
           </span>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className="inline-flex items-center rounded-lg bg-muted/60 p-0.5 text-xs font-medium">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={range}
+            // Radix reports "" when the active item is clicked again; a range
+            // can't be deselected, so ignore that.
+            onValueChange={(v) => {
+              if (v) setRange(v as RangeFilter);
+            }}
+            aria-label="Date range"
+            className="justify-start"
+          >
             {(["all", "week", "month"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setRange(key)}
-                aria-pressed={range === key}
-                className={cn(
-                  "rounded-md px-3 py-1.5 transition-colors",
-                  range === key
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <ToggleGroupItem key={key} value={key} className="px-3">
                 {key === "all" ? "All" : key === "week" ? "This Week" : "This Month"}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by client or brand"
-              className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+              className="pl-9"
             />
           </div>
         </div>
@@ -269,95 +312,90 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
           {STATUS_FILTERS.map((opt) => {
             const active = statusFilters.has(opt.value);
             return (
-              <button
+              <Toggle
                 key={opt.value}
-                type="button"
-                onClick={() => toggleStatusFilter(opt.value)}
-                aria-pressed={active}
-                className={cn(
-                  "inline-flex items-center h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors",
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-                )}
+                variant="outline"
+                size="sm"
+                pressed={active}
+                onPressedChange={() => toggleStatusFilter(opt.value)}
+                className="h-7 min-w-0 px-2.5 text-xs"
               >
                 {opt.label}
-              </button>
+              </Toggle>
             );
           })}
           {statusFilters.size > 0 && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => setStatusFilters(new Set())}
-              className="inline-flex items-center h-7 px-2 rounded-full text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground"
             >
               Clear
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </CardHeader>
 
       {filtered.length === 0 ? (
-        <div className="p-8 text-center">
+        <CardContent className="p-8 md:p-8 text-center">
           <p className="text-sm text-muted-foreground">
             {totalCount === 0 ? "No deals yet. Create your first deal!" : "No deals match your filters."}
           </p>
-        </div>
+        </CardContent>
       ) : (
         <>
           {/* Desktop table */}
           <div className="hidden md:block max-h-[60dvh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 dark:border-white/[0.06]">
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Client</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Amount</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Status</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Date</th>
-                  <th className="text-right font-medium text-muted-foreground px-5 py-3 w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="[&_td]:px-5 [&_th]:px-5">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Client</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right w-16"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map((deal) => (
-                  <tr
-                    key={deal.id}
-                    className="border-b border-border/50 dark:border-white/[0.06] last:border-0 hover:bg-muted/50 transition-colors"
-                  >
-                    <td className="px-5 py-3 font-medium text-foreground">
+                  <TableRow key={deal.id}>
+                    <TableCell className="font-medium whitespace-normal">
                       <div>
                         <span className="inline-flex items-center gap-1.5">
                           {deal.clientName}
-                          {deal.clientUserId && <Link2 className="h-3 w-3 text-primary shrink-0" />}
+                          {deal.clientUserId && <Link2 className="size-3 text-muted-foreground shrink-0" />}
                           {deal.notes && (
-                            <button onClick={() => setInfoModal({ type: "notes", deal })} className="shrink-0 text-amber-500 hover:text-amber-600 transition-colors" title="View notes">
-                              <StickyNote className="h-3.5 w-3.5" />
-                            </button>
+                            <Button variant="ghost" size="icon-xs" onClick={() => setInfoModal({ type: "notes", deal })} className="text-muted-foreground" title="View notes">
+                              <StickyNote />
+                            </Button>
                           )}
                           {deal.serviceCategory && (
-                            <button onClick={() => setInfoModal({ type: "services", deal })} className="shrink-0 text-violet-500 hover:text-violet-600 transition-colors" title="View services">
-                              <Briefcase className="h-3.5 w-3.5" />
-                            </button>
+                            <Button variant="ghost" size="icon-xs" onClick={() => setInfoModal({ type: "services", deal })} className="text-muted-foreground" title="View services">
+                              <Briefcase />
+                            </Button>
                           )}
                         </span>
                         {(deal.brandName || deal.website) && (
                           <div className="flex items-center gap-2 mt-0.5">
                             {deal.brandName && <span className="text-xs text-muted-foreground font-normal">{deal.brandName}</span>}
                             {deal.website && (
-                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[180px] font-normal">
+                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline-offset-4 hover:underline truncate max-w-[180px] font-normal">
                                 {deal.website.replace(/^https?:\/\//, "")}
                               </a>
                             )}
                           </div>
                         )}
                         {deal.setterName && (
-                          <div className="text-[11px] text-muted-foreground font-normal mt-0.5">
+                          <div className="text-xs text-muted-foreground font-normal mt-0.5">
                             Set by {deal.setterName}
                           </div>
                         )}
                       </div>
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-foreground">{formatCents(deal.dealValue)}</td>
-                    <td className="px-5 py-3">
+                    </TableCell>
+                    <TableCell className="font-semibold tabular-nums">{formatCents(deal.dealValue)}</TableCell>
+                    <TableCell className="whitespace-normal">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <DealStatusBadge status={deal.status} compact />
                         {deal.invoiceStatus && (
@@ -366,67 +404,64 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                         {deal.contractStatus && (
                           <DealContractStatusBadge status={deal.contractStatus} />
                         )}
-                        <span className={cn(
-                          "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap",
-                          deal.paidStatus === "paid"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                            : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
-                        )}>
-                          {deal.paidStatus === "paid" ? "Paid" : "Unpaid"}
-                        </span>
+                        <PaidBadge paidStatus={deal.paidStatus} />
                       </div>
-                    </td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</td>
-                    <td className="px-5 py-3">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(deal.closingDate || deal.createdAt)}</TableCell>
+                    <TableCell>
                       <div className="flex items-center justify-end gap-0.5">
                         {!readOnly && (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
                           onClick={() => setEditDeal(deal)}
                           aria-label="Edit deal"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+                          className="text-muted-foreground"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                          <Pencil />
+                        </Button>
                         )}
                         {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => handleDelete(deal)}
                             disabled={deletingIds.has(deal.id)}
                             aria-label="Delete deal"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Mobile cards — stacked rows: the badge/amount/actions cluster
               used to sit beside the name as one non-shrinking row, which
               squeezed the client name to nothing and overflowed the card. */}
-          <div className="md:hidden max-h-[60dvh] overflow-y-auto overscroll-contain divide-y divide-border/50 dark:divide-white/[0.06]">
+          <div className="md:hidden max-h-[60dvh] overflow-y-auto overscroll-contain divide-y border-t">
             {filtered.map((deal) => (
               <div key={deal.id} className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">{deal.clientName}</p>
+                    <p className="text-sm font-medium truncate">{deal.clientName}</p>
                     {(deal.brandName || deal.website) && (
                       <div className="flex items-center gap-2 mt-0.5 min-w-0">
                         {deal.brandName && <span className="min-w-0 truncate text-xs text-muted-foreground">{deal.brandName}</span>}
                         {deal.website && (
-                          <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-primary hover:underline truncate max-w-[150px]">
+                          <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-primary underline-offset-4 hover:underline truncate max-w-[150px]">
                             {deal.website.replace(/^https?:\/\//, "")}
                           </a>
                         )}
                       </div>
                     )}
                     {deal.setterName && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
                         Set by {deal.setterName}
                       </p>
                     )}
@@ -435,27 +470,31 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <span className="mr-1 text-sm font-semibold text-foreground">
+                    <span className="mr-1 text-sm font-semibold tabular-nums">
                       {formatCents(deal.dealValue)}
                     </span>
                     {!readOnly && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setEditDeal(deal)}
                       aria-label="Edit deal"
-                      className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+                      className="text-muted-foreground"
                     >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                      <Pencil />
+                    </Button>
                     )}
                     {!readOnly && DELETABLE_STATUSES.has(deal.status) && (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleDelete(deal)}
                         disabled={deletingIds.has(deal.id)}
                         aria-label="Delete deal"
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        <Trash2 />
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -467,33 +506,28 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                   {deal.contractStatus && (
                     <DealContractStatusBadge status={deal.contractStatus} />
                   )}
-                  <span className={cn(
-                    "inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide whitespace-nowrap",
-                    deal.paidStatus === "paid"
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                      : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
-                  )}>
-                    {deal.paidStatus === "paid" ? "Paid" : "Unpaid"}
-                  </span>
+                  <PaidBadge paidStatus={deal.paidStatus} />
                   {deal.notes && (
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => setInfoModal({ type: "notes", deal })}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 text-xs font-medium text-amber-700 dark:text-amber-400"
                     >
-                      <StickyNote className="h-3.5 w-3.5" />
+                      <StickyNote />
                       Notes
-                    </button>
+                    </Button>
                   )}
                   {deal.serviceCategory && (
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => setInfoModal({ type: "services", deal })}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/5 px-2.5 text-xs font-medium text-violet-700 dark:text-violet-400"
                     >
-                      <Briefcase className="h-3.5 w-3.5" />
+                      <Briefcase />
                       Services
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -501,7 +535,7 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
           </div>
         </>
       )}
-    </div>
+    </Card>
 
     {/* Info modal (notes / services) */}
     {infoModal && (
@@ -517,6 +551,8 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
     {editDeal && (
       <EditDealModal deal={editDeal} onClose={() => setEditDeal(null)} onSaved={handleSaved} />
     )}
+
+    {dialog}
     </>
   );
 }

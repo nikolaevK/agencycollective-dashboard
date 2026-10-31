@@ -3,6 +3,9 @@
 import { useState, useTransition } from "react";
 import { CalendarDays, ExternalLink, Unplug, CheckCircle2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 interface Props {
   connected: boolean;
@@ -13,9 +16,18 @@ interface Props {
 export function GoogleConnectCard({ connected, email, isAdmin }: Props) {
   const [isPending, startTransition] = useTransition();
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
 
-  function handleDisconnect() {
-    if (!confirm("Disconnect Google Calendar? All users will lose access to calendar events.")) return;
+  async function handleDisconnect() {
+    if (
+      !(await confirm({
+        title: "Disconnect Google Calendar?",
+        description: "All users will lose access to calendar events.",
+        destructive: true,
+        confirmText: "Disconnect",
+      }))
+    )
+      return;
     startTransition(async () => {
       await fetch("/api/auth/google/disconnect", { method: "POST" });
       queryClient.invalidateQueries({ queryKey: ["google-calendar-status"] });
@@ -25,76 +37,72 @@ export function GoogleConnectCard({ connected, email, isAdmin }: Props) {
 
   if (connected) {
     return (
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5">
-        <div className="flex items-start justify-between gap-3">
+      <Card className="p-4 md:p-5">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/15">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-500" />
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">Google Calendar Connected</p>
+              <p className="text-sm font-medium text-foreground">Google Calendar Connected</p>
               {email && (
                 <p className="text-xs text-muted-foreground mt-0.5 break-all">{email}</p>
               )}
             </div>
           </div>
           {isAdmin && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleDisconnect}
               disabled={isPending}
-              className="flex shrink-0 items-center gap-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
             >
-              <Unplug className="h-3.5 w-3.5" />
+              <Unplug />
               Disconnect
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+        {dialog}
+      </Card>
     );
   }
 
   if (isAdmin) {
     return (
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-8 text-center">
+      <Card className="p-8 text-center">
         <div className="flex justify-center mb-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-            <CalendarDays className="h-7 w-7 text-primary" />
-          </div>
+          <CalendarDays className="size-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">
+        <h3 className="text-lg font-semibold tracking-tight text-foreground mb-2">
           Connect Google Calendar
         </h3>
         <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
           Link your team&apos;s Google Calendar to see appointments and easily convert meetings into closed deals.
         </p>
-        <a
-          href="/api/auth/google/authorize"
-          className="inline-flex items-center gap-2 h-10 rounded-lg ac-gradient px-6 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-        >
-          <ExternalLink className="h-4 w-4" />
-          Connect with Google
-        </a>
+        <Button asChild size="lg">
+          <a href="/api/auth/google/authorize">
+            <ExternalLink />
+            Connect with Google
+          </a>
+        </Button>
         <p className="text-xs text-muted-foreground mt-3">
           Read-only access to calendar events. You can disconnect at any time.
         </p>
-      </div>
+      </Card>
     );
   }
 
   // Closer view — not connected and not admin
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-8 text-center">
+    <Card className="p-8 text-center">
       <div className="flex justify-center mb-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
-          <CalendarDays className="h-7 w-7 text-muted-foreground" />
-        </div>
+        <CalendarDays className="size-8 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-semibold text-foreground mb-2">
+      <h3 className="text-lg font-semibold tracking-tight text-foreground mb-2">
         Calendar Not Connected
       </h3>
       <p className="text-sm text-muted-foreground max-w-sm mx-auto">
         Ask your admin to connect the team&apos;s Google Calendar to view appointments and link them to deals.
       </p>
-    </div>
+    </Card>
   );
 }

@@ -4,10 +4,15 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, ChevronRight, Loader2 } from "lucide-react";
-import { formatCents } from "@/components/closers/types";
-import type { DealDraft, DealDraftStatus } from "@/lib/dealDrafts";
+import { DRAFT_STATUS_TONE, formatCents } from "@/components/closers/types";
+import type { DealDraft } from "@/lib/dealDrafts";
 import type { ApprovedDeal } from "@/components/closers/DealDraftReviewDrawer";
 import { cn } from "@/lib/utils";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { dialogPanelClass } from "@/components/ui/dialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // Both drawers pull in @react-pdf — mount only when opened.
 const DealDraftReviewDrawer = dynamic(
@@ -21,12 +26,6 @@ const DealInvoiceDrawer = dynamic(
 
 type Row = DealDraft & { closerName: string | null };
 type View = "pending" | "reviewed";
-
-const STATUS_CHIP: Record<DealDraftStatus, string> = {
-  pending: "bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
-  approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-  rejected: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400",
-};
 
 /**
  * Deal queue's approval inbox: deals proposed by agents (v1 API / MCP
@@ -80,71 +79,71 @@ export function DealDraftsPanel() {
 
   return (
     <>
-      <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.03]">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-500/20 px-4 py-3">
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b py-3 md:py-3">
           <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
-            <h3 className="text-sm font-semibold text-foreground">Agent drafts</h3>
+            <Bot className="size-4 text-muted-foreground" />
+            <CardTitle className="text-sm">Agent drafts</CardTitle>
             {pending.length > 0 && (
-              <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">
+              <Badge>
                 {pending.length} awaiting approval
-              </span>
+              </Badge>
             )}
           </div>
-          <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={view}
+            onValueChange={(v) => { if (v) setView(v as View); }}
+          >
             {(["pending", "reviewed"] as View[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                className={cn(
-                  "h-9 rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors sm:h-auto",
-                  view === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <ToggleGroupItem key={v} value={v} className="h-9 px-3 capitalize sm:h-8">
                 {v}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
-        </div>
+          </ToggleGroup>
+        </CardHeader>
 
         {activeQ.isLoading ? (
           <div className="flex justify-center py-6">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : activeFailed ? (
           <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-4 text-xs text-destructive">
             Couldn&apos;t load agent drafts.
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => activeQ.refetch()}
               disabled={activeQ.isFetching}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-border px-3 font-medium text-foreground hover:bg-accent disabled:opacity-60 sm:h-7"
+              className="h-9 sm:h-8"
             >
-              {activeQ.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {activeQ.isFetching && <Loader2 className="size-3.5 animate-spin" />}
               Retry
-            </button>
+            </Button>
           </div>
         ) : rows.length === 0 ? (
           <p className="px-4 py-5 text-center text-xs text-muted-foreground">
             {view === "pending" ? "Nothing waiting for approval." : "No reviewed drafts yet."}
           </p>
         ) : (
-          <ul className="divide-y divide-border/50">
+          <ul className="divide-y">
             {rows.map((d) => (
               <li key={d.id}>
                 <button
                   type="button"
                   onClick={() => setReviewingId(d.id)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="min-w-0 max-w-full truncate text-sm font-semibold text-foreground">{d.fields.clientName}</span>
-                      <span className="text-sm font-medium tabular-nums text-foreground">{formatCents(d.fields.dealValue)}</span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_CHIP[d.status])}>
+                      <span className="min-w-0 max-w-full truncate text-sm font-medium">{d.fields.clientName}</span>
+                      <span className="text-sm tabular-nums">{formatCents(d.fields.dealValue)}</span>
+                      <StatusBadge tone={DRAFT_STATUS_TONE[d.status]} className="capitalize">
                         {d.status}
-                      </span>
+                      </StatusBadge>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {d.closerName ?? "Unknown closer"} · by {d.createdByName ?? "agent"} ·{" "}
@@ -153,16 +152,16 @@ export function DealDraftsPanel() {
                       {d.status === "rejected" && d.reviewNote ? ` · Rejected: ${d.reviewNote}` : ""}
                     </p>
                   </div>
-                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
                     {d.status === "pending" ? "Review" : "View"}
-                    <ChevronRight className="h-3.5 w-3.5" />
+                    <ChevronRight className="size-3.5 text-muted-foreground" />
                   </span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </Card>
 
       {reviewingId && (
         <DealDraftReviewDrawer
@@ -198,14 +197,20 @@ export function DealDraftsPanel() {
  *  the drawer's Save / Send footer. */
 export function ApprovedNotice({ result, onClose }: { result: ApprovedDeal; onClose: () => void }) {
   return (
-    <div role="status" className="fixed inset-x-4 top-4 z-[75] mx-auto max-w-md rounded-xl border border-emerald-500/30 bg-card p-4 shadow-2xl sm:left-6 sm:right-auto">
-      <p className="text-sm font-semibold text-foreground">Deal created for {result.deal.clientName}</p>
+    <div role="status" className={cn(dialogPanelClass, "fixed inset-x-4 top-4 z-[75] mx-auto max-w-md rounded-3xl p-4 sm:left-6 sm:right-auto")}>
+      <p className="flex items-center gap-2 text-sm font-medium">
+        <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+        Deal created for {result.deal.clientName}
+      </p>
       {result.warnings.map((w) => (
-        <p key={w} className="mt-1 text-xs text-amber-600 dark:text-amber-400">{w}</p>
+        <p key={w} className="mt-1 flex items-start gap-2 text-xs text-muted-foreground">
+          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+          {w}
+        </p>
       ))}
-      <button type="button" onClick={onClose} className="mt-2 h-9 text-xs font-medium text-primary hover:underline sm:h-7">
+      <Button type="button" variant="ghost" size="sm" onClick={onClose} className="mt-2 h-9 sm:h-8">
         Dismiss
-      </button>
+      </Button>
     </div>
   );
 }

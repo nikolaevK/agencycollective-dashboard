@@ -4,122 +4,148 @@
 
 @layer base {
   :root {
-    /* Agency Collective — Light Mode */
-    --background: 229 100% 98%;
-    --foreground: 240 15% 9%;
+    /* shadcn/ui "neutral" theme (Luma style) — Light Mode.
+       HSL equivalents of shadcn's oklch neutral palette. */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 15% 9%;
+    --card-foreground: 0 0% 3.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 15% 9%;
+    --popover-foreground: 0 0% 3.9%;
 
-    /* Violet primary — Agency Collective accent */
-    --primary: 263 70% 52%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 0 0% 9.1%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 240 5% 92%;
-    --secondary-foreground: 240 15% 20%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9.1%;
 
-    --muted: 240 5% 93%;
-    --muted-foreground: 240 6% 46%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.2%;
 
-    --accent: 240 5% 90%;
-    --accent-foreground: 240 15% 12%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9.1%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 6% 88%;
-    --input: 240 6% 88%;
-    --ring: 263 70% 52%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 63%;
+
+    /* chart-1/2 = the closed/paid revenue pair: blue + emerald, validated
+       (lightness band, chroma, CVD + normal-vision separation, >= 3:1 on the
+       card) in BOTH modes. Re-run the palette checks before changing them. */
+    --chart-1: 213 68% 50%;
+    --chart-2: 161 94% 30%;
+    --chart-3: 0 0% 32.2%;
+    --chart-4: 0 0% 25%;
+    --chart-5: 0 0% 14.9%;
 
     --radius: 0.625rem;
 
-    /* Portal — MD3-style tokens (Light Mode) */
-    --portal-surface: 229 100% 98%;
-    --portal-on-surface: 210 36% 20%;
+    /* Portal — MD3-style tokens (Light Mode), desaturated to neutral */
+    --portal-surface: 0 0% 98%;
+    --portal-on-surface: 0 0% 20%;
     --portal-surface-lowest: 0 0% 100%;
-    --portal-surface-low: 222 100% 96%;
-    --portal-surface-container: 218 100% 93%;
-    --portal-surface-high: 214 100% 91%;
-    --portal-primary-container: 261 100% 77%;
-    --portal-on-primary: 270 100% 97%;
-    --portal-secondary-text: 200 3% 35%;
-    --portal-secondary-dim: 200 3% 31%;
-    --portal-outline: 210 15% 48%;
-    --portal-outline-variant: 214 28% 71%;
+    --portal-surface-low: 0 0% 96%;
+    --portal-surface-container: 0 0% 93%;
+    --portal-surface-high: 0 0% 91%;
+    --portal-primary-container: 0 0% 77%;
+    --portal-on-primary: 0 0% 97%;
+    --portal-secondary-text: 0 0% 35%;
+    --portal-secondary-dim: 0 0% 31%;
+    --portal-outline: 0 0% 48%;
+    --portal-outline-variant: 0 0% 71%;
     --portal-error: 345 80% 39%;
 
-    /* Sidebar — Light Mode */
-    --sidebar-bg: 229 100% 98%;
-    --sidebar-fg: 240 10% 35%;
-    --sidebar-border: 240 6% 88%;
-    --sidebar-active-bg: 263 70% 95%;
-    --sidebar-active-fg: 263 70% 40%;
-    --sidebar-hover-bg: 240 5% 93%;
-    --sidebar-hover-fg: 240 15% 10%;
+    /* Sidebar — Light Mode (shadcn sidebar tokens) */
+    --sidebar-bg: 0 0% 98%;
+    --sidebar-fg: 0 0% 3.9%;
+    --sidebar-border: 0 0% 89.8%;
+    --sidebar-active-bg: 0 0% 96.1%;
+    --sidebar-active-fg: 0 0% 9.1%;
+    --sidebar-hover-bg: 0 0% 96.1%;
+    --sidebar-hover-fg: 0 0% 9.1%;
   }
 
   .dark {
-    /* Agency Collective — Dark Mode */
-    --background: 240 14% 7%;
-    --foreground: 240 10% 93%;
+    /* shadcn/ui "neutral" theme (Luma style) — Dark Mode */
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
 
-    --card: 240 12% 10%;
-    --card-foreground: 240 10% 93%;
+    --card: 0 0% 9.1%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 240 12% 10%;
-    --popover-foreground: 240 10% 93%;
+    --popover: 0 0% 9.1%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 263 80% 68%;
-    --primary-foreground: 240 14% 7%;
+    --primary: 0 0% 89.8%;
+    --primary-foreground: 0 0% 9.1%;
 
-    --secondary: 240 10% 16%;
-    --secondary-foreground: 240 10% 85%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 240 10% 16%;
-    --muted-foreground: 240 6% 56%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63%;
 
-    --accent: 240 10% 18%;
-    --accent-foreground: 240 10% 90%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 63% 42%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 10% 18%;
-    --input: 240 10% 18%;
-    --ring: 263 80% 68%;
+    /* shadcn's white 10% / 15% over the card, flattened (HSL vars here
+       can't carry alpha — Tailwind appends its own opacity). */
+    --border: 0 0% 18.2%;
+    --input: 0 0% 22.7%;
+    --ring: 0 0% 45.2%;
 
-    /* Portal — MD3-style tokens (Dark Mode) */
-    --portal-surface: 240 14% 7%;
-    --portal-on-surface: 220 20% 90%;
-    --portal-surface-lowest: 240 12% 10%;
-    --portal-surface-low: 240 14% 14%;
-    --portal-surface-container: 240 12% 18%;
-    --portal-surface-high: 240 10% 22%;
-    --portal-primary-container: 263 50% 30%;
-    --portal-on-primary: 263 20% 90%;
-    --portal-secondary-text: 220 8% 62%;
-    --portal-secondary-dim: 220 8% 55%;
-    --portal-outline: 215 12% 52%;
-    --portal-outline-variant: 215 15% 38%;
+    --chart-1: 213 77% 56%;
+    --chart-2: 161 82% 35%;
+    --chart-3: 0 0% 32.2%;
+    --chart-4: 0 0% 25%;
+    --chart-5: 0 0% 14.9%;
+
+    /* Portal — MD3-style tokens (Dark Mode), desaturated to neutral */
+    --portal-surface: 0 0% 3.9%;
+    --portal-on-surface: 0 0% 90%;
+    --portal-surface-lowest: 0 0% 9.1%;
+    --portal-surface-low: 0 0% 12%;
+    --portal-surface-container: 0 0% 16%;
+    --portal-surface-high: 0 0% 20%;
+    --portal-primary-container: 0 0% 25%;
+    --portal-on-primary: 0 0% 90%;
+    --portal-secondary-text: 0 0% 62%;
+    --portal-secondary-dim: 0 0% 55%;
+    --portal-outline: 0 0% 52%;
+    --portal-outline-variant: 0 0% 38%;
     --portal-error: 345 70% 55%;
 
-    /* Sidebar — Dark Mode */
-    --sidebar-bg: 240 16% 5%;
-    --sidebar-fg: 240 8% 68%;
-    --sidebar-border: 240 10% 13%;
-    --sidebar-active-bg: 263 55% 22%;
-    --sidebar-active-fg: 263 75% 82%;
-    --sidebar-hover-bg: 240 12% 12%;
-    --sidebar-hover-fg: 0 0% 92%;
+    /* Sidebar — Dark Mode (shadcn sidebar tokens) */
+    --sidebar-bg: 0 0% 9.1%;
+    --sidebar-fg: 0 0% 98%;
+    --sidebar-border: 0 0% 18.2%;
+    --sidebar-active-bg: 0 0% 14.9%;
+    --sidebar-active-fg: 0 0% 98%;
+    --sidebar-hover-bg: 0 0% 14.9%;
+    --sidebar-hover-fg: 0 0% 98%;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    /* outline-ring/50: shadcn base rule — default focus outlines use the
+       theme ring color instead of the browser's blue. */
+    @apply border-border outline-ring/50;
+  }
+  /* Next.js focuses each new page's root element after a client-side
+     navigation, and Chrome lets a scrollable <main> take that focus — which
+     drew a focus ring around the whole content area. <main> is a landmark,
+     never a control, so it gets no ring. */
+  main:focus {
+    outline: none;
   }
   body {
     @apply bg-background text-foreground;
@@ -170,13 +196,14 @@
   color: hsl(var(--sidebar-active-fg));
 }
 
-/* Primary gradient for hero/accent elements */
+/* Primary gradient for hero/accent elements. Neutral and dark in BOTH
+   modes: every user pairs it with hard-coded text-white. */
 .ac-gradient {
-  background: linear-gradient(135deg, hsl(263 70% 52%), hsl(210 100% 56%));
+  background: linear-gradient(135deg, hsl(0 0% 9%), hsl(0 0% 27%));
 }
 
 .dark .ac-gradient {
-  background: linear-gradient(135deg, hsl(263 80% 68%), hsl(210 100% 70%));
+  background: linear-gradient(135deg, hsl(0 0% 22%), hsl(0 0% 36%));
 }
 
 /* Glass card effect for login */

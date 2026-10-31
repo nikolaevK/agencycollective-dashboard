@@ -5,8 +5,13 @@ import { ChevronDown, Check, Briefcase } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
+// Trigger looks like the shadcn Input; the list like SelectContent/SelectItem.
 const INPUT_CLS =
-  "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
+  "relative flex h-9 w-full min-w-0 items-center rounded-3xl border border-transparent bg-input/50 px-3 py-1 text-sm outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50";
+const ITEM_CLS =
+  "flex w-full cursor-default select-none items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-medium outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground";
+/** Same look as the shadcn Checkbox (a real one can't sit inside a <button>). */
+const BOX_CLS = "flex size-4 shrink-0 items-center justify-center rounded-[5px] border border-transparent transition-colors";
 
 interface ServiceMultiSelectProps {
   value: string[];
@@ -79,36 +84,37 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={cn(INPUT_CLS, "pl-10 pr-8 appearance-none text-left cursor-pointer")}
+        className={cn(INPUT_CLS, "pl-9 pr-8 appearance-none text-left cursor-pointer")}
       >
-        <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Briefcase className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <span className={cn("truncate", value.length === 0 && "text-muted-foreground")}>
           {displayText}
         </span>
         <ChevronDown className={cn(
-          "absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-transform",
+          "absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-transform",
           open && "rotate-180"
         )} />
       </button>
 
       {open && (
-        <div className="absolute z-[60] mt-1 w-full rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100 max-h-60 overflow-y-auto">
+        <div className="absolute z-[60] mt-1 w-full rounded-3xl bg-popover p-1.5 text-popover-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-100 max-h-60 overflow-y-auto">
           {/* Select All */}
           <button
             type="button"
             onClick={toggleAll}
-            className="flex w-full items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent transition-colors border-b border-border/50"
+            className={ITEM_CLS}
           >
             <div className={cn(
-              "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+              BOX_CLS,
               allSelected
-                ? "bg-primary border-primary"
-                : "border-input bg-background"
+                ? "bg-primary border-primary text-primary-foreground"
+                : "bg-input/90"
             )}>
-              {allSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+              {allSelected && <Check className="size-3.5" />}
             </div>
-            <span className="text-sm font-medium text-foreground">Select All</span>
+            <span>Select All</span>
           </button>
+          <div className="pointer-events-none -mx-1.5 my-1.5 h-px bg-border" />
 
           {/* Individual items */}
           {services.map((svc) => {
@@ -119,17 +125,17 @@ export function ServiceMultiSelect({ value, onChange }: ServiceMultiSelectProps)
                 type="button"
                 key={svc.id}
                 onClick={() => toggleItem(label)}
-                className="flex w-full items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent transition-colors"
+                className={ITEM_CLS}
               >
                 <div className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                  BOX_CLS,
                   checked
-                    ? "bg-primary border-primary"
-                    : "border-input bg-background"
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "bg-input/90"
                 )}>
-                  {checked && <Check className="h-3 w-3 text-primary-foreground" />}
+                  {checked && <Check className="size-3.5" />}
                 </div>
-                <span className="text-sm text-foreground flex-1 text-left">{label}</span>
+                <span className="flex-1 text-left">{label}</span>
                 {svc.rate > 0 && (
                   <span className="text-xs text-muted-foreground shrink-0">${(svc.rate / 100).toLocaleString()}</span>
                 )}

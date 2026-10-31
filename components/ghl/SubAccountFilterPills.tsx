@@ -1,6 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SUB_ACCOUNTS, type GhlSubAccountId } from "@/lib/ghl/subAccounts";
 
 // Filter value for the calendar's "show events from which CRM source"
@@ -47,52 +49,42 @@ export function SubAccountFilterPills({ value, onChange, counts }: Props) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap mt-3">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mr-1">
+      <span className="text-xs font-medium text-muted-foreground mr-1">
         Source
       </span>
-      <button
-        type="button"
-        onClick={() => onChange("all")}
-        className={pillCls(value === "all")}
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={value}
+        // Radix reports "" when the active pill is clicked again; a source
+        // filter can't be deselected, so ignore that.
+        onValueChange={(v) => {
+          if (v) onChange(v as SubAccountFilterValue);
+        }}
+        aria-label="Source"
+        className="flex-wrap justify-start"
       >
-        All ({counts.all})
-      </button>
-      {subBuckets.map(({ sub, count }) => (
-        <button
-          key={sub.id}
-          type="button"
-          onClick={() => onChange(sub.id)}
-          className={cn(pillCls(value === sub.id), "gap-1.5")}
-        >
-          <span
-            className={cn(
-              "inline-flex items-center justify-center rounded px-1 py-0 text-[9px] font-bold border",
-              sub.badgeClass
-            )}
-          >
-            {sub.shortLabel}
-          </span>
-          {sub.label} ({count})
-        </button>
-      ))}
-      {counts.nonGhl > 0 && (
-        <button
-          type="button"
-          onClick={() => onChange("non-ghl")}
-          className={pillCls(value === "non-ghl")}
-        >
-          Non-GHL ({counts.nonGhl})
-        </button>
-      )}
+        <ToggleGroupItem value="all" className="px-3 text-xs">
+          All ({counts.all})
+        </ToggleGroupItem>
+        {subBuckets.map(({ sub, count }) => (
+          <ToggleGroupItem key={sub.id} value={sub.id} className="gap-1.5 px-3 text-xs">
+            <Badge
+              variant="outline"
+              className={cn("h-4 px-1 text-[9px] font-semibold", sub.badgeClass)}
+            >
+              {sub.shortLabel}
+            </Badge>
+            {sub.label} ({count})
+          </ToggleGroupItem>
+        ))}
+        {counts.nonGhl > 0 && (
+          <ToggleGroupItem value="non-ghl" className="px-3 text-xs">
+            Non-GHL ({counts.nonGhl})
+          </ToggleGroupItem>
+        )}
+      </ToggleGroup>
     </div>
-  );
-}
-
-function pillCls(active: boolean): string {
-  return cn(
-    "inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-    active
-      ? "bg-primary text-primary-foreground"
-      : "bg-muted/50 text-muted-foreground hover:text-foreground"
   );
 }

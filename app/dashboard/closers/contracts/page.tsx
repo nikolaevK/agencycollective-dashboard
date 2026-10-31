@@ -7,6 +7,43 @@ import { CloserSubNav } from "@/components/closers/CloserSubNav";
 import { Plus, Pencil, Trash2, Loader2, Star, FileSignature, Eye, Upload, X, Hammer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/providers/ToastProvider";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  dialogOverlayClass,
+  dialogPanelClass,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 const DocusealBuilder = lazy(() =>
   import("@docuseal/react").then((mod) => ({ default: mod.DocusealBuilder }))
@@ -39,6 +76,7 @@ interface DocuSealTemplateDetail {
 export default function ContractTemplatesPage() {
   const queryClient = useQueryClient();
   const { toastError } = useToast();
+  const { confirm, dialog } = useConfirm();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   // Set right after an upload so the Add Template form opens on that template.
@@ -60,7 +98,7 @@ export default function ContractTemplatesPage() {
   });
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this contract template?")) return;
+    if (!(await confirm({ title: "Delete this contract template?", destructive: true, confirmText: "Delete" }))) return;
     try {
       let res = await fetch(`/api/admin/contract-templates?id=${id}`, { method: "DELETE" });
       if (res.status === 409) {
@@ -71,9 +109,12 @@ export default function ContractTemplatesPage() {
           toastError(json.error || "Failed to delete template");
           return;
         }
-        const ok = confirm(
-          `${json.error}. Those contracts won't send until you pick another template on each deal. Delete anyway?`
-        );
+        const ok = await confirm({
+          title: "Delete anyway?",
+          description: `${json.error}. Those contracts won't send until you pick another template on each deal.`,
+          destructive: true,
+          confirmText: "Delete",
+        });
         if (!ok) return;
         res = await fetch(`/api/admin/contract-templates?id=${id}&force=1`, { method: "DELETE" });
       }
@@ -89,10 +130,10 @@ export default function ContractTemplatesPage() {
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">Contract Templates</h2>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Contract Templates</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Map DocuSeal templates to service categories for automatic contract generation
           </p>
@@ -100,27 +141,26 @@ export default function ContractTemplatesPage() {
         <CloserSubNav />
 
         <div className="flex flex-wrap justify-end gap-2">
-          <button
+          <Button
+            variant="outline"
             onClick={() => setShowUpload(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-accent transition-colors"
           >
-            <Upload className="h-4 w-4" />
+            <Upload />
             Upload Document
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => { setBuilderTemplateId(-1); setBuilderTemplateName(null); setBuilderLocalId(null); }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-accent transition-colors"
           >
-            <Hammer className="h-4 w-4" />
+            <Hammer />
             Build Template
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => { setShowForm(true); setEditingId(null); }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Add Template
-          </button>
+          </Button>
         </div>
 
         {isLoading ? (
@@ -128,97 +168,107 @@ export default function ContractTemplatesPage() {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : templates.length === 0 ? (
-          <div className="rounded-xl border border-border/50 bg-card p-12 text-center">
-            <FileSignature className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+          <Card className="p-12 text-center">
+            <FileSignature className="size-10 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">No contract templates configured yet</p>
             <p className="text-xs text-muted-foreground mt-1">
               Upload a PDF/DOCX or map an existing DocuSeal template
             </p>
-          </div>
+          </Card>
         ) : (
           <>
           {/* Desktop table */}
-          <div className="hidden md:block rounded-xl border border-border/50 bg-card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50">
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Name</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">DocuSeal ID</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Service Keys</th>
-                  <th className="text-left font-medium text-muted-foreground px-5 py-3">Default</th>
-                  <th className="text-right font-medium text-muted-foreground px-5 py-3 w-32">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.map((tmpl) => (
-                  <tr key={tmpl.id} className="border-b border-border/50 last:border-0 hover:bg-muted/50 transition-colors">
-                    <td className="px-5 py-3 font-medium text-foreground">{tmpl.name}</td>
-                    <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{tmpl.docusealTemplateId}</td>
-                    <td className="px-5 py-3">
-                      {tmpl.serviceKeys && tmpl.serviceKeys.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {tmpl.serviceKeys.map((key) => (
-                            <span key={key} className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400">
-                              {key}
-                            </span>
-                          ))}
+          <Card className="hidden md:block">
+            <CardContent className="pt-2 md:pt-2">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Name</TableHead>
+                    <TableHead>DocuSeal ID</TableHead>
+                    <TableHead>Service Keys</TableHead>
+                    <TableHead>Default</TableHead>
+                    <TableHead className="text-right w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {templates.map((tmpl) => (
+                    <TableRow key={tmpl.id}>
+                      <TableCell className="font-medium text-foreground whitespace-normal">{tmpl.name}</TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">{tmpl.docusealTemplateId}</TableCell>
+                      <TableCell className="whitespace-normal">
+                        {tmpl.serviceKeys && tmpl.serviceKeys.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {tmpl.serviceKeys.map((key) => (
+                              <Badge key={key} variant="secondary">
+                                {key}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {tmpl.isDefault && <Star className="size-4 text-amber-500 fill-amber-500" />}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setPreviewTemplateId(tmpl.docusealTemplateId)}
+                            className="text-muted-foreground"
+                            title="Preview fields"
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); setBuilderLocalId(tmpl.id); }}
+                            className="text-muted-foreground"
+                            title="Open form builder"
+                          >
+                            <Hammer className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => { setEditingId(tmpl.id); setShowForm(true); }}
+                            className="text-muted-foreground"
+                            title="Edit template"
+                            aria-label={`Edit ${tmpl.name}`}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => handleDelete(tmpl.id)}
+                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete template"
+                            aria-label={`Delete ${tmpl.name}`}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {tmpl.isDefault && <Star className="h-4 w-4 text-amber-500 fill-amber-500" />}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setPreviewTemplateId(tmpl.docusealTemplateId)}
-                          className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-                          title="Preview fields"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); setBuilderLocalId(tmpl.id); }}
-                          className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-                          title="Open form builder"
-                        >
-                          <Hammer className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { setEditingId(tmpl.id); setShowForm(true); }}
-                          className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-                          title="Edit template"
-                          aria-label={`Edit ${tmpl.name}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(tmpl.id)}
-                          className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors"
-                          title="Delete template"
-                          aria-label={`Delete ${tmpl.name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
           {/* Mobile card list */}
           <div className="md:hidden space-y-3">
             {templates.map((tmpl) => (
-              <div key={tmpl.id} className="rounded-xl border border-border/50 bg-card p-4 space-y-3">
+              <Card key={tmpl.id} className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{tmpl.name}</p>
-                      {tmpl.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
+                      {tmpl.isDefault && <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />}
                     </div>
                     <p className="text-xs text-muted-foreground font-mono mt-0.5">ID: {tmpl.docusealTemplateId}</p>
                   </div>
@@ -227,45 +277,53 @@ export default function ContractTemplatesPage() {
                 {tmpl.serviceKeys && tmpl.serviceKeys.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {tmpl.serviceKeys.map((key) => (
-                      <span key={key} className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400">
+                      <Badge key={key} variant="secondary">
                         {key}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
 
-                <div className="flex items-center gap-1 border-t border-border/50 pt-3">
-                  <button
+                <div className="flex items-center gap-1 border-t pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setPreviewTemplateId(tmpl.docusealTemplateId)}
-                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 text-xs text-muted-foreground"
                   >
-                    <Eye className="h-3.5 w-3.5" />
+                    <Eye className="size-3.5" />
                     Preview
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => { setBuilderTemplateId(tmpl.docusealTemplateId); setBuilderTemplateName(tmpl.name); setBuilderLocalId(tmpl.id); }}
-                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 text-xs text-muted-foreground"
                   >
-                    <Hammer className="h-3.5 w-3.5" />
+                    <Hammer className="size-3.5" />
                     Builder
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => { setEditingId(tmpl.id); setShowForm(true); }}
-                    className="h-9 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent transition-colors"
+                    className="h-9 flex-1 text-xs text-muted-foreground"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="size-3.5" />
                     Edit
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => handleDelete(tmpl.id)}
-                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10 transition-colors shrink-0"
+                    className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     title="Delete template"
                     aria-label={`Delete ${tmpl.name}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
           </>
@@ -321,6 +379,8 @@ export default function ContractTemplatesPage() {
             }}
           />
         )}
+
+        {dialog}
       </div>
     </DashboardShell>
   );
@@ -398,24 +458,28 @@ function TemplateFormModal({
     }
   }
 
-  const INPUT_CLS =
-    "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain sm:max-w-lg"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        aria-describedby={undefined}
+      >
+        <DialogHeader>
+          <DialogTitle>
             {editId ? "Edit Template" : "Add Contract Template"}
-          </h3>
-          <button onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-lg text-xl leading-none text-muted-foreground hover:bg-accent hover:text-foreground">&times;</button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-foreground">Template Name</label>
-            <input
-              className={cn(INPUT_CLS, "mt-1")}
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="contract-template-name">Template Name</Label>
+            <Input
+              id="contract-template-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Standard Service Agreement"
@@ -423,25 +487,30 @@ function TemplateFormModal({
             />
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-foreground">DocuSeal Template</label>
+          <div className="grid gap-2">
+            <Label htmlFor="contract-template-docuseal">DocuSeal Template</Label>
             {docusealTemplates.length > 0 ? (
-              <select
-                className={cn(INPUT_CLS, "mt-1")}
+              // No empty-valued item: "" shows the placeholder, and `required`
+              // still blocks submit until a template is picked.
+              <Select
                 value={docusealTemplateId}
-                onChange={(e) => setDocusealTemplateId(e.target.value)}
+                onValueChange={(v) => setDocusealTemplateId(v)}
                 required
               >
-                <option value="">Select a template...</option>
-                {docusealTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} (ID: {t.id})
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="contract-template-docuseal">
+                  <SelectValue placeholder="Select a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {docusealTemplates.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name} (ID: {t.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
-              <input
-                className={cn(INPUT_CLS, "mt-1")}
+              <Input
+                id="contract-template-docuseal"
                 type="number"
                 value={docusealTemplateId}
                 onChange={(e) => setDocusealTemplateId(e.target.value)}
@@ -451,48 +520,46 @@ function TemplateFormModal({
             )}
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-foreground">Service Keys</label>
-            <input
-              className={cn(INPUT_CLS, "mt-1")}
+          <div className="grid gap-2">
+            <Label htmlFor="contract-template-service-keys">Service Keys</Label>
+            <Input
+              id="contract-template-service-keys"
               value={serviceKeysStr}
               onChange={(e) => setServiceKeysStr(e.target.value)}
               placeholder="Meta Ads, Email Marketing, Web Design"
             />
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground">
               Comma-separated service keys that match deal service categories
             </p>
           </div>
 
-          <label className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <Checkbox
+              id="contract-template-default"
               checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="h-4 w-4 rounded border-input"
+              onCheckedChange={(c) => setIsDefault(c === true)}
             />
-            <span className="text-sm font-medium text-foreground">Default template</span>
+            <Label htmlFor="contract-template-default" className="cursor-pointer">Default template</Label>
             <span className="text-xs text-muted-foreground">(used when no service keys match)</span>
-          </label>
+          </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving && <Loader2 className="animate-spin" />}
               {editId ? "Update" : "Create"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -518,88 +585,78 @@ function TemplateFieldPreview({
     staleTime: 60_000,
   });
 
-  const FIELD_TYPE_COLORS: Record<string, string> = {
-    text: "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-    signature: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-    date: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-    number: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400",
-    checkbox: "bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400",
-    image: "bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400",
-    initials: "bg-teal-100 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400",
-    select: "bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400",
-  };
-
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-card border-l border-border shadow-2xl h-full overflow-y-auto overscroll-contain">
-        <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <Eye className="h-5 w-5" />
+    <Sheet
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="w-full max-w-md gap-0 sm:max-w-md"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        aria-describedby={undefined}
+      >
+        <SheetHeader className="border-b px-6 py-4 pr-14">
+          <SheetTitle className="flex items-center gap-2">
+            <Eye className="size-4 text-muted-foreground" />
             Template Fields
-          </h2>
-          <button onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+          </SheetTitle>
+        </SheetHeader>
 
-        <div className="p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
-            <p className="text-sm text-red-500">Failed to load template details</p>
+            <p className="text-sm text-destructive">Failed to load template details</p>
           ) : template ? (
             <>
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Template Name</p>
-                <p className="text-sm font-semibold text-foreground mt-0.5">{template.name}</p>
+                <p className="text-xs text-muted-foreground">Template Name</p>
+                <p className="text-sm font-medium text-foreground mt-0.5">{template.name}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">ID: {template.id}</p>
               </div>
 
               {template.submitters && template.submitters.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Signing Roles</p>
+                  <p className="text-sm font-medium text-foreground mb-2">Signing Roles</p>
                   <div className="flex flex-wrap gap-1.5">
                     {template.submitters.map((s, i) => (
-                      <span key={i} className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400">
+                      <Badge key={i} variant="secondary">
                         {s.name || `Role ${i + 1}`}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 </div>
               )}
 
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                <p className="text-sm font-medium text-foreground mb-2">
                   Fields ({template.fields?.length ?? 0})
                 </p>
                 {template.fields && template.fields.length > 0 ? (
                   <div className="space-y-2">
-                    {template.fields.map((field, i) => {
-                      const typeColor = FIELD_TYPE_COLORS[field.type || "text"] || FIELD_TYPE_COLORS.text;
-                      return (
-                        <div key={i} className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground break-words">{field.name}</p>
-                            {field.role && (
-                              <p className="text-[10px] text-muted-foreground mt-0.5">Role: {field.role}</p>
-                            )}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            {field.required && (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400">
-                                Required
-                              </span>
-                            )}
-                            <span className={cn("inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase", typeColor)}>
-                              {field.type || "text"}
-                            </span>
-                          </div>
+                    {template.fields.map((field, i) => (
+                      <div key={i} className="rounded-2xl bg-muted/50 p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground break-words">{field.name}</p>
+                          {field.role && (
+                            <p className="text-xs text-muted-foreground mt-0.5">Role: {field.role}</p>
+                          )}
                         </div>
-                      );
-                    })}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {field.required && (
+                            <StatusBadge tone="warning">Required</StatusBadge>
+                          )}
+                          <Badge variant="secondary">
+                            {field.type || "text"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No fields defined yet</p>
@@ -608,8 +665,8 @@ function TemplateFieldPreview({
             </>
           ) : null}
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -660,9 +717,6 @@ function UploadTemplateModal({
     }
   }
 
-  const INPUT_CLS =
-    "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
-
   // An upload in flight can't be cancelled — don't let a stray click hide it.
   const close = () => {
     if (!uploading) onClose();
@@ -670,32 +724,41 @@ function UploadTemplateModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={close} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <Upload className="h-5 w-5" />
+      <div className={dialogOverlayClass} onClick={close} />
+      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 p-6 space-y-6 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-medium leading-none flex items-center gap-2">
+            <Upload className="size-4 text-muted-foreground" />
             Upload Contract Document
           </h3>
-          <button onClick={close} disabled={uploading} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-lg text-xl leading-none text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50">&times;</button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={close}
+            disabled={uploading}
+            aria-label="Close"
+            className="bg-secondary"
+          >
+            <X />
+          </Button>
         </div>
-        <form onSubmit={handleUpload} className="p-6 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-foreground">Template Name</label>
-            <input
-              className={cn(INPUT_CLS, "mt-1")}
+        <form onSubmit={handleUpload} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="contract-upload-name">Template Name</Label>
+            <Input
+              id="contract-upload-name"
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
               placeholder="e.g. Standard Service Agreement (optional)"
             />
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-foreground">Document File</label>
-            <div className="mt-1">
+          <div className="grid gap-2">
+            <Label>Document File</Label>
+            <div>
               <label className={cn(
-                "flex flex-col items-center justify-center w-full h-32 rounded-xl border-2 border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors",
-                file && "border-primary/50 bg-primary/5"
+                "flex flex-col items-center justify-center w-full h-32 rounded-2xl border-2 border-dashed cursor-pointer hover:border-foreground/30 hover:bg-muted/50 transition-colors",
+                file && "border-foreground/30 bg-muted/50"
               )}>
                 <input
                   type="file"
@@ -713,13 +776,13 @@ function UploadTemplateModal({
                 />
                 {file ? (
                   <>
-                    <FileSignature className="h-8 w-8 text-primary mb-2" />
+                    <FileSignature className="size-8 text-foreground mb-2" />
                     <p className="max-w-full px-4 text-sm font-medium text-foreground truncate">{file.name}</p>
                     <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
                   </>
                 ) : (
                   <>
-                    <Upload className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                    <Upload className="size-8 text-muted-foreground/50 mb-2" />
                     <p className="text-sm text-muted-foreground">Click to upload PDF or DOCX</p>
                     <p className="text-xs text-muted-foreground">Max 10 MB</p>
                   </>
@@ -728,20 +791,19 @@ function UploadTemplateModal({
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={close} disabled={uploading} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50">
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={close} disabled={uploading}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={uploading || !file}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {uploading && <Loader2 className="animate-spin" />}
               Upload to DocuSeal
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -823,23 +885,22 @@ function TemplateBuilderModal({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3 shrink-0">
-        <h2 className="min-w-0 text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
-          <Hammer className="h-5 w-5 shrink-0" />
+      <div className="flex items-center justify-between gap-3 border-b px-4 sm:px-6 py-3 shrink-0">
+        <h2 className="min-w-0 text-base font-semibold tracking-tight text-foreground flex items-center gap-2">
+          <Hammer className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">
             {templateId ? `Edit Template: ${templateName || `#${templateId}`}` : "Build New Template"}
           </span>
         </h2>
-        <div className="flex shrink-0 items-center gap-3">
-          <button
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
             onClick={() => { handleSaved(); }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Done
-          </button>
-          <button onClick={() => { handleSaved(); }} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
-            <X className="h-5 w-5" />
-          </button>
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => { handleSaved(); }} aria-label="Close" className="text-muted-foreground">
+            <X />
+          </Button>
         </div>
       </div>
 
@@ -847,12 +908,12 @@ function TemplateBuilderModal({
       <div className="flex-1 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <FileSignature className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-lg font-semibold text-foreground">Builder Unavailable</p>
+            <FileSignature className="size-12 text-muted-foreground/50 mb-4" />
+            <p className="text-lg font-semibold tracking-tight text-foreground">Builder Unavailable</p>
             <p className="text-sm text-muted-foreground mt-1">{error}</p>
             <p className="text-xs text-muted-foreground mt-3">
               Make sure DOCUSEAL_USER_EMAIL is set in your environment variables.

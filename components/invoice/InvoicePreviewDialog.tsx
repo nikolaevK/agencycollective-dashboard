@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { pdf } from "@react-pdf/renderer";
 import { Download, ExternalLink, FileText, Loader2, Monitor, X, ZoomIn, ZoomOut } from "lucide-react";
 import { InvoiceLivePreview } from "@/components/invoice/InvoiceLivePreview";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { InvoiceData } from "@/types/invoice";
 import { cn } from "@/lib/utils";
@@ -97,89 +101,89 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
   const pageW =
     fitW === null ? null : Math.round(ZOOM_STEPS[zoom] * Math.min(1, fitW / ZOOM_STEPS[DEFAULT_ZOOM]));
 
-  return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Invoice preview">
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-card px-3 py-2 sm:px-4">
+  // Rendered into <body> so it covers the invoice drawers (also body-level)
+  // wherever it's opened from.
+  const dialog = (
+    <div className={cn(dialogOverlayClass, "z-[80] flex flex-col bg-black/70")} role="dialog" aria-modal="true" aria-label="Invoice preview">
+      <div className="flex flex-wrap items-center gap-2 border-b bg-popover px-3 py-2 text-popover-foreground sm:px-4">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{title ?? "Invoice preview"}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-sm font-semibold tracking-tight text-foreground">{title ?? "Invoice preview"}</p>
+          <p className="truncate text-xs text-muted-foreground">
             #{data.details.invoiceNumber || "draft"}
             {data.receiver.name ? ` · ${data.receiver.name}` : ""}
           </p>
         </div>
 
-        <div className="flex rounded-lg bg-muted/60 p-0.5" role="tablist" aria-label="Preview mode">
-          {([
-            ["live", "Live", Monitor],
-            ["pdf", "Exact PDF", FileText],
-          ] as const).map(([m, label, Icon]) => (
-            <button
-              key={m}
-              type="button"
-              role="tab"
-              aria-selected={mode === m}
-              onClick={() => setMode(m)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={mode} onValueChange={(m) => setMode(m as Mode)}>
+          <TabsList aria-label="Preview mode">
+            {([
+              ["live", "Live", Monitor],
+              ["pdf", "Exact PDF", FileText],
+            ] as const).map(([m, label, Icon]) => (
+              <TabsTrigger key={m} value={m} className="text-xs">
+                <Icon className="size-3.5" />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         {mode === "live" && (
-          <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-            <button
+          <div className="flex items-center gap-0.5 rounded-full border p-0.5">
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setZoom((z) => Math.max(0, z - 1))}
               disabled={zoom === 0}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="text-muted-foreground"
               aria-label="Zoom out"
             >
-              <ZoomOut className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <ZoomOut className="size-3.5" />
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => setZoom(DEFAULT_ZOOM)}
-              className="min-w-[3rem] rounded-md px-1 text-[11px] font-medium tabular-nums text-muted-foreground hover:text-foreground"
+              className="min-w-[3rem] px-1 tabular-nums text-muted-foreground"
               title="Reset zoom"
             >
               {Math.round((ZOOM_STEPS[zoom] / ZOOM_STEPS[DEFAULT_ZOOM]) * 100)}%
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setZoom((z) => Math.min(ZOOM_STEPS.length - 1, z + 1))}
               disabled={zoom === ZOOM_STEPS.length - 1}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="text-muted-foreground"
               aria-label="Zoom in"
             >
-              <ZoomIn className="h-3.5 w-3.5" />
-            </button>
+              <ZoomIn className="size-3.5" />
+            </Button>
           </div>
         )}
 
         {mode === "pdf" && pdfUrl && (
-          <a
-            href={pdfUrl}
-            download={fileName}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download
-          </a>
+          <Button asChild variant="outline" size="sm">
+            <a href={pdfUrl} download={fileName}>
+              <Download />
+              Download
+            </a>
+          </Button>
         )}
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onClose}
-          className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground"
           aria-label="Close preview"
         >
-          <X className="h-4 w-4" />
-        </button>
+          <X />
+        </Button>
       </div>
 
       {/* Stable gutter: the live page is sized from this scroller's width, so a
@@ -199,7 +203,7 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
           </div>
         ) : pdfError ? (
           <div className="flex h-full items-center justify-center p-6">
-            <p className="max-w-md rounded-lg bg-card px-4 py-3 text-sm text-destructive">PDF generation failed: {pdfError}</p>
+            <p className="max-w-md rounded-2xl bg-popover px-4 py-3 text-sm text-destructive">PDF generation failed: {pdfError}</p>
           </div>
         ) : !pdfUrl ? (
           <div className="flex h-full items-center justify-center">
@@ -207,26 +211,21 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
           </div>
         ) : !inlinePdf ? (
           <div className="flex h-full items-center justify-center p-6">
-            <div className="max-w-sm space-y-3 rounded-lg bg-card px-5 py-4 text-center">
+            <div className="max-w-sm space-y-3 rounded-3xl bg-popover px-5 py-4 text-center text-popover-foreground shadow-xl">
               <p className="text-sm text-foreground">This browser can&apos;t show the PDF here — open it or download it.</p>
               <div className="flex justify-center gap-2">
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Open PDF
-                </a>
-                <a
-                  href={pdfUrl}
-                  download={fileName}
-                  className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
-                >
-                  <Download className="h-4 w-4" />
-                  Download
-                </a>
+                <Button asChild>
+                  <a href={pdfUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink />
+                    Open PDF
+                  </a>
+                </Button>
+                <Button asChild variant="outline">
+                  <a href={pdfUrl} download={fileName}>
+                    <Download />
+                    Download
+                  </a>
+                </Button>
               </div>
             </div>
           </div>
@@ -236,4 +235,6 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
       </div>
     </div>
   );
+
+  return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/providers/ToastProvider";
 
 /**
@@ -39,31 +40,23 @@ export function StatusToggle({ closerId, status }: { closerId: string; status: s
   };
 
   return (
-    <button
-      onClick={toggle}
-      disabled={toggling}
-      className="flex items-center gap-2 group py-2 -my-2"
+    <label
+      className="flex w-fit cursor-pointer items-center gap-2"
       title={isActive ? "Deactivate closer" : "Activate closer"}
     >
-      <div className={cn(
-        "relative w-8 h-[18px] rounded-full transition-colors",
-        isActive ? "bg-primary" : "bg-gray-300 dark:bg-gray-600"
-      )}>
-        {toggling ? (
-          <Loader2 className="absolute inset-0 m-auto h-3 w-3 animate-spin text-white" />
-        ) : (
-          <div className={cn(
-            "absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-transform",
-            isActive ? "translate-x-[16px]" : "translate-x-[2px]"
-          )} />
-        )}
-      </div>
+      <Switch checked={isActive} onCheckedChange={toggle} disabled={toggling} />
       <span className={cn(
-        "text-[10px] font-bold uppercase tracking-wide",
-        isActive ? "text-primary" : "text-gray-500 dark:text-gray-400"
+        "text-xs font-medium",
+        isActive ? "text-foreground" : "text-muted-foreground"
       )}>
         {isActive ? "Active" : "Inactive"}
       </span>
-    </button>
+      {/* Always rendered so the row doesn't shift while the request runs. */}
+      <Loader2
+        aria-hidden
+        className={cn("size-3 animate-spin text-muted-foreground", !toggling && "invisible")}
+      />
+
+    </label>
   );
 }

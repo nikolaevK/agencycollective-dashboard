@@ -1,7 +1,7 @@
 "use client";
 
 import { Users, Percent, Activity, DollarSign } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import {
   formatCents,
   formatBasisPoints,
@@ -27,36 +27,24 @@ export function CloserManageMetrics({ closers }: CloserManageMetricsProps) {
       value: String(total),
       subtitle: `${active} active`,
       icon: Users,
-      iconBg: "bg-violet-500/10",
-      iconColor: "text-violet-500",
-      gradient: false,
     },
     {
       label: "Avg Commission",
       value: formatBasisPoints(avgCommission),
       subtitle: "Average rate",
       icon: Percent,
-      iconBg: "bg-blue-500/10",
-      iconColor: "text-blue-500",
-      gradient: false,
     },
     {
       label: "Active Closers",
       value: String(active),
       subtitle: `${total - active} inactive`,
       icon: Activity,
-      iconBg: "bg-emerald-500/10",
-      iconColor: "text-emerald-500",
-      gradient: false,
     },
     {
       label: "Total Quota",
       value: formatCents(totalRevenueCents),
       subtitle: "Combined quota",
       icon: DollarSign,
-      iconBg: "bg-white/20",
-      iconColor: "text-white",
-      gradient: true,
     },
   ];
 
@@ -65,58 +53,18 @@ export function CloserManageMetrics({ closers }: CloserManageMetricsProps) {
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <div
-            key={card.label}
-            className={cn(
-              "rounded-xl border p-5",
-              card.gradient
-                ? "ac-gradient border-transparent text-white"
-                : "border-border/50 dark:border-white/[0.06] bg-card"
-            )}
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                  card.iconBg
-                )}
-              >
-                <Icon className={cn("h-5 w-5", card.iconColor)} />
+          <Card key={card.label}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+              <CardDescription>{card.label}</CardDescription>
+              <Icon className="size-4 shrink-0 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-2xl font-semibold tracking-tight tabular-nums truncate">
+                {card.value}
               </div>
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    "text-xs font-medium",
-                    card.gradient
-                      ? "text-white/70"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {card.label}
-                </p>
-                <div className="flex items-center gap-2">
-                  <p
-                    className={cn(
-                      "text-lg font-bold truncate",
-                      card.gradient ? "text-white" : "text-foreground"
-                    )}
-                  >
-                    {card.value}
-                  </p>
-                </div>
-                <p
-                  className={cn(
-                    "text-xs truncate",
-                    card.gradient
-                      ? "text-white/60"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {card.subtitle}
-                </p>
-              </div>
-            </div>
-          </div>
+              <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
+            </CardContent>
+          </Card>
         );
       })}
     </div>

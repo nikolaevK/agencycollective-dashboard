@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Search, User, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface Client {
   id: string;
@@ -78,11 +81,11 @@ export function ClientAutocomplete({
   }
 
   return (
-    <div ref={containerRef} className="relative">
-      <label className="text-sm font-medium text-foreground mb-1.5 block">Client Name</label>
+    <div ref={containerRef} className="relative grid gap-2">
+      <Label>Client Name</Label>
       <div className="relative">
-        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
           type="text"
           value={clientName}
           onChange={(e) => {
@@ -93,38 +96,43 @@ export function ClientAutocomplete({
             if (suggestions.length > 0) setShowDropdown(true);
           }}
           placeholder="Type client name..."
-          className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow"
+          className="pl-9 pr-9"
         />
         {clientUserId && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={clearLinked}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label="Unlink client"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            <X className="size-3.5" />
+          </Button>
         )}
       </div>
 
       {clientUserId && (
-        <p className="text-xs text-primary mt-1 flex items-center gap-1">
-          <Search className="h-3 w-3" />
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <Search className="size-3" />
           Linked to existing client
         </p>
       )}
 
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-3xl bg-popover p-1.5 text-popover-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10 max-h-48 overflow-y-auto">
           {suggestions.map((client) => (
             <button
               key={client.id}
               type="button"
               onClick={() => selectClient(client)}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted/50 transition-colors text-left"
+              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-medium outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground text-left"
             >
-              <div className={cn("flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0")}>
-                {client.displayName.charAt(0).toUpperCase()}
-              </div>
+              <Avatar className="size-7 shrink-0">
+                <AvatarFallback className="text-xs font-medium">
+                  {client.displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
               <span className="truncate">{client.displayName}</span>
             </button>
           ))}
@@ -132,7 +140,7 @@ export function ClientAutocomplete({
       )}
 
       {loading && (
-        <p className="text-xs text-muted-foreground mt-1">Searching clients...</p>
+        <p className="text-xs text-muted-foreground">Searching clients...</p>
       )}
     </div>
   );

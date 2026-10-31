@@ -3,6 +3,9 @@
 import { useCallback, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { addCc, finalizeCcList, extractEmails, normalizeCcList, DEFAULT_MAX_CC } from "@/lib/invoice/email";
 
 /**
@@ -98,36 +101,37 @@ export function CcChipsInput({ field, exclude = [], placeholder = "add CC emailâ
 
   return (
     <div>
+      {/* Looks like one Luma input: chips + the typing field share the pill. */}
       <div
         className={cn(
-          "flex flex-wrap items-center gap-1.5 rounded-lg border bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-primary/20",
-          error ? "border-destructive/60" : "border-input",
-          disabled && "opacity-60"
+          "flex min-h-9 flex-wrap items-center gap-1.5 rounded-2xl border bg-input/50 px-2 py-1.5 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30",
+          error
+            ? "border-destructive ring-[3px] ring-destructive/20 focus-within:border-destructive focus-within:ring-destructive/20"
+            : "border-transparent",
+          disabled && "opacity-50"
         )}
       >
         {emails.map((cc) => (
-          <span
-            key={cc}
-            className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs text-foreground"
-          >
+          <Badge key={cc} variant="secondary" className="h-6 max-w-full gap-0.5 pl-2 pr-0 font-normal">
             <span className="truncate">{cc}</span>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               disabled={disabled}
               onClick={() => {
                 setEmails(emails.filter((x) => x !== cc));
                 setError(null);
                 markEdited();
               }}
-              // -m-1.5 p-1.5: a ~24px tap target on touch without widening the chip.
-              className="-m-1.5 p-1.5 text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:bg-foreground/10"
               aria-label={`Remove ${cc}`}
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </span>
+              <X className="size-3.5" />
+            </Button>
+          </Badge>
         ))}
-        <input
+        <Input
           id={id}
           type="text"
           inputMode="email"
@@ -175,13 +179,14 @@ export function CcChipsInput({ field, exclude = [], placeholder = "add CC emailâ
             if (draft.trim()) commit(draft);
           }}
           placeholder={emails.length === 0 ? placeholder : ""}
-          className="flex-1 min-w-[140px] bg-transparent py-0.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          // Borderless: the pill around the chips is the visible field.
+          className="h-6 w-auto min-w-[140px] flex-1 rounded-none border-0 bg-transparent px-1 py-0 focus-visible:ring-0 disabled:opacity-100"
         />
       </div>
-      <div className="mt-1 flex items-start justify-between gap-2">
+      <div className="mt-1.5 flex items-start justify-between gap-2">
         {error ? <p className="text-xs text-destructive">{error}</p> : <span />}
         {emails.length > 0 && (
-          <span className="shrink-0 text-[10px] text-muted-foreground">
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             {emails.length}/{max}
           </span>
         )}

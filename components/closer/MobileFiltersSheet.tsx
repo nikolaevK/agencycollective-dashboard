@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -34,29 +34,25 @@ export function MobileFiltersSheet({ activeCount, children }: Props) {
     <div className="sm:hidden mt-3">
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <button
+          <Button
             type="button"
-            className={cn(
-              "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-              activeCount > 0
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted/50 text-foreground hover:bg-muted"
-            )}
+            variant={activeCount > 0 ? "default" : "outline"}
+            size="sm"
           >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <SlidersHorizontal className="size-3.5" />
             Filters
             {activeCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full bg-primary-foreground/20 text-[10px] font-bold tabular-nums">
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full bg-primary-foreground/20 text-[10px] font-semibold tabular-nums">
                 {activeCount}
               </span>
             )}
-          </button>
+          </Button>
         </DialogTrigger>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md rounded-xl overscroll-contain">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
           <DialogHeader>
             <DialogTitle>Filters</DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 pt-2">{children}</div>
+          <div className="space-y-5">{children}</div>
         </DialogContent>
       </Dialog>
     </div>

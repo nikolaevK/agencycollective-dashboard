@@ -18,6 +18,10 @@ import {
   type GhlSubAccountId,
 } from "@/lib/ghl/subAccounts";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GhlSubAccountProvider } from "./GhlSubAccountContext";
 // useGhlWorkflows still used by detail pane (Tags & Info → Active workflows
 // resolves the contact's workflow ids against the catalog when present).
@@ -216,13 +220,13 @@ function GhlContactsViewInner({
   );
 
   return (
-    <div
+    <Card
       className={
-        "flex flex-col rounded-xl border border-border/60 bg-card overflow-hidden " +
+        "flex flex-col " +
         "h-[calc(100dvh-9rem)] min-h-[26rem] md:h-[calc(100dvh-15rem)] md:flex-row"
       }
     >
-      <div className="md:w-80 lg:w-96 shrink-0 border-b border-border/60 md:border-b-0 md:border-r md:h-full h-full min-w-0">
+      <div className="md:w-80 lg:w-96 shrink-0 border-b md:border-b-0 md:border-r md:h-full h-full min-w-0">
         <GhlContactList
           query={query}
           setQuery={setQuery}
@@ -273,19 +277,21 @@ function GhlContactsViewInner({
           selectedId ? "fixed inset-0 z-[60] flex flex-col" : "hidden md:flex"
         )}
       >
-        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5 shrink-0 md:hidden">
-          <button
+        <div className="flex items-center gap-2 border-b px-3 py-2.5 shrink-0 md:hidden">
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setSelectedId(null)}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="text-muted-foreground"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft />
             Contacts
-          </button>
+          </Button>
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">{detailBody}</div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -296,40 +302,35 @@ function GhlSubAccountTabs({
   active: GhlSubAccountId;
   onChange: (id: GhlSubAccountId) => void;
 }) {
+  // Same handler as before: switchSub already ignores a re-pick of the
+  // active tab, and Radix only reports actual changes.
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-1">
-      {SUB_ACCOUNTS.map((sub) => (
-        <button
-          key={sub.id}
-          type="button"
-          onClick={() => onChange(sub.id)}
-          aria-pressed={active === sub.id}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            active === sub.id
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <span
-            className={cn(
-              "inline-flex items-center justify-center rounded px-1.5 py-0 text-[9px] font-bold border",
-              sub.badgeClass
-            )}
-          >
-            {sub.shortLabel}
-          </span>
-          {sub.label}
-        </button>
-      ))}
-    </div>
+    <Tabs
+      value={active}
+      onValueChange={(v) => onChange(v as GhlSubAccountId)}
+      activationMode="manual"
+    >
+      <TabsList>
+        {SUB_ACCOUNTS.map((sub) => (
+          <TabsTrigger key={sub.id} value={sub.id} className="gap-1.5">
+            <Badge
+              variant="outline"
+              className={cn("h-4 px-1.5 text-[9px] font-semibold", sub.badgeClass)}
+            >
+              {sub.shortLabel}
+            </Badge>
+            {sub.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
 
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <Users className="h-10 w-10 text-muted-foreground/50" />
+      <Users className="size-10 text-muted-foreground/50" />
       <div>
         <p className="text-sm font-medium text-foreground">Select a contact</p>
         <p className="text-xs text-muted-foreground mt-1">
@@ -343,7 +344,7 @@ function EmptyState() {
 function LoadingContact() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
-      <Loader2 className="h-5 w-5 animate-spin" />
+      <Loader2 className="size-5 animate-spin" />
       <p className="text-sm">Loading contact…</p>
     </div>
   );
@@ -365,7 +366,7 @@ function NotFoundContact({
   const is403 = /\b403\b/.test(message);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <AlertTriangle className="h-8 w-8 text-amber-500" />
+      <AlertTriangle className="size-8 text-amber-500" />
       <div className="space-y-1 max-w-sm">
         <p className="text-sm font-medium text-foreground">
           {is404
@@ -382,13 +383,9 @@ function NotFoundContact({
             : message || "Try again in a moment, or pick a contact from the list."}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onClear}
-        className="text-xs text-muted-foreground hover:text-foreground underline"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={onClear}>
         Back to list
-      </button>
+      </Button>
     </div>
   );
 }

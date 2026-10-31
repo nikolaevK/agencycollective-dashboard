@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import type { AmountType, DiscountDetails, TaxDetails, ShippingDetails } from "@/types/invoice";
 import { parseDecimalInput } from "@/lib/invoice/validation";
-import { cn } from "@/lib/utils";
-import { INPUT_CLS } from "./styles";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface Props {
   discount: DiscountDetails | null;
@@ -24,32 +27,23 @@ export function TypeToggle({
   onChange: (v: "amount" | "percentage") => void;
 }) {
   return (
-    <div className="flex rounded-md border border-input overflow-hidden">
-      <button
-        type="button"
-        onClick={() => onChange("amount")}
-        className={cn(
-          "px-2.5 py-1 text-xs font-medium transition-colors",
-          value === "amount"
-            ? "bg-primary text-primary-foreground"
-            : "bg-background text-muted-foreground hover:bg-accent"
-        )}
-      >
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      rovingFocus={false}
+      value={value}
+      // Radix reports "" when the pressed option is clicked again; the old
+      // buttons still called onChange with it, so keep doing that.
+      onValueChange={(v) => onChange((v || value) as "amount" | "percentage")}
+    >
+      <ToggleGroupItem value="amount" aria-label="Amount" className="min-w-9 px-3">
         $
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("percentage")}
-        className={cn(
-          "px-2.5 py-1 text-xs font-medium transition-colors border-l border-input",
-          value === "percentage"
-            ? "bg-primary text-primary-foreground"
-            : "bg-background text-muted-foreground hover:bg-accent"
-        )}
-      >
+      </ToggleGroupItem>
+      <ToggleGroupItem value="percentage" aria-label="Percentage" className="min-w-9 px-3">
         %
-      </button>
-    </div>
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -91,7 +85,7 @@ export function DecimalInput({
     setText((t) => ((parseDecimalInput(t, maxDecimals) ?? 0) === value ? t : value ? String(value) : ""));
   }, [value, maxDecimals]);
   return (
-    <input
+    <Input
       type="text"
       inputMode="decimal"
       autoComplete="off"
@@ -132,21 +126,19 @@ export function DiscountField({
 }) {
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
+      <Label className="cursor-pointer">
+        <Checkbox
           checked={discount !== null}
-          onChange={(e) =>
+          onCheckedChange={(checked) =>
             onChange(
-              e.target.checked
+              checked === true
                 ? { amount: 0, amountType: "amount" }
                 : null
             )
           }
-          className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
         />
-        <span className="text-sm font-medium text-foreground">Discount</span>
-      </label>
+        Discount
+      </Label>
       {discount && (
         <div className="flex items-center gap-2 pl-6">
           <DecimalInput
@@ -155,7 +147,7 @@ export function DiscountField({
             onChange={(amount) => onChange({ ...discount, amount })}
             placeholder="0"
             ariaLabel="Discount"
-            className={cn(INPUT_CLS, "w-32")}
+            className="w-32"
           />
           <TypeToggle
             value={discount.amountType}
@@ -178,93 +170,90 @@ export function InvoiceChargesForm({
   onShippingChange,
 }: Props) {
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-        Additional Charges
-      </h3>
+    <Card>
+      <CardHeader>
+        <CardTitle>Additional Charges</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <DiscountField discount={discount} onChange={onDiscountChange} />
 
-      <DiscountField discount={discount} onChange={onDiscountChange} />
-
-      {/* Tax */}
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={tax !== null}
-            onChange={(e) =>
-              onTaxChange(
-                e.target.checked
-                  ? { amount: 0, taxId: "", amountType: "percentage" }
-                  : null
-              )
-            }
-            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-          />
-          <span className="text-sm font-medium text-foreground">Tax</span>
-        </label>
-        {tax && (
-          <div className="flex flex-wrap items-center gap-2 pl-6">
-            <DecimalInput
-              value={tax.amount}
-              max={tax.amountType === "percentage" ? 100 : undefined}
-              onChange={(amount) => onTaxChange({ ...tax, amount })}
-              placeholder="0"
-              ariaLabel="Tax"
-              className={cn(INPUT_CLS, "w-32")}
-            />
-            <TypeToggle
-              value={tax.amountType}
-              onChange={(amountType) =>
-                onTaxChange({ ...tax, amountType, amount: capPercent(amountType, tax.amount) })
+        {/* Tax */}
+        <div className="space-y-2">
+          <Label className="cursor-pointer">
+            <Checkbox
+              checked={tax !== null}
+              onCheckedChange={(checked) =>
+                onTaxChange(
+                  checked === true
+                    ? { amount: 0, taxId: "", amountType: "percentage" }
+                    : null
+                )
               }
             />
-            <input
-              type="text"
-              value={tax.taxId}
-              onChange={(e) => onTaxChange({ ...tax, taxId: e.target.value })}
-              placeholder="Tax ID (optional)"
-              className={cn(INPUT_CLS, "w-40")}
-            />
-          </div>
-        )}
-      </div>
+            Tax
+          </Label>
+          {tax && (
+            <div className="flex flex-wrap items-center gap-2 pl-6">
+              <DecimalInput
+                value={tax.amount}
+                max={tax.amountType === "percentage" ? 100 : undefined}
+                onChange={(amount) => onTaxChange({ ...tax, amount })}
+                placeholder="0"
+                ariaLabel="Tax"
+                className="w-32"
+              />
+              <TypeToggle
+                value={tax.amountType}
+                onChange={(amountType) =>
+                  onTaxChange({ ...tax, amountType, amount: capPercent(amountType, tax.amount) })
+                }
+              />
+              <Input
+                type="text"
+                value={tax.taxId}
+                onChange={(e) => onTaxChange({ ...tax, taxId: e.target.value })}
+                placeholder="Tax ID (optional)"
+                className="w-40"
+              />
+            </div>
+          )}
+        </div>
 
-      {/* Shipping */}
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={shipping !== null}
-            onChange={(e) =>
-              onShippingChange(
-                e.target.checked
-                  ? { cost: 0, costType: "amount" }
-                  : null
-              )
-            }
-            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-          />
-          <span className="text-sm font-medium text-foreground">Shipping</span>
-        </label>
-        {shipping && (
-          <div className="flex items-center gap-2 pl-6">
-            <DecimalInput
-              value={shipping.cost}
-              max={shipping.costType === "percentage" ? 100 : undefined}
-              onChange={(cost) => onShippingChange({ ...shipping, cost })}
-              placeholder="0"
-              ariaLabel="Shipping"
-              className={cn(INPUT_CLS, "w-32")}
-            />
-            <TypeToggle
-              value={shipping.costType}
-              onChange={(costType) =>
-                onShippingChange({ ...shipping, costType, cost: capPercent(costType, shipping.cost) })
+        {/* Shipping */}
+        <div className="space-y-2">
+          <Label className="cursor-pointer">
+            <Checkbox
+              checked={shipping !== null}
+              onCheckedChange={(checked) =>
+                onShippingChange(
+                  checked === true
+                    ? { cost: 0, costType: "amount" }
+                    : null
+                )
               }
             />
-          </div>
-        )}
-      </div>
-    </div>
+            Shipping
+          </Label>
+          {shipping && (
+            <div className="flex items-center gap-2 pl-6">
+              <DecimalInput
+                value={shipping.cost}
+                max={shipping.costType === "percentage" ? 100 : undefined}
+                onChange={(cost) => onShippingChange({ ...shipping, cost })}
+                placeholder="0"
+                ariaLabel="Shipping"
+                className="w-32"
+              />
+              <TypeToggle
+                value={shipping.costType}
+                onChange={(costType) =>
+                  onShippingChange({ ...shipping, costType, cost: capPercent(costType, shipping.cost) })
+                }
+              />
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AlertTriangle, Bot, ExternalLink, Info, Loader2, RotateCcw, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/use-confirm";
 import type { DealPrepStatus } from "@/lib/dealPrepRules";
 
 interface PrepFlag {
@@ -54,6 +56,7 @@ export function DealAgentPrepPanel({
   onPrepared?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [rerunning, setRerunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { data } = useQuery<PrepPayload>({
@@ -89,9 +92,15 @@ export function DealAgentPrepPanel({
   async function rerun() {
     const destructive = prep && (prep.status === "ready" || prep.status === "needs_input" || prep.status === "stale");
     const question = data?.autoRun
-      ? "Re-run the agent? It rewrites this deal's draft invoices and unsent contracts — unsaved edits here are lost."
-      : "Queue this deal for the next deal-prep run in Claude? That run rewrites its draft invoices and unsent contracts.";
-    if (destructive && !window.confirm(question)) {
+      ? {
+          title: "Re-run the agent?",
+          description: "It rewrites this deal's draft invoices and unsent contracts — unsaved edits here are lost.",
+        }
+      : {
+          title: "Queue this deal for the next deal-prep run in Claude?",
+          description: "That run rewrites its draft invoices and unsent contracts.",
+        };
+    if (destructive && !(await confirm({ ...question, destructive: true }))) {
       return;
     }
     setRerunning(true);
@@ -113,46 +122,62 @@ export function DealAgentPrepPanel({
   }
 
   const status = prep?.status ?? null;
+  // Status reads from a status dot + a faint ring (no colored fills).
   const tone =
+    status === "needs_input" || status === "stale"
+      ? "ring-1 ring-inset ring-amber-500/40"
+      : status === "failed"
+        ? "ring-1 ring-inset ring-destructive/30"
+        : "";
+  const dot =
     status === "ready"
-      ? "border-violet-500/30 bg-violet-500/5"
+      ? "bg-emerald-500"
       : status === "needs_input" || status === "stale"
-        ? "border-amber-500/40 bg-amber-500/5"
+        ? "bg-amber-500"
         : status === "failed"
-          ? "border-red-500/30 bg-red-500/5"
-          : "border-border/60 bg-muted/30";
+          ? "bg-red-500"
+          : status === "dispatched"
+            ? "bg-sky-500"
+            : "bg-muted-foreground";
 
   return (
-    <div className={cn("rounded-lg border px-3 py-2.5 space-y-2", tone)}>
+    <div className={cn("space-y-2 rounded-2xl bg-muted/50 p-4", tone)}>
       <div className="flex items-start justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          {status === "dispatched" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
+        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+          {status === "dispatched" ? (
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          ) : (
+            <Bot className="size-4 text-muted-foreground" />
+          )}
           {status ? HEADLINE[status] : "Deal-prep agent"}
+          <span className={cn("size-1.5 shrink-0 rounded-full", dot)} aria-hidden />
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           {prep?.sessionUrl && (
-            <a
-              href={prep.sessionUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-              title="Open the agent's Claude session"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Session
-            </a>
+            <Button asChild variant="ghost" size="xs">
+              <a
+                href={prep.sessionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open the agent's Claude session"
+              >
+                <ExternalLink />
+                Session
+              </a>
+            </Button>
           )}
           {status !== "dispatched" && (data.autoRun || (status !== null && status !== "queued")) && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               onClick={rerun}
               disabled={rerunning}
               title={data.autoRun ? "Start a new agent run for this deal" : "Mark this deal for the next deal-prep run in Claude"}
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent disabled:opacity-60"
             >
-              {rerunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              {rerunning ? <Loader2 className="animate-spin" /> : <RotateCcw />}
               {data.autoRun ? (prep ? "Re-run agent" : "Run agent") : "Queue re-run"}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -170,7 +195,7 @@ export function DealAgentPrepPanel({
         </p>
       )}
       {prep?.error && (status === "failed" || status === "queued") && (
-        <p className="text-xs text-red-600 dark:text-red-400">{prep.error}</p>
+        <p className="text-xs text-destructive">{prep.error}</p>
       )}
 
       {prep?.flags && prep.flags.length > 0 && (status === "ready" || status === "needs_input" || status === "stale") && (
@@ -183,7 +208,7 @@ export function DealAgentPrepPanel({
                 className={cn(
                   "flex items-start gap-1.5 text-xs",
                   f.severity === "blocker"
-                    ? "text-red-700 dark:text-red-400"
+                    ? "text-destructive"
                     : f.severity === "warning"
                       ? "text-amber-700 dark:text-amber-300"
                       : "text-muted-foreground"
@@ -199,7 +224,7 @@ export function DealAgentPrepPanel({
 
       {prep?.summary && (status === "ready" || status === "needs_input" || status === "stale") && (
         <details className="group">
-          <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
             What the agent did
           </summary>
           <div className="prose prose-sm dark:prose-invert max-w-none mt-1.5 text-xs leading-relaxed [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0 break-words [overflow-wrap:anywhere]">
@@ -209,6 +234,7 @@ export function DealAgentPrepPanel({
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+      {dialog}
     </div>
   );
 }

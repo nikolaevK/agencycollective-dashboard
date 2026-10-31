@@ -18,6 +18,7 @@ import {
   DashboardError,
 } from "@/components/closer/DashboardSkeleton";
 import { appendTimeFrameParams, buildTimeFrame, type TimeFrame } from "@/lib/timeFrame";
+import { Button } from "@/components/ui/button";
 
 type DashboardEnvelope =
   | { role: "closer"; payload: CloserDashboardData }
@@ -63,23 +64,22 @@ export default function AdminCloserDashboardViewPage() {
   return (
     <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">
       {/* Sticky "viewing as" banner. */}
-      <div className="sticky top-0 z-30 border-b border-amber-500/30 bg-amber-500/10 backdrop-blur supports-[backdrop-filter]:bg-amber-500/[0.08]">
-        <div className="mx-auto max-w-6xl px-4 md:px-6 py-2.5 flex items-center justify-between gap-3">
+      <div className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="mx-auto max-w-6xl px-4 md:px-6 py-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <Eye className="h-4 w-4 text-amber-700 dark:text-amber-400 shrink-0" />
-            <p className="text-xs font-medium text-amber-900 dark:text-amber-200 truncate">
+            <Eye className="size-4 text-amber-500 shrink-0" />
+            <p className="text-xs font-medium truncate">
               {displayName
                 ? `Viewing ${displayName}'s dashboard ${role === "setter" ? "(setter)" : "(closer)"} — read-only`
                 : "Viewing dashboard — read-only"}
             </p>
           </div>
-          <Link
-            href={`/dashboard/closers/${closerId}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-amber-900 dark:text-amber-200 hover:underline shrink-0"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to detail
-          </Link>
+          <Button asChild variant="ghost" size="xs" className="shrink-0">
+            <Link href={`/dashboard/closers/${closerId}`}>
+              <ArrowLeft />
+              Back to detail
+            </Link>
+          </Button>
         </div>
       </div>
 

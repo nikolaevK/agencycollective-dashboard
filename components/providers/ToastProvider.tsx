@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 /**
  * Minimal dependency-free toast stack. Mounted once at the root layout so
@@ -71,10 +72,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 key={t.id}
                 role="status"
                 className={cn(
-                  "flex items-start gap-2.5 rounded-xl border bg-card px-3.5 py-3 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-2",
+                  "flex items-start gap-2.5 rounded-2xl bg-popover px-4 py-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/5 animate-in fade-in-0 slide-in-from-bottom-2 dark:ring-foreground/10",
                   t.variant === "error"
-                    ? "border-red-500/40 text-red-700 dark:text-red-400"
-                    : "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                    ? "[&>svg]:text-destructive"
+                    : "[&>svg]:text-emerald-600 dark:[&>svg]:text-emerald-400"
                 )}
               >
                 {t.variant === "error" ? (
@@ -83,13 +84,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="flex-1 text-foreground">{t.message}</span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   onClick={() => dismiss(t.id)}
-                  className="p-1 -m-1 text-muted-foreground hover:text-foreground"
+                  className="-my-0.5 -mr-1 text-muted-foreground"
                   aria-label="Dismiss"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                  <X />
+                </Button>
               </div>
             ))}
           </div>,

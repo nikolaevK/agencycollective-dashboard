@@ -10,6 +10,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
 
@@ -37,25 +39,25 @@ export function PayoutSummaryCards({
       label: "Total Due",
       value: summary ? formatCents(summary.totalDue) : "$0",
       icon: DollarSign,
-      color: "text-foreground",
+      color: "text-muted-foreground",
     },
     {
       label: "Total Paid",
       value: summary ? formatCents(summary.totalRevenue) : "$0",
       icon: CheckCircle2,
-      color: "text-emerald-600 dark:text-emerald-400",
+      color: "text-emerald-500",
     },
     {
       label: "Unpaid Amount",
       value: summary ? formatCents(summary.unpaidAmount) : "$0",
       icon: AlertCircle,
-      color: "text-red-600 dark:text-red-400",
+      color: "text-red-500",
     },
     {
       label: "Undistributed",
       value: summary ? formatCents(summary.undistributedAmount) : "$0",
       icon: Clock,
-      color: "text-amber-600 dark:text-amber-400",
+      color: "text-amber-500",
     },
   ];
 
@@ -65,7 +67,6 @@ export function PayoutSummaryCards({
     value: string;
     sub: string;
     icon: typeof UserPlus;
-    color: string;
   }> = [
     {
       key: "new",
@@ -75,7 +76,6 @@ export function PayoutSummaryCards({
         ? `${rebillMetrics.newAccountCount} account${rebillMetrics.newAccountCount !== 1 ? "s" : ""}`
         : "0 accounts",
       icon: UserPlus,
-      color: "text-blue-600 dark:text-blue-400",
     },
     {
       key: "rebill",
@@ -87,7 +87,6 @@ export function PayoutSummaryCards({
         ? `${rebillMetrics.rebillAccountCount} account${rebillMetrics.rebillAccountCount !== 1 ? "s" : ""}`
         : "0 accounts",
       icon: RefreshCcw,
-      color: "text-violet-600 dark:text-violet-400",
     },
     {
       key: "forecast",
@@ -101,7 +100,6 @@ export function PayoutSummaryCards({
         ? `${forecast.projectedNewAccounts} projected new`
         : "No data",
       icon: TrendingUp,
-      color: "text-cyan-600 dark:text-cyan-400",
     },
   ];
 
@@ -109,24 +107,21 @@ export function PayoutSummaryCards({
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {baseCards.map((card) => (
-          <div
-            key={card.label}
-            className="min-w-0 rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <card.icon className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">
-                {card.label}
-              </p>
-            </div>
-            {isLoading ? (
-              <div className="h-8 w-24 rounded bg-muted/50 animate-pulse mt-1" />
-            ) : (
-              <p className={cn("text-xl sm:text-2xl font-bold mt-1 break-words", card.color)}>
-                {card.value}
-              </p>
-            )}
-          </div>
+          <Card key={card.label} className="min-w-0">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+              <CardDescription className="truncate">{card.label}</CardDescription>
+              <card.icon className={cn("size-4 shrink-0", card.color)} />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                <div className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums break-words">
+                  {card.value}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
 
@@ -135,29 +130,28 @@ export function PayoutSummaryCards({
           <button
             key={card.key}
             onClick={() => onCardClick?.(card.key)}
-            className={cn(
-              "min-w-0 rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 text-left transition-all",
-              "hover:border-primary/30 hover:shadow-sm cursor-pointer"
-            )}
+            className="group min-w-0 rounded-[min(calc(var(--radius)*2.6),24px)] text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
           >
-            <div className="flex items-center gap-2 mb-1">
-              <card.icon className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">
-                {card.label}
-              </p>
-            </div>
-            {rebillLoading ? (
-              <div className="h-8 w-24 rounded bg-muted/50 animate-pulse mt-1" />
-            ) : (
-              <>
-                <p className={cn("text-xl sm:text-2xl font-bold mt-1 break-words", card.color)}>
-                  {card.value}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {card.sub}
-                </p>
-              </>
-            )}
+            <Card className="h-full transition-colors group-hover:bg-muted/50">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+                <CardDescription className="truncate">{card.label}</CardDescription>
+                <card.icon className="size-4 shrink-0 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {rebillLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums break-words">
+                      {card.value}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {card.sub}
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </button>
         ))}
       </div>

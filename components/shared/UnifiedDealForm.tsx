@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DollarSign, Calendar, Tag, FileText, Send, Building2, Globe, X } from "lucide-react";
+import { DollarSign, Tag, FileText, Send, Building2, Globe, X, Loader2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClientAutocomplete } from "@/components/closer/ClientAutocomplete";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
@@ -10,9 +10,17 @@ import { parseServiceCategory, serializeServiceCategory } from "@/lib/serviceCat
 import { createDealAction } from "@/app/actions/closerDeals";
 import { SETTER_TIERS, SETTER_TIER_LABELS, type SetterTier } from "@/lib/appointments";
 import type { CreatedDeal } from "@/lib/dealCreation";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 
-const INPUT_CLS =
-  "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
+/** Radix SelectItem can't hold "" — stands in for the empty ("none") option. */
+const NONE = "__none__";
 
 /** POST /api/admin/deals result — the new deal and its draft invoice. */
 export type AdminCreatedDeal = CreatedDeal;
@@ -98,6 +106,7 @@ export function UnifiedDealForm({
   // (double submits) and the "Saving..." state never really showed.
   const [isPending, setIsPending] = useState(false);
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
 
   const [clientName, setClientName] = useState(initialData?.clientName ?? calendarEvent?.title ?? "");
   const [clientUserId, setClientUserId] = useState<string | null>(initialData?.clientUserId ?? null);
@@ -254,8 +263,8 @@ export function UnifiedDealForm({
     setSuccess(false);
   }
 
-  function handleDiscard() {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+  async function handleDiscard() {
+    if (dirty && !(await confirm({ title: "Discard unsaved changes?", destructive: true, confirmText: "Discard" }))) return;
     resetForm();
   }
 
@@ -339,9 +348,9 @@ export function UnifiedDealForm({
       !ADMIN_HIDDEN.has(initialData.status) &&
       ADMIN_HIDDEN.has(status)
     ) {
-      const ok = window.confirm(
-        `Changing status to "${status.replace(/_/g, " ")}" moves this deal back to the closer's queue and removes it from your view. Continue?`
-      );
+      const ok = await confirm({
+        title: `Changing status to "${status.replace(/_/g, " ")}" moves this deal back to the closer's queue and removes it from your view. Continue?`,
+      });
       if (!ok) return;
     }
 
@@ -504,84 +513,90 @@ export function UnifiedDealForm({
   const cancelLabel = mode === "create" && context === "closer" ? "Discard" : "Cancel";
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Credit — admin create only. House is the default: the deal belongs to
           the agency, with no closer commission. */}
       {adminCreate && (
-        <div className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-3">
-          <div>
-            <label htmlFor="admin-deal-closer" className="text-sm font-medium text-foreground mb-1.5 block">
+        <div className="rounded-2xl bg-muted/50 p-4 space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="admin-deal-closer">
               Credited closer
-            </label>
-            <select
-              id="admin-deal-closer"
+            </Label>
+            <Select
               value={effectiveCloserId}
-              onChange={(e) => setCreditCloserId(e.target.value)}
+              onValueChange={(v) => setCreditCloserId(v)}
               disabled={!createOptions}
-              className={INPUT_CLS}
             >
-              {!createOptions ? (
-                <option value="">{createOptionsQuery.isError ? "Couldn't load closers" : "Loading…"}</option>
-              ) : (
-                <>
-                  <option value={createOptions.house.id}>
-                    {createOptions.house.displayName} — agency deal, no closer commission
-                  </option>
-                  {createOptions.closers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.displayName}</option>
-                  ))}
-                </>
-              )}
-            </select>
-            <p className="text-xs text-muted-foreground mt-1">
+              <SelectTrigger id="admin-deal-closer">
+                <SelectValue placeholder={createOptionsQuery.isError ? "Couldn't load closers" : "Loading…"} />
+              </SelectTrigger>
+              <SelectContent>
+                {createOptions && (
+                  <>
+                    <SelectItem value={createOptions.house.id}>
+                      {createOptions.house.displayName} — agency deal, no closer commission
+                    </SelectItem>
+                    {createOptions.closers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.displayName}</SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
               {effectiveCloserId && effectiveCloserId !== createOptions?.house.id
                 ? "Counts toward this closer's revenue and commission, and shows in their portal."
                 : "Counts toward company revenue only — no closer gets credit."}
             </p>
           </div>
-          <div>
-            <label htmlFor="admin-deal-setter" className="text-sm font-medium text-foreground mb-1.5 block">
+          <div className="grid gap-2">
+            <Label htmlFor="admin-deal-setter">
               Setter <span className="text-muted-foreground font-normal">(optional)</span>
-            </label>
-            <select
-              id="admin-deal-setter"
-              value={creditSetterId}
-              onChange={(e) => setCreditSetterId(e.target.value)}
+            </Label>
+            <Select
+              value={creditSetterId || NONE}
+              onValueChange={(v) => setCreditSetterId(v === NONE ? "" : v)}
               disabled={!createOptions}
-              className={INPUT_CLS}
             >
-              <option value="">No setter</option>
-              {createOptions?.setters.map((s) => (
-                <option key={s.id} value={s.id}>{s.displayName}</option>
-              ))}
-            </select>
+              <SelectTrigger id="admin-deal-setter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No setter</SelectItem>
+                {createOptions?.setters.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.displayName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {creditSetterId && (
             <>
-              <div>
-                <label htmlFor="admin-deal-tier" className="text-sm font-medium text-foreground mb-1.5 block">
+              <div className="grid gap-2">
+                <Label htmlFor="admin-deal-tier">
                   Setter tier
-                </label>
-                <select
-                  id="admin-deal-tier"
-                  value={setterTier}
-                  onChange={(e) => setSetterTier(e.target.value as "" | SetterTier)}
-                  className={INPUT_CLS}
+                </Label>
+                <Select
+                  value={setterTier || NONE}
+                  onValueChange={(v) => setSetterTier((v === NONE ? "" : v) as "" | SetterTier)}
                 >
-                  <option value="">Select tier…</option>
-                  {SETTER_TIERS.map((t) => (
-                    <option key={t} value={t}>
-                      Tier {t} — {SETTER_TIER_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="admin-deal-tier">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Select tier…</SelectItem>
+                    {SETTER_TIERS.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        Tier {t} — {SETTER_TIER_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
                   checked={noRetainer}
-                  onChange={(e) => setNoRetainer(e.target.checked)}
-                  className="h-4 w-4 rounded border-input"
+                  onCheckedChange={(c) => setNoRetainer(c === true)}
                 />
                 <span>
                   No-retainer deal —{" "}
@@ -602,50 +617,52 @@ export function UnifiedDealForm({
           onClientUserIdChange={setClientUserId}
         />
       ) : (
-        <div>
-          <label className="text-sm font-medium text-foreground mb-1.5 block">Client Name</label>
-          <input
+        <div className="grid gap-2">
+          <Label>Client Name</Label>
+          <Input
             type="text"
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
             required
-            className={INPUT_CLS}
+            aria-label="Client Name"
           />
         </div>
       )}
 
       {/* Client Email */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Client Email <span className="text-muted-foreground font-normal">(optional)</span></label>
-        <input
+      <div className="grid gap-2">
+        <Label>Client Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+        <Input
           type="email"
           value={clientEmail}
           onChange={(e) => setClientEmail(e.target.value)}
           placeholder="client@example.com"
-          className={INPUT_CLS}
+          aria-label="Client Email"
         />
       </div>
 
       {/* Additional CCs */}
-      <div ref={ccFieldRef}>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">
+      <div ref={ccFieldRef} className="grid gap-2">
+        <Label>
           Additional CCs <span className="text-muted-foreground font-normal">(optional)</span>
-        </label>
-        <div className="flex flex-wrap gap-1.5 rounded-lg border border-input bg-background px-2 py-2 text-sm focus-within:ring-2 focus-within:ring-ring">
+        </Label>
+        <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-3xl border border-transparent bg-input/50 px-3 py-1.5 text-sm transition-[color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
           {additionalCcEmails.map((addr) => (
             <span
               key={addr}
-              className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+              className="inline-flex items-center gap-1 rounded-3xl bg-background py-0.5 pl-2 pr-1 text-xs font-medium"
             >
               {addr}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => removeCc(addr)}
-                className="text-muted-foreground hover:text-foreground"
+                className="size-4 rounded-full text-muted-foreground"
                 aria-label={`Remove ${addr}`}
               >
-                <X className="h-3 w-3" />
-              </button>
+                <X className="size-3" />
+              </Button>
             </span>
           ))}
           <input
@@ -683,59 +700,63 @@ export function UnifiedDealForm({
             }}
             onBlur={() => { if (ccInputValue.trim()) tryCommitCc(ccInputValue); }}
             placeholder={additionalCcEmails.length === 0 ? "manager@example.com" : ""}
-            className="flex-1 min-w-[160px] bg-transparent px-1 py-0.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            aria-label="Additional CCs"
+            className="flex-1 min-w-[160px] bg-transparent py-0.5 text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
           />
         </div>
         {ccInputError && (
-          <p className="mt-1 text-xs text-destructive">{ccInputError}</p>
+          <p className="text-xs text-destructive">{ccInputError}</p>
         )}
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Press Enter or comma to add. These are CC&apos;d on the client invoice email (your own email is always CC&apos;d automatically).
         </p>
       </div>
 
       {/* Brand Name */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Brand Name <span className="text-muted-foreground font-normal">(optional)</span></label>
+      <div className="grid gap-2">
+        <Label>Brand Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
         <div className="relative">
-          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
+          <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="text"
             value={brandName}
             onChange={(e) => setBrandName(e.target.value)}
             placeholder="Brand or company name"
-            className={`${INPUT_CLS} pl-10`}
+            aria-label="Brand Name"
+            className="pl-9"
           />
         </div>
       </div>
 
       {/* Website */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Website <span className="text-muted-foreground font-normal">(optional)</span></label>
+      <div className="grid gap-2">
+        <Label>Website <span className="text-muted-foreground font-normal">(optional)</span></Label>
         <div className="relative">
-          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
+          <Globe className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="text"
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             placeholder="https://example.com"
-            className={`${INPUT_CLS} pl-10`}
+            aria-label="Website"
+            className="pl-9"
           />
         </div>
       </div>
 
       {/* Payment Type */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Payment Type</label>
-        <select
-          value={paymentType}
-          onChange={(e) => setPaymentType(e.target.value)}
-          className={INPUT_CLS}
-        >
-          {PAYMENT_TYPES.map((p) => (
-            <option key={p.value} value={p.value}>{p.label}</option>
-          ))}
-        </select>
+      <div className="grid gap-2">
+        <Label>Payment Type</Label>
+        <Select value={paymentType} onValueChange={(v) => setPaymentType(v)}>
+          <SelectTrigger aria-label="Payment Type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_TYPES.map((p) => (
+              <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Status — an admin-entered deal is always created closed: only closed
@@ -746,29 +767,30 @@ export function UnifiedDealForm({
           queue for review. Nothing is emailed until you send it.
         </p>
       ) : (
-        <div>
-          <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className={INPUT_CLS}
-          >
-            {DEAL_STATUSES
-              .filter((s) => context === "admin" || s.value !== "pending_signature")
-              .map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-          </select>
+        <div className="grid gap-2">
+          <Label>Status</Label>
+          <Select value={status} onValueChange={(v) => setStatus(v)}>
+            <SelectTrigger aria-label="Status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEAL_STATUSES
+                .filter((s) => context === "admin" || s.value !== "pending_signature")
+                .map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
       {/* Deal Value — hidden when not_closed */}
       {status !== "not_closed" && (
-        <div>
-          <label className="text-sm font-medium text-foreground mb-1.5 block">Deal Value (USD)</label>
+        <div className="grid gap-2">
+          <Label>Deal Value (USD)</Label>
           <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
+            <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="number"
               step="0.01"
               min="0"
@@ -776,58 +798,54 @@ export function UnifiedDealForm({
               onChange={(e) => setDealValue(e.target.value)}
               placeholder="0.00"
               required
-              className={`${INPUT_CLS} pl-10`}
+              aria-label="Deal Value (USD)"
+              className="pl-9"
             />
           </div>
         </div>
       )}
 
       {/* Closing Date */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Closing Date</label>
-        <div className="relative">
-          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="date"
-            value={closingDate}
-            onChange={(e) => setClosingDate(e.target.value)}
-            readOnly={readOnlyDate}
-            className={`${INPUT_CLS} pl-10 ${readOnlyDate ? "bg-muted/50" : ""}`}
-          />
-        </div>
+      <div className="grid gap-2">
+        <Label>Closing Date</Label>
+        <DatePicker
+          value={closingDate}
+          onValueChange={setClosingDate}
+          disabled={readOnlyDate}
+          aria-label="Closing Date"
+        />
       </div>
 
       {/* Services Purchased (multi-select) */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Services Purchased</label>
+      <div className="grid gap-2">
+        <Label>Services Purchased</Label>
         <ServiceMultiSelect value={selectedServices} onChange={setSelectedServices} />
       </div>
 
       {/* Industry */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Industry</label>
-        <div className="relative">
-          <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <select
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-            className={`${INPUT_CLS} pl-10 appearance-none`}
-          >
-            <option value="">Select industry...</option>
+      <div className="grid gap-2">
+        <Label>Industry</Label>
+        <Select value={industry || NONE} onValueChange={(v) => setIndustry(v === NONE ? "" : v)}>
+          <SelectTrigger aria-label="Industry" className="gap-2">
+            <Tag className="size-4 shrink-0 text-muted-foreground" />
+            <SelectValue className="flex-1 text-left" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Select industry...</SelectItem>
             {INDUSTRIES.map((ind) => (
-              <option key={ind} value={ind}>{ind}</option>
+              <SelectItem key={ind} value={ind}>{ind}</SelectItem>
             ))}
-          </select>
-        </div>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Admin-only setter payout override. Surfaces the tier the setter
           picked and lets admin override per the 1099 contract §3.3, plus
           a no-retainer flag that caps tier A/B at $500 per §3.8. */}
       {showAdminTierFields && (
-        <div className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-3">
+        <div className="rounded-2xl bg-muted/50 p-4 space-y-4">
           <div>
-            <p className="text-sm font-semibold text-foreground">Setter payout</p>
+            <p className="text-sm font-medium">Setter payout</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               {hasSetter
                 ? "Override the tier the setter picked. Set to none to drop them from this deal's commission."
@@ -836,27 +854,29 @@ export function UnifiedDealForm({
           </div>
           {hasSetter && (
             <>
-              <div>
-                <label className="text-xs font-medium text-foreground mb-1.5 block">Tier</label>
-                <select
-                  value={setterTier}
-                  onChange={(e) => setSetterTier(e.target.value as "" | SetterTier)}
-                  className={INPUT_CLS}
+              <div className="grid gap-2">
+                <Label>Tier</Label>
+                <Select
+                  value={setterTier || NONE}
+                  onValueChange={(v) => setSetterTier((v === NONE ? "" : v) as "" | SetterTier)}
                 >
-                  <option value="">None — no setter commission</option>
-                  {SETTER_TIERS.map((t) => (
-                    <option key={t} value={t}>
-                      Tier {t} — {SETTER_TIER_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger aria-label="Tier">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>None — no setter commission</SelectItem>
+                    {SETTER_TIERS.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        Tier {t} — {SETTER_TIER_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
                   checked={noRetainer}
-                  onChange={(e) => setNoRetainer(e.target.checked)}
-                  className="h-4 w-4 rounded border-input"
+                  onCheckedChange={(c) => setNoRetainer(c === true)}
                 />
                 <span>
                   No-retainer deal —{" "}
@@ -869,75 +889,75 @@ export function UnifiedDealForm({
       )}
 
       {/* Notes */}
-      <div>
-        <label className="text-sm font-medium text-foreground mb-1.5 block">Notes</label>
+      <div className="grid gap-2">
+        <Label>Notes</Label>
         <div className="relative">
-          <FileText className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <textarea
+          <FileText className="absolute left-3 top-3 size-4 text-muted-foreground" />
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add notes..."
             rows={4}
-            className="flex w-full min-h-[96px] rounded-lg border border-input bg-background pl-10 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow resize-y"
+            aria-label="Notes"
+            className="min-h-[96px] pl-9 resize-y"
           />
         </div>
       </div>
 
       {/* Error/Success messages */}
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+        <div className="rounded-2xl bg-destructive/10 px-4 py-3">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
-          <p className="text-sm text-emerald-700 dark:text-emerald-400">Deal recorded successfully!</p>
+        <div className="flex items-center gap-2 rounded-2xl bg-muted/50 px-4 py-3">
+          <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <p className="text-sm">Deal recorded successfully!</p>
         </div>
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center justify-end gap-3 pt-2">
+      <div className="flex items-center justify-end gap-2 pt-2">
         {onCancel && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={onCancel}
             disabled={isPending}
-            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {cancelLabel}
-          </button>
+          </Button>
         )}
         {!onCancel && mode === "create" && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={handleDiscard}
             disabled={isPending}
-            className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {cancelLabel}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="submit"
           disabled={isPending || !clientName.trim() || (status !== "not_closed" && !dealValue)}
-          className="h-9 inline-flex items-center gap-2 rounded-lg ac-gradient px-4 text-sm font-semibold text-white disabled:opacity-50 disabled:pointer-events-none transition-opacity"
         >
           {isPending ? (
             <>
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-              </svg>
+              <Loader2 className="animate-spin" />
               {mode === "edit" ? "Saving..." : "Submitting..."}
             </>
           ) : (
             <>
-              <Send className="h-3.5 w-3.5" />
+              <Send className="size-3.5" />
               {submitLabel}
             </>
           )}
-        </button>
+        </Button>
       </div>
     </form>
+    {dialog}
+    </>
   );
 }

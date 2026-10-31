@@ -24,6 +24,17 @@ import { isValidEmail } from "@/lib/invoice/email";
 import type { DiscountDetails, InvoiceData, InvoiceItem, PaymentInfo, PaymentType } from "@/types/invoice";
 import { loadPaymentInfoFromConfig, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
 import { cn } from "@/lib/utils";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
+import { useToast } from "@/components/providers/ToastProvider";
 
 const DocusealBuilder = lazy(() =>
   import("@docuseal/react").then((mod) => ({ default: mod.DocusealBuilder }))
@@ -37,9 +48,16 @@ interface Props {
   onClose: () => void;
 }
 
-const INPUT_CLS =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
-const LABEL_CLS = "mb-1 block text-xs font-medium text-muted-foreground";
+// Segmented control look (TabsList-style track + raised active pill) for the
+// invoice tab strip and the payment-type switch.
+const SEGMENT_TRACK = "rounded-3xl bg-muted p-1";
+const SEGMENT_ITEM =
+  "h-7 rounded-full px-3 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+
+// Radix Select items can't carry an empty value — "No contract" maps to this.
+const NO_TEMPLATE = "__none__";
+// Toggle-group value of the primary invoice's tab (additional tabs use their id).
+const PRIMARY_TAB = "__primary__";
 
 // The closer's address is CC'd on top of the deal's up-to-10 additional CCs
 // (see UnifiedDealForm), so a deal invoice can carry 11 — the send route
@@ -71,19 +89,23 @@ function withRecipientEmail(data: InvoiceData, email: string): InvoiceData {
 }
 
 function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  // overflow-visible: the preset-service dropdown inside must not be clipped.
   return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-background/40 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
-        {aside}
-      </div>
-      {children}
-    </section>
+    <Card className="overflow-visible">
+      <section className="space-y-4 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-medium text-foreground">{title}</h4>
+          {aside}
+        </div>
+        {children}
+      </section>
+    </Card>
   );
 }
 
 export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNotes, onClose }: Props) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const { data: invoice, isLoading } = useDealInvoice(dealId);
   const { data: contract } = useDealContract(dealId);
   const { data: additionalInvoices = [] } = useAdditionalInvoices(dealId);
@@ -387,9 +409,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   };
 
   const handleDeleteContract = async (id: string) => {
-    const confirmed = typeof window !== "undefined"
-      ? window.confirm("Delete this additional contract? If it was already sent, the Docuseal submission will be archived and the signing link will no longer work.")
-      : false;
+    const confirmed = await confirm({
+      title: "Delete this additional contract?",
+      description: "If it was already sent, the Docuseal submission will be archived and the signing link will no longer work.",
+      destructive: true,
+      confirmText: "Delete",
+    });
     if (!confirmed) return;
     setDeletingContractId(id);
     setMsg(null);
@@ -414,9 +439,12 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   const handleDeleteAdditional = async (inv: AdditionalInvoiceRecord) => {
     const warning =
       inv.status === "sent"
-        ? `Delete invoice #${inv.invoiceNumber}? It was already sent to the client — this removes our record and stored PDF.`
-        : `Delete draft invoice #${inv.invoiceNumber}?`;
-    if (!window.confirm(warning)) return;
+        ? {
+            title: `Delete invoice #${inv.invoiceNumber}?`,
+            description: "It was already sent to the client — this removes our record and stored PDF.",
+          }
+        : { title: `Delete draft invoice #${inv.invoiceNumber}?` };
+    if (!(await confirm({ ...warning, destructive: true, confirmText: "Delete" }))) return;
     const id = inv.id;
     setDeletingId(id);
     setMsg(null);
@@ -640,13 +668,13 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
   })();
 
   const footer = invoiceData ? (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {msg && (
         <div
           role="status"
           className={cn(
-            "rounded-lg px-3 py-2 text-xs font-medium",
-            msg.type === "success" ? "bg-emerald-500/5 text-emerald-600 border border-emerald-500/30" : "bg-destructive/5 text-destructive border border-destructive/30"
+            "rounded-2xl px-3 py-2 text-xs font-medium",
+            msg.type === "success" ? "bg-muted/50 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"
           )}
         >
           {msg.text}
@@ -655,60 +683,61 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
       {/* Sent info + View PDF */}
       {activeInvoiceId === null && isSent && invoice && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Sent {invoice.sentCount} time{invoice.sentCount !== 1 ? "s" : ""}
             {invoice.sentAt && <> · Last sent {new Date(invoice.sentAt).toLocaleDateString()}</>}
             {invoice.clientEmail && <> · {invoice.clientEmail}</>}
           </p>
           {invoice.hasPdf && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => window.open(`/api/admin/deal-invoices/pdf?id=${invoice.id}`, "_blank")}
-              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
             >
-              <FileCheck className="h-3.5 w-3.5" />
+              <FileCheck className="text-emerald-600 dark:text-emerald-400" />
               View sent PDF
-            </button>
+            </Button>
           )}
         </div>
       )}
       {activeAddl?.status === "sent" && activeAddl.hasPdf && (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => window.open(`/api/admin/deal-invoices/additional/pdf?id=${activeAddl.id}`, "_blank")}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+          className="w-full"
         >
-          <FileCheck className="h-3.5 w-3.5" />
+          <FileCheck className="text-emerald-600 dark:text-emerald-400" />
           View Sent Invoice PDF
-        </button>
+        </Button>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={handleSave} disabled={saving || sending} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+        <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={saving || sending}>
+          {saving ? <Loader2 className="animate-spin" /> : <Save />}
           Save
-        </button>
-        <button type="button" onClick={handleDownload} disabled={generating} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60">
-          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={handleDownload} disabled={generating}>
+          {generating ? <Loader2 className="animate-spin" /> : <Download />}
           PDF
-        </button>
-        <button type="button" onClick={() => setPdfPreviewOpen(true)} className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors">
-          <Eye className="h-3.5 w-3.5" />
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setPdfPreviewOpen(true)}>
+          <Eye />
           Preview
-        </button>
-        {dirty && <span className="ml-auto text-[11px] font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>}
+        </Button>
+        {dirty && <span className="ml-auto text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>}
       </div>
-      <button
+      <Button
         type="button"
+        size="lg"
         onClick={handleSend}
         disabled={sending || !clientEmail.trim()}
-        className={cn(
-          "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all ac-gradient shadow-lg shadow-primary/20",
-          (sending || !clientEmail.trim()) && "opacity-60 cursor-not-allowed"
-        )}
+        className="w-full"
       >
-        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        {sending ? <Loader2 className="animate-spin" /> : <Send />}
         {sendLabel}
-      </button>
+      </Button>
     </div>
   ) : null;
 
@@ -718,14 +747,9 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
         title="Invoice Review"
         badges={
           invoice && (
-            <span className={cn(
-              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
-              displayStatus === "sent"
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-            )}>
+            <StatusBadge tone={displayStatus === "sent" ? "success" : "warning"}>
               {displayStatus === "sent" ? "Sent" : "Draft"}
-            </span>
+            </StatusBadge>
           )
         }
         subtitle={
@@ -757,9 +781,9 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
             {/* Mismatch warning — primary invoice only */}
             {activeInvoiceId === null && mismatch && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-600">
+              <div className="flex items-start gap-2 rounded-2xl bg-muted/50 px-4 py-3">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                <p className="text-xs text-foreground">
                   Invoice total ({formatCurrencyValue(invoiceTotal, "USD")}) differs from deal value ({formatCurrencyValue(dealValueDollars, "USD")})
                 </p>
               </div>
@@ -767,149 +791,147 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
 
             {/* Deal Notes */}
             {dealNotes && (
-              <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Closer Notes</p>
+              <div className="space-y-1 rounded-2xl bg-muted/50 p-4">
+                <p className="text-sm font-medium text-foreground">Closer Notes</p>
                 <p className="text-xs text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">{dealNotes}</p>
               </div>
             )}
 
             {/* Invoice tabs — the primary plus any additional invoices */}
-            <div>
-              <label className={LABEL_CLS}>Invoices</label>
-              <div className="flex flex-wrap items-center gap-1 rounded-lg bg-muted/50 p-1">
-                <button
-                  type="button"
-                  onClick={() => switchToInvoice(null)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                    activeInvoiceId === null ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
+            <div className="grid gap-2">
+              <Label>Invoices</Label>
+              <ToggleGroup
+                type="single"
+                // Each tab stays its own Tab stop, as the old buttons were.
+                rovingFocus={false}
+                value={activeInvoiceId ?? PRIMARY_TAB}
+                // Radix reports "" when the active tab is clicked again — that
+                // was a no-op (switchToInvoice returns early on the same tab).
+                onValueChange={(v) => {
+                  if (v) switchToInvoice(v === PRIMARY_TAB ? null : v);
+                }}
+                aria-label="Invoices"
+                className={cn("w-full flex-wrap justify-start", SEGMENT_TRACK)}
+              >
+                <ToggleGroupItem value={PRIMARY_TAB} className={SEGMENT_ITEM}>
                   #{invoice?.invoiceNumber}
-                  <span className={cn("inline-block h-1.5 w-1.5 rounded-full", isSent ? "bg-emerald-500" : "bg-amber-500")} />
-                </button>
+                  <span className={cn("inline-block size-1.5 rounded-full", isSent ? "bg-emerald-500" : "bg-amber-500")} />
+                </ToggleGroupItem>
                 {additionalInvoices.map((inv) => (
                   <div key={inv.id} className="relative flex items-center">
-                    <button
+                    <ToggleGroupItem value={inv.id} className={cn(SEGMENT_ITEM, "pr-8")}>
+                      #{inv.invoiceNumber}
+                      <span className={cn(
+                        "inline-block size-1.5 rounded-full",
+                        inv.status === "sent" ? "bg-emerald-500" : "bg-amber-500"
+                      )} />
+                    </ToggleGroupItem>
+                    <Button
                       type="button"
-                      onClick={() => switchToInvoice(inv.id)}
-                      className={cn(
-                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors pr-8 sm:pr-7",
-                        activeInvoiceId === inv.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        #{inv.invoiceNumber}
-                        <span className={cn(
-                          "inline-block h-1.5 w-1.5 rounded-full",
-                          inv.status === "sent" ? "bg-emerald-500" : "bg-amber-500"
-                        )} />
-                      </span>
-                    </button>
-                    <button
-                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
                       onClick={(e) => { e.stopPropagation(); handleDeleteAdditional(inv); }}
                       disabled={deletingId === inv.id}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 sm:right-1.5 sm:p-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      className="absolute inset-y-0 right-1 my-auto size-5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       title="Delete invoice"
                       aria-label={`Delete invoice ${inv.invoiceNumber}`}
                     >
-                      {deletingId === inv.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
-                    </button>
+                      {deletingId === inv.id ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
+                    </Button>
                   </div>
                 ))}
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="xs"
                   onClick={handleAddInvoice}
                   disabled={addingInvoice}
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                  className="h-7 rounded-full hover:bg-background/60"
                   title="Add an additional invoice (starts as a copy of the primary)"
                 >
-                  {addingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  {addingInvoice ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
                   Invoice
-                </button>
-              </div>
+                </Button>
+              </ToggleGroup>
             </div>
 
             <Section title="Recipient">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="deal-inv-email" className={LABEL_CLS}>Client email</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="deal-inv-email">Client email</Label>
+                  <Input
                     id="deal-inv-email"
                     type="email"
                     value={clientEmail}
                     onChange={(e) => setClientEmail(e.target.value)}
                     placeholder="client@example.com"
-                    className={cn(INPUT_CLS, clientEmail.trim() && !isValidEmail(clientEmail) && "border-destructive/60")}
+                    aria-invalid={clientEmail.trim() && !isValidEmail(clientEmail) ? true : undefined}
                   />
                 </div>
-                <div>
-                  <label htmlFor="deal-inv-billto" className={LABEL_CLS}>Bill to</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="deal-inv-billto">Bill to</Label>
+                  <Input
                     id="deal-inv-billto"
                     type="text"
                     value={invoiceData.receiver.name}
                     onChange={(e) => setInvoiceData({ ...invoiceData, receiver: { ...invoiceData.receiver, name: e.target.value } })}
-                    className={INPUT_CLS}
                   />
                 </div>
               </div>
               {/* CC list (closer email + deal's additional CCs + admin-added) */}
-              <div>
-                <label htmlFor="deal-inv-cc" className={LABEL_CLS}>
+              <div className="grid gap-2">
+                <Label htmlFor="deal-inv-cc">
                   CC <span className="font-normal text-muted-foreground">(optional)</span>
-                </label>
+                </Label>
                 <CcChipsInput field={cc} id="deal-inv-cc" exclude={[clientEmail]} placeholder="closer@example.com" />
               </div>
             </Section>
 
             <Section title="Details">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label htmlFor="deal-inv-date" className={LABEL_CLS}>Invoice date</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="deal-inv-date">Invoice date</Label>
+                  <DatePicker
                     id="deal-inv-date"
-                    type="date"
                     value={invoiceData.details.invoiceDate}
-                    onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, invoiceDate: e.target.value } })}
-                    className={INPUT_CLS}
+                    onValueChange={(v) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, invoiceDate: v } })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="deal-inv-due" className={LABEL_CLS}>Due date</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="deal-inv-due">Due date</Label>
+                  <DatePicker
                     id="deal-inv-due"
-                    type="date"
                     value={invoiceData.details.dueDate}
-                    onChange={(e) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, dueDate: e.target.value } })}
-                    className={INPUT_CLS}
+                    onValueChange={(v) => setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, dueDate: v } })}
                   />
                 </div>
-                <div>
-                  <span className={LABEL_CLS}>Payment type</span>
-                  <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium leading-none">Payment type</span>
+                  <ToggleGroup
+                    type="single"
+                    // Each option stays its own Tab stop, as the old buttons were.
+                    rovingFocus={false}
+                    value={drawerPaymentType}
+                    onValueChange={(v) => {
+                      // Radix reports "" when the selected option is clicked
+                      // again; the old buttons re-applied its template then,
+                      // so keep doing that.
+                      const t = (v || drawerPaymentType) as PaymentType;
+                      setDrawerPaymentType(t);
+                      if (invoiceData && agencyConfig) {
+                        const template = loadPaymentTemplate(agencyConfig, t);
+                        setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
+                      }
+                    }}
+                    aria-label="Payment type"
+                    className={cn("w-full", SEGMENT_TRACK)}
+                  >
                     {(["local", "international"] as PaymentType[]).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        aria-pressed={drawerPaymentType === t}
-                        onClick={() => {
-                          setDrawerPaymentType(t);
-                          if (invoiceData && agencyConfig) {
-                            const template = loadPaymentTemplate(agencyConfig, t);
-                            setInvoiceData({ ...invoiceData, details: { ...invoiceData.details, paymentInfo: template, noteToCustomer: "" } });
-                          }
-                        }}
-                        className={cn(
-                          "flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors",
-                          drawerPaymentType === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                        )}
-                      >
+                      <ToggleGroupItem key={t} value={t} className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2 capitalize")}>
                         {t}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
               </div>
             </Section>
@@ -982,15 +1004,16 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
                 />
               ))}
               {additionalContracts.length < 10 && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={handleAddContract}
                   disabled={addingContract}
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
                 >
-                  {addingContract ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  {addingContract ? <Loader2 className="animate-spin" /> : <Plus />}
                   Add Additional Contract
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -1005,6 +1028,7 @@ export function DealInvoiceDrawer({ dealId, dealValue, dealPaymentType, dealNote
           onClose={() => setPdfPreviewOpen(false)}
         />
       )}
+      {dialog}
     </>
   );
 }
@@ -1051,6 +1075,8 @@ function ContractSection({
   deleting?: boolean;
   label?: string;
 }) {
+  const { confirm, dialog } = useConfirm();
+  const { toastError } = useToast();
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Selected template while the "Replace contract" picker is open (defaults to
@@ -1162,7 +1188,14 @@ function ContractSection({
   // with the chosen template, so it sends fresh with the next invoice send.
   async function handleReplaceContract(templateId: string) {
     if (!dealId) return;
-    if (!confirm("Replace this contract? The current signing link will be invalidated and the contract will reset to send fresh with the next invoice.")) {
+    if (
+      !(await confirm({
+        title: "Replace this contract?",
+        description: "The current signing link will be invalidated and the contract will reset to send fresh with the next invoice.",
+        destructive: true,
+        confirmText: "Replace",
+      }))
+    ) {
       return;
     }
     setSaving(true);
@@ -1193,7 +1226,7 @@ function ContractSection({
         }
         setChangingTemplate(false);
         setDocusealIdOverride(null);
-        if (warning) alert(warning);
+        if (warning) toastError(warning);
       } else {
         // Surface the actionable failures (e.g. a signed-race "Cannot replace a
         // signed contract", or "template not found") instead of silently
@@ -1205,10 +1238,10 @@ function ContractSection({
         } catch {
           /* no body */
         }
-        alert(message);
+        toastError(message);
       }
     } catch {
-      alert("Failed to replace the contract. Please check your connection and try again.");
+      toastError("Failed to replace the contract. Please check your connection and try again.");
     } finally {
       setSaving(false);
     }
@@ -1244,76 +1277,237 @@ function ContractSection({
   if (contract && !hasPendingContract) {
     const canEdit = contract.status === "sent" || contract.status === "viewed" || contract.status === "expired" || contract.status === "declined";
     return (
-      <div className="rounded-xl border border-border/50 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileSignature className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
-              contract.status === "signed" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-              contract.status === "sent" && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-              contract.status === "viewed" && "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400",
-              (contract.status === "expired" || contract.status === "declined") && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"
-            )}>
-              {contract.status === "signed" ? "Signed" :
-               contract.status === "sent" ? "Awaiting Signature" :
-               contract.status === "viewed" ? "Viewed" :
-               contract.status === "expired" ? "Expired" :
-               contract.status === "declined" ? "Declined" : contract.status}
-            </span>
-            {contract.docusealSubmissionId && (
-              <button
-                onClick={handleSyncStatus}
-                disabled={syncing}
-                className="p-1 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                title="Refresh status from DocuSeal"
+      <Card>
+        <CardContent className="space-y-3 p-4 md:p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FileSignature className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">{label}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <StatusBadge
+                tone={
+                  contract.status === "signed"
+                    ? "success"
+                    : contract.status === "sent" || contract.status === "viewed"
+                      ? "info"
+                        : contract.status === "expired" || contract.status === "declined"
+                          ? "danger"
+                          : "neutral"
+                }
               >
-                <RotateCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
-              </button>
+                {contract.status === "signed" ? "Signed" :
+                 contract.status === "sent" ? "Awaiting Signature" :
+                 contract.status === "viewed" ? "Viewed" :
+                 contract.status === "expired" ? "Expired" :
+                 contract.status === "declined" ? "Declined" : contract.status}
+              </StatusBadge>
+              {contract.docusealSubmissionId && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={handleSyncStatus}
+                  disabled={syncing}
+                  className="text-muted-foreground"
+                  title="Refresh status from DocuSeal"
+                  aria-label="Refresh status from DocuSeal"
+                >
+                  <RotateCw className={cn("size-3.5", syncing && "animate-spin")} />
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onDelete}
+                  disabled={deleting}
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title="Delete contract"
+                  aria-label="Delete contract"
+                >
+                  {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                </Button>
+              )}
+            </div>
+          </div>
+          {currentTemplate && (
+            <p className="text-xs text-muted-foreground">Template: {currentTemplate.name}</p>
+          )}
+          {contract.signedAt && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+              Signed {new Date(contract.signedAt).toLocaleDateString()}
+            </p>
+          )}
+          {contract.documentUrls && contract.documentUrls.length > 0 && (
+            <div className="space-y-1">
+              {contract.documentUrls.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline">
+                  <ExternalLink className="size-3 text-muted-foreground" />
+                  Signed Document {i + 1}
+                </a>
+              ))}
+            </div>
+          )}
+          {/* Allow editing contract for resend (not for signed contracts) */}
+          {canEdit && currentDocusealId && (
+            <>
+              <Button variant="outline" size="sm" onClick={onTogglePreview} className="w-full">
+                <Eye />
+                {showPreview ? "Hide Contract Preview" : "Preview / Edit Contract"}
+              </Button>
+              {showPreview && (
+                <ContractPreviewOverlay
+                  docusealTemplateId={currentDocusealId}
+                  alreadyCloned={hasOverride}
+                  onClose={onTogglePreview}
+                  onPersistClone={persistCloneOverride}
+                />
+              )}
+            </>
+          )}
+          {/* Replace the sent contract with a fresh one (different or same
+              template). Archives the old signing link and resets to "pending"
+              so it sends fresh with the next invoice. Not for signed contracts. */}
+          {canEdit && (
+            changingTemplate ? (
+              <div className="space-y-2 rounded-2xl bg-muted/50 p-3">
+                <Label>Replace with template</Label>
+                <Select
+                  value={replaceTemplateId || NO_TEMPLATE}
+                  onValueChange={(v) => setReplaceTemplateId(v === NO_TEMPLATE ? "" : v)}
+                  disabled={saving}
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="No contract" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_TEMPLATE}>No contract</SelectItem>
+                    {contractTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Archives the current signing link and resets the contract to send fresh with the next invoice.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleReplaceContract(replaceTemplateId)}
+                    disabled={saving}
+                  >
+                    {saving ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                    Replace
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setChangingTemplate(false)}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReplaceTemplateId(contract.contractTemplateId || "");
+                  setChangingTemplate(true);
+                }}
+                className="w-full text-muted-foreground"
+              >
+                <RefreshCw />
+                Replace contract
+              </Button>
+            )
+          )}
+        </CardContent>
+        {dialog}
+      </Card>
+    );
+  }
+
+  // Pending or no contract — show selector + preview
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4 md:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <FileSignature className="size-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-foreground">{label}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {hasPendingContract && (
+              <Badge variant="outline" className="gap-1.5 font-medium">
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                Will send with invoice
+              </Badge>
             )}
             {onDelete && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={onDelete}
                 disabled={deleting}
-                className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 title="Delete contract"
+                aria-label="Delete contract"
               >
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </button>
+                {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+              </Button>
             )}
           </div>
         </div>
-        {currentTemplate && (
-          <p className="text-xs text-muted-foreground">Template: {currentTemplate.name}</p>
-        )}
-        {contract.signedAt && (
-          <p className="text-xs text-emerald-600 dark:text-emerald-400">
-            Signed {new Date(contract.signedAt).toLocaleDateString()}
-          </p>
-        )}
-        {contract.documentUrls && contract.documentUrls.length > 0 && (
-          <div className="space-y-1">
-            {contract.documentUrls.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-                <ExternalLink className="h-3 w-3" />
-                Signed Document {i + 1}
-              </a>
-            ))}
+
+        {/* Template selector */}
+        {changingTemplate ? (
+          <div className="space-y-2">
+            <Label>Choose Contract Template</Label>
+            <Select
+              value={contract?.contractTemplateId || NO_TEMPLATE}
+              onValueChange={(v) => handleTemplateChange(v === NO_TEMPLATE ? "" : v)}
+              disabled={saving}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="No contract" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TEMPLATE}>No contract</SelectItem>
+                {contractTemplates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {docusealTemplates.length > 0 && contractTemplates.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No templates mapped yet. Go to Closers &rarr; Contracts to map DocuSeal templates.
+              </p>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setChangingTemplate(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-foreground">
+              {currentTemplate ? currentTemplate.name : contract ? "Template selected" : "No contract template"}
+            </p>
+            <Button variant="link" size="xs" onClick={() => setChangingTemplate(true)} className="px-0">
+              {contract ? "Change" : "Select template"}
+            </Button>
           </div>
         )}
-        {/* Allow editing contract for resend (not for signed contracts) */}
-        {canEdit && currentDocusealId && (
+
+        {/* Preview button & embedded preview */}
+        {currentDocusealId && (
           <>
-            <button
-              onClick={onTogglePreview}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              {showPreview ? "Hide Contract Preview" : "Preview / Edit Contract"}
-            </button>
+            <Button variant="outline" size="sm" onClick={onTogglePreview} className="w-full">
+              <Eye />
+              {showPreview ? "Hide Contract Preview" : "Preview Contract"}
+            </Button>
             {showPreview && (
               <ContractPreviewOverlay
                 docusealTemplateId={currentDocusealId}
@@ -1324,151 +1518,9 @@ function ContractSection({
             )}
           </>
         )}
-        {/* Replace the sent contract with a fresh one (different or same
-            template). Archives the old signing link and resets to "pending"
-            so it sends fresh with the next invoice. Not for signed contracts. */}
-        {canEdit && (
-          changingTemplate ? (
-            <div className="space-y-2 rounded-lg border border-border/50 bg-muted/30 p-2.5">
-              <label className="text-xs font-medium text-foreground">Replace with template</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
-                value={replaceTemplateId}
-                onChange={(e) => setReplaceTemplateId(e.target.value)}
-                disabled={saving}
-              >
-                <option value="">No contract</option>
-                {contractTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-              <p className="text-[10px] text-muted-foreground">
-                Archives the current signing link and resets the contract to send fresh with the next invoice.
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleReplaceContract(replaceTemplateId)}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white ac-gradient disabled:opacity-60"
-                >
-                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Replace
-                </button>
-                <button
-                  onClick={() => setChangingTemplate(false)}
-                  disabled={saving}
-                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                setReplaceTemplateId(contract.contractTemplateId || "");
-                setChangingTemplate(true);
-              }}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Replace contract
-            </button>
-          )
-        )}
-      </div>
-    );
-  }
-
-  // Pending or no contract — show selector + preview
-  return (
-    <div className="rounded-xl border border-border/50 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileSignature className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasPendingContract && (
-            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-              Will send with invoice
-            </span>
-          )}
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              disabled={deleting}
-              className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-              title="Delete contract"
-            >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Template selector */}
-      {changingTemplate ? (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">Choose Contract Template</label>
-          <select
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
-            value={contract?.contractTemplateId || ""}
-            onChange={(e) => handleTemplateChange(e.target.value)}
-            disabled={saving}
-          >
-            <option value="">No contract</option>
-            {contractTemplates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          {docusealTemplates.length > 0 && contractTemplates.length === 0 && (
-            <p className="text-[10px] text-muted-foreground">
-              No templates mapped yet. Go to Closers &rarr; Contracts to map DocuSeal templates.
-            </p>
-          )}
-          <button
-            onClick={() => setChangingTemplate(false)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-foreground">
-            {currentTemplate ? currentTemplate.name : contract ? "Template selected" : "No contract template"}
-          </p>
-          <button
-            onClick={() => setChangingTemplate(true)}
-            className="text-xs text-primary hover:underline"
-          >
-            {contract ? "Change" : "Select template"}
-          </button>
-        </div>
-      )}
-
-      {/* Preview button & embedded preview */}
-      {currentDocusealId && (
-        <>
-          <button
-            onClick={onTogglePreview}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {showPreview ? "Hide Contract Preview" : "Preview Contract"}
-          </button>
-          {showPreview && (
-            <ContractPreviewOverlay
-              docusealTemplateId={currentDocusealId}
-              alreadyCloned={hasOverride}
-              onClose={onTogglePreview}
-              onPersistClone={persistCloneOverride}
-            />
-          )}
-        </>
-      )}
-    </div>
+      </CardContent>
+      {dialog}
+    </Card>
   );
 }
 
@@ -1553,33 +1605,31 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={handleClose} />
-      <div className="fixed inset-0 md:inset-4 z-[70] flex flex-col md:rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-semibold text-foreground">
+      <div className={cn(dialogOverlayClass, "z-[70]")} onClick={handleClose} />
+      <div className={cn(dialogPanelClass, "fixed inset-0 z-[70] flex flex-col overflow-hidden rounded-none md:inset-4 md:rounded-4xl")}>
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+          <h3 className="text-base font-semibold tracking-tight text-foreground">
             {editing ? "Contract Editor" : "Contract Preview"}
           </h3>
           <div className="flex items-center gap-2">
             {!editing && !loading && token && (
-              <button
-                onClick={handleStartEditing}
-                disabled={switchingToEdit}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {switchingToEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />}
+              <Button size="sm" onClick={handleStartEditing} disabled={switchingToEdit}>
+                {switchingToEdit ? <Loader2 className="animate-spin" /> : <Pencil />}
                 Edit Contract
-              </button>
+              </Button>
             )}
-            <button onClick={handleClose} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-              <X className="h-4 w-4" />
-            </button>
+            <Button variant="ghost" size="icon-sm" onClick={handleClose} className="text-muted-foreground" aria-label="Close">
+              <X />
+            </Button>
           </div>
         </div>
         {/* Light surface while the builder shows, in every theme — DocuSeal
-            renders in-page, transparent with dark text (unreadable on dark). */}
+            renders in-page, transparent with dark text (unreadable on dark).
+            text-base leading-normal: it inherits the page's base type, not
+            the drawer's text-sm. */}
         <div
           className={cn(
-            "min-h-0 flex-1 overflow-auto overscroll-contain",
+            "min-h-0 flex-1 overflow-auto overscroll-contain text-base leading-normal",
             token && !switchingToEdit && "bg-white text-neutral-900"
           )}
         >
@@ -1588,7 +1638,7 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           )}
-          {error && <p className="text-sm text-red-500 p-6">{error}</p>}
+          {error && <p className="text-sm text-destructive p-6">{error}</p>}
           {token && !switchingToEdit && (
             <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
               <DocusealBuilder

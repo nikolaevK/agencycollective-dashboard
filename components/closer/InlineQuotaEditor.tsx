@@ -4,6 +4,8 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { Pencil, Check, X, DollarSign } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCents } from "@/components/closers/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface InlineQuotaEditorProps {
   currentQuota: number; // cents
@@ -58,8 +60,8 @@ export function InlineQuotaEditor({ currentQuota }: InlineQuotaEditorProps) {
     return (
       <div className="flex items-center gap-1.5">
         <div className="relative flex-1">
-          <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
+          <DollarSign className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
             ref={inputRef}
             type="number"
             step="1"
@@ -68,38 +70,44 @@ export function InlineQuotaEditor({ currentQuota }: InlineQuotaEditorProps) {
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isPending}
-            className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-2 text-sm font-bold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="h-8 pl-7 pr-2 font-semibold tabular-nums"
           />
         </div>
-        <button
+        <Button
+          size="icon-sm"
           onClick={handleSave}
           disabled={isPending}
-          className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+          aria-label="Save"
         >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        <button
+          <Check />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={handleCancel}
           disabled={isPending}
-          className="flex h-7 w-7 items-center justify-center rounded-md bg-muted/50 text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+          aria-label="Cancel"
         >
-          <X className="h-3.5 w-3.5" />
-        </button>
+          <X />
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="flex items-center gap-2">
-      <p className="text-xl sm:text-2xl font-bold text-foreground">
+      <p className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums">
         {formatCents(currentQuota)}
       </p>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={() => setEditing(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 transition-colors"
+        aria-label="Edit"
+        className="text-muted-foreground"
       >
-        <Pencil className="h-3 w-3" />
-      </button>
+        <Pencil />
+      </Button>
     </div>
   );
 }

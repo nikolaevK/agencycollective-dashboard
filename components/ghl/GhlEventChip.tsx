@@ -2,7 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { type CrossReferenceEvent } from "@/hooks/useGhlContacts";
 import {
   DEFAULT_SUB_ACCOUNT_ID,
@@ -70,28 +70,27 @@ export function GhlEventChip({
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 transition-colors",
+        badgeVariants({ variant: "outline" }),
+        "max-w-full justify-start gap-1.5 bg-background px-1.5 text-[10px] font-normal",
         className
       )}
       title={`GHL contact (${sub.label})`}
     >
       <span className="font-semibold">GHL</span>
-      <span
-        className={cn(
-          "inline-flex items-center justify-center rounded px-1 py-0 text-[9px] font-bold border",
-          sub.badgeClass
-        )}
+      <Badge
+        variant="outline"
+        className={cn("h-4 px-1 text-[9px] font-semibold", sub.badgeClass)}
         title={sub.label}
       >
         {sub.shortLabel}
-      </span>
+      </Badge>
       <span className="truncate max-w-[10rem]">{ref.name ?? ref.email ?? "(unnamed)"}</span>
       {ref.tags[0] && (
-        <Badge variant="secondary" className="max-w-[6rem] px-1 py-0 text-[9px]">
+        <Badge variant="secondary" className="h-4 max-w-[6rem] px-1 py-0 text-[9px]">
           <span className="truncate">{ref.tags[0]}</span>
         </Badge>
       )}
-      <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+      <ExternalLink className="text-muted-foreground" />
     </a>
   );
 }

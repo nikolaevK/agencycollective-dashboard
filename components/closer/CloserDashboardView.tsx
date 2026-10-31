@@ -7,6 +7,7 @@ import { CloserPerformanceChart } from "@/components/closers/CloserPerformanceCh
 import { CloserRecentDeals } from "@/components/closer/CloserRecentDeals";
 import { PaginatedFollowUpList } from "@/components/closer/PaginatedFollowUpList";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
+import { Button } from "@/components/ui/button";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import type { ChartDeal, CloserDealStats, DealMetricBucket } from "@/lib/deals";
 import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
@@ -67,7 +68,7 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
     <div className="mx-auto max-w-6xl px-4 py-8 pb-24 md:px-6 md:pb-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight">
           Welcome back, {data.closer.displayName.split(" ")[0]}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -102,13 +103,13 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
 
       {/* No-show follow-ups (scoped to this closer's own marks) */}
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-foreground mb-3">No-show follow-ups</h2>
+        <h2 className="text-sm font-medium mb-3">No-show follow-ups</h2>
         <PaginatedFollowUpList items={data.noShowFollowUps} variant="closer" />
       </section>
 
       {/* Showed leads */}
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-foreground mb-3">Showed leads</h2>
+        <h2 className="text-sm font-medium mb-3">Showed leads</h2>
         <PaginatedFollowUpList
           items={data.showedFollowUps}
           variant="closer"
@@ -118,13 +119,15 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
       </section>
 
       {!readOnly && (
-        <Link
-          href="/closer/new-deal"
-          className="md:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg shadow-primary/25 active:scale-95 transition-transform"
-          aria-label="New deal"
+        <Button
+          asChild
+          size="icon-lg"
+          className="md:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 size-14 rounded-full shadow-lg [&_svg:not([class*='size-'])]:size-6"
         >
-          <Plus className="h-6 w-6" />
-        </Link>
+          <Link href="/closer/new-deal" aria-label="New deal">
+            <Plus className="size-5" />
+          </Link>
+        </Button>
       )}
     </div>
   );

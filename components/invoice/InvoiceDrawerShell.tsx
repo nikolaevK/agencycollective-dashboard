@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Eye, EyeOff, Maximize2, Minimize2, X } from "lucide-react";
 import { InvoiceLivePreview } from "@/components/invoice/InvoiceLivePreview";
 import { InvoicePreviewDialog } from "@/components/invoice/InvoicePreviewDialog";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass } from "@/components/ui/dialog";
+import { sheetPanelClass } from "@/components/ui/sheet";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { InvoiceData } from "@/types/invoice";
 import { cn } from "@/lib/utils";
@@ -69,6 +74,7 @@ export function InvoiceDrawerShell({
   children,
 }: Props) {
   const titleId = useId();
+  const { confirm, dialog } = useConfirm();
   const [expanded, setExpanded] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [fullPreview, setFullPreview] = useState(false);
@@ -91,15 +97,19 @@ export function InvoiceDrawerShell({
     });
   }
 
-  function requestClose() {
+  async function requestClose() {
     if (busy) return;
-    if (dirty && !window.confirm("Discard unsaved changes to this invoice?")) return;
+    if (dirty && !(await confirm({ title: "Discard unsaved changes to this invoice?", destructive: true }))) return;
     onClose();
   }
 
   // Nested layers (full-screen preview, pickers, contract editor) mount later,
-  // so they sit above this on the Escape stack and close first.
-  useEscapeKey(requestClose);
+  // so they sit above this on the Escape stack and close first. (Radix
+  // popovers/selects/confirm dialogs inside handle Escape themselves and mark
+  // it handled, so it never reaches this layer.)
+  useEscapeKey(() => {
+    void requestClose();
+  });
 
   // Keyboard focus belongs to the drawer while it's open: it moves in on open
   // (the panel itself — not the first input, which would pop the keyboard on
@@ -137,9 +147,14 @@ export function InvoiceDrawerShell({
 
   const sideBySide = expanded && showPreview && !!preview;
 
-  return (
+  // Rendered into <body> so the Radix popovers, selects and confirm dialogs
+  // used inside (portaled to <body> when they open, i.e. after this) stack
+  // above the drawer, and the drawer stacks above the app chrome (sidebar,
+  // mobile bottom nav) — at the shared z-50 of the shadcn overlays, later in
+  // the DOM wins. React events still bubble through the component tree.
+  const drawer = (
     <>
-      <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm" onClick={requestClose} />
+      <div className={dialogOverlayClass} onClick={requestClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -148,67 +163,76 @@ export function InvoiceDrawerShell({
         tabIndex={-1}
         onKeyDown={trapTab}
         className={cn(
-          "fixed bottom-0 right-0 top-0 z-[60] flex w-full flex-col overflow-hidden border-l border-border bg-card shadow-2xl outline-none transition-[max-width] duration-200",
+          sheetPanelClass,
+          "fixed bottom-0 right-0 top-0 z-50 w-full overflow-hidden border-l outline-none transition-[max-width] duration-200",
           expanded ? "max-w-[min(1440px,100vw)] lg:max-w-[min(1440px,96vw)]" : size === "lg" ? "max-w-2xl" : "max-w-xl"
         )}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b px-5 py-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 id={titleId} className="text-lg font-semibold text-foreground">
+              <h3 id={titleId} className="text-base font-semibold tracking-tight text-foreground">
                 {title}
               </h3>
               {badges}
             </div>
-            {subtitle && <div className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</div>}
+            {subtitle && <div className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</div>}
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {/* Icon-only on phones — below lg there's no side preview, and
                 some drawers (deal-draft review) have no footer Preview. */}
             {preview && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setFullPreview(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:px-2 sm:py-1.5"
+                className="px-2.5 text-muted-foreground"
                 title="Full-screen preview"
                 aria-label="Preview invoice"
               >
-                <Eye className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                <Eye />
                 <span className="hidden sm:inline">Preview</span>
-              </button>
+              </Button>
             )}
             {expanded && preview && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={togglePreview}
-                className="hidden rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground lg:inline-flex"
+                className="hidden text-muted-foreground lg:inline-flex"
                 title={showPreview ? "Hide side preview" : "Show side preview"}
                 aria-label={showPreview ? "Hide side preview" : "Show side preview"}
                 aria-pressed={showPreview}
               >
-                {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+                {showPreview ? <EyeOff /> : <Eye />}
+              </Button>
             )}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={toggleExpanded}
-              className="hidden rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:inline-flex"
+              className="hidden text-muted-foreground sm:inline-flex"
               title={expanded ? "Collapse" : "Expand"}
               aria-label={expanded ? "Collapse drawer" : "Expand drawer"}
               aria-pressed={expanded}
             >
-              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </button>
-            <button
+              {expanded ? <Minimize2 /> : <Maximize2 />}
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={requestClose}
               disabled={busy}
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+              className="text-muted-foreground"
               aria-label="Close"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
         </div>
 
@@ -218,17 +242,15 @@ export function InvoiceDrawerShell({
             <div className={cn("px-5 py-4", expanded && !sideBySide && "mx-auto max-w-5xl")}>{children}</div>
           </div>
           {sideBySide && (
-            <div className="hidden min-h-0 flex-col border-l border-border bg-muted/40 lg:flex">
-              <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Live preview</p>
-                <button
-                  type="button"
-                  onClick={() => setFullPreview(true)}
-                  className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
-                >
-                  <Maximize2 className="h-3 w-3" />
+            // leading-normal: the preview inherits a unitless line-height (as
+            // on the Invoice page), not the panel's text-sm 1.25rem.
+            <div className="hidden min-h-0 flex-col border-l bg-muted/50 leading-normal lg:flex">
+              <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
+                <p className="text-xs font-medium text-muted-foreground">Live preview</p>
+                <Button type="button" variant="ghost" size="xs" onClick={() => setFullPreview(true)}>
+                  <Maximize2 />
                   Full screen
-                </button>
+                </Button>
               </div>
               {/* Stable gutter: the preview scales to this pane's width, so a
                   scrollbar that comes and goes as the scaled page crosses the
@@ -243,12 +265,15 @@ export function InvoiceDrawerShell({
           )}
         </div>
 
-        {footer && <div className="shrink-0 border-t border-border bg-card px-5 py-3">{footer}</div>}
+        {footer && <div className="shrink-0 border-t px-5 py-3">{footer}</div>}
       </div>
 
       {fullPreview && preview && (
         <InvoicePreviewDialog data={preview} title={title} onClose={() => setFullPreview(false)} />
       )}
+      {dialog}
     </>
   );
+
+  return typeof document === "undefined" ? drawer : createPortal(drawer, document.body);
 }

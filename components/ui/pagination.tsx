@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface PaginationProps {
   page: number;
@@ -40,49 +41,53 @@ export function Pagination({
       </span>
       <div className="flex items-center gap-1">
         {showFirstLast && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => onPageChange(1)}
             disabled={safePage === 1}
             aria-label="First page"
-            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border/50 bg-background hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <ChevronsLeft className="h-3.5 w-3.5" />
-          </button>
+            <ChevronsLeft />
+          </Button>
         )}
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => onPageChange(Math.max(1, safePage - 1))}
           disabled={safePage === 1}
           aria-label="Previous page"
-          className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-border/50 bg-background hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft />
           Prev
-        </button>
+        </Button>
         <span className="px-2 tabular-nums" aria-current="page">
           {safePage} / {totalPages}
         </span>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
           disabled={safePage === totalPages}
           aria-label="Next page"
-          className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-border/50 bg-background hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Next
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
+          <ChevronRight />
+        </Button>
         {showFirstLast && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => onPageChange(totalPages)}
             disabled={safePage === totalPages}
             aria-label="Last page"
-            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border/50 bg-background hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <ChevronsRight className="h-3.5 w-3.5" />
-          </button>
+            <ChevronsRight />
+          </Button>
         )}
       </div>
     </nav>

@@ -13,6 +13,9 @@ import { CloserPagination } from "@/components/closers/CloserPagination";
 import { AddEditCloserModal } from "@/components/closers/AddEditCloserModal";
 import { AddEditCloserMobile } from "@/components/closers/AddEditCloserMobile";
 import type { CloserPublic } from "@/components/closers/types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ClosersManagePage() {
   const [search, setSearch] = useState("");
@@ -91,26 +94,23 @@ export default function ClosersManagePage() {
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       {/* Extra bottom room on phones so the FAB never covers the pagination. */}
       <div className="space-y-6 pb-16 md:pb-0">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl lg:text-3xl font-black text-foreground">
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">
               Closers Management
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
               Manage your sales team members
             </p>
           </div>
-          <button
-            onClick={openCreate}
-            className="hidden md:inline-flex items-center gap-2 h-9 rounded-lg ac-gradient px-4 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus className="h-4 w-4" />
+          <Button onClick={openCreate} className="hidden md:inline-flex">
+            <Plus />
             Add New Closer
-          </button>
+          </Button>
         </div>
 
         <CloserSubNav />
@@ -148,13 +148,14 @@ export default function ClosersManagePage() {
         )}
 
         {/* Mobile FAB */}
-        <button
+        <Button
           onClick={openCreate}
           aria-label="Add new closer"
-          className="md:hidden fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg hover:opacity-90 transition-opacity"
+          size="icon-lg"
+          className="md:hidden fixed bottom-20 right-4 z-30 size-14 rounded-full shadow-lg [&_svg:not([class*='size-'])]:size-6"
         >
-          <Plus className="h-6 w-6" />
-        </button>
+          <Plus />
+        </Button>
 
         {/* Desktop Modal */}
         {showModal && (
@@ -188,48 +189,45 @@ function ManageSkeleton() {
       {/* Metrics skeleton */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg animate-pulse bg-muted" />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-                <div className="h-6 w-28 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-              </div>
-            </div>
-          </div>
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="size-4" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-3 w-32" />
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Search skeleton */}
       <div className="flex gap-3">
-        <div className="flex-1 h-10 rounded-lg animate-pulse bg-muted" />
-        <div className="w-48 h-10 rounded-lg animate-pulse bg-muted" />
+        <Skeleton className="flex-1 h-9 rounded-3xl" />
+        <Skeleton className="w-48 h-8 rounded-3xl" />
       </div>
 
       {/* Table skeleton */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-        <div className="h-10 border-b border-border/50 bg-muted/30" />
+      <Card>
+        <div className="h-12 border-b" />
         {[1, 2, 3, 4, 5].map((i) => (
           <div
             key={i}
-            className="flex items-center gap-4 px-4 py-3 border-b border-border/50 dark:border-white/[0.06] last:border-0"
+            className="flex items-center gap-4 px-4 py-3 border-b last:border-0"
           >
-            <div className="w-9 h-9 rounded-full animate-pulse bg-muted" />
+            <Skeleton className="size-9 rounded-full" />
             <div className="flex-1 space-y-1.5">
-              <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-44 animate-pulse rounded bg-muted" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-44" />
             </div>
-            <div className="h-6 w-20 animate-pulse rounded-full bg-muted" />
-            <div className="h-6 w-16 animate-pulse rounded-full bg-muted" />
-            <div className="h-4 w-12 animate-pulse rounded bg-muted" />
-            <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-4 w-16" />
           </div>
         ))}
-      </div>
+      </Card>
     </div>
   );
 }

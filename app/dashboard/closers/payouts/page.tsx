@@ -17,6 +17,12 @@ import { RebillDetailModal } from "@/components/payouts/RebillDetailModal";
 import { BrandDocumentsModal } from "@/components/payouts/BrandDocumentsModal";
 import type { PayoutRecord, PayoutSummary, RebillMetrics, ForecastData } from "@/lib/payouts";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type PaidFilter = "all" | "paid" | "unpaid";
 
@@ -89,116 +95,123 @@ function DateJoinedPicker({
 
   return (
     <div className="relative">
-      <button
-        onClick={onToggle}
-        className={cn(
-          "flex w-full md:w-auto items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-          hasFilter
-            ? "border-primary/50 bg-primary/5 text-primary"
-            : "bg-background text-foreground"
-        )}
+      <Popover
+        open={open}
+        onOpenChange={(next) => (next ? onToggle() : onClose())}
       >
-        <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="truncate">{dateLabel(dateFrom, dateTo)}</span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-auto",
-            open && "rotate-180"
-          )}
-        />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={onClose} />
-
-          <div className="absolute left-0 right-0 md:left-auto md:right-auto md:w-72 top-full z-20 mt-2 rounded-lg border bg-popover shadow-lg">
-            <div className="p-2">
-              <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Presets
-              </p>
-              {presets.map((preset) => (
-                <button
-                  key={preset.label}
-                  onClick={() => onSelectPreset(preset.from, preset.to, preset.label)}
-                  className={cn(
-                    "flex w-full items-center rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent",
-                    dateFrom === preset.from &&
-                      dateTo === preset.to &&
-                      "bg-primary/10 text-primary font-medium"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="border-t p-2">
-              <button
-                onClick={onToggleCustom}
-                className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm font-medium hover:bg-accent"
-              >
-                Custom range
-                <ChevronDown
-                  className={cn(
-                    "h-3 w-3 transition-transform",
-                    showCustom && "rotate-180"
-                  )}
-                />
-              </button>
-
-              {showCustom && (
-                <div className="mt-2 space-y-2 px-2">
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        From
-                      </label>
-                      <input
-                        type="date"
-                        value={customFrom}
-                        onChange={(e) => onCustomFrom(e.target.value)}
-                        max={customTo || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-base sm:text-xs"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        To
-                      </label>
-                      <input
-                        type="date"
-                        value={customTo}
-                        onChange={(e) => onCustomTo(e.target.value)}
-                        min={customFrom || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-base sm:text-xs"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={onApplyCustom}
-                    disabled={!customFrom || !customTo || customFrom > customTo}
-                    className="w-full rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50 hover:bg-primary/90"
-                  >
-                    Apply
-                  </button>
-                </div>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className={cn(
+              "w-full md:w-auto justify-start",
+              hasFilter && "border-primary/50 bg-primary/5"
+            )}
+          >
+            <Calendar className="text-muted-foreground" />
+            <span className="truncate">{dateLabel(dateFrom, dateTo)}</span>
+            <ChevronDown
+              className={cn(
+                "text-muted-foreground transition-transform ml-auto",
+                open && "rotate-180"
               )}
-            </div>
+            />
+          </Button>
+        </PopoverTrigger>
 
-            {hasFilter && (
-              <div className="border-t p-2">
-                <button
-                  onClick={onClear}
-                  className="flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+        <PopoverContent
+          align="start"
+          className="w-[var(--radix-popover-trigger-width)] md:w-72 p-0"
+          // The old dropdown didn't close on Escape.
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <div className="p-1.5">
+            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
+              Presets
+            </p>
+            {presets.map((preset) => (
+              <Button
+                key={preset.label}
+                variant="ghost"
+                size="sm"
+                onClick={() => onSelectPreset(preset.from, preset.to, preset.label)}
+                className={cn(
+                  "w-full justify-start font-normal",
+                  dateFrom === preset.from &&
+                    dateTo === preset.to &&
+                    "bg-muted font-medium"
+                )}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+
+          <div className="border-t p-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleCustom}
+              className="w-full justify-between"
+            >
+              Custom range
+              <ChevronDown
+                className={cn(
+                  "size-3 transition-transform",
+                  showCustom && "rotate-180"
+                )}
+              />
+            </Button>
+
+            {showCustom && (
+              <div className="mt-2 space-y-3 px-1.5 pb-1.5">
+                <div className="grid gap-2">
+                  <Label htmlFor="payout-date-from" className="text-xs text-muted-foreground">
+                    From
+                  </Label>
+                  <DatePicker
+                    id="payout-date-from"
+                    value={customFrom}
+                    onValueChange={onCustomFrom}
+                    max={customTo || undefined}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="payout-date-to" className="text-xs text-muted-foreground">
+                    To
+                  </Label>
+                  <DatePicker
+                    id="payout-date-to"
+                    value={customTo}
+                    onValueChange={onCustomTo}
+                    min={customFrom || undefined}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={onApplyCustom}
+                  disabled={!customFrom || !customTo || customFrom > customTo}
+                  className="w-full"
                 >
-                  Clear date filter
-                </button>
+                  Apply
+                </Button>
               </div>
             )}
           </div>
-        </>
-      )}
+
+          {hasFilter && (
+            <div className="border-t p-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClear}
+                className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                Clear date filter
+              </Button>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -424,7 +437,7 @@ export default function PayoutsPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl lg:text-3xl font-black text-foreground">
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">
               Payout Tracker
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -433,23 +446,14 @@ export default function PayoutsPage() {
             </p>
           </div>
           <div className="hidden md:flex items-center gap-2">
-            <button
-              onClick={handleImportClick}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-foreground border border-border bg-background hover:bg-accent transition-colors"
-            >
-              <FileDown className="h-4 w-4" />
+            <Button variant="outline" onClick={handleImportClick}>
+              <FileDown />
               Import from Deal
-            </button>
-            <button
-              onClick={handleAdd}
-              className={cn(
-                "inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-all",
-                "ac-gradient shadow-lg shadow-primary/20"
-              )}
-            >
-              <Plus className="h-4 w-4" />
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus />
               Add Payout
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -478,31 +482,34 @@ export default function PayoutsPage() {
         {/* Search + filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by brand name..."
-              className="flex h-10 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+              className="pl-9"
             />
           </div>
-          <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1 overflow-x-auto">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={paidFilter}
+            // Radix reports "" when the active pill is clicked again; the
+            // old pills just re-selected it, so ignore that.
+            onValueChange={(v) => {
+              if (v) setPaidFilter(v as PaidFilter);
+            }}
+            aria-label="Payment status"
+            className="overflow-x-auto"
+          >
             {paidFilters.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setPaidFilter(f.value)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
-                  paidFilter === f.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <ToggleGroupItem key={f.value} value={f.value} className="px-3">
                 {f.label} ({f.count})
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
         </div>
 
         {/* Date filter dropdown */}
@@ -559,22 +566,25 @@ export default function PayoutsPage() {
       </div>
 
       {/* Mobile FABs */}
-      <button
+      <Button
+        variant="outline"
+        size="icon-lg"
         onClick={handleImportClick}
         aria-label="Import from deal"
         title="Import from Deal"
-        className="md:hidden fixed bottom-[9.25rem] right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-lg hover:bg-accent transition-colors"
+        className="md:hidden fixed bottom-[9.25rem] right-4 z-30 size-12 rounded-full shadow-lg"
       >
-        <FileDown className="h-5 w-5" />
-      </button>
-      <button
+        <FileDown className="size-5" />
+      </Button>
+      <Button
+        size="icon-lg"
         onClick={handleAdd}
         aria-label="Add payout"
         title="Add Payout"
-        className="md:hidden fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full ac-gradient text-white shadow-lg hover:opacity-90 transition-opacity"
+        className="md:hidden fixed bottom-20 right-4 z-30 size-14 rounded-full shadow-lg"
       >
-        <Plus className="h-6 w-6" />
-      </button>
+        <Plus className="size-6" />
+      </Button>
 
       {/* Deal importer (picker) */}
       <ImportDealModal

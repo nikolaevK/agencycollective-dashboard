@@ -14,6 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
 import { TrendDelta } from "@/components/shared/TrendDelta";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { InlineQuotaEditor } from "./InlineQuotaEditor";
 import type { DealMetricBucket } from "@/lib/deals";
 
@@ -73,8 +75,6 @@ export function CloserBentoGrid({
             key: "lifetime-closed",
             label: "Total closed deals",
             icon: Award,
-            iconBg: "bg-violet-100 dark:bg-violet-500/15",
-            iconColor: "text-violet-600 dark:text-violet-400",
             value: String(lifetime.closedCount),
             sub: `${formatCents(lifetime.closedRevenue)} closed revenue`,
           },
@@ -82,8 +82,6 @@ export function CloserBentoGrid({
             key: "lifetime-paid",
             label: "Total paid revenue",
             icon: Wallet,
-            iconBg: "bg-emerald-100 dark:bg-emerald-500/15",
-            iconColor: "text-emerald-600 dark:text-emerald-400",
             value: formatCents(lifetime.paidRevenue),
             sub:
               lifetime.outstandingRevenue > 0
@@ -94,8 +92,6 @@ export function CloserBentoGrid({
             key: "lifetime-show",
             label: "Show rate",
             icon: UserCheck,
-            iconBg: "bg-cyan-100 dark:bg-cyan-500/15",
-            iconColor: "text-cyan-600 dark:text-cyan-400",
             value: `${lifetime.showRate}%`,
             sub:
               lifetime.showCount + lifetime.noShowCount > 0
@@ -106,12 +102,10 @@ export function CloserBentoGrid({
             key: "quota",
             label: "Monthly target",
             icon: Crosshair,
-            iconBg: "bg-pink-100 dark:bg-pink-500/15",
-            iconColor: "text-pink-600 dark:text-pink-400",
             custom: (
               <>
                 {readOnly ? (
-                  <p className="text-xl sm:text-2xl font-bold text-foreground">
+                  <p className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums">
                     {formatCents(quotaCents)}
                   </p>
                 ) : (
@@ -119,21 +113,17 @@ export function CloserBentoGrid({
                 )}
                 {quotaPct != null && monthClosed != null ? (
                   <>
-                    <div
-                      className="mt-2 h-1.5 w-full rounded-full bg-muted/60 dark:bg-white/5"
-                      role="progressbar"
+                    <Progress
+                      value={Math.max(quotaPct, 2)}
                       aria-valuenow={quotaPct}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                    >
-                      <div
-                        className={cn(
-                          "h-1.5 rounded-full transition-all",
-                          quotaPct >= 100 ? "bg-emerald-500" : "bg-pink-500/70"
-                        )}
-                        style={{ width: `${Math.max(quotaPct, 2)}%` }}
-                      />
-                    </div>
+                      aria-valuetext={`${quotaPct}%`}
+                      className={cn(
+                        "mt-2 h-1.5",
+                        quotaPct >= 100 ? "[&>div]:bg-emerald-500" : "[&>div]:bg-chart-1"
+                      )}
+                    />
                     <p className="text-xs text-muted-foreground mt-1">
                       {formatCents(monthClosed)} closed this month · {quotaPct}%
                     </p>
@@ -158,8 +148,6 @@ export function CloserBentoGrid({
               key: "win-closed-revenue",
               label: "Closed revenue",
               icon: TrendingUp,
-              iconBg: "bg-violet-100 dark:bg-violet-500/15",
-              iconColor: "text-violet-600 dark:text-violet-400",
               value: formatCents(window.closedRevenue),
               sub: `${window.closedCount} deal${window.closedCount === 1 ? "" : "s"} closed`,
               delta: (
@@ -173,8 +161,6 @@ export function CloserBentoGrid({
               key: "win-paid",
               label: "Paid revenue",
               icon: DollarSign,
-              iconBg: "bg-emerald-100 dark:bg-emerald-500/15",
-              iconColor: "text-emerald-600 dark:text-emerald-400",
               value: formatCents(window.paidRevenue),
               sub: "Cash collected",
               delta: (
@@ -185,8 +171,6 @@ export function CloserBentoGrid({
               key: "win-outstanding",
               label: "Outstanding",
               icon: Clock,
-              iconBg: "bg-amber-100 dark:bg-amber-500/15",
-              iconColor: "text-amber-600 dark:text-amber-400",
               value: formatCents(window.outstandingRevenue),
               sub: "Closed but unpaid",
               delta: (
@@ -201,8 +185,6 @@ export function CloserBentoGrid({
               key: "win-pending",
               label: "Pending pipeline",
               icon: FileCheck,
-              iconBg: "bg-blue-100 dark:bg-blue-500/15",
-              iconColor: "text-blue-600 dark:text-blue-400",
               value: formatCents(window.pendingPipeline),
               sub: `${window.pendingCount} awaiting signature`,
             },
@@ -210,8 +192,6 @@ export function CloserBentoGrid({
               key: "win-avg",
               label: "Avg deal value",
               icon: CheckCircle2,
-              iconBg: "bg-pink-100 dark:bg-pink-500/15",
-              iconColor: "text-pink-600 dark:text-pink-400",
               value: formatCents(window.avgClosedValue),
               sub: "Per closed deal",
             },
@@ -219,8 +199,6 @@ export function CloserBentoGrid({
               key: "win-show",
               label: "Show rate",
               icon: UserCheck,
-              iconBg: "bg-cyan-100 dark:bg-cyan-500/15",
-              iconColor: "text-cyan-600 dark:text-cyan-400",
               value: `${window.showRate}%`,
               sub:
                 window.showCount + window.noShowCount > 0
@@ -241,8 +219,6 @@ interface CardDef {
   key: string;
   label: string;
   icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
   value?: string;
   sub?: string;
   delta?: React.ReactNode;
@@ -261,33 +237,32 @@ function Section({
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+        <h3 className="text-sm font-medium">{title}</h3>
+        <span className="text-xs text-muted-foreground">{subtitle}</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <div
-              key={card.key}
-              className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-5"
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", card.iconBg)}>
-                  <Icon className={cn("h-4 w-4", card.iconColor)} />
-                </div>
-                <span className="text-xs font-medium text-muted-foreground">{card.label}</span>
-              </div>
-              {card.custom ?? (
-                <>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-xl sm:text-2xl font-bold text-foreground">{card.value}</p>
-                    {card.delta}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
-                </>
-              )}
-            </div>
+            <Card key={card.key}>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2 md:pb-2">
+                <CardDescription>{card.label}</CardDescription>
+                <Icon className="size-4 shrink-0 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {card.custom ?? (
+                  <>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums">
+                        {card.value}
+                      </p>
+                      {card.delta}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           );
         })}
       </div>

@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { NoShowFollowUpList, type NoShowFollowUpListProps } from "./NoShowFollowUpList";
 import { Pagination } from "@/components/ui/pagination";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useGhlCrossReference, type CrossReferenceEvent } from "@/hooks/useGhlContacts";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 
@@ -135,32 +143,35 @@ export function PaginatedFollowUpList({
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none"
+              className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
               aria-hidden="true"
             />
-            <input
+            <Input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, email, or title…"
               aria-label="Search follow-ups"
-              className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+              className="pl-9"
             />
           </div>
-          <select
+          <Select
             value={sort.value}
-            onChange={(e) =>
-              setSort(SORT_OPTIONS.find((o) => o.value === e.target.value) ?? SORT_OPTIONS[0])
+            onValueChange={(v) =>
+              setSort(SORT_OPTIONS.find((o) => o.value === v) ?? SORT_OPTIONS[0])
             }
-            aria-label="Sort order"
-            className="h-9 rounded-lg border border-border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
           >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Sort order" className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
             {countLabel}
           </span>

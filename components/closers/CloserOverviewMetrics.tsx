@@ -1,7 +1,7 @@
 "use client";
 
 import { Award, Clock, DollarSign, FileText, Target, Trophy, UserCheck, Wallet } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { formatCents } from "@/components/closers/types";
 import { TrendDelta } from "@/components/shared/TrendDelta";
 import { computeCloseRate, type DealMetricBucket } from "@/lib/deals";
@@ -33,8 +33,6 @@ interface MetricCard {
   value: string;
   subtitle: string;
   icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
   delta?: React.ReactNode;
 }
 
@@ -55,8 +53,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: String(stats.lifetime.closedCount),
       subtitle: `${formatCents(stats.lifetime.closedRevenue)} closed revenue`,
       icon: Award,
-      iconBg: "bg-violet-500/10",
-      iconColor: "text-violet-500",
     },
     {
       label: "Paid revenue",
@@ -66,8 +62,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
           ? `${formatCents(stats.lifetime.outstandingRevenue)} outstanding`
           : "Fully collected",
       icon: Wallet,
-      iconBg: "bg-emerald-500/10",
-      iconColor: "text-emerald-500",
     },
     {
       label: "Top performer",
@@ -76,8 +70,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
         ? `${formatCents(stats.topPerformer.paidRevenue)} paid`
         : "No deals yet",
       icon: Trophy,
-      iconBg: "bg-amber-500/10",
-      iconColor: "text-amber-500",
     },
     {
       label: "Show rate",
@@ -89,8 +81,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
           : "No data yet";
       })(),
       icon: UserCheck,
-      iconBg: "bg-cyan-500/10",
-      iconColor: "text-cyan-500",
     },
   ];
 
@@ -101,8 +91,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.closedRevenue),
       subtitle: `${stats.window.closedCount} deal${stats.window.closedCount === 1 ? "" : "s"} closed`,
       icon: DollarSign,
-      iconBg: "bg-violet-500/10",
-      iconColor: "text-violet-500",
       delta: (
         <TrendDelta
           current={stats.window.closedRevenue}
@@ -115,8 +103,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.paidRevenue),
       subtitle: "Cash collected",
       icon: Wallet,
-      iconBg: "bg-emerald-500/10",
-      iconColor: "text-emerald-500",
       delta: (
         <TrendDelta current={stats.window.paidRevenue} previous={previous?.paidRevenue} />
       ),
@@ -126,8 +112,6 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       value: formatCents(stats.window.outstandingRevenue),
       subtitle: "Closed but unpaid",
       icon: Clock,
-      iconBg: "bg-amber-500/10",
-      iconColor: "text-amber-500",
       delta: (
         <TrendDelta
           current={stats.window.outstandingRevenue}
@@ -148,16 +132,12 @@ export function CloserOverviewMetrics({ stats, windowLabel, isLifetimeWindow }: 
       // aggregated for an honest denominator.
       subtitle: `${stats.window.closedCount} closed of ${stats.window.closedCount + stats.window.pendingCount + stats.window.inFlightCount} opportunities`,
       icon: Target,
-      iconBg: "bg-blue-500/10",
-      iconColor: "text-blue-500",
     },
     {
       label: "Pending pipeline",
       value: formatCents(stats.window.pendingPipeline),
       subtitle: `${stats.window.pendingCount} awaiting signature`,
       icon: FileText,
-      iconBg: "bg-pink-500/10",
-      iconColor: "text-pink-500",
     },
   ];
 
@@ -183,36 +163,28 @@ function Section({
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+        <h3 className="text-sm font-medium">{title}</h3>
+        <span className="text-xs text-muted-foreground">{subtitle}</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <div
-              key={card.label}
-              className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5"
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                    card.iconBg
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5", card.iconColor)} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <p className="text-lg font-bold text-foreground truncate">{card.value}</p>
-                    {card.delta}
+            <Card key={card.label}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+                <CardDescription>{card.label}</CardDescription>
+                <Icon className="size-4 shrink-0 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="text-2xl font-semibold tracking-tight tabular-nums truncate">
+                    {card.value}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
+                  {card.delta}
                 </div>
-              </div>
-            </div>
+                <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
+              </CardContent>
+            </Card>
           );
         })}
       </div>

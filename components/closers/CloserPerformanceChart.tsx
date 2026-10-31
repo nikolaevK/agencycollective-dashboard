@@ -1,25 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  ComposedChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import { addDays, format, parseISO, startOfWeek, subDays, subMonths, subWeeks } from "date-fns";
 import { BarChart3 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { formatCents } from "@/components/closers/types";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  formatCents,
-  CHART_CLOSED_COLOR,
-  CHART_PAID_COLOR,
-} from "@/components/closers/types";
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 /** Minimal deal shape the chart needs — matches lib/deals.ts ChartDeal and
  *  lets the admin drill-down and closer portal payloads feed it without
@@ -47,6 +41,13 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 // How far back each grouping looks. Buckets with no deals render as zero so
 // quiet stretches stay visible instead of being silently skipped.
 const PERIODS: Record<Grouping, number> = { day: 14, week: 12, month: 12 };
+
+const chartConfig = {
+  // Same series colors as TeamTrendChart (theme chart pair).
+  closed: { label: "Closed revenue", color: "hsl(var(--chart-1))" },
+  paid: { label: "Paid revenue", color: "hsl(var(--chart-2))" },
+  cumPaid: { label: "Paid — month to date", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig;
 
 // Plain-language explainer per grouping. Buckets are whole calendar units
 // (weeks run Mon–Sun) and ignore any time-frame filter on the page — the
@@ -238,97 +239,98 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
   const hasData = chartData.some((p) => p.closed > 0 || p.paid > 0);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
-      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 pb-2 md:pb-2">
         <div className="flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Performance Trends</h3>
-          <span className="text-[11px] text-muted-foreground">by closing date</span>
+          <CardTitle>Performance Trends</CardTitle>
+          <CardDescription className="text-xs">by closing date</CardDescription>
         </div>
-        <div className="inline-flex items-center rounded-lg bg-muted/60 p-0.5 text-xs font-medium">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={grouping}
+          // Radix reports "" when the active item is clicked again; a grouping
+          // can't be deselected, so ignore that.
+          onValueChange={(v) => {
+            if (v) setGrouping(v as Grouping);
+          }}
+          aria-label="Grouping"
+        >
           {GROUPINGS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setGrouping(opt.value)}
-              aria-pressed={grouping === opt.value}
-              className={cn(
-                "rounded-md px-3 py-1.5 transition-colors",
-                grouping === opt.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
+            <ToggleGroupItem key={opt.value} value={opt.value} className="px-3">
               {opt.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
-      </div>
+        </ToggleGroup>
+      </CardHeader>
 
-      <p className="text-[11px] text-muted-foreground mb-5">{CAPTIONS[grouping]}</p>
+      <CardContent className="space-y-4">
+        <p className="text-xs text-muted-foreground">{CAPTIONS[grouping]}</p>
 
-      {!hasData ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center mb-3">
-            <BarChart3 className="h-5 w-5 text-muted-foreground" />
+        {!hasData ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <BarChart3 className="size-5 text-muted-foreground mb-3" />
+            <p className="text-sm text-muted-foreground">
+              No closed or paid revenue in the last {PERIODS[grouping]}{" "}
+              {grouping === "day" ? "days" : grouping === "week" ? "weeks" : "months"}.
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            No closed or paid revenue in the last {PERIODS[grouping]}{" "}
-            {grouping === "day" ? "days" : grouping === "week" ? "weeks" : "months"}.
-          </p>
-        </div>
-      ) : (
-        <div style={{ width: "100%", height: 250, overflow: "hidden" }}>
-          <ResponsiveContainer width="100%" height="100%">
+        ) : (
+          <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
             <ComposedChart
               data={chartData}
               margin={{ top: 5, right: 16, left: 0, bottom: 5 }}
               barGap={2}
             >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-                vertical={false}
-              />
+              <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
                 tickFormatter={(v: number) => formatCents(v)}
-                tick={{ fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
                 width={70}
               />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+              <ChartTooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const item = payload[0].payload as ChartDataPoint;
                   return (
-                    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-md">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                    <div className="grid min-w-32 gap-1.5 rounded-xl bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10">
+                      <p className="font-medium">
                         {item.tooltipLabel}
                         {item.inProgress && (
-                          <span className="text-[10px] font-normal"> · in progress</span>
+                          <span className="font-normal text-muted-foreground"> · in progress</span>
                         )}
                       </p>
-                      <p className="text-sm text-foreground">
-                        <span className="font-semibold">{formatCents(item.closed)}</span>{" "}
-                        closed · {item.count} deal{item.count === 1 ? "" : "s"}
+                      <p className="flex items-center gap-2 text-muted-foreground">
+                        <span className="size-2.5 shrink-0 rounded-[2px] bg-[--color-closed]" />
+                        <span>
+                          <span className="font-mono font-medium tabular-nums text-foreground">
+                            {formatCents(item.closed)}
+                          </span>{" "}
+                          closed · {item.count} deal{item.count === 1 ? "" : "s"}
+                        </span>
                       </p>
-                      <p className="text-sm text-foreground">
-                        <span className="font-semibold">{formatCents(item.paid)}</span> paid ·{" "}
-                        {item.paidCount} deal{item.paidCount === 1 ? "" : "s"}
+                      <p className="flex items-center gap-2 text-muted-foreground">
+                        <span className="size-2.5 shrink-0 rounded-[2px] bg-[--color-paid]" />
+                        <span>
+                          <span className="font-mono font-medium tabular-nums text-foreground">
+                            {formatCents(item.paid)}
+                          </span>{" "}
+                          paid · {item.paidCount} deal{item.paidCount === 1 ? "" : "s"}
+                        </span>
                       </p>
                       {item.cumPaid != null && (
-                        <p className="text-xs text-muted-foreground mt-1 pt-1 border-t border-border/50">
+                        <p className="border-t pt-1.5 text-muted-foreground">
                           Month to date (as of{" "}
                           {item.cumAsOf ? format(parseISO(item.cumAsOf), "MMM d") : "week end"}):{" "}
-                          <span className="font-semibold text-foreground">
+                          <span className="font-mono font-medium tabular-nums text-foreground">
                             {formatCents(item.cumPaid)}
                           </span>{" "}
                           · {item.cumPaidCount} paid deal{item.cumPaidCount === 1 ? "" : "s"}
@@ -338,42 +340,36 @@ export function CloserPerformanceChart({ deals }: CloserPerformanceChartProps) {
                   );
                 }}
               />
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                formatter={(value: string) => (
-                  <span className="text-xs text-muted-foreground">{value}</span>
-                )}
-              />
+              <ChartLegend content={<ChartLegendContent />} />
               <Bar
                 dataKey="closed"
                 name="Closed revenue"
-                fill={CHART_CLOSED_COLOR}
-                radius={[4, 4, 0, 0]}
+                fill="var(--color-closed)"
+                radius={[6, 6, 0, 0]}
                 maxBarSize={24}
               />
               <Bar
                 dataKey="paid"
                 name="Paid revenue"
-                fill={CHART_PAID_COLOR}
-                radius={[4, 4, 0, 0]}
+                fill="var(--color-paid)"
+                radius={[6, 6, 0, 0]}
                 maxBarSize={24}
               />
               {grouping === "week" && (
                 <Line
                   dataKey="cumPaid"
                   name="Paid — month to date"
-                  stroke={CHART_PAID_COLOR}
+                  stroke="var(--color-cumPaid)"
                   strokeWidth={2}
                   strokeDasharray="5 3"
-                  dot={{ r: 3, fill: CHART_PAID_COLOR, strokeWidth: 0 }}
+                  dot={{ r: 3, fill: "var(--color-cumPaid)", strokeWidth: 0 }}
                   activeDot={{ r: 4 }}
                 />
               )}
             </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
   );
 }

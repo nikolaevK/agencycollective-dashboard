@@ -1,7 +1,8 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface CloserSearchFilterProps {
   search: string;
@@ -26,33 +27,31 @@ export function CloserSearchFilter({
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
       {/* Search Input */}
       <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search closers..."
-          className="flex h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+          className="pl-9"
         />
       </div>
 
-      {/* Filter Pills */}
-      <div className="flex gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1">
+      {/* Filter Pills — Radix sends "" when the active pill is clicked again;
+          the old pills re-applied the current filter then, so do the same. */}
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={filter}
+        onValueChange={(v) => setFilter((v || filter) as "all" | "active" | "inactive")}
+      >
         {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setFilter(f.value)}
-            className={cn(
-              "px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors",
-              filter === f.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
+          <ToggleGroupItem key={f.value} value={f.value} className="px-3">
             {f.label}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { LineItemsEditor } from "@/components/invoice/LineItemsEditor";
 import { CcChipsInput, useCcField } from "@/components/invoice/CcChipsInput";
 import { DiscountField } from "@/components/invoice/InvoiceChargesForm";
 import { ServiceMultiSelect } from "@/components/shared/ServiceMultiSelect";
-import { DEAL_STATUSES } from "@/components/closers/types";
+import { DEAL_STATUSES, DRAFT_STATUS_TONE } from "@/components/closers/types";
 import { calculateTotals } from "@/lib/invoice/validation";
 import { invoiceToSpec } from "@/lib/invoice/invoiceSpec";
 import { DEFAULT_MAX_CC, isValidEmail } from "@/lib/invoice/email";
@@ -19,10 +19,19 @@ import type { DealDraft } from "@/lib/dealDrafts";
 import type { DealRecord } from "@/lib/deals";
 import type { DiscountDetails, InvoiceData, InvoiceItem } from "@/types/invoice";
 import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-const FIELD =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
-const LABEL = "mb-1 block text-xs font-medium text-muted-foreground";
+/** Radix SelectItem can't hold "" — stands in for an empty closer id. */
+const NONE = "__none__";
+/** Field label for the non-<label> captions (Payment type, Services). */
+const CAPTION = "text-sm font-medium leading-none";
 
 type DraftDetail = DealDraft & {
   closerName: string | null;
@@ -79,9 +88,9 @@ interface Props {
 
 function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-background/40 p-4">
+    <section className="space-y-4 rounded-2xl bg-muted/50 p-4">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
+        <h4 className="text-sm font-medium">{title}</h4>
         {aside}
       </div>
       {children}
@@ -369,92 +378,106 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
     draft && form ? (
       <div className="space-y-2">
         {stale && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <p className="min-w-0 flex-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-              This draft changed since you opened it. Load the latest version to continue — your unsaved edits here
-              will be discarded.
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted/50 px-4 py-3">
+            <p className="flex min-w-0 flex-1 items-start gap-2 text-xs font-medium">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+              <span>
+                This draft changed since you opened it. Load the latest version to continue — your unsaved edits here
+                will be discarded.
+              </span>
             </p>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={loadLatest}
               disabled={isFetching}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-500/10 disabled:opacity-60 dark:text-amber-400 sm:h-7"
+              className="h-9 shrink-0 sm:h-8"
             >
-              {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isFetching && <Loader2 className="size-3.5 animate-spin" />}
               Load latest
-            </button>
+            </Button>
           </div>
         )}
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs font-medium text-destructive">
+          <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-xs font-medium text-destructive">
             {error}
           </div>
         )}
         {pending && rejecting ? (
-          <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-            <label htmlFor="reject-note" className="text-xs font-medium text-foreground">
+          <div className="grid gap-2 rounded-2xl bg-muted/50 p-4">
+            <Label htmlFor="reject-note">
               Reason (shared with whoever prepared it)
-            </label>
-            <textarea
+            </Label>
+            <Textarea
               id="reject-note"
               rows={2}
               maxLength={2000}
               value={rejectNote}
               onChange={(e) => setRejectNote(e.target.value)}
               placeholder="e.g. Duplicate of an existing deal / wrong amount"
-              className="flex w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="min-h-0 resize-y"
             />
             <div className="flex justify-end gap-2">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setRejecting(false)}
                 disabled={busy !== null}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
+                size="sm"
                 onClick={reject}
                 disabled={busy !== null}
-                className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
               >
-                {busy === "reject" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+                {busy === "reject" ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsDown className="size-3.5" />}
                 Reject draft
-              </button>
+              </Button>
             </div>
           </div>
         ) : pending ? (
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="destructive"
+              size="sm"
               onClick={() => setRejecting(true)}
               disabled={busy !== null}
-              className="flex items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:opacity-60"
             >
-              <ThumbsDown className="h-3.5 w-3.5" />
+              <ThumbsDown className="size-3.5" />
               Reject
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={save}
               disabled={busy !== null || !dirty || stale}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
               title="Save your edits to the draft without approving"
             >
-              {busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {busy === "save" ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
               Save
-            </button>
-            {dirty && <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>}
-            <button
+            </Button>
+            {dirty && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                Unsaved changes
+              </span>
+            )}
+            <Button
               type="button"
               onClick={approve}
               disabled={busy !== null || stale}
-              className="ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/20 ac-gradient disabled:opacity-60"
+              className="ml-auto"
             >
-              {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4" />}
+              {busy === "approve" ? <Loader2 className="animate-spin" /> : <ThumbsUp />}
               Approve &amp; create deal
-            </button>
+            </Button>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
@@ -472,9 +495,9 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
       title="Review deal draft"
       badges={
         draft && (
-          <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium capitalize text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+          <StatusBadge tone={DRAFT_STATUS_TONE[draft.status]} className="capitalize">
             {draft.status}
-          </span>
+          </StatusBadge>
         )
       }
       subtitle={draft ? `${draft.fields.clientName}${draft.closerName ? ` · ${draft.closerName}` : ""}` : undefined}
@@ -487,122 +510,134 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
       {!form && (isLoading || (draft && !isError)) ? (
         // Loaded but not seeded yet counts as loading (no error flash).
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : !draft || !form ? (
         <p className="py-12 text-center text-sm text-destructive">Couldn&apos;t load this draft.</p>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300">
-              <Bot className="h-3.5 w-3.5" />
+          <div className="rounded-2xl bg-muted/50 px-4 py-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium">
+              <Bot className="size-3.5 text-muted-foreground" />
               Proposed by {draft.createdByName ?? "an agent"}
               <span className="font-normal text-muted-foreground">· {new Date(draft.createdAt).toLocaleString()}</span>
             </p>
-            {draft.note && <p className="mt-1 whitespace-pre-wrap text-xs text-foreground">{draft.note}</p>}
+            {draft.note && <p className="mt-1 whitespace-pre-wrap text-xs">{draft.note}</p>}
             {pending && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Nothing exists yet. Approving creates the deal (and, for a closed deal, its invoice + contract to review and send). It emails nobody.
               </p>
             )}
           </div>
 
           <Section title="Deal">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="dd-client" className={LABEL}>Client name</label>
-                <input id="dd-client" className={FIELD} disabled={!pending} value={form.clientName} onChange={(e) => patchForm({ clientName: e.target.value })} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="dd-client">Client name</Label>
+                <Input id="dd-client" disabled={!pending} value={form.clientName} onChange={(e) => patchForm({ clientName: e.target.value })} />
               </div>
-              <div>
-                <label htmlFor="dd-closer" className={LABEL}>Closer</label>
-                <select id="dd-closer" className={FIELD} disabled={!pending} value={form.closerId} onChange={(e) => patchForm({ closerId: e.target.value })}>
-                  {!closers.some((c) => c.id === form.closerId) && (
-                    <option value={form.closerId}>{draft.closerName ?? form.closerId}</option>
-                  )}
-                  {closers
-                    .filter((c) => c.role !== "setter")
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.displayName}
-                        {c.status !== "active" ? " (inactive)" : ""}
-                      </option>
-                    ))}
-                </select>
+              <div className="grid gap-2">
+                <Label htmlFor="dd-closer">Closer</Label>
+                <Select
+                  disabled={!pending}
+                  value={form.closerId || NONE}
+                  onValueChange={(v) => patchForm({ closerId: v === NONE ? "" : v })}
+                >
+                  <SelectTrigger id="dd-closer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {!closers.some((c) => c.id === form.closerId) && (
+                      <SelectItem value={form.closerId || NONE}>{draft.closerName ?? form.closerId}</SelectItem>
+                    )}
+                    {closers
+                      .filter((c) => c.role !== "setter")
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.displayName}
+                          {c.status !== "active" ? " (inactive)" : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label htmlFor="dd-value" className={LABEL}>Deal value ($)</label>
-                <input
+              <div className="grid gap-2">
+                <Label htmlFor="dd-value">Deal value ($)</Label>
+                <Input
                   id="dd-value"
                   type="number"
                   min="0"
                   step="0.01"
                   inputMode="decimal"
-                  className={FIELD}
                   disabled={!pending}
                   value={form.dealValue}
                   onChange={(e) => patchForm({ dealValue: e.target.value.startsWith("-") ? "" : e.target.value })}
                 />
               </div>
-              <div>
-                <label htmlFor="dd-status" className={LABEL}>Status on approval</label>
-                <select id="dd-status" className={FIELD} disabled={!pending} value={form.status} onChange={(e) => patchForm({ status: e.target.value })}>
-                  {DEAL_STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
+              <div className="grid gap-2">
+                <Label htmlFor="dd-status">Status on approval</Label>
+                <Select disabled={!pending} value={form.status} onValueChange={(v) => patchForm({ status: v })}>
+                  <SelectTrigger id="dd-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEAL_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label htmlFor="dd-date" className={LABEL}>Closing date</label>
-                <input id="dd-date" type="date" className={FIELD} disabled={!pending} value={form.closingDate} onChange={(e) => patchForm({ closingDate: e.target.value })} />
+              <div className="grid gap-2">
+                <Label htmlFor="dd-date">Closing date</Label>
+                <DatePicker id="dd-date" disabled={!pending} value={form.closingDate} onValueChange={(v) => patchForm({ closingDate: v })} />
               </div>
-              <div>
-                <span className={LABEL}>Payment type</span>
-                <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+              <div className="grid gap-2">
+                <span className={CAPTION}>Payment type</span>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  disabled={!pending}
+                  value={form.paymentType}
+                  onValueChange={(v) => { if (v) patchForm({ paymentType: v }); }}
+                  aria-label="Payment type"
+                  className="w-full"
+                >
                   {["local", "international"].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      disabled={!pending}
-                      aria-pressed={form.paymentType === t}
-                      onClick={() => patchForm({ paymentType: t })}
-                      className={cn(
-                        "flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors",
-                        form.paymentType === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                      )}
-                    >
+                    <ToggleGroupItem key={t} value={t} className="flex-1 capitalize">
                       {t}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
+                </ToggleGroup>
               </div>
             </div>
-            <div>
-              <span className={LABEL}>Services</span>
+            <div className="grid gap-2">
+              <span className={CAPTION}>Services</span>
               {pending ? (
                 <ServiceMultiSelect value={form.services} onChange={(services) => patchForm({ services })} />
               ) : (
-                <p className="text-sm text-foreground">{form.services.join(", ") || "—"}</p>
+                <p className="text-sm">{form.services.join(", ") || "—"}</p>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="dd-brand" className={LABEL}>Brand</label>
-                <input id="dd-brand" className={FIELD} disabled={!pending} value={form.brandName} onChange={(e) => patchForm({ brandName: e.target.value })} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="dd-brand">Brand</Label>
+                <Input id="dd-brand" disabled={!pending} value={form.brandName} onChange={(e) => patchForm({ brandName: e.target.value })} />
               </div>
-              <div>
-                <label htmlFor="dd-website" className={LABEL}>Website</label>
-                <input id="dd-website" className={FIELD} disabled={!pending} value={form.website} onChange={(e) => patchForm({ website: e.target.value })} />
+              <div className="grid gap-2">
+                <Label htmlFor="dd-website">Website</Label>
+                <Input id="dd-website" disabled={!pending} value={form.website} onChange={(e) => patchForm({ website: e.target.value })} />
               </div>
             </div>
-            <div>
-              <label htmlFor="dd-notes" className={LABEL}>Closer notes</label>
-              <textarea
+            <div className="grid gap-2">
+              <Label htmlFor="dd-notes">Closer notes</Label>
+              <Textarea
                 id="dd-notes"
                 rows={3}
                 disabled={!pending}
                 value={form.notes}
                 onChange={(e) => patchForm({ notes: e.target.value })}
-                className="flex w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="resize-y"
               />
             </div>
           </Section>
@@ -616,10 +651,10 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
                     <dd
                       className={cn(
                         "break-words",
-                        x.warn ? "flex items-start gap-1 font-medium text-amber-600 dark:text-amber-400" : "text-foreground"
+                        x.warn && "flex items-start gap-1 font-medium"
                       )}
                     >
-                      {x.warn && <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />}
+                      {x.warn && <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-500" />}
                       {x.value}
                     </dd>
                   </Fragment>
@@ -629,25 +664,25 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
           )}
 
           <Section title="Recipient">
-            <div>
-              <label htmlFor="dd-email" className={LABEL}>Client email</label>
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="dd-email">Client email</Label>
+              <Input
                 id="dd-email"
                 type="email"
                 disabled={!pending}
-                className={cn(FIELD, form.clientEmail.trim() && !isValidEmail(form.clientEmail) && "border-destructive/60")}
+                aria-invalid={form.clientEmail.trim() && !isValidEmail(form.clientEmail) ? true : undefined}
                 value={form.clientEmail}
                 onChange={(e) => patchForm({ clientEmail: e.target.value })}
                 placeholder="client@example.com"
               />
               {!form.clientEmail.trim() && form.status === "closed" && (
-                <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="h-3 w-3" /> Without an email no contract is prepared, and the invoice can&apos;t be sent until one is added.
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <AlertTriangle className="size-3 shrink-0 text-amber-500" /> Without an email no contract is prepared, and the invoice can&apos;t be sent until one is added.
                 </p>
               )}
             </div>
-            <div>
-              <label htmlFor="dd-cc" className={LABEL}>Additional CCs</label>
+            <div className="grid gap-2">
+              <Label htmlFor="dd-cc">Additional CCs</Label>
               <CcChipsInput field={cc} id="dd-cc" exclude={[form.clientEmail]} disabled={!pending} />
             </div>
           </Section>
@@ -657,7 +692,7 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
             aside={
               invoice && pending ? (
                 <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {resetInvoice
                       ? "Regenerates on save"
                       : invoiceTouched
@@ -667,15 +702,17 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
                       : "Generated from value + services"}
                   </span>
                   {!resetInvoice && (invoiceTouched || draft.invoice) && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={resetToGenerated}
                       disabled={busy !== null}
-                      className="h-9 rounded-md px-2 text-[11px] font-medium text-primary hover:bg-primary/5 disabled:opacity-60 sm:h-7"
+                      className="h-9 sm:h-6"
                       title="Drop the proposed/edited lines — the invoice is generated from the deal value + services"
                     >
                       Reset to generated lines
-                    </button>
+                    </Button>
                   )}
                 </div>
               ) : undefined
@@ -714,19 +751,19 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
                 )}
                 <InvoiceTotalsSummary details={invoice.details} />
                 {pending && Math.round(invoice.details.totalAmount * 100) !== valueCents && valueCents > 0 && (
-                  <p className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="h-3 w-3" /> Invoice total differs from the deal value.
+                  <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <AlertTriangle className="size-3 shrink-0 text-amber-500" /> Invoice total differs from the deal value.
                   </p>
                 )}
                 {pending && resetInvoice ? (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Save (or approve) to replace these lines with ones generated from the deal value + services.
                   </p>
                 ) : (
                   pending &&
                   dirty &&
                   !invoiceTouched && (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Changed the value or services? Save to refresh the generated lines.
                     </p>
                   )
@@ -736,8 +773,8 @@ export function DealDraftReviewDrawer({ draftId, onClose, onApproved }: Props) {
           </Section>
 
           {draft.status === "approved" && draft.dealId && (
-            <p className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <Check className="h-3.5 w-3.5" /> Approved — the deal is in the queue.
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Check className="size-3.5 text-emerald-500" /> Approved — the deal is in the queue.
             </p>
           )}
         </div>

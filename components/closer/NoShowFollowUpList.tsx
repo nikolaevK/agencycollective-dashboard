@@ -5,31 +5,28 @@ import { GhlEventChip, type GhlCrossReferenceData } from "@/components/ghl/GhlEv
 import { format, parseISO } from "date-fns";
 import {
   AlignLeft,
-  CheckCircle2,
   ChevronDown,
   Clock,
   Mail,
   MapPin,
   Pencil,
-  PhoneCall,
-  PhoneOff,
   StickyNote,
   User,
   UserCircle2,
   Users,
   Video,
-  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  PRE_CALL_BADGE,
   PRE_CALL_LABELS,
-  POST_CALL_BADGE,
   POST_CALL_LABELS,
   type PreCallStatus,
   type PostCallStatus,
 } from "@/lib/appointments";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 export interface NoShowFollowUpListProps {
   items: NoShowFollowUp[];
@@ -78,16 +75,40 @@ function formatRange(start: string | null, end: string | null, allDay: boolean):
 // Mirrors components/closer/CalendarEventList — keeps the two surfaces
 // visually consistent so a "Cancelled" pill on a follow-up card reads the
 // same as on the calendar.
-const RESPONSE_BADGE: Record<string, { label: string; cls: string }> = {
-  accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
-  tentative: { label: "Maybe", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  needsAction: { label: "Pending", cls: "bg-muted/60 text-muted-foreground" },
+// `tone` is the status color of the Badge pattern.
+const RESPONSE_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
+  accepted: { label: "Accepted", tone: "success" },
+  declined: { label: "Declined", tone: "danger" },
+  tentative: { label: "Maybe", tone: "warning" },
+  needsAction: { label: "Pending", tone: "neutral" },
 };
 
-const STATUS_PILL: Record<string, { label: string; cls: string }> = {
-  tentative: { label: "Tentative", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  cancelled: { label: "Cancelled", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
+const STATUS_PILL: Record<string, { label: string; tone: BadgeTone }> = {
+  tentative: { label: "Tentative", tone: "warning" },
+  cancelled: { label: "Cancelled", tone: "danger" },
+};
+
+// Status tones for the setter's pre/post-call badges (same hues as the
+// lib/appointments PRE_CALL_BADGE / POST_CALL_BADGE fills).
+const PRE_CALL_TONE: Record<PreCallStatus, BadgeTone> = {
+  not_called: "neutral",
+  auto_confirmed: "success",
+  auto_no_answer: "warning",
+  triaged_confirmed: "success",
+  confirmed: "success",
+  no_answer: "warning",
+  voicemail: "info",
+  rescheduled: "info",
+  cancelled: "danger",
+};
+
+const POST_CALL_TONE: Record<PostCallStatus, BadgeTone> = {
+  not_called: "neutral",
+  followed_up: "success",
+  needs_followup: "warning",
+  qualified: "success",
+  disqualified: "danger",
+  no_answer: "warning",
 };
 
 export function NoShowFollowUpList({
@@ -111,18 +132,15 @@ export function NoShowFollowUpList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border/50 bg-card/50 p-10 text-center">
-        <p className="text-sm text-muted-foreground">
-          {emptyText ?? "No no-shows to follow up on. Nice."}
-        </p>
-      </div>
+      <Card>
+        <CardContent className="p-10 md:p-10 text-center">
+          <p className="text-sm text-muted-foreground">
+            {emptyText ?? "No no-shows to follow up on. Nice."}
+          </p>
+        </CardContent>
+      </Card>
     );
   }
-
-  const cardBorder =
-    tone === "recovered" || tone === "showed"
-      ? "border-emerald-500/30 bg-emerald-500/5"
-      : "border-red-500/30 bg-red-500/5";
 
   return (
     <div className="space-y-2">
@@ -135,45 +153,33 @@ export function NoShowFollowUpList({
         const isOpen = expanded.has(n.googleEventId);
 
         return (
-          <div
-            key={`${n.googleEventId}-${n.markedAt}`}
-            className={cn("rounded-xl border p-4", cardBorder)}
-          >
-            <div className="flex items-start justify-between gap-3">
+          <Card key={`${n.googleEventId}-${n.markedAt}`}>
+            <CardContent className="flex items-start justify-between gap-3 p-4 md:p-4">
               <div className="min-w-0 flex-1">
                 {/* Title row: status pill + client name + event status */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {tone === "recovered" || tone === "showed" ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-3 w-3" />
+                    <StatusBadge tone="success">
                       {tone === "recovered" ? "Recovered" : "Showed"}
-                    </span>
+                    </StatusBadge>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-red-500/15 text-red-700 dark:text-red-400">
-                      <XCircle className="h-3 w-3" />
-                      No show
-                    </span>
+                    <StatusBadge tone="danger">No show</StatusBadge>
                   )}
                   {n.clientName && (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-foreground">
-                      <User className="h-3 w-3 text-muted-foreground" />
+                    <span className="inline-flex items-center gap-1 text-sm font-medium">
+                      <User className="size-3 text-muted-foreground" />
                       {n.clientName}
                     </span>
                   )}
                   {statusPill && (
-                    <span className={cn(
-                      "shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                      statusPill.cls
-                    )}>
-                      {statusPill.label}
-                    </span>
+                    <StatusBadge tone={statusPill.tone}>{statusPill.label}</StatusBadge>
                   )}
                 </div>
 
                 {/* Meta row: scheduled time range, email, links, attribution */}
                 <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="size-3" />
                     {formatRange(n.scheduledAt, n.eventEnd, n.allDay)}
                   </span>
                   {n.clientEmail && (
@@ -181,7 +187,7 @@ export function NoShowFollowUpList({
                       href={`mailto:${n.clientEmail}`}
                       className="inline-flex items-center gap-1 hover:text-foreground"
                     >
-                      <Mail className="h-3 w-3" />
+                      <Mail className="size-3" />
                       {n.clientEmail}
                     </a>
                   )}
@@ -192,30 +198,28 @@ export function NoShowFollowUpList({
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 hover:text-foreground"
                     >
-                      <Video className="h-3 w-3" />
+                      <Video className="size-3" />
                       Meet
                     </a>
                   )}
                   {n.eventLocation && (
                     <span className="inline-flex items-center gap-1 max-w-[14rem] truncate" title={n.eventLocation}>
-                      <MapPin className="h-3 w-3 shrink-0" />
+                      <MapPin className="size-3 shrink-0" />
                       {n.eventLocation}
                     </span>
                   )}
                   {n.calendarName && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-muted text-[10px] font-medium">
-                      {n.calendarName}
-                    </span>
+                    <Badge variant="secondary">{n.calendarName}</Badge>
                   )}
                   {variant === "setter" && n.markedByCloserName && (
                     <span className="inline-flex items-center gap-1">
-                      <UserCircle2 className="h-3 w-3" />
+                      <UserCircle2 className="size-3" />
                       Marked by {n.markedByCloserName}
                     </span>
                   )}
                   {n.attendees.length > 0 && (
                     <span className="inline-flex items-center gap-1">
-                      <Users className="h-3 w-3" />
+                      <Users className="size-3" />
                       {n.attendees.length} attendee{n.attendees.length !== 1 ? "s" : ""}
                     </span>
                   )}
@@ -237,25 +241,27 @@ export function NoShowFollowUpList({
                 {/* Details expander — description + attendees, identical to calendar pattern */}
                 {hasDetails && (
                   <div className="mt-2">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={() => toggleExpanded(n.googleEventId)}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      className="-ml-2 text-muted-foreground"
                     >
-                      <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                      <ChevronDown className={cn("transition-transform", isOpen && "rotate-180")} />
                       {isOpen ? "Hide details" : "Details"}
-                    </button>
+                    </Button>
                     {isOpen && (
-                      <div className="mt-2 space-y-2.5 rounded-lg border border-border/40 bg-muted/20 p-3">
+                      <div className="mt-2 space-y-2.5 rounded-2xl bg-muted/50 p-3">
                         {n.eventDescription && (
                           <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                            <AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />
+                            <AlignLeft className="size-3 mt-0.5 shrink-0" />
                             <p className="whitespace-pre-wrap break-words">{n.eventDescription}</p>
                           </div>
                         )}
                         {n.attendees.length > 0 && (
                           <div className="flex items-start gap-1.5 text-xs">
-                            <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                            <Users className="size-3 mt-0.5 shrink-0 text-muted-foreground" />
                             <ul className="space-y-1 flex-1 min-w-0">
                               {n.attendees.map((a) => (
                                 <li key={a.email} className="flex items-center gap-2 flex-wrap">
@@ -266,12 +272,9 @@ export function NoShowFollowUpList({
                                     {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                   </a>
                                   {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                    <span className={cn(
-                                      "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                                      RESPONSE_BADGE[a.responseStatus].cls
-                                    )}>
+                                    <StatusBadge tone={RESPONSE_BADGE[a.responseStatus].tone}>
                                       {RESPONSE_BADGE[a.responseStatus].label}
-                                    </span>
+                                    </StatusBadge>
                                   )}
                                 </li>
                               ))}
@@ -289,36 +292,28 @@ export function NoShowFollowUpList({
                     the appointment row is what makes a setter "exist on the
                     call" (setterName comes from the same join). */}
                 {hasAppointment && (
-                  <div className="mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04] space-y-2">
+                  <div className="mt-3 pt-3 border-t space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {n.setterName && (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <UserCircle2 className="h-3 w-3" />
+                          <UserCircle2 className="size-3" />
                           Setter: {n.setterName}
                         </span>
                       )}
                       {preCall && (
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          PRE_CALL_BADGE[preCall]
-                        )}>
-                          <PhoneCall className="h-3 w-3" />
+                        <StatusBadge tone={PRE_CALL_TONE[preCall]}>
                           Pre: {PRE_CALL_LABELS[preCall]}
-                        </span>
+                        </StatusBadge>
                       )}
                       {postCall && (
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          POST_CALL_BADGE[postCall]
-                        )}>
-                          <PhoneOff className="h-3 w-3" />
+                        <StatusBadge tone={POST_CALL_TONE[postCall]}>
                           Post: {POST_CALL_LABELS[postCall]}
-                        </span>
+                        </StatusBadge>
                       )}
                     </div>
                     {n.setterNotes && (
                       <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                        <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
+                        <StickyNote className="size-3 mt-0.5 shrink-0" />
                         <p className="whitespace-pre-wrap break-words">{n.setterNotes}</p>
                       </div>
                     )}
@@ -328,16 +323,18 @@ export function NoShowFollowUpList({
 
               {/* Setter-only: edit button */}
               {variant === "setter" && onEdit && (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => onEdit(n)}
-                  className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border/50 bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  className="shrink-0"
                 >
-                  <Pencil className="h-3 w-3" />
+                  <Pencil />
                   {hasAppointment ? "Update" : "Start follow-up"}
-                </button>
+                </Button>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         );
       })}
     </div>

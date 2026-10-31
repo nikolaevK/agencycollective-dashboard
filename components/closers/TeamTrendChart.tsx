@@ -1,27 +1,29 @@
 "use client";
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { TrendingUp } from "lucide-react";
-import {
-  formatCents,
-  CHART_CLOSED_COLOR,
-  CHART_PAID_COLOR,
-} from "@/components/closers/types";
+import { formatCents } from "@/components/closers/types";
 import { format, parseISO } from "date-fns";
 import type { TeamMonthlyTrendPoint } from "@/lib/deals";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 interface Props {
   data: TeamMonthlyTrendPoint[];
 }
+
+const chartConfig = {
+  // Theme chart pair (globals.css): closed = blue, paid = emerald.
+  closedRevenue: { label: "Closed revenue", color: "hsl(var(--chart-1))" },
+  paidRevenue: { label: "Paid revenue", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig;
 
 function monthLabel(month: string): string {
   try {
@@ -39,88 +41,83 @@ export function TeamTrendChart({ data }: Props) {
   const hasData = data.some((p) => p.closedRevenue > 0 || p.paidRevenue > 0);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
-      <div className="flex items-center justify-between gap-2 mb-5">
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-violet-500" />
-          <h3 className="text-base font-semibold text-foreground">Revenue Trend</h3>
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>Revenue Trend</CardTitle>
         </div>
-        <span className="text-[11px] text-muted-foreground">Last 12 months</span>
-      </div>
+        <CardDescription className="text-xs">Last 12 months</CardDescription>
+      </CardHeader>
 
-      {!hasData ? (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No revenue recorded in the last 12 months.
-        </p>
-      ) : (
-        <div style={{ width: "100%", height: 260, overflow: "hidden" }}>
-          <ResponsiveContainer width="100%" height="100%">
+      <CardContent>
+        {!hasData ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No revenue recorded in the last 12 months.
+          </p>
+        ) : (
+          <ChartContainer config={chartConfig} className="aspect-auto h-[260px] w-full">
             <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barGap={2}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-                vertical={false}
-              />
+              <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="month"
                 tickFormatter={monthLabel}
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
                 tickFormatter={(v: number) => formatCents(v)}
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
                 width={72}
               />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
-                  const p = payload[0].payload as TeamMonthlyTrendPoint;
-                  return (
-                    <div className="rounded-lg border border-border/50 dark:border-white/[0.06] bg-card px-3 py-2 shadow-lg">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">
-                        {format(parseISO(`${p.month}-01`), "MMMM yyyy")}
-                      </p>
-                      <p className="text-sm text-foreground">
-                        <span className="font-semibold">{formatCents(p.closedRevenue)}</span>{" "}
-                        closed · {p.closedCount} deal{p.closedCount === 1 ? "" : "s"}
-                      </p>
-                      <p className="text-sm text-foreground">
-                        <span className="font-semibold">{formatCents(p.paidRevenue)}</span> paid
-                      </p>
-                    </div>
-                  );
-                }}
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(_, payload) => {
+                      const p = payload?.[0]?.payload as TeamMonthlyTrendPoint | undefined;
+                      return p ? format(parseISO(`${p.month}-01`), "MMMM yyyy") : null;
+                    }}
+                    formatter={(value, name, item) => {
+                      const p = item.payload as TeamMonthlyTrendPoint;
+                      const key = name as keyof typeof chartConfig;
+                      return (
+                        <>
+                          <div
+                            className="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-[--color-bg]"
+                            style={{ "--color-bg": `var(--color-${key})` } as React.CSSProperties}
+                          />
+                          <div className="flex flex-1 items-center justify-between gap-4 leading-none">
+                            <span className="text-muted-foreground">{chartConfig[key]?.label}</span>
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {formatCents(Number(value))}
+                              {key === "closedRevenue" &&
+                                ` · ${p.closedCount} deal${p.closedCount === 1 ? "" : "s"}`}
+                            </span>
+                          </div>
+                        </>
+                      );
+                    }}
+                  />
+                }
               />
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                formatter={(value: string) => (
-                  <span className="text-xs text-muted-foreground">{value}</span>
-                )}
-              />
+              <ChartLegend content={<ChartLegendContent />} />
               <Bar
                 dataKey="closedRevenue"
-                name="Closed revenue"
-                fill={CHART_CLOSED_COLOR}
-                radius={[4, 4, 0, 0]}
+                fill="var(--color-closedRevenue)"
+                radius={[6, 6, 0, 0]}
                 maxBarSize={22}
               />
               <Bar
                 dataKey="paidRevenue"
-                name="Paid revenue"
-                fill={CHART_PAID_COLOR}
-                radius={[4, 4, 0, 0]}
+                fill="var(--color-paidRevenue)"
+                radius={[6, 6, 0, 0]}
                 maxBarSize={22}
               />
             </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
   );
 }

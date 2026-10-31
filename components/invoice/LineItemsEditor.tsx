@@ -23,14 +23,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { DecimalInput } from "@/components/invoice/InvoiceChargesForm";
 import { InvoiceServiceSelector } from "@/components/invoice/InvoiceServiceSelector";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { createEmptyItem, formatCurrencyValue, lineAmountOf } from "@/lib/invoice/validation";
 import type { InvoiceItem } from "@/types/invoice";
 import { cn } from "@/lib/utils";
-
-const CELL =
-  "flex h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted-foreground";
-
 
 /** Textarea that grows with its content (capped, then scrolls). */
 function AutoGrowTextarea({
@@ -54,7 +54,7 @@ function AutoGrowTextarea({
     el.style.height = `${Math.min(el.scrollHeight + 2, 384)}px`;
   }, [value]);
   return (
-    <textarea
+    <Textarea
       ref={ref}
       rows={2}
       value={value}
@@ -62,14 +62,14 @@ function AutoGrowTextarea({
       aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="flex min-h-[3.25rem] w-full resize-y overflow-y-auto rounded-md border border-input bg-background px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted-foreground"
+      className="min-h-[3.25rem] resize-y overflow-y-auto py-2 leading-relaxed"
     />
   );
 }
 
-const LABEL = "mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground";
+const LABEL = "text-xs font-medium text-muted-foreground";
 // Row actions: >= 36px tap targets on phones, compact on desktop.
-const ACTION = "flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors sm:h-7 sm:w-7";
+const ACTION = "size-9 text-muted-foreground sm:size-7";
 
 interface RowProps {
   item: InvoiceItem;
@@ -119,22 +119,24 @@ function ItemRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group rounded-lg border bg-background/60 p-2.5 sm:p-3",
-        locked ? "border-dashed border-border" : "border-border/60",
-        isDragging && "relative z-10 opacity-80 shadow-lg ring-2 ring-primary/30"
+        "group rounded-2xl border bg-card p-2.5 sm:p-3",
+        locked && "border-dashed bg-muted/30",
+        isDragging && "relative z-10 opacity-80 shadow-lg ring-2 ring-ring/30"
       )}
     >
       <div className="flex items-start gap-2">
         {canReorder ? (
-          <button
+          <Button
             type="button"
-            className="flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:mt-1 sm:h-7 sm:w-5"
+            variant="ghost"
+            size="icon-sm"
+            className="size-9 shrink-0 cursor-grab touch-none text-muted-foreground active:cursor-grabbing sm:mt-1 sm:h-7 sm:w-5"
             aria-label={`Reorder ${label}`}
             {...attributes}
             {...listeners}
           >
-            <GripVertical className="h-4 w-4" />
-          </button>
+            <GripVertical />
+          </Button>
         ) : (
           <span className="w-9 shrink-0 sm:w-5" />
         )}
@@ -146,43 +148,43 @@ function ItemRow({
               Qty + Unit price share the next and the Total gets its own. */}
           <div className={cn("grid gap-2", wide ? "grid-cols-[minmax(0,1fr)_5rem_7.5rem_7rem]" : "grid-cols-[minmax(0,2fr)_minmax(0,3fr)]")}>
             <div className={wide ? undefined : "col-span-2"}>
-              <label className={cn(LABEL, wide ? "hidden" : "block")}>
+              <Label className={cn(LABEL, "mb-1.5", wide ? "hidden" : "flex")}>
                 Item
-              </label>
-              <input
+              </Label>
+              <Input
                 type="text"
                 value={item.name}
                 disabled={locked}
                 onChange={(e) => onPatch({ name: e.target.value })}
                 placeholder="Service name"
                 aria-label={`Item ${index + 1} name`}
-                className={cn(CELL, "font-medium")}
+                className="font-medium"
               />
             </div>
             <div>
-              <label className={cn(LABEL, wide ? "hidden" : "block")}>
+              <Label className={cn(LABEL, "mb-1.5", wide ? "hidden" : "flex")}>
                 Qty
-              </label>
+              </Label>
               <DecimalInput
                 value={item.quantity}
                 maxDecimals={4}
                 disabled={locked}
                 onChange={(quantity) => onPatch({ quantity })}
                 ariaLabel={`${label} quantity`}
-                className={cn(CELL, "text-right tabular-nums")}
+                className="text-right tabular-nums"
               />
             </div>
             <div>
-              <label className={cn(LABEL, wide ? "hidden" : "block")}>
+              <Label className={cn(LABEL, "mb-1.5", wide ? "hidden" : "flex")}>
                 Unit price
-              </label>
+              </Label>
               <DecimalInput
                 value={item.unitPrice}
                 disabled={locked}
                 onChange={(unitPrice) => onPatch({ unitPrice })}
                 placeholder="0.00"
                 ariaLabel={`${label} unit price`}
-                className={cn(CELL, "text-right tabular-nums")}
+                className="text-right tabular-nums"
               />
             </div>
             {/* Never truncated: a clipped right-aligned amount loses its
@@ -208,8 +210,8 @@ function ItemRow({
           />
 
           {computed && (
-            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Lock className="h-3 w-3" /> Calculated from the invoice components above
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Lock className="size-3" /> Calculated from the invoice components above
             </p>
           )}
         </div>
@@ -217,39 +219,45 @@ function ItemRow({
         {/* Row actions — Remove sits at the bottom, away from Duplicate. */}
         <div className="flex shrink-0 flex-col items-center gap-1 self-stretch sm:mt-0.5">
           {onSavePreset && !locked && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={onSavePreset}
               disabled={savingPreset || !item.name.trim()}
               title={item.name.trim() ? `Save "${item.name}" as a preset service` : "Name the item to save it as a preset"}
               aria-label={`Save ${label} as preset`}
-              className={cn(ACTION, "hover:bg-primary/10 hover:text-primary disabled:opacity-30")}
+              className={ACTION}
             >
-              {savingPreset ? <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" /> : <BookmarkPlus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />}
-            </button>
+              {savingPreset ? <Loader2 className="size-4 animate-spin sm:size-3.5" /> : <BookmarkPlus className="size-4 sm:size-3.5" />}
+            </Button>
           )}
           {!locked && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={onDuplicate}
               title="Duplicate line"
               aria-label={`Duplicate ${label}`}
-              className={cn(ACTION, "hover:bg-muted hover:text-foreground")}
+              className={ACTION}
             >
-              <Copy className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-            </button>
+              <Copy className="size-4 sm:size-3.5" />
+            </Button>
           )}
           {!locked && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={onRemove}
               disabled={!canRemove}
               title={canRemove ? "Remove line" : "An invoice needs at least one line"}
               aria-label={`Remove ${label}`}
-              className={cn(ACTION, "mt-auto hover:bg-destructive/10 hover:text-destructive disabled:opacity-30")}
+              className={cn(ACTION, "mt-auto hover:bg-destructive/10 hover:text-destructive")}
             >
-              <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-            </button>
+              <Trash2 className="size-4 sm:size-3.5" />
+            </Button>
           )}
         </div>
       </div>
@@ -408,7 +416,7 @@ export function LineItemsEditor({
     <div ref={rootRef} className="space-y-2">
       {/* Column legend (desktop) — rows label themselves on phones. */}
       {items.length > 0 && wide && (
-        <div className="flex items-center gap-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
           <span className="w-5 shrink-0" />
           <div className="grid flex-1 grid-cols-[minmax(0,1fr)_5rem_7.5rem_7rem] gap-2">
             <span>Item</span>
@@ -461,35 +469,38 @@ export function LineItemsEditor({
       </DndContext>
 
       {items.length === 0 && (
-        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+        <p className="rounded-2xl border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
           No line items yet.
         </p>
       )}
 
       {removed && !disabled && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 py-1 pl-3 pr-1 text-xs text-muted-foreground">
+        <div role="status" className="flex items-center justify-between gap-2 rounded-2xl bg-muted/50 py-1 pl-3 pr-1 text-xs text-muted-foreground">
           <span className="min-w-0 truncate">Removed {removed.item.name.trim() ? `"${removed.item.name.trim()}"` : "line"}</span>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={undoRemove}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 font-medium text-primary hover:bg-primary/10 sm:h-7"
+            className="h-9 shrink-0 text-foreground sm:h-7"
           >
-            <Undo2 className="h-3.5 w-3.5" />
+            <Undo2 className="size-3.5" />
             Undo
-          </button>
+          </Button>
         </div>
       )}
 
       {!disabled && (
-        <div className="flex flex-wrap items-center gap-4 pt-1">
-          <button
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => emit([...items, createEmptyItem()])}
-            className="flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Add item
-          </button>
+          </Button>
           <InvoiceServiceSelector onSelect={(item) => emit([...items, item])} />
         </div>
       )}

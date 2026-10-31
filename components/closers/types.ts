@@ -1,6 +1,8 @@
 import type { CloserStatus, CloserRole } from "@/lib/closers";
 import type { DealStatus, ShowStatus } from "@/lib/deals";
 import type { SetterTier } from "@/lib/appointments";
+import type { DealDraftStatus } from "@/lib/dealDrafts";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export interface CloserPublic {
   id: string;
@@ -73,6 +75,13 @@ export const PAYMENT_TYPES = [
   { value: "international" as const, label: "International (Wire)" },
 ] as const;
 
+/** Status tone per deal-draft status (Deal queue panel + review drawer). */
+export const DRAFT_STATUS_TONE: Record<DealDraftStatus, BadgeTone> = {
+  pending: "warning",
+  approved: "success",
+  rejected: "danger",
+};
+
 export const DEAL_STATUSES = [
   { value: "closed" as const, label: "Closed" },
   { value: "not_closed" as const, label: "Not Closed" },
@@ -90,11 +99,3 @@ export { formatCents } from "@/lib/format";
 export function formatBasisPoints(bp: number): string {
   return `${(bp / 100).toFixed(1)}%`;
 }
-
-// Shared revenue-chart series colors (TeamTrendChart + CloserPerformanceChart
-// must stay identical so closed/paid read the same across both charts). The
-// pair passes the palette checks — lightness band, chroma, CVD separation,
-// 3:1 surface contrast — in light AND dark mode; don't swap for lighter
-// tailwind steps without re-validating.
-export const CHART_CLOSED_COLOR = "#7c3aed"; // violet-600
-export const CHART_PAID_COLOR = "#059669"; // emerald-600

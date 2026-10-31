@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -46,44 +47,43 @@ export function MonthYearSelector({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button
+      <Button
+        variant="outline"
+        size="icon"
         onClick={goPrev}
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg border border-border/50 dark:border-white/[0.06]",
-          "bg-card text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-        )}
+        aria-label="Previous month"
       >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
+        <ChevronLeft />
+      </Button>
 
       <div className="min-w-[180px] text-center">
-        <span className="text-sm font-semibold text-foreground">
+        <span className="text-sm font-semibold tracking-tight">
           {MONTH_NAMES[month - 1]} {year}
         </span>
         {isFuture && (
-          <span className="ml-2 inline-flex items-center rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
+          <StatusBadge tone="info" className="ml-2 align-middle">
             Future month
-          </span>
+          </StatusBadge>
         )}
       </div>
 
-      <button
+      <Button
+        variant="outline"
+        size="icon"
         onClick={goNext}
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg border border-border/50 dark:border-white/[0.06]",
-          "bg-card text-muted-foreground transition-colors hover:text-foreground hover:bg-muted/50"
-        )}
+        aria-label="Next month"
       >
-        <ChevronRight className="h-4 w-4" />
-      </button>
+        <ChevronRight />
+      </Button>
 
       {!isCurrentMonth && (
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onChange(now.getMonth() + 1, now.getFullYear())}
-          className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
         >
           Today
-        </button>
+        </Button>
       )}
     </div>
   );

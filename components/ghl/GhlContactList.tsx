@@ -15,8 +15,21 @@ import {
   Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Badge, BadgeDot, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Toggle } from "@/components/ui/toggle";
 import type { GhlContact, GhlPipeline, GhlTag } from "@/types/ghl";
 
 // "all" is no longer a filter key — an empty `filters` set means "show all
@@ -166,40 +179,39 @@ export function GhlContactList(props: Props) {
 
   return (
     <div className="flex h-full flex-col min-w-0">
-      <div className="border-b border-border/60 p-3 space-y-2 min-w-0">
+      <div className="border-b p-3 space-y-2 min-w-0">
         {/* Search — internal state with debounced commit upward, so each
             keystroke doesn't re-render the entire view. */}
         <SearchBox initialValue={props.query} onSearch={props.setQuery} />
 
         {/* Primary filters (multi-select; combine with AND alongside the
             status/tag/pipeline/source/stale/date filters below). */}
-        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-muted/50 dark:bg-white/5 p-1">
+        <div className="flex flex-wrap items-center gap-1">
           {FILTERS.map((f) => {
             const on = props.filters.has(f.key);
             return (
-              <button
+              <Toggle
                 key={f.key}
-                type="button"
-                onClick={() => props.toggleFilter(f.key)}
-                className={cn(
-                  "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-                  on
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
+                variant="outline"
+                size="sm"
+                pressed={on}
+                onPressedChange={() => props.toggleFilter(f.key)}
+                className="h-7 px-2.5 text-xs"
               >
                 {f.label}
-              </button>
+              </Toggle>
             );
           })}
           {props.filters.size > 0 && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={props.clearFilters}
-              className="ml-auto px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground underline"
+              className="ml-auto text-muted-foreground"
             >
               clear
-            </button>
+            </Button>
           )}
         </div>
 
@@ -208,20 +220,17 @@ export function GhlContactList(props: Props) {
           {STATUSES.map((s) => {
             const on = props.statuses.has(s.key);
             return (
-              <button
+              <Toggle
                 key={s.key}
-                type="button"
-                onClick={() => props.toggleStatus(s.key)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors",
-                  on
-                    ? "border-foreground/40 bg-foreground/10 text-foreground"
-                    : "border-border bg-background text-muted-foreground hover:text-foreground"
-                )}
+                variant="outline"
+                size="sm"
+                pressed={on}
+                onPressedChange={() => props.toggleStatus(s.key)}
+                className="h-7 px-2.5 text-xs"
               >
-                {on && <Check className="h-3 w-3" />}
+                {on && <Check className="size-3" />}
                 {s.label}
-              </button>
+              </Toggle>
             );
           })}
         </div>
@@ -258,56 +267,58 @@ export function GhlContactList(props: Props) {
 
         {/* Sort + Stale + Date range */}
         <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <select
-            value={props.sort}
-            onChange={(e) => props.setSort(e.target.value as SortKey)}
-            className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Sort"
-          >
-            {SORTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                Sort: {s.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={props.stale}
-            onChange={(e) => props.setStale(e.target.value as StaleKey)}
-            className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Last activity"
-          >
-            {STALE_OPTIONS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
+          <Select value={props.sort} onValueChange={(v) => props.setSort(v as SortKey)}>
+            <SelectTrigger aria-label="Sort" className="h-8 w-auto min-w-0 max-w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORTS.map((s) => (
+                <SelectItem key={s.key} value={s.key}>
+                  Sort: {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={props.stale} onValueChange={(v) => props.setStale(v as StaleKey)}>
+            <SelectTrigger aria-label="Last activity" className="h-8 w-auto min-w-0 max-w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STALE_OPTIONS.map((s) => (
+                <SelectItem key={s.key} value={s.key}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DatePicker
             value={props.fromDate}
-            onChange={(e) => props.setFromDate(e.target.value)}
+            onValueChange={props.setFromDate}
             aria-label="From date"
-            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder="From date"
+            className="h-8 w-[8.5rem] text-xs"
           />
           <span className="text-xs text-muted-foreground">→</span>
-          <input
-            type="date"
+          <DatePicker
             value={props.toDate}
-            onChange={(e) => props.setToDate(e.target.value)}
+            onValueChange={props.setToDate}
             aria-label="To date"
-            className="h-8 w-[7.5rem] rounded-md border border-input bg-background px-2 text-base sm:text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder="To date"
+            className="h-8 w-[8.5rem] text-xs"
           />
           {(props.fromDate || props.toDate) && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => {
                 props.setFromDate("");
                 props.setToDate("");
               }}
-              className="text-[10px] underline text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground"
             >
               clear
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -328,7 +339,7 @@ export function GhlContactList(props: Props) {
           </div>
         ) : (
           <>
-            <ul className="divide-y divide-border/40">
+            <ul className="divide-y">
               {visible.map((c) => (
                 <ContactRow
                   key={c.id}
@@ -349,9 +360,9 @@ export function GhlContactList(props: Props) {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
         <span className="truncate">
-          {props.isFetchingNextPage && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
+          {props.isFetchingNextPage && <Loader2 className="inline size-3 animate-spin mr-1" />}
           {visible.length} shown · {props.loaded.toLocaleString()} loaded
           {props.total > props.loaded && (
             <span className="ml-1 opacity-70">
@@ -411,17 +422,19 @@ function LoadMoreSentinel({
     <div ref={ref} className="px-3 py-3 text-center">
       {isFetchingNextPage ? (
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loader2 className="size-3 animate-spin" />
           Loading older contacts…
         </span>
       ) : (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="xs"
           onClick={fetchNextPage}
-          className="text-xs text-muted-foreground hover:text-foreground underline"
+          className="text-muted-foreground"
         >
           Load older contacts
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -452,13 +465,13 @@ const SearchBox = memo(function SearchBox({
 
   return (
     <div className="relative">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-      <input
+      <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
         type="text"
         value={local}
         onChange={(e) => setLocal(e.target.value)}
         placeholder="Search by name, email, phone…"
-        className="flex h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+        className="pl-9"
       />
     </div>
   );
@@ -496,39 +509,36 @@ function FlatPickerButton({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
+        <Button
           type="button"
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40",
-            count > 0
-              ? "border-foreground/40 bg-foreground/5 text-foreground"
-              : "border-input bg-background text-foreground"
-          )}
+          variant="outline"
+          size="sm"
+          className={cn("h-7 px-2.5 text-xs", count > 0 && "bg-muted dark:bg-muted")}
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="size-3.5" />
           {label}
           {count > 0 && (
-            <span className="ml-0.5 rounded-full bg-foreground/10 px-1.5 text-[10px]">
+            <Badge variant="outline" className="ml-0.5 h-4 bg-background px-1.5 text-[10px] tabular-nums">
               {count}
-            </span>
+            </Badge>
           )}
-          <ChevronDown className="h-3 w-3" />
-        </button>
+          <ChevronDown className="size-3 text-muted-foreground" />
+        </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-72 p-0">
+      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-72 overflow-hidden p-0">
         <div className="border-b p-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={`Filter ${label.toLowerCase()}…`}
-              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-base sm:text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-8 pl-8"
             />
           </div>
         </div>
-        <div className="max-h-72 overflow-y-auto py-1">
+        <div className="max-h-72 overflow-y-auto p-1.5">
           {filtered.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
               {items.length === 0 ? emptyMessage : "No matches."}
@@ -537,31 +547,31 @@ function FlatPickerButton({
             filtered.map((it) => {
               const on = selected.has(it.id);
               return (
-                <button
+                <label
                   key={it.id}
-                  type="button"
-                  onClick={() => onToggle(it.id)}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted/50"
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-xs hover:bg-muted"
                 >
+                  <Checkbox checked={on} onCheckedChange={() => onToggle(it.id)} />
                   <span className="truncate">{it.label}</span>
-                  {on && <Check className="h-3.5 w-3.5 text-foreground shrink-0" />}
-                </button>
+                </label>
               );
             })
           )}
         </div>
         {count > 0 && (
           <div className="border-t p-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => {
                 onClear();
                 setSearch("");
               }}
-              className="text-xs text-muted-foreground hover:text-foreground underline"
+              className="text-muted-foreground"
             >
               Clear {count} selected
-            </button>
+            </Button>
           </div>
         )}
       </PopoverContent>
@@ -586,27 +596,24 @@ function PipelinePickerButton({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
+        <Button
           type="button"
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40",
-            count > 0
-              ? "border-foreground/40 bg-foreground/5 text-foreground"
-              : "border-input bg-background text-foreground"
-          )}
+          variant="outline"
+          size="sm"
+          className={cn("h-7 px-2.5 text-xs", count > 0 && "bg-muted dark:bg-muted")}
         >
-          <GitBranch className="h-3.5 w-3.5" />
+          <GitBranch className="size-3.5" />
           Pipeline
           {count > 0 && (
-            <span className="ml-0.5 rounded-full bg-foreground/10 px-1.5 text-[10px]">
+            <Badge variant="outline" className="ml-0.5 h-4 bg-background px-1.5 text-[10px] tabular-nums">
               {count}
-            </span>
+            </Badge>
           )}
-          <ChevronDown className="h-3 w-3" />
-        </button>
+          <ChevronDown className="size-3 text-muted-foreground" />
+        </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-80 p-0">
-        <div className="max-h-80 overflow-y-auto py-1">
+      <PopoverContent align="start" className="w-[calc(100vw-1.5rem)] sm:w-80 overflow-hidden p-0">
+        <div className="max-h-80 overflow-y-auto p-1.5">
           {pipelines.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
               No pipelines found in GHL.
@@ -614,25 +621,23 @@ function PipelinePickerButton({
           ) : (
             pipelines.map((p) => (
               <div key={p.id}>
-                <p className="sticky top-0 bg-popover px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b">
+                <p className="sticky top-0 z-10 bg-popover px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
                   {p.name}
                 </p>
                 {p.stages.length === 0 ? (
-                  <p className="px-3 py-2 text-xs text-muted-foreground italic">No stages</p>
+                  <p className="px-2.5 py-2 text-xs text-muted-foreground italic">No stages</p>
                 ) : (
                   p.stages.map((s) => {
                     const id = `${p.id}|${s.id}`;
                     const on = selectedStageIds.has(id);
                     return (
-                      <button
+                      <label
                         key={id}
-                        type="button"
-                        onClick={() => onToggle(id)}
-                        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted/50"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-xs hover:bg-muted"
                       >
+                        <Checkbox checked={on} onCheckedChange={() => onToggle(id)} />
                         <span className="truncate">{s.name}</span>
-                        {on && <Check className="h-3.5 w-3.5 text-foreground shrink-0" />}
-                      </button>
+                      </label>
                     );
                   })
                 )}
@@ -642,13 +647,15 @@ function PipelinePickerButton({
         </div>
         {count > 0 && (
           <div className="border-t p-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={onClear}
-              className="text-xs text-muted-foreground hover:text-foreground underline"
+              className="text-muted-foreground"
             >
               Clear {count} selected
-            </button>
+            </Button>
           </div>
         )}
       </PopoverContent>
@@ -834,8 +841,8 @@ const ContactRow = memo(function ContactRow({
         type="button"
         onClick={handleClick}
         className={cn(
-          "flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-muted/40",
-          isActive && "bg-muted/60"
+          "flex w-full flex-col gap-1 px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/30",
+          isActive && "bg-muted"
         )}
       >
         <div className="flex items-center justify-between gap-2">
@@ -844,13 +851,14 @@ const ContactRow = memo(function ContactRow({
           </span>
           <div className="flex items-center gap-1 shrink-0">
             {noteCount > 0 && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-medium"
+              <Badge
+                variant="outline"
+                className="gap-1 px-1.5 text-[10px] tabular-nums"
                 title={`${noteCount} note${noteCount === 1 ? "" : "s"}`}
               >
-                <StickyNote className="h-3 w-3" />
+                <StickyNote className="text-amber-500" />
                 {noteCount}
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -859,21 +867,14 @@ const ContactRow = memo(function ContactRow({
         )}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {apptIndicator && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                apptIndicator.kind === "upcoming"
-                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                  : "bg-slate-500/15 text-slate-700 dark:text-slate-400"
-              )}
-            >
+            <Badge variant="outline" className="gap-1 px-1.5 text-[10px]">
               {apptIndicator.kind === "upcoming" ? (
-                <CalendarClock className="h-3 w-3" />
+                <CalendarClock className="text-emerald-500" />
               ) : (
-                <CalendarCheck2 className="h-3 w-3" />
+                <CalendarCheck2 className="text-muted-foreground" />
               )}
               {apptIndicator.label}
-            </span>
+            </Badge>
           )}
           {stageIndicator}
           {contact.tags.slice(0, 2).map((t) => (
@@ -931,23 +932,24 @@ function computeStageView(c: GhlContact, pipelines: GhlPipeline[]): StageView | 
 }
 
 function renderStageIndicator(view: StageView): React.ReactNode {
+  const tone: BadgeTone =
+    view.status === "won"
+      ? "success"
+      : view.status === "lost"
+      ? "danger"
+      : view.status === "abandoned"
+      ? "neutral"
+      : "info";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-        view.status === "won"
-          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-          : view.status === "lost"
-          ? "bg-red-500/15 text-red-700 dark:text-red-400"
-          : view.status === "abandoned"
-          ? "bg-slate-500/15 text-slate-700 dark:text-slate-400"
-          : "bg-blue-500/15 text-blue-700 dark:text-blue-400"
-      )}
+    <Badge
+      variant="outline"
+      tone={tone}
+      className="gap-1.5 px-1.5 text-[10px]"
       title={view.pipelineName ? `${view.pipelineName} · ${view.label}` : view.label}
     >
-      <GitBranch className="h-3 w-3" />
+      <BadgeDot tone={tone} />
       <span className="truncate max-w-[8rem]">{view.label}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -966,11 +968,11 @@ function shortDate(iso: string): string {
 
 function ListSkeleton() {
   return (
-    <ul className="divide-y divide-border/40">
+    <ul className="divide-y">
       {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
         <li key={i} className="space-y-2 px-3 py-2.5">
-          <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-3 w-1/2" />
         </li>
       ))}
     </ul>
@@ -981,7 +983,7 @@ function ErrorState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-start gap-2 p-6 text-sm">
       <div className="flex items-center gap-2 text-destructive">
-        <AlertTriangle className="h-4 w-4" />
+        <AlertTriangle className="size-4" />
         <span className="font-medium">Couldn’t load contacts</span>
       </div>
       <p className="text-muted-foreground text-xs leading-relaxed">{message}</p>

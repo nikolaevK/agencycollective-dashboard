@@ -3,6 +3,24 @@
 import { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatCents } from "@/components/closers/types";
 import { computeCloseRate } from "@/lib/deals";
 
@@ -48,24 +66,6 @@ function closeRateOf(c: CloserBreakdown): number {
   );
 }
 
-function getInitialsColor(name: string): string {
-  const colors = [
-    "bg-violet-500/20 text-violet-600 dark:text-violet-400",
-    "bg-blue-500/20 text-blue-600 dark:text-blue-400",
-    "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
-    "bg-amber-500/20 text-amber-600 dark:text-amber-400",
-    "bg-rose-500/20 text-rose-600 dark:text-rose-400",
-    "bg-cyan-500/20 text-cyan-600 dark:text-cyan-400",
-    "bg-orange-500/20 text-orange-600 dark:text-orange-400",
-    "bg-pink-500/20 text-pink-600 dark:text-pink-400",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
 function getInitials(name: string): string {
   return name
     .split(/\s+/)
@@ -75,18 +75,29 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function RankBadge({ rank }: { rank: number }) {
-  const styles: Record<number, string> = {
-    1: "bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold",
-    2: "bg-slate-300/30 text-slate-600 dark:text-slate-400 font-bold",
-    3: "bg-orange-500/20 text-orange-600 dark:text-orange-400 font-bold",
-  };
+function InitialsAvatar({ name }: { name: string }) {
+  return (
+    <Avatar className="h-8 w-8">
+      <AvatarFallback className="text-xs font-medium">
+        {getInitials(name)}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
 
+// Gold / silver / bronze for the podium — a faint tint + ring, not a fill.
+const MEDAL_STYLES: Record<number, string> = {
+  1: "bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300",
+  2: "bg-zinc-400/10 text-zinc-600 ring-1 ring-inset ring-zinc-400/40 dark:text-zinc-300",
+  3: "bg-orange-500/10 text-orange-700 ring-1 ring-inset ring-orange-500/25 dark:text-orange-300",
+};
+
+function RankBadge({ rank }: { rank: number }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center w-7 h-7 rounded-full text-xs",
-        styles[rank] ?? "text-muted-foreground"
+        "inline-flex items-center justify-center size-7 rounded-full text-xs tabular-nums",
+        MEDAL_STYLES[rank] ? cn("font-semibold", MEDAL_STYLES[rank]) : "text-muted-foreground"
       )}
     >
       {rank}
@@ -119,169 +130,127 @@ export function CloserLeaderboard({ closerBreakdowns }: CloserLeaderboardProps) 
   const moneyValue = (c: CloserBreakdown) => (paidSort ? c.paidRevenue : c.revenue);
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 sm:p-6">
-      <div className="flex items-center justify-between gap-2 mb-5">
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-amber-500" />
-          <h3 className="text-base font-semibold text-foreground">Top Closers</h3>
+          <Trophy className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>Top Closers</CardTitle>
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          Sort by
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="h-7 rounded-md border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="leaderboard-sort" className="text-xs text-muted-foreground">
+            Sort by
+          </label>
+          <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+            <SelectTrigger id="leaderboard-sort" className="h-8 w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
 
-      {sorted.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No closer data available yet.
-        </p>
-      ) : (
-        <>
-          {/* Desktop table */}
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 dark:border-white/[0.06]">
-                  <th className="text-left pb-3 pr-2 text-xs font-medium text-muted-foreground w-10">
-                    #
-                  </th>
-                  <th className="text-left pb-3 pr-2 text-xs font-medium text-muted-foreground">
-                    Closer
-                  </th>
-                  <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-28">
-                    {moneyLabel}
-                  </th>
-                  <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-24">
-                    Close Rate
-                  </th>
-                  <th className="text-right pb-3 pr-4 text-xs font-medium text-muted-foreground w-24">
-                    Show Rate
-                  </th>
-                  <th className="text-left pb-3 text-xs font-medium text-muted-foreground hidden lg:table-cell w-36">
-                    &nbsp;
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((closer, index) => {
-                  const rank = index + 1;
-                  const closeRate = closeRateOf(closer);
-                  const barWidth =
-                    maxRevenue > 0
-                      ? Math.max((closer.revenue / maxRevenue) * 100, 4)
-                      : 0;
+      <CardContent>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No closer data available yet.
+          </p>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead>Closer</TableHead>
+                    <TableHead className="text-right w-28">{moneyLabel}</TableHead>
+                    <TableHead className="text-right whitespace-normal">Close Rate</TableHead>
+                    <TableHead className="text-right whitespace-normal">Show Rate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sorted.map((closer, index) => {
+                    const rank = index + 1;
+                    const closeRate = closeRateOf(closer);
+                    const barWidth =
+                      maxRevenue > 0
+                        ? Math.max((closer.revenue / maxRevenue) * 100, 4)
+                        : 0;
 
-                  return (
-                    <tr
-                      key={closer.closerId}
-                      className="border-b border-border/30 dark:border-white/[0.03] last:border-0"
-                    >
-                      <td className="py-3 pr-2">
-                        <RankBadge rank={rank} />
-                      </td>
-                      <td className="py-3 pr-2">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={cn(
-                              "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
-                              getInitialsColor(closer.displayName)
-                            )}
-                          >
-                            {getInitials(closer.displayName)}
+                    return (
+                      <TableRow key={closer.closerId}>
+                        <TableCell>
+                          <RankBadge rank={rank} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <InitialsAvatar name={closer.displayName} />
+                            {/* Revenue-share bar sits under the name — a column
+                                of its own doesn't fit the half-width card. */}
+                            <div className="min-w-0 w-36 space-y-1.5">
+                              <p className="font-medium truncate">{closer.displayName}</p>
+                              <Progress value={barWidth} aria-label="Revenue share" className="h-1.5 [&>div]:bg-chart-1" />
+                            </div>
                           </div>
-                          <span className="font-medium text-foreground truncate">
-                            {closer.displayName}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-right font-semibold text-foreground tabular-nums">
-                        {formatCents(moneyValue(closer))}
-                      </td>
-                      <td className="py-3 pr-4 text-right text-muted-foreground tabular-nums">
-                        {closeRate}%
-                      </td>
-                      <td className="py-3 pr-4 text-right text-muted-foreground tabular-nums">
-                        {closer.showRate}%
-                      </td>
-                      <td className="py-3 hidden lg:table-cell">
-                        <div className="w-full bg-muted/50 dark:bg-white/5 rounded-full h-2">
-                          <div
-                            className="h-2 rounded-full bg-violet-500/70"
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {formatCents(moneyValue(closer))}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground tabular-nums">
+                          {closeRate}%
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground tabular-nums">
+                          {closer.showRate}%
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
 
-          {/* Mobile card list */}
-          <div className="sm:hidden space-y-3">
-            {sorted.map((closer, index) => {
-              const rank = index + 1;
-              const closeRate = closeRateOf(closer);
-              const barWidth =
-                maxRevenue > 0
-                  ? Math.max((closer.revenue / maxRevenue) * 100, 4)
-                  : 0;
+            {/* Mobile card list */}
+            <div className="sm:hidden space-y-3">
+              {sorted.map((closer, index) => {
+                const rank = index + 1;
+                const closeRate = closeRateOf(closer);
+                const barWidth =
+                  maxRevenue > 0
+                    ? Math.max((closer.revenue / maxRevenue) * 100, 4)
+                    : 0;
 
-              return (
-                <div
-                  key={closer.closerId}
-                  className="rounded-lg border border-border/30 dark:border-white/[0.04] bg-muted/20 dark:bg-white/[0.02] p-4"
-                >
-                  <div className="flex items-center justify-between mb-2">
+                return (
+                  <div key={closer.closerId} className="rounded-2xl bg-muted/50 p-4">
                     <div className="flex items-center gap-3 min-w-0">
                       <RankBadge rank={rank} />
-                      <div
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
-                          getInitialsColor(closer.displayName)
+                      <InitialsAvatar name={closer.displayName} />
+                      <span className="font-medium text-sm truncate">{closer.displayName}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-3">
+                      <span className="text-sm font-semibold tabular-nums">
+                        {formatCents(moneyValue(closer))}
+                        {paidSort && (
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">paid</span>
                         )}
-                      >
-                        {getInitials(closer.displayName)}
-                      </div>
-                      <span className="font-medium text-foreground text-sm truncate">
-                        {closer.displayName}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {closeRate}% close &middot; {closer.showRate}% show
                       </span>
                     </div>
+                    <Progress value={barWidth} aria-label="Revenue share" className="h-2 mt-3 [&>div]:bg-chart-1" />
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-3">
-                    <span className="text-sm font-semibold text-foreground tabular-nums">
-                      {formatCents(moneyValue(closer))}
-                      {paidSort && (
-                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">paid</span>
-                      )}
-                    </span>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {closeRate}% close &middot; {closer.showRate}% show
-                    </span>
-                  </div>
-                  <div className="w-full bg-muted/50 dark:bg-white/5 rounded-full h-1.5 mt-2">
-                    <div
-                      className="h-1.5 rounded-full bg-violet-500/70"
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

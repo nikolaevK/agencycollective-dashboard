@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 export interface DayHeaderInfo {
   /** Big number ("27"). */
@@ -114,66 +115,50 @@ export function DayHeader({ info, eventCount }: DayHeaderProps) {
       className={cn(
         "sticky top-[var(--calendar-nav-h,9rem)] z-10 mb-3 pb-2 border-b -mx-px px-px",
         "bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
-        info.isToday ? "border-primary/40" : "border-border/40"
+        info.isToday && "border-foreground/30"
       )}
     >
-      {/* Mobile: single compact row. The big purple date card is too tall
+      {/* Mobile: single compact row. The big date tile is too tall
           on phones where every pixel of vertical space matters. */}
       <div className="flex sm:hidden items-center gap-2 pt-2 pb-0.5">
-        <span
-          className={cn(
-            "shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide tabular-nums",
-            info.isToday
-              ? "bg-primary/15 text-primary"
-              : info.isPast
-                ? "bg-muted/40 text-muted-foreground"
-                : "bg-muted/40 text-foreground"
-          )}
+        <Badge
+          variant={info.isToday ? "default" : "secondary"}
+          className={cn("shrink-0 tabular-nums", info.isPast && "text-muted-foreground")}
         >
           {info.month} {info.dayNum}
-        </span>
-        <span
-          className={cn(
-            "truncate text-xs font-semibold",
-            info.isToday ? "text-primary" : "text-foreground"
-          )}
-        >
+        </Badge>
+        <span className="truncate text-xs font-semibold text-foreground">
           {info.weekday}
         </span>
-        <span className="shrink-0 ml-auto text-[10px] font-medium text-muted-foreground tabular-nums">
+        <span className="shrink-0 ml-auto text-xs text-muted-foreground tabular-nums">
           {eventCount} {eventCount === 1 ? "event" : "events"}
         </span>
       </div>
 
-      {/* Desktop: full date card. */}
+      {/* Desktop: full date tile. */}
       <div className="hidden sm:flex items-center gap-3 pt-2">
         <div
           className={cn(
-            "flex flex-col items-center justify-center shrink-0 w-12 h-12 rounded-xl border",
+            "flex flex-col items-center justify-center shrink-0 size-12 rounded-2xl",
             info.isToday
-              ? "border-primary/40 bg-primary/10 text-primary"
+              ? "bg-primary text-primary-foreground"
               : info.isPast
-                ? "border-border/50 bg-muted/40 text-muted-foreground"
-                : "border-border/60 bg-card text-foreground"
+                ? "bg-muted/50 text-muted-foreground"
+                : "bg-muted text-foreground"
           )}
         >
-          <span className="text-[9px] font-semibold uppercase leading-none mt-0.5">{info.month}</span>
-          <span className="text-lg font-bold leading-none mt-0.5 tabular-nums">{info.dayNum}</span>
+          <span className="text-[10px] font-medium uppercase leading-none">{info.month}</span>
+          <span className="text-lg font-semibold tracking-tight leading-none mt-1 tabular-nums">{info.dayNum}</span>
         </div>
         <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "text-sm font-semibold truncate",
-              info.isToday ? "text-primary" : "text-foreground"
-            )}
-          >
+          <p className="text-sm font-semibold tracking-tight text-foreground truncate">
             {info.weekday}
           </p>
           {info.longLabel && info.weekday !== info.longLabel && (
             <p className="text-xs text-muted-foreground truncate">{info.longLabel}</p>
           )}
         </div>
-        <span className="shrink-0 text-[11px] font-medium text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {eventCount} {eventCount === 1 ? "event" : "events"}
         </span>
       </div>

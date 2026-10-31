@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { InvoiceServiceRecord } from "@/lib/invoiceServices";
 import type { InvoiceItem } from "@/types/invoice";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 /** A search box only earns its space once the catalog is long. */
@@ -62,20 +64,16 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-      >
-        <Plus className="h-4 w-4" />
+      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(!open)}>
+        <Plus />
         Add Service
         <ChevronDown
           className={cn(
-            "h-3.5 w-3.5 transition-transform",
+            "size-3.5 text-muted-foreground transition-transform",
             open && "rotate-180"
           )}
         />
-      </button>
+      </Button>
 
       {open && (
         <>
@@ -87,21 +85,21 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
               trigger wasn't at the left edge). sm+: anchored dropdown. */}
           <div
             className={cn(
-              "fixed inset-x-4 bottom-4 z-50 max-h-[60dvh] overscroll-contain overflow-y-auto rounded-lg border border-border bg-popover shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-80 sm:max-h-72",
+              "fixed inset-x-4 bottom-4 z-50 max-h-[60dvh] overscroll-contain overflow-y-auto rounded-3xl bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10 sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-80 sm:max-h-72",
               align === "right" ? "sm:right-0" : "sm:left-0"
             )}
           >
             {services.length > SEARCH_THRESHOLD && (
-              <div className="sticky top-0 z-10 border-b border-border/50 bg-popover p-2">
+              <div className="sticky top-0 z-10 border-b bg-popover p-2">
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
                     autoFocus
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search services…"
                     aria-label="Search preset services"
-                    className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="h-8 pl-9"
                   />
                 </div>
               </div>
@@ -109,34 +107,39 @@ export function InvoiceServiceSelector({ onSelect, align = "left" }: Props) {
             {visible.length === 0 && (
               <p className="px-3 py-4 text-center text-xs text-muted-foreground">No services match.</p>
             )}
-            {visible.map((service) => (
-              <button
-                type="button"
-                key={service.id}
-                onClick={() => handleSelect(service)}
-                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors border-b border-border/50 last:border-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="text-sm font-medium text-foreground truncate"
-                    title={service.internalLabel || service.name}
+            {visible.length > 0 && (
+              <div className="p-1.5">
+                {visible.map((service) => (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    key={service.id}
+                    onClick={() => handleSelect(service)}
+                    className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left font-normal"
                   >
-                    {service.internalLabel || service.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                    {service.description.split("\n")[0]}
-                  </p>
-                </div>
-                <span className="shrink-0 text-sm font-semibold text-foreground">
-                  {(service.rate / 100).toLocaleString("en-US", {
-                    style: "currency",
-                    currency: "USD",
-                    minimumFractionDigits: service.rate % 100 === 0 ? 0 : 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-              </button>
-            ))}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="text-sm font-medium text-foreground truncate"
+                        title={service.internalLabel || service.name}
+                      >
+                        {service.internalLabel || service.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                        {service.description.split("\n")[0]}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                      {(service.rate / 100).toLocaleString("en-US", {
+                        style: "currency",
+                        currency: "USD",
+                        minimumFractionDigits: service.rate % 100 === 0 ? 0 : 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

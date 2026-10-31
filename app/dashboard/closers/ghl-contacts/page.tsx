@@ -6,10 +6,10 @@ import { GhlContactsView } from "@/components/ghl/GhlContactsView";
 
 export default function AdminGhlContactsPage() {
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">
             GHL Contacts
           </h2>
           <p className="text-sm text-muted-foreground mt-1">

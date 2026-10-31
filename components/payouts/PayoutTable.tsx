@@ -1,35 +1,54 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { MoreHorizontal, Pencil, Trash2, StickyNote, Briefcase, Plus, X, GitBranch, UserCircle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/components/closers/types";
 import { SortHeader } from "@/components/ui/SortHeader";
+import { Button } from "@/components/ui/button";
+import { BadgeDot, badgeTone, badgeToneHover, type BadgeTone } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { PayoutRecord, PayDistributed } from "@/lib/payouts";
 
-// ---------------------------------------------------------------------------
-// Shared dropdown positioning (flips above anchor when near viewport bottom)
-// ---------------------------------------------------------------------------
+// Menu-row look for the inline editor popovers (they hold text inputs, so
+// they're Popovers rather than DropdownMenus — a menu would steal focus /
+// typeahead from the input).
+const optionRowClass =
+  "w-full justify-start rounded-2xl px-3 font-normal";
 
-function calcDropdownPos(
-  anchor: HTMLElement,
-  dropdownEl: HTMLElement | null,
-  opts: { leftOffset?: number; fallbackHeight?: number } = {},
-) {
-  const rect = anchor.getBoundingClientRect();
-  const dh = dropdownEl?.offsetHeight || opts.fallbackHeight || 260;
-  const dw = dropdownEl?.offsetWidth || 208;
-  const spaceBelow = window.innerHeight - rect.bottom;
-  const top = spaceBelow >= dh + 8
-    ? rect.bottom + 4
-    : Math.max(4, rect.top - dh - 4);
-  const left = Math.min(
-    Math.max(4, rect.left + (opts.leftOffset || 0)),
-    window.innerWidth - dw - 8,
-  );
-  return { top, left };
-}
+// Inline cell triggers (vertical / sales rep / referral): compact truncating
+// text that inherits the surrounding font size (text-sm in the table,
+// text-xs on the mobile cards).
+const cellTriggerClass =
+  "-ml-1.5 h-auto max-w-full justify-start px-1.5 py-0.5 font-normal text-[length:inherit] text-muted-foreground hover:text-foreground";
 
 // ---------------------------------------------------------------------------
 // Inline toggle badge
@@ -63,20 +82,17 @@ function ToggleBadge({
   };
 
   return (
-    <button
+    <Button
+      variant="outline"
+      size="xs"
       onClick={toggle}
       disabled={pending}
       aria-label={`Toggle ${field === "isSigned" ? "signed" : field === "isPaid" ? "paid" : "slack"}: currently ${value ? "yes" : "no"}`}
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors",
-        pending && "opacity-50",
-        value
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
-          : "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
-      )}
+      className={cn("gap-1.5", badgeTone[value ? "success" : "danger"], badgeToneHover[value ? "success" : "danger"])}
     >
+      <BadgeDot tone={value ? "success" : "danger"} />
       {value ? "Yes" : "No"}
-    </button>
+    </Button>
   );
 }
 
@@ -94,13 +110,12 @@ function PayDistributedBadge({
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const options: PayDistributed[] = ["Yes", "No", "Hold Til Full Pay"];
 
-  const colors: Record<PayDistributed, string> = {
-    Yes: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400",
-    No: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400",
-    "Hold Til Full Pay":
-      "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400",
+  const tones: Record<PayDistributed, BadgeTone> = {
+    Yes: "success",
+    No: "danger",
+    "Hold Til Full Pay": "warning",
   };
 
   const select = async (newVal: PayDistributed) => {
@@ -115,72 +130,29 @@ function PayDistributedBadge({
   };
 
   return (
-    <div className="relative">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer",
-          colors[value]
-        )}
-      >
-        {value === "Hold Til Full Pay" ? "Hold" : value}
-      </button>
-      {open && (
-        <PayDistributedDropdown
-          current={value}
-          onSelect={select}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-        />
-      )}
-    </div>
-  );
-}
-
-function PayDistributedDropdown({
-  current,
-  onSelect,
-  onClose,
-  anchorRef,
-}: {
-  current: PayDistributed;
-  onSelect: (v: PayDistributed) => void;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-}) {
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const options: PayDistributed[] = ["Yes", "No", "Hold Til Full Pay"];
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    setPos(calcDropdownPos(anchorRef.current, null, { fallbackHeight: 120 }));
-  }, [anchorRef]);
-
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="fixed z-[61] w-44 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100"
-        style={{ top: pos.top, left: pos.left }}
-      >
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          className={cn("gap-1.5", badgeTone[tones[value]], badgeToneHover[tones[value]])}
+        >
+          <BadgeDot tone={tones[value]} />
+          {value === "Hold Til Full Pay" ? "Hold" : value}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-44">
         {options.map((opt) => (
-          <button
+          <DropdownMenuItem
             key={opt}
-            onClick={() => onSelect(opt)}
-            className={cn(
-              "flex w-full items-center px-3 py-1.5 text-sm transition-colors",
-              opt === current
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground hover:bg-accent"
-            )}
+            onSelect={() => select(opt)}
+            className={cn(opt === value && "bg-accent text-accent-foreground")}
           >
             {opt}
-          </button>
+          </DropdownMenuItem>
         ))}
-      </div>
-    </>,
-    document.body
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -202,7 +174,6 @@ function SalesRepBadge({
   onSalesRepsChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   const select = async (newVal: string | null) => {
     setOpen(false);
@@ -217,23 +188,27 @@ function SalesRepBadge({
 
   return (
     <div className="relative min-w-0">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        className="text-left text-muted-foreground hover:text-foreground transition-colors cursor-pointer whitespace-nowrap truncate block max-w-full"
-      >
-        {value || "\u2014"}
-      </button>
-      {open && (
-        <SalesRepDropdown
-          current={value}
-          options={options}
-          onSelect={select}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-          onSalesRepsChanged={onSalesRepsChanged}
-        />
-      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className={cellTriggerClass}>
+            <span className="min-w-0 truncate">{value || "\u2014"}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-52 max-h-64 overflow-y-auto p-1.5"
+          // The old menu didn't close on Escape (Escape only cancels the
+          // inline "add new" input).
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <SalesRepDropdown
+            current={value}
+            options={options}
+            onSelect={select}
+            onSalesRepsChanged={onSalesRepsChanged}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -242,33 +217,17 @@ function SalesRepDropdown({
   current,
   options,
   onSelect,
-  onClose,
-  anchorRef,
   onSalesRepsChanged,
 }: {
   current: string | null;
   options: string[];
   onSelect: (v: string | null) => void;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
   onSalesRepsChanged: () => void;
 }) {
-  const [pos, setPos] = useState({ top: -9999, left: -9999 });
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    setPos(calcDropdownPos(anchorRef.current, null, { fallbackHeight: 260 }));
-    requestAnimationFrame(() => {
-      if (anchorRef.current) {
-        setPos(calcDropdownPos(anchorRef.current, dropdownRef.current, { fallbackHeight: 260 }));
-      }
-    });
-  }, [anchorRef]);
 
   useEffect(() => {
     if (adding && inputRef.current) inputRef.current.focus();
@@ -304,91 +263,92 @@ function SalesRepDropdown({
     if (res.ok) onSalesRepsChanged();
   };
 
-  return createPortal(
+  return (
     <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        ref={dropdownRef}
-        className="fixed z-[61] w-52 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100 max-h-64 overflow-y-auto"
-        style={{ top: pos.top, left: pos.left }}
+      {/* None option */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onSelect(null)}
+        className={cn(
+          optionRowClass,
+          !current
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground"
+        )}
       >
-        {/* None option */}
-        <button
-          onClick={() => onSelect(null)}
+        <span className="italic">None</span>
+      </Button>
+
+      {options.map((opt) => (
+        <div
+          key={opt}
           className={cn(
-            "flex w-full items-center px-3 py-1.5 text-sm transition-colors",
-            !current
+            "flex w-full items-center justify-between group rounded-2xl",
+            opt === current
               ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-accent"
+              : "hover:bg-muted"
           )}
         >
-          <span className="italic">None</span>
-        </button>
-
-        {options.map((opt) => (
-          <div
-            key={opt}
-            className={cn(
-              "flex w-full items-center justify-between group",
-              opt === current
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground hover:bg-accent"
-            )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSelect(opt)}
+            className={cn(optionRowClass, "flex-1 min-w-0 hover:bg-transparent")}
           >
-            <button
-              onClick={() => onSelect(opt)}
-              className="flex-1 text-left px-3 py-1.5 text-sm transition-colors"
-            >
-              {opt}
-            </button>
-            <button
-              onClick={(e) => handleRemove(opt, e)}
-              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
-              title={`Remove ${opt}`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-
-        {/* Add new */}
-        <div className="border-t border-border mt-1 pt-1">
-          {adding ? (
-            <div className="px-2 py-1.5 flex gap-1">
-              <input
-                ref={inputRef}
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setAdding(false); setNewName(""); }
-                }}
-                placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
-                disabled={saving}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={saving || !newName.trim()}
-                className="px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-sm text-primary hover:bg-accent transition-colors"
-            >
-              <Plus className="h-3 w-3" />
-              Add new rep
-            </button>
-          )}
+            <span className="truncate">{opt}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => handleRemove(opt, e)}
+            className="mr-1 opacity-60 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:bg-transparent hover:text-destructive"
+            title={`Remove ${opt}`}
+          >
+            <X />
+          </Button>
         </div>
+      ))}
+
+      {/* Add new */}
+      <div className="border-t mt-1 pt-1">
+        {adding ? (
+          <div className="px-1 py-1 flex gap-1">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAdd();
+                if (e.key === "Escape") { setAdding(false); setNewName(""); }
+              }}
+              placeholder="Name..."
+              className="h-8 flex-1 min-w-0"
+              disabled={saving}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAdd}
+              disabled={saving || !newName.trim()}
+            >
+              Add
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdding(true)}
+            className={optionRowClass}
+          >
+            <Plus />
+            Add new rep
+          </Button>
+        )}
       </div>
-    </>,
-    document.body
+    </>
   );
 }
 
@@ -410,7 +370,6 @@ function VerticalBadge({
   onVerticalsChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   const select = async (newVal: string | null) => {
     setOpen(false);
@@ -425,23 +384,27 @@ function VerticalBadge({
 
   return (
     <div className="relative min-w-0">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        className="text-left text-muted-foreground hover:text-foreground transition-colors cursor-pointer whitespace-nowrap truncate block max-w-full"
-      >
-        {value || "\u2014"}
-      </button>
-      {open && (
-        <VerticalDropdown
-          current={value}
-          options={options}
-          onSelect={select}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-          onVerticalsChanged={onVerticalsChanged}
-        />
-      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className={cellTriggerClass}>
+            <span className="min-w-0 truncate">{value || "\u2014"}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-52 max-h-64 overflow-y-auto p-1.5"
+          // The old menu didn't close on Escape (Escape only cancels the
+          // inline "add new" input).
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <VerticalDropdown
+            current={value}
+            options={options}
+            onSelect={select}
+            onVerticalsChanged={onVerticalsChanged}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -450,33 +413,17 @@ function VerticalDropdown({
   current,
   options,
   onSelect,
-  onClose,
-  anchorRef,
   onVerticalsChanged,
 }: {
   current: string | null;
   options: string[];
   onSelect: (v: string | null) => void;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
   onVerticalsChanged: () => void;
 }) {
-  const [pos, setPos] = useState({ top: -9999, left: -9999 });
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    setPos(calcDropdownPos(anchorRef.current, null, { fallbackHeight: 260 }));
-    requestAnimationFrame(() => {
-      if (anchorRef.current) {
-        setPos(calcDropdownPos(anchorRef.current, dropdownRef.current, { fallbackHeight: 260 }));
-      }
-    });
-  }, [anchorRef]);
 
   useEffect(() => {
     if (adding && inputRef.current) inputRef.current.focus();
@@ -512,91 +459,92 @@ function VerticalDropdown({
     if (res.ok) onVerticalsChanged();
   };
 
-  return createPortal(
+  return (
     <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        ref={dropdownRef}
-        className="fixed z-[61] w-52 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100 max-h-64 overflow-y-auto"
-        style={{ top: pos.top, left: pos.left }}
+      {/* None option */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onSelect(null)}
+        className={cn(
+          optionRowClass,
+          !current
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground"
+        )}
       >
-        {/* None option */}
-        <button
-          onClick={() => onSelect(null)}
+        <span className="italic">None</span>
+      </Button>
+
+      {options.map((opt) => (
+        <div
+          key={opt}
           className={cn(
-            "flex w-full items-center px-3 py-1.5 text-sm transition-colors",
-            !current
+            "flex w-full items-center justify-between group rounded-2xl",
+            opt === current
               ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-accent"
+              : "hover:bg-muted"
           )}
         >
-          <span className="italic">None</span>
-        </button>
-
-        {options.map((opt) => (
-          <div
-            key={opt}
-            className={cn(
-              "flex w-full items-center justify-between group",
-              opt === current
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground hover:bg-accent"
-            )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSelect(opt)}
+            className={cn(optionRowClass, "flex-1 min-w-0 hover:bg-transparent")}
           >
-            <button
-              onClick={() => onSelect(opt)}
-              className="flex-1 text-left px-3 py-1.5 text-sm transition-colors"
-            >
-              {opt}
-            </button>
-            <button
-              onClick={(e) => handleRemove(opt, e)}
-              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
-              title={`Remove ${opt}`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-
-        {/* Add new */}
-        <div className="border-t border-border mt-1 pt-1">
-          {adding ? (
-            <div className="px-2 py-1.5 flex gap-1">
-              <input
-                ref={inputRef}
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setAdding(false); setNewName(""); }
-                }}
-                placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
-                disabled={saving}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={saving || !newName.trim()}
-                className="px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-sm text-primary hover:bg-accent transition-colors"
-            >
-              <Plus className="h-3 w-3" />
-              Add new vertical
-            </button>
-          )}
+            <span className="truncate">{opt}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => handleRemove(opt, e)}
+            className="mr-1 opacity-60 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:bg-transparent hover:text-destructive"
+            title={`Remove ${opt}`}
+          >
+            <X />
+          </Button>
         </div>
+      ))}
+
+      {/* Add new */}
+      <div className="border-t mt-1 pt-1">
+        {adding ? (
+          <div className="px-1 py-1 flex gap-1">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAdd();
+                if (e.key === "Escape") { setAdding(false); setNewName(""); }
+              }}
+              placeholder="Name..."
+              className="h-8 flex-1 min-w-0"
+              disabled={saving}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAdd}
+              disabled={saving || !newName.trim()}
+            >
+              Add
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdding(true)}
+            className={optionRowClass}
+          >
+            <Plus />
+            Add new vertical
+          </Button>
+        )}
       </div>
-    </>,
-    document.body
+    </>
   );
 }
 
@@ -620,7 +568,6 @@ function ReferralBadge({
   onReferralsChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   const select = async (newVal: string | null) => {
     setOpen(false);
@@ -639,26 +586,31 @@ function ReferralBadge({
 
   return (
     <div className="relative min-w-0">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        className="text-left text-muted-foreground hover:text-foreground transition-colors cursor-pointer whitespace-nowrap truncate block max-w-full"
-      >
-        {label}
-      </button>
-      {open && (
-        <ReferralDropdown
-          current={value}
-          pct={pct}
-          payoutId={payoutId}
-          options={options}
-          onSelect={select}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-          onReferralsChanged={onReferralsChanged}
-          onChanged={onChanged}
-        />
-      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className={cellTriggerClass}>
+            <span className="min-w-0 truncate">{label}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-52 max-h-72 overflow-y-auto p-1.5"
+          // The old menu didn't close on Escape (Escape only cancels the
+          // inline "add new" / percentage inputs).
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <ReferralDropdown
+            current={value}
+            pct={pct}
+            payoutId={payoutId}
+            options={options}
+            onSelect={select}
+            onClose={() => setOpen(false)}
+            onReferralsChanged={onReferralsChanged}
+            onChanged={onChanged}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -670,7 +622,6 @@ function ReferralDropdown({
   options,
   onSelect,
   onClose,
-  anchorRef,
   onReferralsChanged,
   onChanged,
 }: {
@@ -680,30 +631,15 @@ function ReferralDropdown({
   options: string[];
   onSelect: (v: string | null) => void;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
   onReferralsChanged: () => void;
   onChanged: () => void;
 }) {
-  const [pos, setPos] = useState({ top: -9999, left: -9999 });
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [editPct, setEditPct] = useState(false);
   const [pctVal, setPctVal] = useState(String(pct ?? ""));
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    // Initial position with fallback height
-    setPos(calcDropdownPos(anchorRef.current, null, { fallbackHeight: 300 }));
-    // Reposition after render with actual dropdown dimensions
-    requestAnimationFrame(() => {
-      if (anchorRef.current) {
-        setPos(calcDropdownPos(anchorRef.current, dropdownRef.current, { fallbackHeight: 300 }));
-      }
-    });
-  }, [anchorRef]);
 
   useEffect(() => {
     if (adding && inputRef.current) inputRef.current.focus();
@@ -751,128 +687,132 @@ function ReferralDropdown({
     onClose();
   };
 
-  return createPortal(
+  return (
     <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        ref={dropdownRef}
-        className="fixed z-[61] w-52 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100 max-h-72 overflow-y-auto"
-        style={{ top: pos.top, left: pos.left }}
+      {/* None option */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onSelect(null)}
+        className={cn(
+          optionRowClass,
+          !current
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground"
+        )}
       >
-        {/* None option */}
-        <button
-          onClick={() => onSelect(null)}
+        <span className="italic">None</span>
+      </Button>
+
+      {options.map((opt) => (
+        <div
+          key={opt}
           className={cn(
-            "flex w-full items-center px-3 py-1.5 text-sm transition-colors",
-            !current
+            "flex w-full items-center justify-between group rounded-2xl",
+            opt === current
               ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-accent"
+              : "hover:bg-muted"
           )}
         >
-          <span className="italic">None</span>
-        </button>
-
-        {options.map((opt) => (
-          <div
-            key={opt}
-            className={cn(
-              "flex w-full items-center justify-between group",
-              opt === current
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground hover:bg-accent"
-            )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSelect(opt)}
+            className={cn(optionRowClass, "flex-1 min-w-0 hover:bg-transparent")}
           >
-            <button
-              onClick={() => onSelect(opt)}
-              className="flex-1 text-left px-3 py-1.5 text-sm transition-colors"
-            >
-              {opt}
-            </button>
-            <button
-              onClick={(e) => handleRemove(opt, e)}
-              className="opacity-60 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-all"
-              title={`Remove ${opt}`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-
-        {/* Add new */}
-        <div className="border-t border-border mt-1 pt-1">
-          {adding ? (
-            <div className="px-2 py-1.5 flex gap-1">
-              <input
-                ref={inputRef}
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setAdding(false); setNewName(""); }
-                }}
-                placeholder="Name..."
-                className="flex-1 min-w-0 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
-                disabled={saving}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={saving || !newName.trim()}
-                className="px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-sm text-primary hover:bg-accent transition-colors"
-            >
-              <Plus className="h-3 w-3" />
-              Add new referral
-            </button>
-          )}
+            <span className="truncate">{opt}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => handleRemove(opt, e)}
+            className="mr-1 opacity-60 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:bg-transparent hover:text-destructive"
+            title={`Remove ${opt}`}
+          >
+            <X />
+          </Button>
         </div>
+      ))}
 
-        {/* Percentage editor (only when a referral is selected) */}
-        {current && (
-          <div className="border-t border-border mt-1 pt-1 px-3 py-2">
-            {editPct ? (
-              <div className="flex gap-1 items-center">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={pctVal}
-                  onChange={(e) => setPctVal(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSavePct();
-                    if (e.key === "Escape") setEditPct(false);
-                  }}
-                  className="w-16 px-2 py-1 text-base sm:text-xs rounded border border-input bg-background text-foreground"
-                  autoFocus
-                />
-                <span className="text-xs text-muted-foreground">%</span>
-                <button
-                  onClick={handleSavePct}
-                  className="px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded transition-colors"
-                >
-                  Save
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => { setEditPct(true); setPctVal(String(pct ?? "")); }}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {pct != null ? `${pct}% — edit` : "Set percentage..."}
-              </button>
-            )}
+      {/* Add new */}
+      <div className="border-t mt-1 pt-1">
+        {adding ? (
+          <div className="px-1 py-1 flex gap-1">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAdd();
+                if (e.key === "Escape") { setAdding(false); setNewName(""); }
+              }}
+              placeholder="Name..."
+              className="h-8 flex-1 min-w-0"
+              disabled={saving}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAdd}
+              disabled={saving || !newName.trim()}
+            >
+              Add
+            </Button>
           </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdding(true)}
+            className={optionRowClass}
+          >
+            <Plus />
+            Add new referral
+          </Button>
         )}
       </div>
-    </>,
-    document.body
+
+      {/* Percentage editor (only when a referral is selected) */}
+      {current && (
+        <div className="border-t mt-1 pt-1 px-1 py-1">
+          {editPct ? (
+            <div className="flex gap-1 items-center">
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={pctVal}
+                onChange={(e) => setPctVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSavePct();
+                  if (e.key === "Escape") setEditPct(false);
+                }}
+                className="h-8 w-20"
+                autoFocus
+              />
+              <span className="text-xs text-muted-foreground">%</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSavePct}
+              >
+                Save
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setEditPct(true); setPctVal(String(pct ?? "")); }}
+              className={cn(optionRowClass, "text-xs text-muted-foreground")}
+            >
+              {pct != null ? `${pct}% — edit` : "Set percentage..."}
+            </Button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -890,26 +830,32 @@ function DistDateCell({
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div className="relative">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer whitespace-nowrap text-[11px]"
-      >
-        {value ? formatDate(value) : "—"}
-      </button>
-      {open && (
-        <DistDatePopover
-          value={value}
-          payoutId={payoutId}
-          onChanged={onChanged}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-        />
-      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="font-normal text-muted-foreground hover:text-foreground"
+          >
+            {value ? formatDate(value) : "—"}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-60 p-3"
+          // The old popover didn't close on Escape.
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DistDatePopover
+            value={value}
+            payoutId={payoutId}
+            onChanged={onChanged}
+            onClose={() => setOpen(false)}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -919,21 +865,13 @@ function DistDatePopover({
   payoutId,
   onChanged,
   onClose,
-  anchorRef,
 }: {
   value: string | null;
   payoutId: string;
   onChanged: () => void;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
 }) {
-  const [pos, setPos] = useState({ top: 0, left: 0 });
   const [date, setDate] = useState(value ?? "");
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    setPos(calcDropdownPos(anchorRef.current, null, { fallbackHeight: 140, leftOffset: -60 }));
-  }, [anchorRef]);
 
   const save = async (newDate: string | null) => {
     const res = await fetch("/api/admin/payouts", {
@@ -945,113 +883,43 @@ function DistDatePopover({
     onClose();
   };
 
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="fixed z-[61] w-52 rounded-lg border border-border bg-popover shadow-lg p-3 animate-in fade-in-0 zoom-in-95 duration-100"
-        style={{ top: pos.top, left: pos.left }}
-      >
-        <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-          Distribution Date
-        </label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full rounded border border-input bg-background px-2 py-1.5 text-xs text-foreground"
-        />
-        <div className="flex justify-between mt-2">
-          {value && (
-            <button
-              onClick={() => save(null)}
-              className="text-xs text-destructive hover:text-destructive/80 transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          <button
-            onClick={() => save(date || null)}
-            disabled={!date}
-            className="ml-auto text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+  return (
+    <div className="grid gap-2">
+      <Label className="text-xs text-muted-foreground">
+        Distribution Date
+      </Label>
+      <DatePicker
+        value={date}
+        onValueChange={setDate}
+        aria-label="Distribution Date"
+      />
+      <div className="flex justify-between">
+        {value && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => save(null)}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
-            Save
-          </button>
-        </div>
+            Clear
+          </Button>
+        )}
+        <Button
+          size="xs"
+          onClick={() => save(date || null)}
+          disabled={!date}
+          className="ml-auto"
+        >
+          Save
+        </Button>
       </div>
-    </>,
-    document.body
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Actions dropdown (portal)
+// Actions dropdown
 // ---------------------------------------------------------------------------
-
-function ActionsDropdown({
-  payout,
-  onEdit,
-  onDelete,
-  onViewDocs,
-  onClose,
-  anchorRef,
-}: {
-  payout: PayoutRecord;
-  onEdit: (p: PayoutRecord) => void;
-  onDelete: (id: string) => void;
-  onViewDocs: (brandName: string) => void;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-}) {
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const top = spaceBelow >= 140 ? rect.bottom + 4 : rect.top - 136;
-    setPos({ top: Math.max(4, top), left: rect.right - 192 });
-  }, [anchorRef]);
-
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="fixed z-[61] w-48 rounded-lg border border-border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95 duration-100"
-        style={{ top: pos.top, left: pos.left }}
-      >
-        <button
-          onClick={() => {
-            onClose();
-            onEdit(payout);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-        >
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </button>
-        <button
-          onClick={() => {
-            onClose();
-            onViewDocs(payout.brandName);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-        >
-          <FileText className="h-3.5 w-3.5" /> Documents
-        </button>
-        <button
-          onClick={() => {
-            onClose();
-            onDelete(payout.id);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-        >
-          <Trash2 className="h-3.5 w-3.5" /> Delete
-        </button>
-      </div>
-    </>,
-    document.body
-  );
-}
 
 function ActionsCell({
   payout,
@@ -1064,30 +932,36 @@ function ActionsCell({
   onDelete: (id: string) => void;
   onViewDocs: (brandName: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
   return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        aria-label="Payout actions"
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
-      {open && (
-        <ActionsDropdown
-          payout={payout}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onViewDocs={onViewDocs}
-          onClose={() => setOpen(false)}
-          anchorRef={btnRef}
-        />
-      )}
-    </>
+    // modal={false}: "Delete" / "Documents" open Radix dialogs; a modal
+    // menu closing underneath them can leave <body> pointer-events stuck.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Payout actions"
+          className="text-muted-foreground"
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuItem onSelect={() => onEdit(payout)}>
+          <Pencil /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onViewDocs(payout.brandName)}>
+          <FileText /> Documents
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => onDelete(payout.id)}
+        >
+          <Trash2 /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1105,34 +979,37 @@ function DeleteConfirm({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onCancel}
-      />
-      <div className="relative z-10 w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto break-words rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card p-6 shadow-xl">
-        <h4 className="text-lg font-semibold text-foreground">Delete Payout</h4>
-        <p className="text-sm text-muted-foreground mt-2">
-          Are you sure you want to delete the payout for{" "}
-          <span className="font-medium text-foreground">{brandName}</span>?
-          This action cannot be undone.
-        </p>
-        <div className="flex justify-end gap-3 mt-6">
-          <button
+    <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
+      <DialogContent
+        showCloseButton={false}
+        // The old modal had no Escape handler.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto break-words sm:max-w-sm"
+      >
+        <DialogHeader>
+          <DialogTitle>Delete Payout</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete the payout for{" "}
+            <span className="font-medium text-foreground">{brandName}</span>?
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="outline"
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="destructive"
             onClick={onConfirm}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-destructive hover:bg-destructive/90 transition-colors"
           >
             Delete
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1152,29 +1029,30 @@ function DetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div className="relative z-10 flex w-full max-w-md max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border/50 dark:border-white/[0.06] bg-card shadow-xl">
-        <div className="shrink-0 px-6 pt-6">
-          <h4 className="text-sm font-semibold text-foreground break-words">{brandName}</h4>
-          <p className="text-xs text-muted-foreground mb-3">{label}</p>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        // The old modal had no Escape handler.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0"
+      >
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-3">
+          <DialogTitle className="break-words leading-snug">{brandName}</DialogTitle>
+          <DialogDescription className="text-xs">{label}</DialogDescription>
+        </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6">
-          <p className="text-sm text-foreground whitespace-pre-wrap break-words">{content}</p>
+          <p className="text-sm whitespace-pre-wrap break-words">{content}</p>
         </div>
-        <div className="flex shrink-0 justify-end px-6 pb-6 pt-4">
-          <button
+        <DialogFooter className="shrink-0 px-6 pb-6 pt-4">
+          <Button
+            variant="outline"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             Close
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1253,9 +1131,9 @@ export function PayoutTable({
     return (
       <div className="space-y-3">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div
+          <Skeleton
             key={i}
-            className="h-16 rounded-xl bg-muted/50 animate-pulse"
+            className="h-16"
           />
         ))}
       </div>
@@ -1264,265 +1142,272 @@ export function PayoutTable({
 
   if (payouts.length === 0) {
     return (
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-12 text-center">
-        <p className="text-muted-foreground text-sm">
-          No payouts for this month.
-        </p>
-      </div>
+      <Card>
+        <CardContent className="p-12 md:p-12 text-center">
+          <p className="text-muted-foreground text-sm">
+            No payouts for this month.
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <>
       {/* Desktop table */}
-      <div className="hidden md:block rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 dark:border-white/[0.06] bg-muted/30">
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Brand
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  <SortHeader
-                    label="Joined"
-                    active={true}
-                    direction={dateSort}
-                    onToggle={() => setDateSort(dateSort === "asc" ? "desc" : "asc")}
+      <Card className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <TableHead className="px-4 text-muted-foreground">
+                Brand
+              </TableHead>
+              <TableHead className="px-4 text-muted-foreground">
+                <SortHeader
+                  label="Joined"
+                  active={true}
+                  direction={dateSort}
+                  onToggle={() => setDateSort(dateSort === "asc" ? "desc" : "asc")}
+                />
+              </TableHead>
+              <TableHead className="px-4 text-muted-foreground">
+                Vertical
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                POC
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Service
+              </TableHead>
+              <TableHead className="px-4 text-right text-muted-foreground">
+                Due
+              </TableHead>
+              <TableHead className="px-4 text-right text-muted-foreground">
+                Paid
+              </TableHead>
+              <TableHead className="px-4 text-muted-foreground">
+                Sales Rep
+              </TableHead>
+              <TableHead className="px-4 text-muted-foreground">
+                Referral
+              </TableHead>
+              <TableHead className="px-2 text-center text-muted-foreground">
+                Split
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Signed
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Paid
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Slack
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Distributed
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Dist. Date
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Notes
+              </TableHead>
+              <TableHead className="text-center text-muted-foreground">
+                Docs
+              </TableHead>
+              <TableHead className="px-2 w-10" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((p) => {
+              const underpaid = !p.isPaid && p.amountDue > p.amountPaid;
+              return (
+              <TableRow
+                key={p.id}
+                className={cn(
+                  underpaid && "bg-destructive/5 hover:bg-destructive/10"
+                )}
+              >
+                <TableCell className="px-4 font-medium">
+                  {p.brandName}
+                </TableCell>
+                <TableCell className="px-4 text-muted-foreground">
+                  {formatDate(p.dateJoined)}
+                </TableCell>
+                <TableCell className="px-4">
+                  <VerticalBadge
+                    value={p.vertical}
+                    payoutId={p.id}
+                    options={verticalOptions}
+                    onChanged={onRefresh}
+                    onVerticalsChanged={onVerticalsChanged}
                   />
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Vertical
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  POC
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Service
-                </th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Due
-                </th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Paid
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Sales Rep
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Referral
-                </th>
-                <th className="text-center px-2 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Split
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Signed
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Paid
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Slack
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Distributed
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Dist. Date
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Notes
-                </th>
-                <th className="text-center px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  Docs
-                </th>
-                <th className="px-2 py-3 w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((p) => {
-                const underpaid = !p.isPaid && p.amountDue > p.amountPaid;
-                return (
-                <tr
-                  key={p.id}
-                  className={cn(
-                    "border-b border-border/50 dark:border-white/[0.06] last:border-0 transition-colors",
-                    underpaid
-                      ? "bg-red-50/60 hover:bg-red-50 dark:bg-red-500/[0.07] dark:hover:bg-red-500/[0.12]"
-                      : "hover:bg-muted/20"
-                  )}
-                >
-                  <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">
-                    {p.brandName}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                    {formatDate(p.dateJoined)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <VerticalBadge
-                      value={p.vertical}
-                      payoutId={p.id}
-                      options={verticalOptions}
-                      onChanged={onRefresh}
-                      onVerticalsChanged={onVerticalsChanged}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {p.pointOfContact ? (
-                      <button
-                        onClick={() => setPocId(p.id)}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md text-sky-500 hover:bg-sky-500/10 transition-colors"
-                      >
-                        <UserCircle className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      <span className="text-muted-foreground/40">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {p.service ? (
-                      <button
-                        onClick={() => setServiceId(p.id)}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md text-violet-500 hover:bg-violet-500/10 transition-colors"
-                      >
-                        <Briefcase className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      <span className="text-muted-foreground/40">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-foreground whitespace-nowrap">
-                    {formatCents(p.amountDue)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-foreground whitespace-nowrap">
-                    {formatCents(p.amountPaid)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <SalesRepBadge
-                      value={p.salesRep}
-                      payoutId={p.id}
-                      options={salesRepOptions}
-                      onChanged={onRefresh}
-                      onSalesRepsChanged={onSalesRepsChanged}
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <ReferralBadge
-                      value={p.referral}
-                      pct={p.referralPct}
-                      payoutId={p.id}
-                      options={referralOptions}
-                      onChanged={onRefresh}
-                      onReferralsChanged={onReferralsChanged}
-                    />
-                  </td>
-                  <td className="px-2 py-3 text-center">
-                    {p.commissionSplit && p.splitDetails.length > 0 ? (
-                      <button
-                        onClick={() => onEdit(p)}
-                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 hover:opacity-80 transition-opacity"
-                        title={p.splitDetails.map((s) => `${s.name}: ${s.pct}%`).join(", ")}
-                      >
-                        <GitBranch className="h-3 w-3" />
-                        {p.splitDetails.length}
-                      </button>
-                    ) : (
-                      <span className="text-muted-foreground/40">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <ToggleBadge
-                      value={p.isSigned}
-                      payoutId={p.id}
-                      field="isSigned"
-                      onToggled={onRefresh}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <ToggleBadge
-                      value={p.isPaid}
-                      payoutId={p.id}
-                      field="isPaid"
-                      onToggled={onRefresh}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <ToggleBadge
-                      value={p.addedToSlack}
-                      payoutId={p.id}
-                      field="addedToSlack"
-                      onToggled={onRefresh}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <PayDistributedBadge
-                      value={p.payDistributed}
-                      payoutId={p.id}
-                      onChanged={onRefresh}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <DistDateCell
-                      value={p.payDistributedDate}
-                      payoutId={p.id}
-                      onChanged={onRefresh}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {p.paymentNotes ? (
-                      <button
-                        onClick={() => setNotesId(p.id)}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md text-amber-500 hover:bg-amber-500/10 transition-colors"
-                      >
-                        <StickyNote className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      <span className="text-muted-foreground/40">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <button
-                      onClick={() => onViewDocs(p.brandName)}
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-md text-blue-500 hover:bg-blue-500/10 transition-colors"
-                      title="View documents"
+                </TableCell>
+                <TableCell className="text-center">
+                  {p.pointOfContact ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setPocId(p.id)}
+                      aria-label="View point of contact"
+                      className="size-7 text-muted-foreground"
                     >
-                      <FileText className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                  <td className="px-2 py-3">
-                    <ActionsCell
-                      payout={p}
-                      onEdit={onEdit}
-                      onDelete={setDeleteId}
-                      onViewDocs={onViewDocs}
-                    />
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      <UserCircle className="size-3.5" />
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground/40">{"\u2014"}</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  {p.service ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setServiceId(p.id)}
+                      aria-label="View service"
+                      className="size-7 text-muted-foreground"
+                    >
+                      <Briefcase className="size-3.5" />
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground/40">{"\u2014"}</span>
+                  )}
+                </TableCell>
+                <TableCell className="px-4 text-right font-medium tabular-nums">
+                  {formatCents(p.amountDue)}
+                </TableCell>
+                <TableCell className="px-4 text-right font-medium tabular-nums">
+                  {formatCents(p.amountPaid)}
+                </TableCell>
+                <TableCell className="px-4">
+                  <SalesRepBadge
+                    value={p.salesRep}
+                    payoutId={p.id}
+                    options={salesRepOptions}
+                    onChanged={onRefresh}
+                    onSalesRepsChanged={onSalesRepsChanged}
+                  />
+                </TableCell>
+                <TableCell className="px-4">
+                  <ReferralBadge
+                    value={p.referral}
+                    pct={p.referralPct}
+                    payoutId={p.id}
+                    options={referralOptions}
+                    onChanged={onRefresh}
+                    onReferralsChanged={onReferralsChanged}
+                  />
+                </TableCell>
+                <TableCell className="px-2 text-center">
+                  {p.commissionSplit && p.splitDetails.length > 0 ? (
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      onClick={() => onEdit(p)}
+                      title={p.splitDetails.map((s) => `${s.name}: ${s.pct}%`).join(", ")}
+                    >
+                      <GitBranch />
+                      {p.splitDetails.length}
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground/40">{"\u2014"}</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  <ToggleBadge
+                    value={p.isSigned}
+                    payoutId={p.id}
+                    field="isSigned"
+                    onToggled={onRefresh}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <ToggleBadge
+                    value={p.isPaid}
+                    payoutId={p.id}
+                    field="isPaid"
+                    onToggled={onRefresh}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <ToggleBadge
+                    value={p.addedToSlack}
+                    payoutId={p.id}
+                    field="addedToSlack"
+                    onToggled={onRefresh}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <PayDistributedBadge
+                    value={p.payDistributed}
+                    payoutId={p.id}
+                    onChanged={onRefresh}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <DistDateCell
+                    value={p.payDistributedDate}
+                    payoutId={p.id}
+                    onChanged={onRefresh}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  {p.paymentNotes ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setNotesId(p.id)}
+                      aria-label="View payment notes"
+                      className="size-7 text-muted-foreground"
+                    >
+                      <StickyNote className="size-3.5" />
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground/40">{"\u2014"}</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => onViewDocs(p.brandName)}
+                    className="size-7 text-muted-foreground"
+                    title="View documents"
+                  >
+                    <FileText className="size-3.5" />
+                  </Button>
+                </TableCell>
+                <TableCell className="px-2">
+                  <ActionsCell
+                    payout={p}
+                    onEdit={onEdit}
+                    onDelete={setDeleteId}
+                    onViewDocs={onViewDocs}
+                  />
+                </TableCell>
+              </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
         {sorted.map((p) => {
           const underpaid = !p.isPaid && p.amountDue > p.amountPaid;
           return (
-          <div
+          <Card
             key={p.id}
             className={cn(
-              "rounded-lg border p-4",
-              underpaid
-                ? "border-red-200 dark:border-red-500/20 bg-red-50/60 dark:bg-red-500/[0.07]"
-                : "border-border/50 dark:border-white/[0.06] bg-background/50"
+              "p-4",
+              underpaid && "bg-destructive/5 ring-destructive/20 dark:ring-destructive/20"
             )}
           >
             {/* Top: Brand + date + actions */}
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="min-w-0">
-                <p className="font-medium text-foreground text-sm truncate">
+                <p className="font-medium text-sm truncate">
                   {p.brandName}
                 </p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1538,30 +1423,36 @@ export function PayoutTable({
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
                   {p.pointOfContact && (
-                    <button
+                    <Button
+                      variant="link"
+                      size="xs"
                       onClick={() => setPocId(p.id)}
-                      className="inline-flex items-center gap-1 py-1 text-xs text-sky-500 hover:text-sky-600 transition-colors"
+                      className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
                     >
-                      <UserCircle className="h-3 w-3" />
+                      <UserCircle />
                       View POC
-                    </button>
+                    </Button>
                   )}
                   {p.service && (
-                    <button
+                    <Button
+                      variant="link"
+                      size="xs"
                       onClick={() => setServiceId(p.id)}
-                      className="inline-flex items-center gap-1 py-1 text-xs text-violet-500 hover:text-violet-600 transition-colors"
+                      className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
                     >
-                      <Briefcase className="h-3 w-3" />
+                      <Briefcase />
                       View Service
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    variant="link"
+                    size="xs"
                     onClick={() => onViewDocs(p.brandName)}
-                    className="inline-flex items-center gap-1 py-1 text-xs text-blue-500 hover:text-blue-600 transition-colors"
+                    className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
                   >
-                    <FileText className="h-3 w-3" />
+                    <FileText />
                     Docs
-                  </button>
+                  </Button>
                 </div>
               </div>
               <ActionsCell
@@ -1576,13 +1467,13 @@ export function PayoutTable({
             <div className="flex items-center gap-3 mb-2">
               <div>
                 <span className="text-[10px] text-muted-foreground block">Due</span>
-                <span className="font-semibold text-foreground text-sm">
+                <span className="font-semibold text-sm tabular-nums">
                   {formatCents(p.amountDue)}
                 </span>
               </div>
               <div>
                 <span className="text-[10px] text-muted-foreground block">Paid</span>
-                <span className="font-semibold text-foreground text-sm">
+                <span className="font-semibold text-sm tabular-nums">
                   {formatCents(p.amountPaid)}
                 </span>
               </div>
@@ -1659,13 +1550,14 @@ export function PayoutTable({
               {p.commissionSplit && p.splitDetails.length > 0 && (
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-muted-foreground">Split</span>
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     onClick={() => onEdit(p)}
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400"
                   >
-                    <GitBranch className="h-3 w-3" />
+                    <GitBranch />
                     {p.splitDetails.length}
-                  </button>
+                  </Button>
                 </div>
               )}
               {p.payDistributedDate && (
@@ -1678,17 +1570,19 @@ export function PayoutTable({
 
             {/* Payment notes icon */}
             {p.paymentNotes && (
-              <div className="mt-3 pt-3 border-t border-border/50 dark:border-white/[0.06] flex items-center gap-1.5">
-                <button
+              <div className="mt-3 pt-3 border-t flex items-center gap-1.5">
+                <Button
+                  variant="link"
+                  size="xs"
                   onClick={() => setNotesId(p.id)}
-                  className="inline-flex items-center gap-1 py-1 text-xs text-amber-500 hover:text-amber-600 transition-colors"
+                  className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
                 >
-                  <StickyNote className="h-3 w-3" />
+                  <StickyNote />
                   View Notes
-                </button>
+                </Button>
               </div>
             )}
-          </div>
+          </Card>
           );
         })}
       </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 // Floating "scroll to top" affordance for long-scroll pages (calendar).
 // Auto-shows once the user has scrolled past `threshold` and fades out
@@ -66,9 +67,11 @@ export function ScrollToTopButton({ threshold = 400, className }: Props) {
   }, [scrollEl]);
 
   return (
-    <button
+    <Button
       ref={buttonRef}
       type="button"
+      variant="outline"
+      size="icon-lg"
       onClick={scrollToTop}
       aria-label="Scroll to top"
       // fixed + bottom-24 sm:bottom-6: clears the mobile bottom-nav
@@ -77,13 +80,13 @@ export function ScrollToTopButton({ threshold = 400, className }: Props) {
       // when invisible.
       className={cn(
         "fixed right-4 sm:right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] sm:bottom-6 z-30",
-        "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-lg",
-        "transition-all duration-200 hover:bg-accent",
+        "rounded-full shadow-lg",
+        "duration-200",
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none",
         className
       )}
     >
-      <ArrowUp className="h-5 w-5" />
-    </button>
+      <ArrowUp className="size-5" />
+    </Button>
   );
 }

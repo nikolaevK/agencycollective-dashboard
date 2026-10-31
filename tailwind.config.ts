@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: ["class"],
@@ -50,6 +51,13 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        chart: {
+          1: "hsl(var(--chart-1))",
+          2: "hsl(var(--chart-2))",
+          3: "hsl(var(--chart-3))",
+          4: "hsl(var(--chart-4))",
+          5: "hsl(var(--chart-5))",
+        },
         portal: {
           surface: "hsl(var(--portal-surface))",
           "on-surface": "hsl(var(--portal-on-surface))",
@@ -67,6 +75,12 @@ const config: Config = {
         },
       },
       borderRadius: {
+        // shadcn Luma scale (multiples of --radius). sm/md/lg resolve to the
+        // same px as before at the default 0.625rem radius.
+        "4xl": "calc(var(--radius) * 2.6)",
+        "3xl": "calc(var(--radius) * 2.2)",
+        "2xl": "calc(var(--radius) * 1.8)",
+        xl: "calc(var(--radius) * 1.4)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
@@ -87,7 +101,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 };
 
 export default config;

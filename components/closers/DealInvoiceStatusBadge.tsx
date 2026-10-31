@@ -2,6 +2,7 @@
 
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BadgeDot, badgeToneHover, badgeVariants, type BadgeTone } from "@/components/ui/badge";
 
 interface Props {
   status: string | null;
@@ -21,20 +22,20 @@ export function DealInvoiceStatusBadge({ status, onClick, isAdmin }: Props) {
       ? "Review"
       : "Under Review"
     : "Sent";
+  const tone: BadgeTone = isDraft ? "warning" : isSent ? "success" : "neutral";
 
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors",
-        isDraft && "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-        isSent && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-        onClick && "cursor-pointer hover:opacity-80",
-        !onClick && "cursor-default"
+        badgeVariants({ variant: "outline", tone }),
+        "gap-1.5 font-medium",
+        onClick ? cn("cursor-pointer", badgeToneHover[tone]) : "cursor-default"
       )}
     >
-      <FileText className="h-3 w-3" />
+      <BadgeDot tone={tone} />
+      <FileText className="opacity-70" />
       {label}
     </button>
   );

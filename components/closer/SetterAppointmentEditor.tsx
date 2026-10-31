@@ -1,8 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEvent } from "@/components/closer/CalendarEventList";
 import type {
   AppointmentRecord,
@@ -27,8 +46,8 @@ interface Props {
   onSaved: () => void;
 }
 
-const INPUT_CLS =
-  "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
+// RadioGroup values are strings — "no tier" (null) maps to this sentinel.
+const NO_TIER = "__none__";
 
 export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }: Props) {
   const [preCallStatus, setPreCallStatus] = useState<PreCallStatus>(appointment.preCallStatus);
@@ -88,87 +107,94 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4 rounded-t-2xl">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-foreground truncate">Edit Appointment</h3>
-            <p className="text-xs text-muted-foreground truncate mt-0.5">{event.title}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="min-w-0 pr-8">
+          <DialogTitle className="truncate">Edit Appointment</DialogTitle>
+          <DialogDescription className="truncate">{event.title}</DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+            <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Pre-call status</label>
-              <select
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="setter-appt-pre-call">Pre-call status</Label>
+              <Select
                 value={preCallStatus}
-                onChange={(e) => setPreCallStatus(e.target.value as PreCallStatus)}
-                className={INPUT_CLS}
+                onValueChange={(v) => setPreCallStatus(v as PreCallStatus)}
               >
-                {PRE_CALL_STATUSES.map((v) => (
-                  <option key={v} value={v}>{PRE_CALL_LABELS[v]}</option>
-                ))}
-              </select>
+                <SelectTrigger id="setter-appt-pre-call">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRE_CALL_STATUSES.map((v) => (
+                    <SelectItem key={v} value={v}>{PRE_CALL_LABELS[v]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Post-call status</label>
-              <select
+            <div className="grid gap-2">
+              <Label htmlFor="setter-appt-post-call">Post-call status</Label>
+              <Select
                 value={postCallStatus}
-                onChange={(e) => setPostCallStatus(e.target.value as PostCallStatus)}
-                className={INPUT_CLS}
+                onValueChange={(v) => setPostCallStatus(v as PostCallStatus)}
               >
-                {POST_CALL_STATUSES.map((v) => (
-                  <option key={v} value={v}>{POST_CALL_LABELS[v]}</option>
-                ))}
-              </select>
+                <SelectTrigger id="setter-appt-post-call">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {POST_CALL_STATUSES.map((v) => (
+                    <SelectItem key={v} value={v}>{POST_CALL_LABELS[v]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Client name</label>
-              <input
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="setter-appt-client-name">Client name</Label>
+              <Input
+                id="setter-appt-client-name"
                 type="text"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Optional"
-                className={INPUT_CLS}
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Client email</label>
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="setter-appt-client-email">Client email</Label>
+              <Input
+                id="setter-appt-client-email"
                 type="email"
                 value={clientEmail}
                 onChange={(e) => setClientEmail(e.target.value)}
                 placeholder="Optional"
-                className={INPUT_CLS}
               />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Notes</label>
-            <textarea
+          <div className="grid gap-2">
+            <Label htmlFor="setter-appt-notes">Notes</Label>
+            <Textarea
+              id="setter-appt-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Anything the closer should know before the call"
               rows={4}
-              className={cn(INPUT_CLS, "h-auto py-2")}
             />
           </div>
 
@@ -178,25 +204,30 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
               setter is NOT credited on any deal that links to this event.
               Picking a tier acts as the explicit "approve attribution"
               consent the contract requires. */}
-          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-            <label className="text-sm font-medium text-foreground">Commission tier</label>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <div className="space-y-2 rounded-2xl bg-muted/50 p-4">
+            <p id="setter-appt-tier-label" className="text-sm font-medium text-foreground">Commission tier</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
               Pick the tier that best describes your contribution. Selecting a
               tier credits you on any closed deal linked to this call. Leave
               unselected if you weren&apos;t the source of this appointment.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-              <label className="flex items-start gap-2 rounded-md border border-input bg-background px-3 py-2 cursor-pointer hover:bg-accent/40 transition-colors">
-                <input
-                  type="radio"
-                  name="setter-tier"
-                  className="mt-0.5"
-                  checked={setterTier === null}
-                  onChange={() => setSetterTier(null)}
-                />
+            <RadioGroup
+              name="setter-tier"
+              aria-labelledby="setter-appt-tier-label"
+              value={setterTier ?? NO_TIER}
+              onValueChange={(v) => setSetterTier(v === NO_TIER ? null : (v as SetterTier))}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1"
+            >
+              <label
+                className={cn(
+                  "flex items-start gap-2.5 rounded-2xl bg-background px-3 py-2.5 ring-1 ring-foreground/10 cursor-pointer transition-colors hover:bg-muted",
+                  setterTier === null && "ring-foreground/40"
+                )}
+              >
+                <RadioGroupItem value={NO_TIER} className="mt-0.5" />
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-foreground">No tier</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     I&apos;m not claiming credit on this appointment.
                   </p>
                 </div>
@@ -205,48 +236,34 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
                 <label
                   key={t}
                   className={cn(
-                    "flex items-start gap-2 rounded-md border border-input bg-background px-3 py-2 cursor-pointer hover:bg-accent/40 transition-colors",
-                    setterTier === t && "border-foreground/40 bg-foreground/5"
+                    "flex items-start gap-2.5 rounded-2xl bg-background px-3 py-2.5 ring-1 ring-foreground/10 cursor-pointer transition-colors hover:bg-muted",
+                    setterTier === t && "ring-foreground/40"
                   )}
                 >
-                  <input
-                    type="radio"
-                    name="setter-tier"
-                    className="mt-0.5"
-                    checked={setterTier === t}
-                    onChange={() => setSetterTier(t)}
-                  />
+                  <RadioGroupItem value={t} className="mt-0.5" />
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-foreground">
                       {SETTER_TIER_LABELS[t]}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {SETTER_TIER_PAYOUT_HINT[t]}
                     </p>
                   </div>
                 </label>
               ))}
-            </div>
+            </RadioGroup>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
-            >
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="h-9 rounded-lg ac-gradient px-5 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

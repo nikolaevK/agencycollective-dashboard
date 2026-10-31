@@ -2,15 +2,25 @@
 
 import { useMemo, useRef, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, PhoneCall, PhoneOff, StickyNote, MapPin, ChevronDown, AlignLeft, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
+import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, StickyNote, MapPin, ChevronDown, AlignLeft, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  PRE_CALL_BADGE,
   PRE_CALL_LABELS,
-  POST_CALL_BADGE,
   POST_CALL_LABELS,
   type AppointmentIndexEntry,
+  type PostCallStatus,
+  type PreCallStatus,
 } from "@/lib/appointments";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
 import { useGhlCrossReference } from "@/hooks/useGhlContacts";
 import { GhlEventChip, buildGhlCrossReferenceInputs } from "@/components/ghl/GhlEventChip";
@@ -116,16 +126,39 @@ function dashboardStatusLabel(s: "showed" | "no_show" | null): string {
   return "—";
 }
 
-const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
-  accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
-  tentative: { label: "Maybe", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  needsAction: { label: "Pending", cls: "bg-muted/60 text-muted-foreground" },
+const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; tone: BadgeTone }> = {
+  accepted: { label: "Accepted", tone: "success" },
+  declined: { label: "Declined", tone: "danger" },
+  tentative: { label: "Maybe", tone: "warning" },
+  needsAction: { label: "Pending", tone: "neutral" },
 };
 
-const STATUS_PILL: Record<string, { label: string; cls: string }> = {
-  tentative: { label: "Tentative", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  cancelled: { label: "Cancelled", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
+const STATUS_PILL: Record<string, { label: string; tone: BadgeTone }> = {
+  tentative: { label: "Tentative", tone: "warning" },
+  cancelled: { label: "Cancelled", tone: "danger" },
+};
+
+// Status tones for the setter's pre/post-call badges (labels stay the
+// shared PRE_CALL_LABELS / POST_CALL_LABELS).
+const PRE_CALL_TONE: Record<PreCallStatus, BadgeTone> = {
+  not_called: "neutral",
+  auto_confirmed: "success",
+  auto_no_answer: "warning",
+  triaged_confirmed: "success",
+  confirmed: "success",
+  no_answer: "warning",
+  voicemail: "info",
+  rescheduled: "info",
+  cancelled: "danger",
+};
+
+const POST_CALL_TONE: Record<PostCallStatus, BadgeTone> = {
+  not_called: "neutral",
+  followed_up: "success",
+  needs_followup: "warning",
+  qualified: "success",
+  disqualified: "danger",
+  no_answer: "warning",
 };
 
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
@@ -287,9 +320,9 @@ export function CalendarEventList({
 
   if (events.length === 0) {
     return (
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-12 text-center">
+      <Card className="p-12 text-center">
         <p className="text-sm text-muted-foreground">No events found for this period.</p>
-      </div>
+      </Card>
     );
   }
 
@@ -335,16 +368,16 @@ export function CalendarEventList({
                 // ("1:00 PM" vs "12:30 PM").
                 <div key={event.id} className="flex items-start gap-3">
                   <div className="hidden sm:flex w-14 shrink-0 pt-4 justify-end">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground tabular-nums">
+                    <p className="text-xs font-medium text-muted-foreground tabular-nums">
                       {event.allDay ? "All day" : formatTime(event.start, false)}
                     </p>
                   </div>
-                  <div
+                  <Card
                     className={cn(
-                      "flex-1 min-w-0 rounded-xl border bg-card p-4 transition-colors",
+                      "flex-1 min-w-0 p-4 transition-colors",
                       isLinked
-                        ? "border-emerald-500/30 bg-emerald-500/5"
-                        : "border-border/50 dark:border-white/[0.06] hover:bg-muted/30"
+                        ? "ring-emerald-500/40 dark:ring-emerald-500/40"
+                        : "hover:bg-muted/30"
                     )}
                   >
                   {/* Header: title row + Link as Deal button.
@@ -361,28 +394,23 @@ export function CalendarEventList({
                         </p>
                         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 sm:shrink-0">
                           {event.calendarName && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-muted text-muted-foreground max-w-[14rem] truncate" title={event.calendarName}>
-                              {event.calendarName}
-                            </span>
+                            <Badge variant="secondary" className="max-w-[14rem] font-normal text-muted-foreground" title={event.calendarName}>
+                              <span className="truncate">{event.calendarName}</span>
+                            </Badge>
                           )}
                           {isLinked && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                              Deal Linked
-                            </span>
+                            <StatusBadge tone="success">Deal Linked</StatusBadge>
                           )}
                           {setterClaim && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-sky-500/10 text-sky-700 dark:text-sky-400">
-                              <Flag className="h-2.5 w-2.5" />
+                            <Badge variant="outline" className="gap-1 font-medium">
+                              <Flag className="text-muted-foreground" />
                               Setter: {setterClaim.setterName ?? "Unknown"}
-                            </span>
+                            </Badge>
                           )}
                           {STATUS_PILL[event.status] && (
-                            <span className={cn(
-                              "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                              STATUS_PILL[event.status].cls
-                            )}>
+                            <StatusBadge tone={STATUS_PILL[event.status].tone}>
                               {STATUS_PILL[event.status].label}
-                            </span>
+                            </StatusBadge>
                           )}
                         </div>
                       </div>
@@ -440,13 +468,15 @@ export function CalendarEventList({
                     {/* Link as Deal — full-width on mobile (tap target),
                         compact top-right on desktop. */}
                     {onLinkDeal && !isLinked && (
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => onLinkDeal(event)}
-                        className="inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 w-full sm:w-auto sm:shrink-0 px-3 rounded-lg border border-primary/30 bg-primary/5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                        className="h-10 sm:h-8 w-full sm:w-auto sm:shrink-0"
                       >
                         Link as Deal
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
+                        <ArrowRight data-icon="inline-end" className="size-3.5" />
+                      </Button>
                     )}
                   </div>
 
@@ -458,16 +488,18 @@ export function CalendarEventList({
                     const isOpen = expanded.has(event.id);
                     return (
                       <div className="mt-2">
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="xs"
                           onClick={() => toggleExpanded(event.id)}
-                          className="inline-flex items-center gap-1 py-1.5 sm:py-0 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                          className="-ml-2.5 h-8 sm:h-6 text-muted-foreground"
                         >
-                          <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                          <ChevronDown className={cn("transition-transform", isOpen && "rotate-180")} />
                           {isOpen ? "Hide details" : "Details"}
-                        </button>
+                        </Button>
                         {isOpen && (
-                          <div className="mt-2 space-y-2.5 rounded-lg border border-border/40 bg-muted/20 p-3">
+                          <div className="mt-2 space-y-2.5 rounded-2xl bg-muted/50 p-3">
                             {event.description && (
                               <div className="flex items-start gap-1.5 text-xs text-muted-foreground min-w-0">
                                 <AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />
@@ -493,12 +525,9 @@ export function CalendarEventList({
                                         {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                       </a>
                                       {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                        <span className={cn(
-                                          "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                                          RESPONSE_BADGE[a.responseStatus].cls
-                                        )}>
+                                        <StatusBadge tone={RESPONSE_BADGE[a.responseStatus].tone}>
                                           {RESPONSE_BADGE[a.responseStatus].label}
-                                        </span>
+                                        </StatusBadge>
                                       )}
                                     </li>
                                   ))}
@@ -513,22 +542,14 @@ export function CalendarEventList({
 
                   {/* Setter claim panel — read-only view of pre/post-call notes */}
                   {setterClaim && (
-                    <div className="mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04] space-y-2">
+                    <div className="mt-3 pt-3 border-t space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          PRE_CALL_BADGE[setterClaim.preCallStatus]
-                        )}>
-                          <PhoneCall className="h-3 w-3" />
+                        <StatusBadge tone={PRE_CALL_TONE[setterClaim.preCallStatus] ?? "neutral"}>
                           Pre: {PRE_CALL_LABELS[setterClaim.preCallStatus]}
-                        </span>
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          POST_CALL_BADGE[setterClaim.postCallStatus]
-                        )}>
-                          <PhoneOff className="h-3 w-3" />
+                        </StatusBadge>
+                        <StatusBadge tone={POST_CALL_TONE[setterClaim.postCallStatus] ?? "neutral"}>
                           Post: {POST_CALL_LABELS[setterClaim.postCallStatus]}
-                        </span>
+                        </StatusBadge>
                         {setterClaim.clientName && setterClaim.clientName !== event.title && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <User className="h-3 w-3" />
@@ -566,13 +587,15 @@ export function CalendarEventList({
                                 {setterClaim.notes}
                               </p>
                               {isLong && (
-                                <button
+                                <Button
                                   type="button"
+                                  variant="link"
+                                  size="xs"
                                   onClick={() => toggleNotesExpanded(event.id)}
-                                  className="mt-1 py-1 sm:py-0 text-[11px] font-medium text-primary hover:underline"
+                                  className="mt-1 h-auto px-0 py-1 sm:py-0"
                                 >
                                   {isOpen ? "Show less" : "Show more"}
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -587,53 +610,61 @@ export function CalendarEventList({
                       on the same row (right-aligned on desktop, full-width
                       below on mobile). */}
                   {onAttendanceChange && (
-                    <div className="mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04] flex flex-col sm:flex-row sm:items-center gap-2">
+                    <div className="mt-3 pt-3 border-t flex flex-col sm:flex-row sm:items-center gap-2">
                       <div className="flex items-center gap-2">
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-pressed={eventAttendance === "showed"}
                           disabled={isSyncing}
                           onClick={() => handleAttendanceClick(event.id, "showed", eventAttendance === "showed" ? null : "showed")}
                           className={cn(
-                            "inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 flex-1 sm:flex-none px-3 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-70",
+                            "h-10 sm:h-8 flex-1 sm:flex-none",
                             eventAttendance === "showed"
-                              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                              : "border-border/50 bg-background text-muted-foreground hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-700 dark:hover:text-emerald-400"
+                              ? "border-foreground/20 bg-muted text-foreground dark:bg-muted"
+                              : "text-muted-foreground"
                           )}
                         >
                           {pendingButton === "showed" ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="size-3.5 animate-spin" />
                           ) : (
-                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <CheckCircle2 className={cn("size-3.5", eventAttendance === "showed" && "text-emerald-500")} />
                           )}
                           Showed
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-pressed={eventAttendance === "no_show"}
                           disabled={isSyncing}
                           onClick={() => handleAttendanceClick(event.id, "no_show", eventAttendance === "no_show" ? null : "no_show")}
                           className={cn(
-                            "inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 flex-1 sm:flex-none px-3 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-70",
+                            "h-10 sm:h-8 flex-1 sm:flex-none",
                             eventAttendance === "no_show"
-                              ? "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-400"
-                              : "border-border/50 bg-background text-muted-foreground hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-700 dark:hover:text-red-400"
+                              ? "border-foreground/20 bg-muted text-foreground dark:bg-muted"
+                              : "text-muted-foreground"
                           )}
                         >
                           {pendingButton === "no_show" ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="size-3.5 animate-spin" />
                           ) : (
-                            <XCircle className="h-3.5 w-3.5" />
+                            <XCircle className={cn("size-3.5", eventAttendance === "no_show" && "text-red-500")} />
                           )}
                           No Show
-                        </button>
+                        </Button>
                       </div>
 
                       {/* Edit button for linked deals */}
                       {isLinked && dealInfo && onEditDeal && (
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => onEditDeal(dealInfo.dealId)}
-                          className="inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 w-full sm:w-auto px-3 rounded-lg border border-border/50 bg-background text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors sm:ml-auto"
+                          className="h-10 sm:h-8 w-full sm:w-auto sm:ml-auto"
                         >
-                          <Pencil className="h-3 w-3" />
+                          <Pencil className="size-3.5" />
                           Edit Deal
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -658,55 +689,59 @@ export function CalendarEventList({
                     return (
                     <div className="mt-2 flex items-start gap-2">
                       {syncEntry.syncState === "out_of_sync" ? (
-                        <div className="flex-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                            <AlertTriangle className="h-3 w-3" />
+                        <div className="flex-1 rounded-2xl bg-muted/50 px-3 py-2.5">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                            <AlertTriangle className="size-3.5 text-amber-500" />
                             Out of sync with GHL
                             {SubBadge}
                           </div>
-                          <div className="mt-1 text-[11px] text-muted-foreground">
+                          <div className="mt-1 text-xs text-muted-foreground">
                             Dashboard: <span className="font-medium text-foreground">{dashboardStatusLabel(syncEntry.dashboardStatus)}</span>
                             <span className="mx-1.5">·</span>
                             GHL: <span className="font-medium text-foreground">{ghlStatusLabel(syncEntry.ghlStatus)}</span>
                           </div>
                           {onResync && (
                             <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <button
+                              <Button
+                                variant="outline"
+                                size="xs"
                                 disabled={pendingPushPull !== undefined}
                                 onClick={() => handleResyncClick(event.id, "push")}
-                                className="inline-flex items-center justify-center gap-1 h-9 sm:h-7 flex-1 sm:flex-none px-2.5 rounded-md border border-amber-500/40 bg-background text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-wait"
+                                className="h-9 sm:h-7 flex-1 sm:flex-none"
                               >
                                 {pendingPushPull === "push" ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  <Loader2 className="animate-spin" />
                                 ) : (
-                                  <RefreshCw className="h-3 w-3" />
+                                  <RefreshCw />
                                 )}
                                 Push to GHL
-                              </button>
-                              <button
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="xs"
                                 disabled={pendingPushPull !== undefined}
                                 onClick={() => handleResyncClick(event.id, "pull")}
-                                className="inline-flex items-center justify-center gap-1 h-9 sm:h-7 flex-1 sm:flex-none px-2.5 rounded-md border border-amber-500/40 bg-background text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-60 disabled:cursor-wait"
+                                className="h-9 sm:h-7 flex-1 sm:flex-none"
                               >
                                 {pendingPushPull === "pull" ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  <Loader2 className="animate-spin" />
                                 ) : (
-                                  <RefreshCw className="h-3 w-3 rotate-180" />
+                                  <RefreshCw className="rotate-180" />
                                 )}
                                 Pull from GHL
-                              </button>
+                              </Button>
                             </div>
                           )}
                         </div>
                       ) : syncEntry.syncState === "pending" ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Loader2 className="size-3 animate-spin" />
                           Syncing with GHL…
                           {SubBadge}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-3 w-3" />
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <CheckCircle2 className="size-3 text-emerald-500" />
                           Synced with GHL
                           {SubBadge}
                         </span>
@@ -729,59 +764,58 @@ export function CalendarEventList({
                     // for No Show only and the cards look mismatched.
                     // Desktop stays inline.
                     return (
-                      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center items-start gap-2 mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04]">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide shrink-0",
-                          eventAttendance === "showed"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                            : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
-                        )}>
-                          {eventAttendance === "showed" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center items-start gap-2 mt-3 pt-3 border-t">
+                        <StatusBadge tone={eventAttendance === "showed" ? "success" : "danger"} className="shrink-0">
                           {eventAttendance === "showed" ? "Showed" : "No Show"}
-                        </span>
+                        </StatusBadge>
                         {canReassign && closers && (
-                          <label className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground w-full sm:w-auto">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground w-full sm:w-auto">
                             <span className="shrink-0">Attributed to:</span>
-                            <select
+                            <Select
                               value={currentCloser ?? ""}
                               disabled={reassignBusy}
-                              onChange={(e) => {
-                                const next = e.target.value;
+                              onValueChange={(next) => {
                                 if (!next || next === currentCloser) return;
                                 handleReassignClick(event.id, next);
                               }}
-                              className={cn(
-                                "h-9 sm:h-7 min-w-0 flex-1 sm:flex-none rounded-md border border-border bg-background px-2 text-xs sm:text-[11px] font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30",
-                                reassignBusy && "opacity-60 cursor-wait"
-                              )}
-                              aria-label="Reassign attendance to a different closer"
                             >
-                              {/* If the currently-attributed closer isn't in
-                                  the active-closers list (deactivated since
-                                  the row was written), still render them as
-                                  the selected option so the picker reflects
-                                  reality and the admin sees who to change FROM. */}
-                              {currentCloser &&
-                                !closers.some((c) => c.id === currentCloser) && (
-                                  <option value={currentCloser}>
-                                    (unknown / inactive)
-                                  </option>
+                              <SelectTrigger
+                                className={cn(
+                                  "h-9 sm:h-8 min-w-0 flex-1 sm:flex-none sm:w-auto text-xs font-medium",
+                                  reassignBusy && "opacity-60 cursor-wait"
                                 )}
-                              {closers.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.displayName}
-                                </option>
-                              ))}
-                            </select>
+                                aria-label="Reassign attendance to a different closer"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {/* If the currently-attributed closer isn't in
+                                    the active-closers list (deactivated since
+                                    the row was written), still render them as
+                                    the selected option so the picker reflects
+                                    reality and the admin sees who to change FROM. */}
+                                {currentCloser &&
+                                  !closers.some((c) => c.id === currentCloser) && (
+                                    <SelectItem value={currentCloser}>
+                                      (unknown / inactive)
+                                    </SelectItem>
+                                  )}
+                                {closers.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.displayName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             {reassignBusy && (
-                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                              <Loader2 className="size-3 animate-spin text-muted-foreground" />
                             )}
-                          </label>
+                          </div>
                         )}
                       </div>
                     );
                   })()}
-                  </div>
+                  </Card>
                 </div>
               );
             })}

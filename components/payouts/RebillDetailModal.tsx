@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  X,
   ChevronDown,
   UserPlus,
   RefreshCcw,
@@ -11,6 +10,12 @@ import {
 } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { RebillMetrics, ForecastData, RebillAccount } from "@/lib/payouts";
 import type { MetricCardType } from "./PayoutSummaryCards";
 
@@ -39,32 +44,27 @@ function RebillRow({ account }: { account: RebillAccount }) {
   const hasWarning = account.noPriorHistory || account.amountChanged;
 
   return (
-    <div className={cn(
-      "border-b border-border/50 last:border-0",
-      account.noPriorHistory && "bg-red-50/30 dark:bg-red-950/10",
-      !account.noPriorHistory && account.amountChanged && "bg-amber-50/30 dark:bg-amber-950/10"
-    )}>
+    <div className="border-b last:border-0">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 px-6 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50"
       >
         <ChevronDown
           className={cn(
-            "h-4 w-4 text-muted-foreground shrink-0 transition-transform",
+            "size-4 text-muted-foreground shrink-0 transition-transform",
             expanded && "rotate-180"
           )}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-foreground truncate">
+            <p className="text-sm font-medium truncate">
               {account.brandName}
             </p>
             {hasWarning && (
               <AlertTriangle className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                account.noPriorHistory
-                  ? "text-red-500 dark:text-red-400"
-                  : "text-amber-500 dark:text-amber-400"
+                "size-3.5 shrink-0",
+                account.noPriorHistory ? "text-red-500" : "text-amber-500"
               )} />
             )}
           </div>
@@ -81,7 +81,7 @@ function RebillRow({ account }: { account: RebillAccount }) {
           )}
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-semibold tabular-nums">
             {formatCents(account.totalAmountDue)}
           </p>
           {account.totalAmountPaid > 0 && (
@@ -93,17 +93,17 @@ function RebillRow({ account }: { account: RebillAccount }) {
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4 pt-1 md:pl-11">
+        <div className="px-6 pb-4 pt-1 md:pl-[3.25rem]">
           {account.noPriorHistory ? (
-            <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50/50 dark:bg-red-950/20 px-3 py-2">
-              <AlertTriangle className="h-4 w-4 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700 dark:text-red-300">
+            <div className="flex items-start gap-2 rounded-2xl bg-destructive/10 px-3 py-2 text-destructive">
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+              <p className="text-xs">
                 Sales Rep is marked as REBILL but no matching account was found in previous months. This may be the first billing cycle or a name mismatch. Please verify.
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border border-border/50 bg-muted/30 overflow-hidden">
-              <div className="grid grid-cols-3 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border/50">
+            <div className="rounded-2xl bg-muted/50 overflow-hidden">
+              <div className="grid grid-cols-3 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
                 <span>Month</span>
                 <span className="text-right">Due</span>
                 <span className="text-right">Paid</span>
@@ -111,11 +111,11 @@ function RebillRow({ account }: { account: RebillAccount }) {
               {account.priorMonths.map((pm) => (
                 <div
                   key={`${pm.year}-${pm.month}`}
-                  className="grid grid-cols-3 gap-2 px-3 py-2 text-xs text-foreground border-b border-border/30 last:border-0"
+                  className="grid grid-cols-3 gap-2 px-3 py-2 text-xs border-b last:border-0"
                 >
                   <span>{monthLabel(pm.month, pm.year)}</span>
-                  <span className="text-right">{formatCents(pm.amountDue)}</span>
-                  <span className="text-right">{formatCents(pm.amountPaid)}</span>
+                  <span className="text-right tabular-nums">{formatCents(pm.amountDue)}</span>
+                  <span className="text-right tabular-nums">{formatCents(pm.amountPaid)}</span>
                 </div>
               ))}
             </div>
@@ -129,9 +129,9 @@ function RebillRow({ account }: { account: RebillAccount }) {
 /* ── New account row ───────────────────────────────────────────── */
 function NewAccountRow({ account }: { account: RebillAccount }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-0">
+    <div className="flex items-center gap-3 px-6 py-3 border-b last:border-0">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">
+        <p className="text-sm font-medium truncate">
           {account.brandName}
         </p>
         <p className="text-xs text-muted-foreground">
@@ -140,7 +140,7 @@ function NewAccountRow({ account }: { account: RebillAccount }) {
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-sm font-semibold text-foreground">
+        <p className="text-sm font-semibold tabular-nums">
           {formatCents(account.totalAmountDue)}
         </p>
         {account.totalAmountPaid > 0 && (
@@ -157,16 +157,16 @@ function NewAccountRow({ account }: { account: RebillAccount }) {
 function NewAccountsView({ metrics, month, year }: { metrics: RebillMetrics; month: number; year: number }) {
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-border/50">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-muted/50 border-y">
         <div className="flex min-w-0 items-center gap-2">
-          <UserPlus className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
-          <span className="text-sm font-medium text-foreground">
+          <UserPlus className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-sm font-medium">
             {metrics.newAccountCount} new account
             {metrics.newAccountCount !== 1 ? "s" : ""} in{" "}
             {monthLabel(month, year)}
           </span>
         </div>
-        <span className="shrink-0 text-sm font-bold text-blue-600 dark:text-blue-400">
+        <span className="shrink-0 text-sm font-semibold tabular-nums">
           {formatCents(metrics.newAccountRevenue)}
         </span>
       </div>
@@ -188,16 +188,16 @@ function NewAccountsView({ metrics, month, year }: { metrics: RebillMetrics; mon
 function RebillAccountsView({ metrics, month, year }: { metrics: RebillMetrics; month: number; year: number }) {
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-violet-50/50 dark:bg-violet-950/20 border-b border-border/50">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-muted/50 border-y">
         <div className="flex min-w-0 items-center gap-2">
-          <RefreshCcw className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
-          <span className="text-sm font-medium text-foreground">
+          <RefreshCcw className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-sm font-medium">
             {metrics.rebillAccountCount} rebilled account
             {metrics.rebillAccountCount !== 1 ? "s" : ""} in{" "}
             {monthLabel(month, year)}
           </span>
         </div>
-        <span className="shrink-0 text-sm font-bold text-violet-600 dark:text-violet-400">
+        <span className="shrink-0 text-sm font-semibold tabular-nums">
           {formatCents(metrics.rebillAccountRevenue)}
         </span>
       </div>
@@ -235,10 +235,10 @@ function ForecastView({
 
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-cyan-50/50 dark:bg-cyan-950/20 border-b border-border/50">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3 bg-muted/50 border-y">
         <div className="flex min-w-0 items-center gap-2">
-          <TrendingUp className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
-          <span className="text-sm font-medium text-foreground">
+          <TrendingUp className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-sm font-medium">
             Forecast for {monthLabel(nextMonth, nextYear)}
           </span>
         </div>
@@ -246,9 +246,9 @@ function ForecastView({
 
       <div className="min-h-0 p-6 space-y-5 max-h-[60dvh] overflow-y-auto overscroll-contain">
         {forecast.limitedData && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800 dark:text-amber-300">
+          <div className="flex items-start gap-2 rounded-2xl bg-muted/50 px-4 py-3">
+            <AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground">
               Limited data &mdash; forecast based on{" "}
               {forecast.trailingMonths} month
               {forecast.trailingMonths !== 1 ? "s" : ""}. Accuracy improves
@@ -258,26 +258,26 @@ function ForecastView({
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+          <div className="rounded-2xl bg-muted/50 p-3 text-center">
             <p className="text-xs text-muted-foreground mb-1">
               Projected New
             </p>
-            <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            <p className="text-lg font-semibold tracking-tight tabular-nums">
               {forecast.projectedNewAccounts}
             </p>
             <p className="text-xs text-muted-foreground">accounts</p>
           </div>
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+          <div className="rounded-2xl bg-muted/50 p-3 text-center">
             <p className="text-xs text-muted-foreground mb-1">New Revenue</p>
-            <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            <p className="text-lg font-semibold tracking-tight tabular-nums">
               {formatCents(forecast.projectedNewRevenue)}
             </p>
           </div>
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+          <div className="rounded-2xl bg-muted/50 p-3 text-center">
             <p className="text-xs text-muted-foreground mb-1">
               Rebill Revenue
             </p>
-            <p className="text-lg font-bold text-violet-600 dark:text-violet-400">
+            <p className="text-lg font-semibold tracking-tight tabular-nums">
               {formatCents(forecast.projectedRebillRevenue)}
             </p>
           </div>
@@ -285,12 +285,12 @@ function ForecastView({
 
         {forecast.historicalData.length > 0 && (
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+            <p className="text-sm font-medium mb-2">
               Historical Breakdown
             </p>
-            <div className="rounded-lg border border-border/50 overflow-x-auto">
+            <div className="rounded-2xl border overflow-x-auto">
               <div className="min-w-[440px]">
-                <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground bg-muted/30 border-b border-border/50">
+                <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground bg-muted/50 border-b">
                   <span>Month</span>
                   <span className="text-right">New</span>
                   <span className="text-right">New Rev</span>
@@ -300,7 +300,7 @@ function ForecastView({
                 {forecast.historicalData.map((d) => (
                   <div
                     key={`${d.year}-${d.month}`}
-                    className="grid grid-cols-5 gap-2 px-3 py-2 text-xs text-foreground border-b border-border/30 last:border-0"
+                    className="grid grid-cols-5 gap-2 px-3 py-2 text-xs tabular-nums border-b last:border-0"
                   >
                     <span>{monthLabel(d.month, d.year)}</span>
                     <span className="text-right">{d.newCount}</span>
@@ -345,30 +345,21 @@ export function RebillDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        aria-describedby={undefined}
         className={cn(
-          "relative flex w-full max-h-[calc(100dvh-2rem)] flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden",
-          view === "rebill" ? "max-w-2xl" : "max-w-lg"
+          "flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0",
+          view === "rebill" ? "sm:max-w-2xl" : "sm:max-w-lg"
         )}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">
-            {titles[view]}
-          </h3>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 py-5 pr-14">
+          <DialogTitle>{titles[view]}</DialogTitle>
+        </DialogHeader>
 
         {/* Content */}
         {view === "new" && metrics && (
@@ -386,7 +377,7 @@ export function RebillDetailModal({
             Loading...
           </p>
         ) : null}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

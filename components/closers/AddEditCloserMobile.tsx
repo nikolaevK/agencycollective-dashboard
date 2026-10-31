@@ -9,7 +9,16 @@ import {
   DollarSign,
   Lightbulb,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   CLOSER_ROLES,
   type CloserPublic,
@@ -25,9 +34,6 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
 }
-
-const INPUT_CLS =
-  "flex h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
 export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
   const isEdit = !!closer;
@@ -91,91 +97,94 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
-        <button
+      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label="Back"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
         >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h2 className="text-lg font-semibold text-foreground">
+          <ArrowLeft className="size-5" />
+        </Button>
+        <h2 className="text-base font-medium">
           {isEdit ? "Edit Closer" : "Add New Closer"}
         </h2>
       </div>
 
       {/* Scrollable Content */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5">
-        <form id="closer-mobile-form" onSubmit={handleSubmit} className="space-y-5">
+        <form id="closer-mobile-form" onSubmit={handleSubmit} className="space-y-4">
           {/* Error */}
           {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+            <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
           {/* Full Name */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="grid gap-2">
+            <Label>
               Full Name
-            </label>
+            </Label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
+              <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="John Doe"
                 required
-                className={cn(INPUT_CLS, "pl-9")}
+                className="h-11 pl-9"
               />
             </div>
           </div>
 
           {/* Email */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="grid gap-2">
+            <Label>
               Professional Email
-            </label>
+            </Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
+              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="john@company.com"
                 required
-                className={cn(INPUT_CLS, "pl-9")}
+                className="h-11 pl-9"
               />
             </div>
           </div>
 
           {/* Role */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="grid gap-2">
+            <Label>
               Role Selection
-            </label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className={INPUT_CLS}
-            >
-              {CLOSER_ROLES.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            </Label>
+            <Select value={role} onValueChange={(v) => setRole(v)}>
+              <SelectTrigger className="h-11">
+                <SelectValue />
+              </SelectTrigger>
+              {/* Above this hand-built z-[60] full-screen form */}
+              <SelectContent className="z-[70]">
+                {CLOSER_ROLES.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Commission Rate */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="grid gap-2">
+            <Label>
               Commission Rate %
-            </label>
+            </Label>
             <div className="relative">
-              <Percent className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
+              <Percent className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="number"
                 step="0.1"
                 min="0"
@@ -183,7 +192,7 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
                 value={commissionRate}
                 onChange={(e) => setCommissionRate(e.target.value)}
                 placeholder="12.5"
-                className={cn(INPUT_CLS, "pl-9")}
+                className="h-11 pl-9"
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -192,20 +201,20 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
           </div>
 
           {/* Monthly Quota */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="grid gap-2">
+            <Label>
               Monthly Quota $
-            </label>
+            </Label>
             <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
+              <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="number"
                 step="1"
                 min="0"
                 value={quota}
                 onChange={(e) => setQuota(e.target.value)}
                 placeholder="50000"
-                className={cn(INPUT_CLS, "pl-9")}
+                className="h-11 pl-9"
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -215,11 +224,11 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
 
           {/* Helper Info */}
           {!isEdit && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="rounded-2xl bg-muted/50 p-4">
               <div className="flex gap-3">
-                <Lightbulb className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <Lightbulb className="size-4 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-foreground mb-1">
+                  <p className="text-sm font-medium mb-1">
                     Quick Tip
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -235,26 +244,29 @@ export function AddEditCloserMobile({ closer, onClose, onSaved }: Props) {
       </div>
 
       {/* Fixed Bottom Bar */}
-      <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center gap-3">
-        <button
+      <div className="shrink-0 border-t bg-background px-4 py-3 flex items-center gap-3">
+        <Button
           type="button"
+          variant="outline"
+          size="lg"
           onClick={onClose}
-          className="flex-1 h-11 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
+          className="flex-1 h-11"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
           form="closer-mobile-form"
+          size="lg"
           disabled={isPending || !displayName.trim() || !email.trim()}
-          className="flex-1 h-11 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:pointer-events-none"
+          className="flex-1 h-11"
         >
           {isPending
             ? "Saving..."
             : isEdit
               ? "Save Changes"
               : "Create Closer"}
-        </button>
+        </Button>
       </div>
     </div>
   );

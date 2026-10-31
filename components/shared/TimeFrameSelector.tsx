@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Calendar } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   TIME_FRAME_OPTIONS,
   buildTimeFrame,
@@ -61,67 +64,67 @@ export function TimeFrameSelector({ value, onChange, hideCustom }: Props) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1 flex-wrap" role="group" aria-label="Time frame">
-        {TIME_FRAME_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => pickPreset(opt.value)}
-            aria-pressed={activeKey === opt.value}
-            className={cn(
-              "inline-flex items-center h-8 px-3 rounded-md text-xs font-medium transition-colors",
-              activeKey === opt.value
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-1">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          // Empty while a custom range is active — no preset is selected then.
+          value={activeKey === "custom" ? "" : activeKey}
+          // Radix reports "" when the active item is clicked again; a time
+          // frame can't be deselected, so ignore that.
+          onValueChange={(v) => {
+            if (v) pickPreset(v as Exclude<TimeFrameKey, "custom">);
+          }}
+          aria-label="Time frame"
+          className="flex-wrap justify-start"
+        >
+          {TIME_FRAME_OPTIONS.map((opt) => (
+            <ToggleGroupItem key={opt.value} value={opt.value} className="px-3">
+              {opt.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
         {!hideCustom && (
-          <button
-            type="button"
-            onClick={() => setShowCustom((v) => !v)}
-            aria-pressed={activeKey === "custom"}
+          <Toggle
+            variant="outline"
+            size="sm"
+            pressed={activeKey === "custom"}
+            onPressedChange={() => setShowCustom((v) => !v)}
             aria-expanded={showCustom}
-            className={cn(
-              "inline-flex items-center gap-1 h-8 px-3 rounded-md text-xs font-medium transition-colors",
-              activeKey === "custom"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
+            className="px-3"
           >
-            <Calendar className="h-3 w-3" />
+            <Calendar />
             {customPillLabel}
-          </button>
+          </Toggle>
         )}
       </div>
 
       {showCustom && !hideCustom && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <input
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Input
             type="date"
             value={customSince}
             onChange={(e) => setCustomSince(e.target.value)}
             aria-label="From date"
-            className="h-8 rounded-md border border-border bg-background px-2 focus:outline-none focus:ring-2 focus:ring-ring/30"
+            className="h-8 w-auto"
           />
           <span className="text-muted-foreground">to</span>
-          <input
+          <Input
             type="date"
             value={customUntil}
             onChange={(e) => setCustomUntil(e.target.value)}
             aria-label="To date"
-            className="h-8 rounded-md border border-border bg-background px-2 focus:outline-none focus:ring-2 focus:ring-ring/30"
+            className="h-8 w-auto"
           />
-          <button
+          <Button
             type="button"
+            size="sm"
             onClick={applyCustom}
             disabled={!customSince || !customUntil || customSince > customUntil}
-            className="inline-flex items-center h-8 px-3 rounded-md text-xs font-medium bg-primary text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
           >
             Apply
-          </button>
+          </Button>
         </div>
       )}
     </div>

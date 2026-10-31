@@ -3,7 +3,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { CloserSubNav } from "@/components/closers/CloserSubNav";
@@ -17,6 +16,9 @@ import { SUB_ACCOUNTS } from "@/lib/ghl/subAccounts";
 import { useElementHeightVar } from "@/hooks/useElementHeightVar";
 import { MobileFiltersSheet } from "@/components/closer/MobileFiltersSheet";
 import { ScrollToTopButton } from "@/components/closer/ScrollToTopButton";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DealPublic } from "@/components/closers/types";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
 
@@ -288,10 +290,10 @@ export default function AdminCalendarPage() {
   const connected = status?.connected ?? false;
 
   return (
-    <DashboardShell>
+    <DashboardShell wide>
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">
             Team Calendar
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -313,72 +315,70 @@ export default function AdminCalendarPage() {
                 chips reachable from any scroll position. */}
             <div
               ref={navRef}
-              className="sticky top-0 z-20 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40"
+              className="sticky top-0 z-20 -mx-4 px-4 md:-mx-6 md:px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b"
             >
               <div className="flex items-center justify-between">
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w - 1)}
                   aria-label="Previous week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-foreground">
+                  <ChevronLeft />
+                </Button>
+                <div className="flex flex-col items-center text-center">
+                  <p className="text-sm font-semibold tracking-tight text-foreground">
                     {format(currentWeekStart, "MMM d")} – {format(currentWeekEnd, "MMM d, yyyy")}
                   </p>
                   {weekOffset !== 0 && (
-                    <button
+                    <Button
+                      variant="link"
+                      size="xs"
                       onClick={() => setWeekOffset(0)}
-                      className="text-xs text-primary hover:underline mt-0.5"
+                      className="h-auto px-0 mt-0.5 text-muted-foreground hover:text-foreground"
                     >
                       Back to this week
-                    </button>
+                    </Button>
                   )}
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w + 1)}
                   aria-label="Next week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  <ChevronRight />
+                </Button>
               </div>
 
               {/* Desktop filter rows — hidden on mobile where they'd wrap
                   to many lines and eat half the screen. */}
               {calendarOwners.length > 1 && (
-                <div className="hidden sm:flex items-center gap-2 flex-wrap mt-3">
-                  <button
-                    onClick={() => setCloserFilter("all")}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                      activeFilter === "all"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                    )}
-                  >
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={activeFilter}
+                  // Radix reports "" when the active pill is clicked again;
+                  // that pill is `activeFilter`, so this sets exactly what
+                  // its old onClick did (incl. clearing a stale owner on "All").
+                  onValueChange={(v) => setCloserFilter(v || activeFilter)}
+                  aria-label="Filter by calendar"
+                  className="hidden sm:flex flex-wrap justify-start mt-3"
+                >
+                  <ToggleGroupItem value="all" className="px-3 text-xs">
                     All ({events.length})
-                  </button>
+                  </ToggleGroupItem>
                   {calendarOwners.map((owner) => {
                     const count = events.filter((e) => e.calendarName === owner).length;
                     return (
-                      <button
-                        key={owner}
-                        onClick={() => setCloserFilter(owner)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                          activeFilter === owner
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <UserRound className="h-3 w-3" />
+                      <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                        <UserRound className="size-3" />
                         {owner} ({count})
-                      </button>
+                      </ToggleGroupItem>
                     );
                   })}
-                </div>
+                </ToggleGroup>
               )}
 
               <div className="hidden sm:block">
@@ -397,40 +397,31 @@ export default function AdminCalendarPage() {
               >
                 {calendarOwners.length > 1 && (
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    <p className="text-sm font-medium text-foreground mb-2">
                       Calendar
                     </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() => setCloserFilter("all")}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                          activeFilter === "all"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      size="sm"
+                      value={activeFilter}
+                      onValueChange={(v) => setCloserFilter(v || activeFilter)}
+                      aria-label="Filter by calendar"
+                      className="flex-wrap justify-start"
+                    >
+                      <ToggleGroupItem value="all" className="px-3 text-xs">
                         All ({events.length})
-                      </button>
+                      </ToggleGroupItem>
                       {calendarOwners.map((owner) => {
                         const count = events.filter((e) => e.calendarName === owner).length;
                         return (
-                          <button
-                            key={owner}
-                            onClick={() => setCloserFilter(owner)}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                              activeFilter === owner
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <UserRound className="h-3 w-3" />
+                          <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                            <UserRound className="size-3" />
                             {owner} ({count})
-                          </button>
+                          </ToggleGroupItem>
                         );
                       })}
-                    </div>
+                    </ToggleGroup>
                   </div>
                 )}
                 <SubAccountFilterPills
@@ -444,7 +435,7 @@ export default function AdminCalendarPage() {
             {eventsLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 rounded-xl bg-muted/50 animate-pulse" />
+                  <Skeleton key={i} className="h-20" />
                 ))}
               </div>
             ) : (

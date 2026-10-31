@@ -12,6 +12,10 @@ import { CloserStatusBadge } from "@/components/closers/CloserStatusBadge";
 import { CloserRoleBadge } from "@/components/closers/CloserRoleBadge";
 import type { CloserPublic, DealPublic } from "@/components/closers/types";
 import type { ChartDeal, CloserDealStats } from "@/lib/deals";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface CloserDetailData {
   closer: CloserPublic;
@@ -43,39 +47,37 @@ export default function CloserDetailPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <Link
-            href="/dashboard/closers/manage"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Manage
-          </Link>
+          <Button asChild variant="ghost" size="sm" className="-ml-3 mb-4 text-muted-foreground">
+            <Link href="/dashboard/closers/manage">
+              <ArrowLeft />
+              Back to Manage
+            </Link>
+          </Button>
 
           {isLoading ? (
             <HeaderSkeleton />
           ) : data ? (
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="h-12 w-12 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
+              <Avatar className="size-12">
                 {data.closer.avatarPath ? (
-                  <img
+                  <AvatarImage
                     src={data.closer.avatarPath}
                     alt={data.closer.displayName}
-                    className="h-12 w-12 rounded-full object-cover"
                   />
                 ) : (
-                  <span className="text-lg font-bold text-violet-500">
+                  <AvatarFallback className="text-lg font-medium">
                     {data.closer.displayName
                       .split(/\s+/)
                       .map((w) => w[0])
                       .join("")
                       .toUpperCase()
                       .slice(0, 2)}
-                  </span>
+                  </AvatarFallback>
                 )}
-              </div>
+              </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-2xl lg:text-3xl font-black text-foreground break-words min-w-0">
+                  <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight break-words min-w-0">
                     {data.closer.displayName}
                   </h2>
                   <CloserStatusBadge status={data.closer.status} />
@@ -85,34 +87,36 @@ export default function CloserDetailPage() {
                   {data.closer.email}
                 </p>
               </div>
-              <Link
-                href={`/dashboard/closers/${data.closer.id}/dashboard`}
-                aria-label={`View ${data.closer.displayName}'s dashboard`}
-                className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-primary/30 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
-              >
-                <Eye className="h-4 w-4" />
-                {/* Full label on tablet+, short on phones. */}
-                <span className="hidden sm:inline">View their dashboard</span>
-                <span className="sm:hidden">View</span>
-              </Link>
+              <Button asChild variant="outline" className="shrink-0">
+                <Link
+                  href={`/dashboard/closers/${data.closer.id}/dashboard`}
+                  aria-label={`View ${data.closer.displayName}'s dashboard`}
+                >
+                  <Eye />
+                  {/* Full label on tablet+, short on phones. */}
+                  <span className="hidden sm:inline">View their dashboard</span>
+                  <span className="sm:hidden">View</span>
+                </Link>
+              </Button>
             </div>
           ) : null}
         </div>
 
         {/* Error state */}
         {isError && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-12 text-center">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">
-              Closer not found or failed to load.
-            </p>
-            <Link
-              href="/dashboard/closers/manage"
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mt-3"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Return to Manage
-            </Link>
-          </div>
+          <Card>
+            <CardContent className="p-12 md:p-12 text-center">
+              <p className="text-sm font-medium text-destructive">
+                Closer not found or failed to load.
+              </p>
+              <Button asChild variant="ghost" size="sm" className="mt-3 text-muted-foreground">
+                <Link href="/dashboard/closers/manage">
+                  <ArrowLeft />
+                  Return to Manage
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {/* Loading state */}
@@ -134,10 +138,10 @@ export default function CloserDetailPage() {
 function HeaderSkeleton() {
   return (
     <div className="flex items-center gap-4">
-      <div className="h-12 w-12 rounded-full animate-pulse bg-muted" />
+      <Skeleton className="size-12 rounded-full" />
       <div className="space-y-2">
-        <div className="h-7 w-48 animate-pulse rounded bg-muted" />
-        <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-32" />
       </div>
     </div>
   );
@@ -149,37 +153,40 @@ function DetailSkeleton() {
       {/* Metrics skeleton */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg animate-pulse bg-muted" />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-                <div className="h-6 w-28 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-              </div>
-            </div>
-          </div>
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 md:pb-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="size-4" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-3 w-32" />
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Chart skeleton */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
-        <div className="h-5 w-40 animate-pulse rounded bg-muted mb-6" />
-        <div className="h-[250px] w-full animate-pulse rounded bg-muted" />
-      </div>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-40" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[250px] w-full" />
+        </CardContent>
+      </Card>
 
       {/* Table skeleton */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
-        <div className="h-5 w-36 animate-pulse rounded bg-muted mb-6" />
-        <div className="space-y-3">
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-36" />
+        </CardHeader>
+        <CardContent className="space-y-3">
           {[1, 2, 3, 4, 5].map((j) => (
-            <div key={j} className="h-10 w-full animate-pulse rounded bg-muted" />
+            <Skeleton key={j} className="h-10 w-full" />
           ))}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
