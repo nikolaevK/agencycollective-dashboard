@@ -2,14 +2,10 @@ import crypto from "crypto";
 import { getDb, ensureMigrated } from "./db";
 import type { Row } from "@libsql/client";
 
-export type NotePriority = "high" | "medium" | "low";
-export const NOTE_PRIORITIES: NotePriority[] = ["high", "medium", "low"];
+import type { NotePriority } from "./noteRules";
+import { NOTE_MAX_SHARES, NOTE_MAX_TAGS, NOTE_TAG_MAX, NOTE_PRIORITIES } from "./noteRules";
 
-export const NOTE_TITLE_MAX = 200;
-export const NOTE_BODY_MAX = 50_000;
-export const NOTE_TAG_MAX = 32;
-export const NOTE_MAX_TAGS = 12;
-export const NOTE_MAX_SHARES = 50;
+export * from "./noteRules";
 
 export interface NoteRecord {
   id: string;

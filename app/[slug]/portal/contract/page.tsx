@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, FileSignature, CheckCircle2 } from "lucide-react";
 import { DocusealForm } from "@docuseal/react";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 
 interface ContractData {
   status: string;
@@ -52,80 +53,99 @@ export default function PortalContractPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <DashboardShell>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardShell>
     );
   }
 
   if (error || !contract) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <FileSignature className="h-12 w-12 text-muted-foreground/50 mb-4" />
-        <p className="text-lg font-semibold text-foreground">No Contract Available</p>
-        <p className="text-sm text-muted-foreground mt-1">{error || "There is no contract to sign at this time."}</p>
-      </div>
+      <StatusScreen
+        icon={<FileSignature className="size-6 text-muted-foreground" />}
+        title="No Contract Available"
+        body={error || "There is no contract to sign at this time."}
+      />
     );
   }
 
   if (contract.status === "signed" || justSigned) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
-        <p className="text-lg font-semibold text-foreground">Contract Signed</p>
-        <p className="text-sm text-muted-foreground mt-1">
-          {justSigned
+      <StatusScreen
+        icon={<CheckCircle2 className="size-6 text-emerald-600 dark:text-emerald-400" />}
+        title="Contract Signed"
+        body={
+          justSigned
             ? "Thank you! Your contract has been signed successfully."
-            : `Thank you! Your contract was signed on ${contract.signedAt ? new Date(contract.signedAt).toLocaleDateString() : "—"}.`}
-        </p>
-      </div>
+            : `Thank you! Your contract was signed on ${contract.signedAt ? new Date(contract.signedAt).toLocaleDateString() : "—"}.`
+        }
+      />
     );
   }
 
   if (contract.status === "declined") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <FileSignature className="h-12 w-12 text-muted-foreground/50 mb-4" />
-        <p className="text-lg font-semibold text-foreground">Contract Declined</p>
-        <p className="text-sm text-muted-foreground mt-1">Please contact your representative for assistance.</p>
-      </div>
+      <StatusScreen
+        icon={<FileSignature className="size-6 text-muted-foreground" />}
+        title="Contract Declined"
+        body="Please contact your representative for assistance."
+      />
     );
   }
 
   if (!contract.signingUrl || !contract.signingUrl.startsWith("https://")) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <FileSignature className="h-12 w-12 text-muted-foreground/50 mb-4" />
-        <p className="text-lg font-semibold text-foreground">Contract {contract.status === "expired" ? "Expired" : "Unavailable"}</p>
-        <p className="text-sm text-muted-foreground mt-1">Please contact your representative for assistance.</p>
-      </div>
+      <StatusScreen
+        icon={<FileSignature className="size-6 text-muted-foreground" />}
+        title={`Contract ${contract.status === "expired" ? "Expired" : "Unavailable"}`}
+        body="Please contact your representative for assistance."
+      />
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-black text-foreground">Sign Your Contract</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Please review and sign the contract below
-        </p>
+    <DashboardShell>
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-foreground">Sign Your Contract</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Please review and sign the contract below
+          </p>
+        </div>
+        {/* Light surface in every theme — the in-page DocuSeal form is
+            transparent with dark text (unreadable on the dark theme). */}
+        <div className="overflow-hidden rounded-[min(calc(var(--radius)*2.6),24px)] bg-white text-neutral-900 shadow ring-1 ring-foreground/5 dark:ring-foreground/10">
+          <DocusealForm
+            src={contract.signingUrl}
+            withTitle={false}
+            withDownloadButton={true}
+            withSendCopyButton={true}
+            withDecline={true}
+            allowTypedSignature={true}
+            onComplete={handleComplete}
+            onDecline={handleDecline}
+            className="w-full"
+            style={{ minHeight: "80vh" }}
+          />
+        </div>
       </div>
-      {/* Light surface in every theme — the in-page DocuSeal form is
-          transparent with dark text (unreadable on the dark theme). */}
-      <div className="rounded-xl border border-border/50 bg-white text-neutral-900 overflow-hidden">
-        <DocusealForm
-          src={contract.signingUrl}
-          withTitle={false}
-          withDownloadButton={true}
-          withSendCopyButton={true}
-          withDecline={true}
-          allowTypedSignature={true}
-          onComplete={handleComplete}
-          onDecline={handleDecline}
-          className="w-full"
-          style={{ minHeight: "80vh" }}
-        />
+    </DashboardShell>
+  );
+}
+
+/** Centered state (no / signed / declined / unavailable contract). */
+function StatusScreen({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <DashboardShell>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted">{icon}</div>
+        <div className="space-y-1">
+          <p className="text-lg font-semibold text-foreground">{title}</p>
+          <p className="text-sm text-muted-foreground">{body}</p>
+        </div>
       </div>
-    </div>
+    </DashboardShell>
   );
 }

@@ -5,9 +5,17 @@ import ReactMarkdown from "react-markdown";
 import { Eye, EyeOff, Hash, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NotePriority, NoteRecord } from "@/lib/notes";
-import { NOTE_BODY_MAX, NOTE_TITLE_MAX } from "@/lib/notes";
+import { NOTE_BODY_MAX, NOTE_TITLE_MAX } from "@/lib/noteRules";
 import { LeadPicker } from "@/components/closer/LeadPicker";
 import { SharePicker } from "@/components/closer/SharePicker";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface NoteWithShares extends NoteRecord {
   sharedWith?: string[];
@@ -20,9 +28,6 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
 }
-
-const INPUT_CLS =
-  "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
 
 type LinkedLead = {
   googleEventId: string | null;
@@ -176,59 +181,59 @@ export function NoteEditor({ note, initialLeadLabel, initialLeadKind, onClose, o
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[92vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4 rounded-t-2xl">
-          <h3 className="text-lg font-semibold text-foreground">{isEdit ? "Edit note" : "New note"}</h3>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      <div className={dialogOverlayClass} onClick={onClose} />
+      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-2xl mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-popover px-4 py-4 sm:px-6">
+          <h3 className="text-base font-medium">{isEdit ? "Edit note" : "New note"}</h3>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-2">
+            <span className="sr-only">Close</span>
+            <X />
+          </Button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-4 space-y-5 sm:p-6">
           {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+            <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Title</label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="note-title">Title</Label>
+            <Input
+              id="note-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Call Kyle back about pricing"
               required
               maxLength={NOTE_TITLE_MAX}
-              className={INPUT_CLS}
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-medium text-foreground">Body (markdown supported)</label>
-              <button
+              <Label htmlFor="note-body">Body (markdown supported)</Label>
+              <Button
                 type="button"
+                variant="ghost"
+                size="xs"
                 onClick={() => setShowPreview((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground"
               >
-                {showPreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showPreview ? <EyeOff /> : <Eye />}
                 {showPreview ? "Edit" : "Preview"}
-              </button>
+              </Button>
             </div>
             {showPreview ? (
-              <div className="min-h-32 rounded-lg border border-input bg-background px-3 py-2 text-sm max-h-80 overflow-y-auto">
+              <div className="min-h-32 rounded-2xl bg-muted/40 px-3 py-3 text-sm max-h-80 overflow-y-auto">
                 {body ? (
                   <ReactMarkdown
                     components={{
                       // Keep fenced code blocks inside the preview card on
                       // narrow screens instead of overflowing horizontally.
                       pre: (p: { children?: React.ReactNode }) => (
-                        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs font-mono my-2">
+                        <pre className="overflow-x-auto rounded-2xl bg-muted p-3 text-xs font-mono my-2">
                           {p.children}
                         </pre>
                       ),
@@ -241,92 +246,79 @@ export function NoteEditor({ note, initialLeadLabel, initialLeadKind, onClose, o
                 )}
               </div>
             ) : (
-              <textarea
+              <Textarea
+                id="note-body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="**Context:** …\n\n- Action items\n- Deadlines"
+                placeholder={"**Context:** …\n\n- Action items\n- Deadlines"}
                 rows={8}
                 maxLength={NOTE_BODY_MAX}
-                className={cn(INPUT_CLS, "h-auto py-2 font-mono text-xs")}
+                className="resize-y font-mono md:text-xs"
               />
             )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Priority</label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as NotePriority)}
-                className={INPUT_CLS}
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+            <div className="space-y-2">
+              <Label htmlFor="note-priority">Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as NotePriority)}>
+                <SelectTrigger id="note-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Due date (optional)</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className={INPUT_CLS}
-              />
+            <div className="space-y-2">
+              <Label htmlFor="note-due">Due date (optional)</Label>
+              <DatePicker id="note-due" value={dueDate} onValueChange={setDueDate} />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Tags</label>
-            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1.5 min-h-10">
+          <div className="space-y-2">
+            <Label htmlFor="note-tags">Tags</Label>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-3xl border border-transparent bg-input/50 px-2 py-1 min-h-9 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
               {tags.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted text-foreground"
-                >
-                  <Hash className="h-3 w-3" />
-                  {t}
+                <Badge key={t} variant="secondary" className="max-w-full">
+                  <Hash />
+                  <span className="truncate">{t}</span>
                   <button
                     type="button"
                     onClick={() => setTags(tags.filter((x) => x !== t))}
                     className="ml-0.5 text-muted-foreground hover:text-foreground"
                     aria-label={`Remove tag ${t}`}
                   >
-                    <X className="h-3 w-3" />
+                    <X className="size-3" />
                   </button>
-                </span>
+                </Badge>
               ))}
               <input
+                id="note-tags"
                 type="text"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={handleTagKey}
                 placeholder={tags.length === 0 ? "followup, pricing (press Enter)" : ""}
-                className="flex-1 min-w-[8rem] h-7 bg-transparent text-sm focus:outline-none"
+                className="flex-1 min-w-[8rem] h-7 bg-transparent px-1 text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">Press Enter or comma to add a tag. Up to 12 tags.</p>
+            <p className="text-xs text-muted-foreground">Press Enter or comma to add a tag. Up to 12 tags.</p>
           </div>
 
           <LeadPicker value={lead} onChange={setLead} />
 
           <SharePicker value={sharedWith} onChange={setSharedWith} />
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-9 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
-            >
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !title.trim()}
-              className="h-9 rounded-lg ac-gradient px-5 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={saving || !title.trim()}>
               {saving ? "Saving..." : isEdit ? "Save changes" : "Create note"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

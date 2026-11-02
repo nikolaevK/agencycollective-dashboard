@@ -15,7 +15,7 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import DashboardLoading from "./loading";
 import { SetupBanner } from "@/components/layout/SetupBanner";
 import { useAdmin } from "@/components/providers/AdminProvider";
-import { rangeLabel } from "@/components/filters/DateRangePicker";
+import { rangeLabel } from "@/components/filters/dateRangeLabel";
 import { AgencyPulse, type SalesStats } from "@/components/overview/AgencyPulse";
 import { MetaKpiCards } from "@/components/overview/MetaKpiCards";
 import { MetaPerformanceChart } from "@/components/overview/MetaPerformanceChart";

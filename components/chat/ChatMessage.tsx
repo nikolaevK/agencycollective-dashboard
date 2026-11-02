@@ -4,6 +4,7 @@ import React, { useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { Sparkles, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ToolResultRenderer } from "./ToolResultRenderer";
 import type { ContentBlock } from "@/types/chat";
 
@@ -65,7 +66,7 @@ const markdownComponents = {
     );
   },
   table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-4 rounded-xl border border-border">
+    <div className="overflow-x-auto my-4 rounded-2xl border border-border">
       <table className="w-full border-collapse text-xs">{children}</table>
     </div>
   ),
@@ -94,7 +95,7 @@ const markdownComponents = {
   code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
     const isBlock = className?.startsWith("language-");
     return isBlock ? (
-      <pre className="rounded-xl bg-muted/70 p-4 overflow-x-auto my-3 border border-border/50">
+      <pre className="rounded-2xl bg-muted/70 p-4 overflow-x-auto my-3 border border-border/50">
         <code className={cn("font-mono text-xs text-foreground", className)} {...props}>
           {children}
         </code>
@@ -267,7 +268,7 @@ export function ChatMessage({ role, content, blocks, isStreaming }: ChatMessageP
   if (role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] md:max-w-[72%] rounded-2xl rounded-tr-none bg-primary px-4 py-3 text-sm text-primary-foreground leading-relaxed shadow-lg shadow-primary/10">
+        <div className="max-w-[85%] md:max-w-[72%] rounded-3xl rounded-tr-md bg-primary px-4 py-3 text-sm text-primary-foreground leading-relaxed [overflow-wrap:anywhere]">
           {content}
         </div>
       </div>
@@ -288,7 +289,7 @@ export function ChatMessage({ role, content, blocks, isStreaming }: ChatMessageP
 
       {/* Content */}
       <div className="flex-1 min-w-0 overflow-hidden max-w-[85%] md:max-w-none">
-        <div ref={contentRef} className="bg-card rounded-2xl rounded-tl-none p-4 shadow-sm border border-border/50">
+        <div ref={contentRef} className="bg-card rounded-3xl rounded-tl-md p-4 border">
           {hasBlocks ? (
             blocks.map((block, i) => {
               if (block.type === "text") {
@@ -324,13 +325,10 @@ export function ChatMessage({ role, content, blocks, isStreaming }: ChatMessageP
         {/* Download button for responses with charts/metrics/tables */}
         {showDownload && (
           <div className="mt-2 flex gap-2">
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <Download className="h-3 w-3" />
+            <Button variant="outline" size="sm" onClick={handleDownload} className="text-muted-foreground">
+              <Download />
               Download Report
-            </button>
+            </Button>
           </div>
         )}
       </div>

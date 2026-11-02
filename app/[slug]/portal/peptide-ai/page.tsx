@@ -3,6 +3,10 @@ import { ExternalLink, FlaskConical } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { StatusBadge, badgeTone } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
   getPeptideAiPolicy,
@@ -11,22 +15,28 @@ import {
   schedulePeptideAiSync,
 } from "@/lib/peptideAi";
 import {
+  PEPTIDE_AI_STATE_LABEL,
+  PEPTIDE_AI_STATE_TONE,
   PEPTIDE_AI_WARN_SHARE,
   formatCycleDate,
   formatUsd,
   ordinalDay,
+  type PeptideAiState,
 } from "@/lib/peptideAiPresentation";
 
 // Usage is read live from Peptide AI on every visit.
 export const dynamic = "force-dynamic";
 
+
+// No state chip here: clients get the message, never the internal reason
+// ("Blocked in Peptide AI" is the admin label).
 function Unavailable({ title, body }: { title: string; body: string }) {
   return (
     <DashboardShell>
-      <div className="max-w-2xl space-y-3">
-        <h1 className="text-2xl font-bold">Peptide AI</h1>
-        <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-          <p className="font-semibold text-sm">{title}</p>
+      <div className="max-w-2xl space-y-4">
+        <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Peptide AI</h1>
+        <div className={cn("rounded-3xl border px-4 py-3", badgeTone.warning)}>
+          <p className="font-medium text-sm">{title}</p>
           <p className="mt-1 text-sm opacity-90">{body}</p>
         </div>
       </div>
@@ -85,87 +95,96 @@ export default async function PeptideAiPage({ params }: { params: { slug: string
     usage?.provisioned && usage.periodEnd
       ? `Resets on ${formatCycleDate(usage.periodEnd)}`
       : `Resets on the ${ordinalDay(policy.anchorDay)} of each month`;
+  // The meter's state, from the same numbers the meter shows (this page's
+  // budget), so the chip never disagrees with the bar.
+  const state: PeptideAiState = !usage
+    ? "unknown"
+    : !usage.provisioned
+      ? "never_opened"
+      : reached
+        ? "capped"
+        : nearly
+          ? "near_cap"
+          : !usage.lastActiveAt
+            ? "not_used"
+            : "active";
 
   return (
     <DashboardShell>
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
-          <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold tracking-tight text-portal-on-surface md:text-3xl">
-            <FlaskConical className="h-6 w-6 text-primary" />
-            Peptide AI
-          </h1>
-          <p className="max-w-2xl text-portal-secondary-text">
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Peptide AI</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Your research-peptide marketing assistant: ad creatives, copy and landing-page audits.
             It opens in a new tab and signs you in automatically.
           </p>
         </div>
 
-        <div className="space-y-5 rounded-xl border border-border/50 bg-card p-6 shadow-[0_4px_24px_rgba(32,48,68,0.04)] dark:border-white/[0.06] dark:shadow-none">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                This month&apos;s AI budget
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
+              <CardTitle>This month&apos;s AI budget</CardTitle>
+            </div>
+            {/* No chip when usage couldn't be read — it can still be opened. */}
+            {state !== "unknown" && (
+              <StatusBadge tone={PEPTIDE_AI_STATE_TONE[state]}>{PEPTIDE_AI_STATE_LABEL[state]}</StatusBadge>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
                 {usage ? formatUsd(spent) : "—"}{" "}
-                <span className="text-base font-medium text-muted-foreground">of {formatUsd(cap)} used</span>
+                <span className="text-base font-normal text-muted-foreground">of {formatUsd(cap)} used</span>
               </p>
+              <CardDescription>{resets}</CardDescription>
             </div>
-            <p className="text-sm text-muted-foreground">{resets}</p>
-          </div>
 
-          <div
-            className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label="AI budget used"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(share * 100)}
-          >
-            <div
+            <Progress
+              value={share * 100}
+              aria-label="AI budget used"
               className={cn(
-                "h-full rounded-full transition-all",
-                reached ? "bg-red-500" : nearly ? "bg-amber-500" : "bg-primary"
+                "h-2.5",
+                reached ? "[&>div]:bg-red-500" : nearly ? "[&>div]:bg-amber-500" : "[&>div]:bg-chart-1"
               )}
-              style={{ width: `${share * 100}%` }}
             />
-          </div>
 
-          {!usage ? (
-            <p className="text-sm text-muted-foreground">
-              Usage can&apos;t be shown right now. You can still open Peptide AI.
-            </p>
-          ) : reached ? (
-            <div role="status" className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-800 dark:text-red-300">
-              <p className="font-semibold">You&apos;ve hit this month&apos;s limit.</p>
-              <p className="mt-1">
-                Peptide AI won&apos;t take new requests until your budget resets
-                {usage.provisioned && usage.periodEnd ? ` on ${formatCycleDate(usage.periodEnd)}` : ""}. Your
-                chats stay saved and you can still open them. Need more this month? Contact your account
-                manager.
+            {!usage ? (
+              <p className="text-sm text-muted-foreground">
+                Usage can&apos;t be shown right now. You can still open Peptide AI.
               </p>
-            </div>
-          ) : nearly ? (
-            <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-300">
-              <p className="font-semibold">You&apos;ve used {Math.round(share * 100)}% of this month&apos;s budget.</p>
-              <p className="mt-1">{formatUsd(remaining)} left. Unused budget doesn&apos;t carry over.</p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {formatUsd(remaining)} left this month. Unused budget doesn&apos;t carry over.
-            </p>
-          )}
+            ) : reached ? (
+              <div role="status" className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
+                <p className="font-medium">You&apos;ve hit this month&apos;s limit.</p>
+                <p className="mt-1">
+                  Peptide AI won&apos;t take new requests until your budget resets
+                  {usage.provisioned && usage.periodEnd ? ` on ${formatCycleDate(usage.periodEnd)}` : ""}. Your
+                  chats stay saved and you can still open them. Need more this month? Contact your account
+                  manager.
+                </p>
+              </div>
+            ) : nearly ? (
+              <div role="status" className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
+                <p className="font-medium">You&apos;ve used {Math.round(share * 100)}% of this month&apos;s budget.</p>
+                <p className="mt-1">{formatUsd(remaining)} left. Unused budget doesn&apos;t carry over.</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {formatUsd(remaining)} left this month. Unused budget doesn&apos;t carry over.
+              </p>
+            )}
 
-          <a
-            href="/api/portal/peptide-ai/launch"
-            target="_blank"
-            rel="noopener"
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99]"
-          >
-            Open Peptide AI
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
+            <a
+              href="/api/portal/peptide-ai/launch"
+              target="_blank"
+              rel="noopener"
+              className={buttonVariants({ size: "lg" })}
+            >
+              Open Peptide AI
+              <ExternalLink />
+            </a>
+          </CardContent>
+        </Card>
       </div>
     </DashboardShell>
   );

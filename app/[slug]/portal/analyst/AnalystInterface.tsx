@@ -2,21 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle,
   Send,
   Square,
   Sparkles,
-  ChevronDown,
   TrendingUp,
   BarChart3,
   Lightbulb,
   Search,
   FileText,
-  Wallet,
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { parseSSEStream } from "@/lib/chatStreamParser";
 import type {
@@ -24,6 +27,12 @@ import type {
   ApiContentBlock,
   ReportResult,
 } from "@/types/chat";
+
+// Lazy: the Radix menu code stays out of the page's first load (the pickers
+// still server-render; client navigations show a same-height placeholder).
+const AnalystPickers = dynamic(() => import("./AnalystPickers").then((m) => m.AnalystPickers), {
+  loading: () => <div aria-hidden className="h-9 w-64 max-w-full rounded-4xl bg-muted/60" />,
+});
 
 const DATE_PRESETS: { id: DatePreset; label: string }[] = [
   { id: "last_7d",    label: "Last 7 days" },
@@ -147,15 +156,15 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
-  const [showDateMenu, setShowDateMenu] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const accountMenuRef = useRef<HTMLDivElement>(null);
-  const dateMenuRef = useRef<HTMLDivElement>(null);
+  // Set when a pick opens the switch confirm: the closing menu then must not
+  // pull focus back to its trigger, away from the dialog.
+  const confirmingSwitchRef = useRef(false);
 
   const selectedAccount = useMemo(
     () => accounts.find((a) => a.accountId === accountId) ?? accounts[0],
@@ -191,41 +200,20 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
     };
   }, []);
 
-  // Click-outside for both menus
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
-        setShowAccountMenu(false);
-      }
-      if (dateMenuRef.current && !dateMenuRef.current.contains(e.target as Node)) {
-        setShowDateMenu(false);
-      }
-    }
-    if (showAccountMenu || showDateMenu) {
-      document.addEventListener("pointerdown", onPointerDown);
-    }
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [showAccountMenu, showDateMenu]);
-
-  function handleAccountSwitch(nextId: string) {
-    if (nextId === accountId) {
-      setShowAccountMenu(false);
-      return;
-    }
+  async function handleAccountSwitch(nextId: string) {
+    if (nextId === accountId) return;
     if (messages.length > 0) {
-      const ok = confirm(
-        "Switch to a different ad account? This will start a new conversation — the current chat will be cleared.",
-      );
-      if (!ok) {
-        setShowAccountMenu(false);
-        return;
-      }
+      const ok = await confirm({
+        title: "Switch to a different ad account?",
+        description: "This will start a new conversation — the current chat will be cleared.",
+        confirmText: "Switch account",
+      });
+      if (!ok) return;
     }
     abortRef.current?.abort();
     setMessages([]);
     setIsLoading(false);
     setAccountId(nextId);
-    setShowAccountMenu(false);
     router.replace(`/${slug}/portal/analyst?accountId=${encodeURIComponent(nextId)}`);
   }
 
@@ -385,7 +373,7 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">AI Analyst</h1>
+        <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">AI Analyst</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Ask anything about your Meta ad account performance.
         </p>
@@ -395,137 +383,67 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
       {!bannerDismissed && (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+          className={cn("flex items-start gap-3 rounded-3xl border p-4", badgeTone.warning)}
         >
-          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div className="flex-1 text-sm leading-relaxed">
-            <p className="font-semibold">AI-generated analysis. Verify before acting.</p>
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1 text-sm leading-relaxed">
+            <p className="font-medium">AI-generated analysis. Verify before acting.</p>
             <p className="mt-1 opacity-90">
               Numbers, recommendations, and reports may be inaccurate, incomplete, or out of date.
               Always cross-reference against your live Meta Ads Manager before making decisions or
               sharing reports externally. Reports should be reviewed by a human.
             </p>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setBannerDismissed(true)}
-            className="text-xs font-semibold uppercase tracking-wider opacity-60 hover:opacity-100 transition-opacity shrink-0"
+            className="-my-0.5 shrink-0 text-current hover:bg-amber-500/15 hover:text-current dark:hover:bg-amber-400/15"
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Toolbar: account + date pickers */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Account picker */}
-        <div ref={accountMenuRef} className="relative">
-          <button
-            onClick={() => setShowAccountMenu((v) => !v)}
-            disabled={accounts.length === 0}
-            className={cn(
-              "flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors",
-              "border-border hover:border-primary/40",
-              showAccountMenu && "border-primary/40 ring-1 ring-primary/20",
-            )}
-          >
-            <Wallet className="h-3.5 w-3.5 text-primary" />
-            <span className="max-w-[200px] truncate">{accountDisplay}</span>
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showAccountMenu && "rotate-180")} />
-          </button>
-
-          {showAccountMenu && (
-            <div className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-border bg-popover shadow-lg max-h-80 overflow-y-auto">
-              <p className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Ad Account
-              </p>
-              {accounts.map((a) => {
-                const isActive = a.accountId === accountId;
-                return (
-                  <button
-                    key={a.accountId}
-                    onClick={() => handleAccountSwitch(a.accountId)}
-                    className={cn(
-                      "flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted",
-                      isActive && "bg-primary/5",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={cn(
-                          "text-sm font-medium truncate",
-                          isActive ? "text-primary" : "text-foreground",
-                        )}
-                      >
-                        {a.label ?? a.accountId}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground font-mono">{a.accountId}</p>
-                    </div>
-                    {isActive && (
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary mt-2" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Date picker */}
-        <div ref={dateMenuRef} className="relative">
-          <button
-            onClick={() => setShowDateMenu((v) => !v)}
-            className={cn(
-              "flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors",
-              "border-border hover:border-primary/40",
-              showDateMenu && "border-primary/40 ring-1 ring-primary/20",
-            )}
-          >
-            <span>{dateLabel}</span>
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showDateMenu && "rotate-180")} />
-          </button>
-
-          {showDateMenu && (
-            <div className="absolute left-0 top-full z-50 mt-1.5 w-44 rounded-xl border border-border bg-popover shadow-lg">
-              {DATE_PRESETS.map((p) => {
-                const isActive = p.id === datePreset;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      setDatePreset(p.id);
-                      setShowDateMenu(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted",
-                      isActive && "bg-primary/5 text-primary font-medium",
-                    )}
-                  >
-                    {p.label}
-                    {isActive && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <AnalystPickers
+          accounts={accounts}
+          accountId={accountId}
+          accountDisplay={accountDisplay}
+          onAccountChange={(nextId) => {
+            confirmingSwitchRef.current = nextId !== accountId && messages.length > 0;
+            void handleAccountSwitch(nextId);
+          }}
+          onAccountMenuCloseAutoFocus={(e) => {
+            if (confirmingSwitchRef.current) {
+              confirmingSwitchRef.current = false;
+              e.preventDefault();
+            }
+          }}
+          dateLabel={dateLabel}
+          datePreset={datePreset}
+          datePresets={DATE_PRESETS}
+          onDatePresetChange={(p) => setDatePreset(p as DatePreset)}
+        />
       </div>
 
       {/* Chat area — height-bounded on phones so the message list scrolls
           internally and the composer stays visible instead of stranded at the
           bottom of an ever-growing page. */}
-      <div className="rounded-2xl border border-border bg-card flex flex-col min-h-[60vh] max-h-[calc(100dvh-13rem)] md:max-h-none">
+      <Card className="flex flex-col min-h-[60vh] max-h-[calc(100dvh-13rem)] md:max-h-none">
         {/* Messages or empty state */}
         <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-8 gap-6">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground shadow-lg">
-                <Sparkles className="h-7 w-7" />
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <Sparkles className="size-6 text-muted-foreground" />
               </div>
-              <div>
-                <h3 className="text-xl font-bold tracking-tight">
+              <div className="min-w-0 max-w-full">
+                <h3 className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">
                   Ask about {accountDisplay}
                 </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Analyzing performance for {dateLabel.toLowerCase()}
                 </p>
               </div>
@@ -536,11 +454,12 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
                   return (
                     <button
                       key={q.title}
+                      type="button"
                       onClick={() => handlePresetClick(q.prompt)}
-                      className="flex items-center gap-2.5 p-3 bg-muted/40 border border-border/50 rounded-lg text-left hover:border-primary/40 hover:bg-primary/5 transition-all group"
+                      className="flex min-w-0 items-center gap-2.5 rounded-2xl border bg-background p-3 text-left outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 dark:bg-transparent dark:hover:bg-input/30"
                     >
-                      <Icon className="h-4 w-4 text-primary shrink-0" />
-                      <p className="text-xs font-medium text-foreground group-hover:text-primary truncate">
+                      <Icon className="size-4 shrink-0 text-muted-foreground" />
+                      <p className="truncate text-sm font-medium text-foreground">
                         {q.title}
                       </p>
                     </button>
@@ -548,7 +467,7 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
                 })}
               </div>
 
-              <p className="text-[11px] text-muted-foreground max-w-sm">
+              <p className="text-xs text-muted-foreground max-w-sm">
                 Tap a question to start, or write your own below.
               </p>
             </div>
@@ -568,13 +487,13 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
           )}
           {isThinking && (
             <div className="flex items-start gap-3">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
-                <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Sparkles className="size-3.5 animate-pulse" />
               </div>
-              <div className="flex items-center gap-1.5 pt-2">
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:300ms]" />
+              <div className="flex items-center gap-1.5 pt-3">
+                <span className="size-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                <span className="size-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                <span className="size-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
               </div>
             </div>
           )}
@@ -582,8 +501,8 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
         </div>
 
         {/* Input bar */}
-        <div className="border-t border-border p-3 md:p-4">
-          <div className="relative flex items-center rounded-xl border border-border/60 bg-background/50 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+        <div className="border-t p-3 md:p-4">
+          <div className="relative flex items-center rounded-3xl border border-transparent bg-input/50 transition-[color,box-shadow,border-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
             <textarea
               ref={textareaRef}
               value={input}
@@ -595,34 +514,36 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
               style={{ maxHeight: "160px" }}
             />
             {isLoading ? (
-              <button
+              <Button
+                variant="destructive"
+                size="icon"
                 onClick={handleStop}
-                className="absolute right-2 flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                className="absolute right-1.5"
                 title="Stop generating"
+                aria-label="Stop generating"
               >
-                <Square className="h-3.5 w-3.5 fill-current" />
-              </button>
+                <Square className="size-3.5 fill-current" />
+              </Button>
             ) : (
-              <button
+              <Button
+                size="icon"
                 onClick={() => sendMessage(input)}
                 disabled={!input.trim()}
-                className={cn(
-                  "absolute right-2 flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
-                  input.trim()
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/20"
-                    : "bg-muted text-muted-foreground cursor-not-allowed",
-                )}
+                className="absolute right-1.5"
                 title="Send (Enter)"
+                aria-label="Send"
               >
-                <Send className="h-3.5 w-3.5" />
-              </button>
+                <Send className="size-3.5" />
+              </Button>
             )}
           </div>
-          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
             AI-generated. Verify metrics in Meta Ads Manager before acting on recommendations.
           </p>
         </div>
-      </div>
+      </Card>
+
+      {confirmDialog}
     </div>
   );
 }

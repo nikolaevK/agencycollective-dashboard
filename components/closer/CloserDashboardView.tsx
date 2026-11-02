@@ -10,6 +10,7 @@ import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { Button } from "@/components/ui/button";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import type { ChartDeal, CloserDealStats, DealMetricBucket } from "@/lib/deals";
+import type { OverviewTrends } from "@/lib/metricSeries";
 import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
 
 export interface CloserDashboardData {
@@ -28,6 +29,8 @@ export interface CloserDashboardData {
    *  is capped at 500 rows and would undercount older buckets. Optional for
    *  the same cached-payload reason (chart falls back to recentDeals). */
   chartDeals?: ChartDeal[];
+  /** Card trend lines (requested with `trends=1`). */
+  trends?: OverviewTrends | null;
   timeFrame: { since: string | null; until: string | null };
   recentDeals: Array<{
     id: string;
@@ -91,6 +94,7 @@ export function CloserDashboardView({ data, timeFrame, onTimeFrameChange, readOn
         isLifetimeWindow={isLifetimeWindow}
         quota={data.closer.quota}
         readOnly={readOnly}
+        trends={data.trends}
       />
 
       {/* Closed vs paid revenue over time — same chart as the admin drill-down. */}

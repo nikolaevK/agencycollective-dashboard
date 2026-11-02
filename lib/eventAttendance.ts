@@ -615,10 +615,13 @@ export async function getTeamShowRate(
  * Team attendance marks per day for the Sales Overview show-rate trend
  * (bucketed by lib/metricSeries.ts). Same source and date basis as
  * getTeamShowRate, so a month's bucket matches that month's show rate.
+ * With `closerId`, one closer's marks (getCloserShowRate's basis) — the
+ * closer dashboard's trend.
  */
 export async function getAttendanceDayRows(
   since: string,
-  until: string
+  until: string,
+  closerId?: string
 ): Promise<AttendanceDayRow[]> {
   await ensureMigrated();
   const db = getDb();
@@ -629,9 +632,9 @@ export async function getAttendanceDayRows(
             SUM(CASE WHEN show_status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
           FROM event_attendance
           WHERE substr(COALESCE(event_date, created_at),1,10) >= ?
-            AND substr(COALESCE(event_date, created_at),1,10) <= ?
+            AND substr(COALESCE(event_date, created_at),1,10) <= ?${closerId ? "\n            AND closer_id = ?" : ""}
           GROUP BY day`,
-    args: [since, until],
+    args: closerId ? [since, until, closerId] : [since, until],
   });
   return result.rows.map((row) => ({
     day: String(row.day),

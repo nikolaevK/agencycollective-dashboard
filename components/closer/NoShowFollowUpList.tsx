@@ -27,6 +27,7 @@ import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { POST_CALL_TONE, PRE_CALL_TONE } from "@/components/closer/calendarState";
 
 export interface NoShowFollowUpListProps {
   items: NoShowFollowUp[];
@@ -86,29 +87,6 @@ const RESPONSE_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
 const STATUS_PILL: Record<string, { label: string; tone: BadgeTone }> = {
   tentative: { label: "Tentative", tone: "warning" },
   cancelled: { label: "Cancelled", tone: "danger" },
-};
-
-// Status tones for the setter's pre/post-call badges (same hues as the
-// lib/appointments PRE_CALL_BADGE / POST_CALL_BADGE fills).
-const PRE_CALL_TONE: Record<PreCallStatus, BadgeTone> = {
-  not_called: "neutral",
-  auto_confirmed: "success",
-  auto_no_answer: "warning",
-  triaged_confirmed: "success",
-  confirmed: "success",
-  no_answer: "warning",
-  voicemail: "info",
-  rescheduled: "info",
-  cancelled: "danger",
-};
-
-const POST_CALL_TONE: Record<PostCallStatus, BadgeTone> = {
-  not_called: "neutral",
-  followed_up: "success",
-  needs_followup: "warning",
-  qualified: "success",
-  disqualified: "danger",
-  no_answer: "warning",
 };
 
 export function NoShowFollowUpList({

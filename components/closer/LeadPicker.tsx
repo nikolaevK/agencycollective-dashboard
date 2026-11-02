@@ -5,6 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
+import { BadgeDot, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const PAGE_SIZE = 50;
 
@@ -61,11 +64,12 @@ const KIND_LABEL: Record<NoteLead["kind"], string> = {
   showed: "Showed",
 };
 
-const KIND_BADGE: Record<NoteLead["kind"], string> = {
-  appointment: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
-  deal: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
-  no_show: "bg-red-500/15 text-red-700 dark:text-red-400",
-  showed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+/** Status tone per lead kind (Badge pattern). */
+const KIND_TONE: Record<NoteLead["kind"], BadgeTone> = {
+  appointment: "info",
+  deal: "neutral",
+  no_show: "danger",
+  showed: "success",
 };
 
 function leadKey(lead: Pick<NoteLead, "googleEventId" | "dealId">): string {
@@ -143,40 +147,42 @@ export function LeadPicker({ value, onChange }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <label className="text-sm font-medium text-foreground">Linked lead</label>
+        <label className="text-sm font-medium">Linked lead</label>
         {value && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => onChange(null)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground"
           >
-            <X className="h-3 w-3" />
+            <X />
             Clear
-          </button>
+          </Button>
         )}
       </div>
 
       {value && (
-        <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 flex items-center justify-between gap-2">
+        <div className="rounded-2xl bg-muted/50 px-3 py-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{value.label}</p>
-            <span className={cn("inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide", KIND_BADGE[value.kind])}>
+            <StatusBadge tone={KIND_TONE[value.kind]} className="mt-1">
               {KIND_LABEL[value.kind]}
-            </span>
+            </StatusBadge>
           </div>
-          <Check className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
+          <Check className="size-4 text-foreground shrink-0" />
         </div>
       )}
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search prospects, deals, showed, no-shows…"
           aria-label="Search leads"
-          className="w-full h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="pl-9"
         />
       </div>
 
@@ -203,7 +209,7 @@ export function LeadPicker({ value, onChange }: Props) {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           {matching.length === 0
             ? search || kindFilter !== "all" ? "No matches." : "No leads yet."
@@ -211,29 +217,31 @@ export function LeadPicker({ value, onChange }: Props) {
         </span>
         {pageCount > 1 && (
           <div className="flex items-center gap-1">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={safePage === 0}
-              className="inline-flex items-center gap-0.5 h-7 px-2 rounded-md border border-border text-[11px] font-medium hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
             >
-              <ChevronLeft className="h-3 w-3" />
+              <ChevronLeft />
               Prev
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
               disabled={safePage >= pageCount - 1}
-              className="inline-flex items-center gap-0.5 h-7 px-2 rounded-md border border-border text-[11px] font-medium hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
             >
               Next
-              <ChevronRight className="h-3 w-3" />
-            </button>
+              <ChevronRight />
+            </Button>
           </div>
         )}
       </div>
 
-      <div className="max-h-56 overflow-y-auto rounded-lg border border-border/50 divide-y divide-border/40">
+      <div className="max-h-56 overflow-y-auto overscroll-contain rounded-2xl border divide-y">
         {isLoading ? (
           <div className="p-3 text-xs text-muted-foreground">Loading leads…</div>
         ) : filtered.length === 0 ? (
@@ -259,22 +267,22 @@ export function LeadPicker({ value, onChange }: Props) {
                   })
                 }
                 className={cn(
-                  "w-full text-left px-3 py-2 hover:bg-accent transition-colors flex items-center justify-between gap-2",
-                  isSelected && "bg-sky-500/5"
+                  "w-full text-left px-3 py-2 hover:bg-muted/60 transition-colors flex items-center justify-between gap-2",
+                  isSelected && "bg-muted/60"
                 )}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className={cn("inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide", KIND_BADGE[lead.kind])}>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <StatusBadge tone={KIND_TONE[lead.kind]}>
                       {KIND_LABEL[lead.kind]}
-                    </span>
-                    <p className="text-sm text-foreground truncate">{lead.label}</p>
+                    </StatusBadge>
+                    <p className="min-w-0 text-sm text-foreground truncate">{lead.label}</p>
                   </div>
                   {lead.subLabel && (
                     <p className="text-xs text-muted-foreground truncate mt-0.5">{prettifySubLabel(lead.subLabel)}</p>
                   )}
                 </div>
-                {isSelected && <Check className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />}
+                {isSelected && <Check className="size-4 text-foreground shrink-0" />}
               </button>
             );
           })
@@ -288,8 +296,8 @@ interface FilterChipProps {
   active: boolean;
   count: number;
   onClick: () => void;
-  /** When set, the active state borrows the kind's badge color so the chip
-   *  reads consistent with the row badge below. "All" omits this. */
+  /** When set, the chip carries the kind's status dot so it reads
+   *  consistent with the row badge below. "All" omits this. */
   kind?: NoteLead["kind"];
   children: React.ReactNode;
 }
@@ -302,14 +310,13 @@ function FilterChip({ active, count, onClick, kind, children }: FilterChipProps)
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-medium transition-colors",
+        "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-3xl text-xs font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
         active
-          ? kind
-            ? KIND_BADGE[kind]
-            : "bg-foreground/10 text-foreground"
-          : "text-muted-foreground hover:bg-muted/40"
+          ? "bg-muted text-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       )}
     >
+      {kind && <BadgeDot tone={KIND_TONE[kind]} />}
       <span>{children}</span>
       <span className={cn("tabular-nums", active ? "opacity-80" : "opacity-60")}>{count}</span>
     </button>

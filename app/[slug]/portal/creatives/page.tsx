@@ -6,10 +6,10 @@ export default function AdCreativesPage() {
     <DashboardShell>
       <div className="space-y-6">
         <div>
-          <h1 className="mb-2 text-2xl font-bold tracking-tight text-portal-on-surface md:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">
             Ad Creatives
           </h1>
-          <p className="max-w-2xl text-portal-secondary-text">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Every creative we&apos;ve made for you. Tap one to view it full size or download the
             original.
           </p>

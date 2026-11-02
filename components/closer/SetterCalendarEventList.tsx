@@ -4,36 +4,46 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
   AlignLeft,
-  CheckCircle2,
   ChevronDown,
   Clock,
   Flag,
   MapPin,
   Pencil,
-  PhoneCall,
-  PhoneOff,
+  StickyNote,
   Users,
   Video,
   X,
-  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useGhlCrossReference } from "@/hooks/useGhlContacts";
 import { GhlEventChip, buildGhlCrossReferenceInputs } from "@/components/ghl/GhlEventChip";
-import type {
-  AttendeeResponseStatus,
-  CalendarEvent,
-} from "@/components/closer/CalendarEventList";
+import type { CalendarEvent } from "@/components/closer/CalendarEventList";
 import type { AppointmentRecord } from "@/lib/appointments";
+import { PRE_CALL_LABELS, POST_CALL_LABELS } from "@/lib/appointmentRules";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
-  PRE_CALL_BADGE,
-  PRE_CALL_LABELS,
-  PRE_CALL_STATUSES,
-  POST_CALL_BADGE,
-  POST_CALL_LABELS,
-  POST_CALL_STATUSES,
-} from "@/lib/appointmentRules";
-import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
+  CalendarStateChip,
+  CalendarStateLegend,
+  CalendarStatusBadge,
+  DayHeader,
+  dayHeaderInfo,
+  makeCalendarRefs,
+  useMidnightTick,
+  useNow,
+} from "@/components/closer/DayHeader";
+import {
+  ATTENDEE_RESPONSE_META,
+  EVENT_STATUS_PILL,
+  POST_CALL_TONE,
+  PRE_CALL_TONE,
+  SETTER_STATE_ORDER,
+  calendarStateStyle,
+  countCalendarStates,
+  setterEventState,
+  type SetterCalendarState,
+} from "@/components/closer/calendarState";
 
 interface Props {
   events: CalendarEvent[];
@@ -73,18 +83,6 @@ function formatTime(dateStr: string, allDay: boolean): string {
   }
 }
 
-const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
-  accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
-  tentative: { label: "Maybe", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  needsAction: { label: "Pending", cls: "bg-muted/60 text-muted-foreground" },
-};
-
-const STATUS_PILL: Record<string, { label: string; cls: string }> = {
-  tentative: { label: "Tentative", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  cancelled: { label: "Cancelled", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
-};
-
 export function SetterCalendarEventList({
   events,
   appointmentsByEvent,
@@ -99,10 +97,34 @@ export function SetterCalendarEventList({
   // Re-render at midnight so the "Today" badge tracks the calendar day,
   // not just the data refetch cadence.
   useMidnightTick();
+  // Minute clock for the time-based states (Live now / Awaiting outcome).
+  const now = useNow();
 
   // Single GHL cross-reference fetch covering every event on the screen.
   const ghlInputs = useMemo(() => buildGhlCrossReferenceInputs(events), [events]);
   const { data: ghlData } = useGhlCrossReference(ghlInputs);
+
+  // One state per event (rail + chip + legend count) — precedence in
+  // components/closer/calendarState.ts.
+  const eventStates = useMemo(() => {
+    const m = new Map<string, SetterCalendarState>();
+    for (const e of events) {
+      const appt = appointmentsByEvent[e.id];
+      m.set(
+        e.id,
+        setterEventState({
+          event: e,
+          claimed: Boolean(appt),
+          preCallStatus: appt?.preCallStatus,
+          postCallStatus: appt?.postCallStatus,
+          attendance: attendance?.[e.id],
+          now,
+        })
+      );
+    }
+    return m;
+  }, [events, appointmentsByEvent, attendance, now]);
+  const stateCounts = useMemo(() => countCalendarStates(eventStates.values()), [eventStates]);
 
   useEffect(() => {
     if (todayRef.current) {
@@ -121,9 +143,9 @@ export function SetterCalendarEventList({
 
   if (events.length === 0) {
     return (
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-12 text-center">
+      <Card className="p-12 text-center">
         <p className="text-sm text-muted-foreground">No events found for this period.</p>
-      </div>
+      </Card>
     );
   }
 
@@ -149,6 +171,8 @@ export function SetterCalendarEventList({
   }
 
   return (
+    <div>
+    <CalendarStateLegend counts={stateCounts} order={SETTER_STATE_ORDER} />
     <div className="space-y-8">
       {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => {
         const info = dayHeaderInfo(dayKey, calendarRefs);
@@ -157,7 +181,9 @@ export function SetterCalendarEventList({
             key={dayKey}
             ref={info.isToday ? todayRef : undefined}
             aria-label={info.longLabel || undefined}
-            className={info.isToday ? "scroll-mt-28" : undefined}
+            // Same offset var as DayHeader's sticky top (the page mirrors
+            // its nav height into it), so today's header lands below the nav.
+            className={info.isToday ? "scroll-mt-[var(--calendar-nav-h,9rem)]" : undefined}
           >
             <DayHeader info={info} eventCount={dayEvents.length} />
             <div className="space-y-2">
@@ -166,57 +192,51 @@ export function SetterCalendarEventList({
                 const claimed = Boolean(appt);
                 const isPending = pending === event.id;
                 const eventAttendance = attendance?.[event.id] as "showed" | "no_show" | undefined;
+                const state = eventStates.get(event.id) ?? "unclaimed";
+                const look = calendarStateStyle(state);
 
                 return (
-                  <div
+                  <Card
                     key={event.id}
                     className={cn(
-                      "rounded-xl border bg-card p-4 transition-colors",
-                      claimed
-                        ? "border-emerald-500/30 bg-emerald-500/5"
-                        : "border-border/50 dark:border-white/[0.06] hover:bg-muted/30"
+                      "relative p-4 transition-colors hover:bg-muted/30",
+                      look.ring,
+                      look.card
                     )}
                   >
-                    {/* Top row */}
-                    <div className="flex items-start justify-between gap-3">
+                    {/* State rail — same color as the state chip + legend. */}
+                    <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", look.rail)} />
+                    {/* Top row: title + chips, Claim/Unclaim. Mobile stacks
+                        the button full-width below; desktop puts it right. */}
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-foreground truncate">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                          <p className={cn("text-sm font-semibold text-foreground break-words sm:break-normal sm:truncate sm:flex-1 sm:min-w-0", look.title)}>
                             {event.title}
                           </p>
-                          {event.calendarName && (
-                            <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-muted text-muted-foreground">
-                              {event.calendarName}
-                            </span>
-                          )}
-                          {claimed && (
-                            <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                              <Flag className="h-3 w-3" />
-                              Claimed
-                            </span>
-                          )}
-                          {eventAttendance === "showed" && (
-                            <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Showed
-                            </span>
-                          )}
-                          {eventAttendance === "no_show" && (
-                            <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-red-500/15 text-red-700 dark:text-red-400">
-                              <XCircle className="h-3 w-3" />
-                              No show
-                            </span>
-                          )}
-                          {STATUS_PILL[event.status] && (
-                            <span className={cn(
-                              "shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                              STATUS_PILL[event.status].cls
-                            )}>
-                              {STATUS_PILL[event.status].label}
-                            </span>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 sm:shrink-0">
+                            <CalendarStateChip state={state} />
+                            {event.calendarName && (
+                              <Badge variant="secondary" className="max-w-[14rem] font-normal text-muted-foreground" title={event.calendarName}>
+                                <span className="truncate">{event.calendarName}</span>
+                              </Badge>
+                            )}
+                            {/* Attendance stays visible when a later step
+                                (the post-call status) is the card's state. */}
+                            {eventAttendance === "showed" && state !== "showed" && (
+                              <CalendarStatusBadge tone="success">Showed</CalendarStatusBadge>
+                            )}
+                            {eventAttendance === "no_show" && state !== "no_show" && (
+                              <CalendarStatusBadge tone="danger">No show</CalendarStatusBadge>
+                            )}
+                            {EVENT_STATUS_PILL[event.status] && !(event.status === "cancelled" && state === "cancelled") && (
+                              <CalendarStatusBadge tone={EVENT_STATUS_PILL[event.status].tone}>
+                                {EVENT_STATUS_PILL[event.status].label}
+                              </CalendarStatusBadge>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="h-3 w-3" />
                             {formatTime(event.start, event.allDay)}
@@ -240,7 +260,7 @@ export function SetterCalendarEventList({
                             </a>
                           )}
                           {event.location && (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground max-w-[16rem] truncate" title={event.location}>
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground max-w-[12rem] sm:max-w-[16rem] truncate" title={event.location}>
                               <MapPin className="h-3 w-3 shrink-0" />
                               {event.location}
                             </span>
@@ -258,23 +278,27 @@ export function SetterCalendarEventList({
                       </div>
 
                       {!claimed ? (
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => handleClaim(event)}
                           disabled={isPending}
-                          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-primary/30 bg-primary/5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+                          className="h-10 sm:h-8 w-full sm:w-auto sm:shrink-0"
                         >
-                          <Flag className="h-3 w-3" />
+                          <Flag className="size-3.5" />
                           Claim
-                        </button>
+                        </Button>
                       ) : (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => handleUnclaim(event)}
                           disabled={isPending}
-                          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border/50 bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
+                          className="h-10 sm:h-8 w-full sm:w-auto sm:shrink-0 text-muted-foreground"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="size-3.5" />
                           Unclaim
-                        </button>
+                        </Button>
                       )}
                     </div>
 
@@ -283,41 +307,40 @@ export function SetterCalendarEventList({
                       const isOpen = expanded.has(event.id);
                       return (
                         <div className="mt-2">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             onClick={() => toggleExpanded(event.id)}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                            className="-ml-2.5 h-8 sm:h-6 text-muted-foreground"
                           >
-                            <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                            <ChevronDown className={cn("transition-transform", isOpen && "rotate-180")} />
                             {isOpen ? "Hide details" : "Details"}
-                          </button>
+                          </Button>
                           {isOpen && (
-                            <div className="mt-2 space-y-2.5 rounded-lg border border-border/40 bg-muted/20 p-3">
+                            <div className="mt-2 space-y-2.5 rounded-2xl bg-muted/50 p-3">
                               {event.description && (
-                                <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <div className="flex items-start gap-1.5 text-xs text-muted-foreground min-w-0">
                                   <AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />
-                                  <p className="whitespace-pre-wrap break-words">{event.description}</p>
+                                  <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">{event.description}</p>
                                 </div>
                               )}
                               {event.attendees.length > 0 && (
-                                <div className="flex items-start gap-1.5 text-xs">
+                                <div className="flex items-start gap-1.5 text-xs min-w-0">
                                   <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
                                   <ul className="space-y-1 flex-1 min-w-0">
                                     {event.attendees.map((a) => (
-                                      <li key={a.email} className="flex items-center gap-2 flex-wrap">
+                                      <li key={a.email} className="flex items-center gap-2 flex-wrap min-w-0">
                                         <a
                                           href={`mailto:${a.email}`}
-                                          className="text-muted-foreground hover:text-foreground truncate"
+                                          className="text-muted-foreground hover:text-foreground break-all min-w-0"
                                         >
                                           {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                         </a>
-                                        {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                          <span className={cn(
-                                            "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                                            RESPONSE_BADGE[a.responseStatus].cls
-                                          )}>
-                                            {RESPONSE_BADGE[a.responseStatus].label}
-                                          </span>
+                                        {a.responseStatus && ATTENDEE_RESPONSE_META[a.responseStatus] && (
+                                          <CalendarStatusBadge tone={ATTENDEE_RESPONSE_META[a.responseStatus].tone}>
+                                            {ATTENDEE_RESPONSE_META[a.responseStatus].label}
+                                          </CalendarStatusBadge>
                                         )}
                                       </li>
                                     ))}
@@ -330,39 +353,33 @@ export function SetterCalendarEventList({
                       );
                     })()}
 
-                    {/* Claimed card body: status pills + edit */}
+                    {/* Claimed card body: status chips + edit */}
                     {claimed && appt && (
-                      <div className="mt-3 pt-3 border-t border-border/30 dark:border-white/[0.04] flex flex-wrap items-center gap-2">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          PRE_CALL_BADGE[appt.preCallStatus]
-                        )}>
-                          <PhoneCall className="h-3 w-3" />
+                      <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
+                        <CalendarStatusBadge tone={PRE_CALL_TONE[appt.preCallStatus] ?? "neutral"}>
                           Pre: {PRE_CALL_LABELS[appt.preCallStatus]}
-                        </span>
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold",
-                          POST_CALL_BADGE[appt.postCallStatus]
-                        )}>
-                          <PhoneOff className="h-3 w-3" />
+                        </CalendarStatusBadge>
+                        <CalendarStatusBadge tone={POST_CALL_TONE[appt.postCallStatus] ?? "neutral"}>
                           Post: {POST_CALL_LABELS[appt.postCallStatus]}
-                        </span>
+                        </CalendarStatusBadge>
                         {appt.notes && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground bg-muted/50 max-w-xs truncate">
-                            <CheckCircle2 className="h-3 w-3" />
-                            {appt.notes}
+                          <span className="inline-flex min-w-0 max-w-xs items-center gap-1 text-xs text-muted-foreground">
+                            <StickyNote className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{appt.notes}</span>
                           </span>
                         )}
-                        <button
+                        <Button
+                          variant="outline"
+                          size="xs"
                           onClick={() => onEdit(event, appt)}
-                          className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-border/50 bg-background text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                          className="ml-auto h-9 sm:h-7"
                         >
-                          <Pencil className="h-3 w-3" />
+                          <Pencil />
                           Edit
-                        </button>
+                        </Button>
                       </div>
                     )}
-                  </div>
+                  </Card>
                 );
               })}
             </div>
@@ -370,6 +387,6 @@ export function SetterCalendarEventList({
         );
       })}
     </div>
+    </div>
   );
 }
-

@@ -1,6 +1,8 @@
 // Pure Peptide AI vocabulary shared by the portal tab and the admin views — no
 // db imports, safe in client components. The server side is lib/peptideAi.ts.
 
+import type { BadgeTone } from "@/components/ui/badge";
+
 export const PEPTIDE_AI_DEFAULT_CAP_CENTS = 5000;
 /** Share of the budget used at which the client is warned. */
 export const PEPTIDE_AI_WARN_SHARE = 0.8;
@@ -49,6 +51,18 @@ export function peptideAiState(enabled: boolean, usage: PeptideAiUsage | null | 
   if (!usage.lastActiveAt) return "not_used";
   return "active";
 }
+
+/** Kit badge tone per state — admin views and the portal tab. */
+export const PEPTIDE_AI_STATE_TONE: Record<PeptideAiState, BadgeTone> = {
+  off: "neutral",
+  unknown: "neutral",
+  never_opened: "info",
+  not_used: "info",
+  blocked: "danger",
+  active: "success",
+  near_cap: "warning",
+  capped: "danger",
+};
 
 export const PEPTIDE_AI_STATE_LABEL: Record<PeptideAiState, string> = {
   off: "Off",

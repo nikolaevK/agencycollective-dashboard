@@ -5,6 +5,11 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { format, isToday, parseISO } from "date-fns";
 import { Send, Star, Smile, Meh, Frown, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   ConversationRecord,
   MessageRecord,
@@ -71,7 +76,7 @@ export function SupportPage() {
     <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background p-4 pb-28 md:p-8 md:pb-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-foreground">
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight text-foreground">
             Feedback &amp; Support
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -80,18 +85,14 @@ export function SupportPage() {
         </header>
 
         {isLoading ? (
-          <div className="flex h-[400px] items-center justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" aria-busy>
+            <Skeleton className="h-[640px] rounded-3xl lg:col-span-7" />
+            <Skeleton className="h-[420px] rounded-3xl lg:col-span-5" />
           </div>
         ) : error || !data ? (
-          <div className="flex h-[400px] flex-col items-center justify-center text-muted-foreground gap-3">
+          <div className="flex h-[400px] flex-col items-center justify-center text-muted-foreground gap-3 text-center">
             <p className="text-sm">Couldn&apos;t load support. {(error as Error)?.message ?? ""}</p>
-            <button
-              onClick={() => refetch()}
-              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-semibold"
-            >
-              Try again
-            </button>
+            <Button onClick={() => refetch()}>Try again</Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -225,33 +226,21 @@ function SupportChat({ initial }: ChatProps) {
   }
 
   return (
-    <div className="bg-card rounded-xl shadow-[0_4px_24px_rgba(32,48,68,0.04)] dark:shadow-none border border-border/50 dark:border-white/[0.06] flex flex-col h-[640px] overflow-hidden">
-      <div className="px-5 py-4 border-b border-border/50 dark:border-white/[0.06] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <MessageSquare className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-bold text-sm text-foreground">Direct Support</h3>
-            <p className="text-[11px] flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "w-1.5 h-1.5 rounded-full",
-                  presence?.online ? "bg-emerald-500" : "bg-muted-foreground/40"
-                )}
-              />
-              <span className={cn("font-semibold", presence?.online ? "text-primary" : "text-muted-foreground")}>
-                {presence?.online ? "Team is online" : "Team is offline"}
-              </span>
-            </p>
-          </div>
+    <Card className="flex flex-col h-[640px]">
+      <div className="px-5 py-4 border-b flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+          <h3 className="text-base font-medium leading-snug text-foreground truncate">Direct Support</h3>
         </div>
+        <StatusBadge tone={presence?.online ? "success" : "neutral"} className="shrink-0">
+          {presence?.online ? "Team is online" : "Team is offline"}
+        </StatusBadge>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3 bg-muted/20">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
-            <MessageSquare className="h-8 w-8 opacity-40" />
+            <MessageSquare className="size-6" />
             <p className="text-sm font-medium">Say hello — we&apos;re here to help.</p>
           </div>
         ) : (
@@ -259,9 +248,9 @@ function SupportChat({ initial }: ChatProps) {
         )}
       </div>
 
-      <form onSubmit={handleSend} className="p-4 border-t border-border/50 dark:border-white/[0.06] bg-card">
-        <div className="flex items-end gap-2 bg-muted/40 rounded-xl p-2">
-          <textarea
+      <form onSubmit={handleSend} className="p-4 border-t">
+        <div className="flex items-end gap-2">
+          <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -272,20 +261,20 @@ function SupportChat({ initial }: ChatProps) {
             }}
             rows={1}
             placeholder="Type your message…"
-            className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm resize-none py-2 px-2 max-h-32 text-foreground placeholder:text-muted-foreground"
+            className="min-h-9 max-h-32 flex-1 py-2"
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
             disabled={!draft.trim() || sendMutation.isPending}
-            className="bg-primary text-primary-foreground p-2.5 rounded-lg shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Send"
           >
             {sendMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Send className="h-4 w-4" />
+              <Send />
             )}
-          </button>
+          </Button>
         </div>
         {sendMutation.isError && (
           <p className="text-xs text-destructive mt-2">
@@ -293,7 +282,7 @@ function SupportChat({ initial }: ChatProps) {
           </p>
         )}
       </form>
-    </div>
+    </Card>
   );
 }
 
@@ -310,7 +299,7 @@ function renderWithDateSeparators(
       lastDateKey = dateKey;
       elements.push(
         <div key={`sep-${dateKey}`} className="flex justify-center my-2">
-          <span className="bg-muted px-3 py-0.5 rounded-full text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+          <span className="bg-muted px-2.5 py-0.5 rounded-full text-[11px] font-medium text-muted-foreground">
             {isToday(dt) ? "Today" : format(dt, "MMM d, yyyy")}
           </span>
         </div>
@@ -328,7 +317,7 @@ function MessageRow({ message, sender }: { message: MessageRecord; sender?: Send
   if (message.deletedAt) {
     return (
       <div className={cn("flex", isClient ? "justify-end" : "justify-start")}>
-        <span className="text-[11px] italic text-muted-foreground">Message deleted</span>
+        <span className="text-xs italic text-muted-foreground">Message deleted</span>
       </div>
     );
   }
@@ -336,7 +325,7 @@ function MessageRow({ message, sender }: { message: MessageRecord; sender?: Send
   return (
     <div className={cn("flex gap-2 max-w-[85%]", isClient ? "ml-auto flex-row-reverse" : "")}>
       {!isClient && (
-        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 mt-1">
+        <div className="size-8 rounded-full bg-muted text-muted-foreground ring-1 ring-border flex items-center justify-center text-xs font-medium shrink-0 mt-1">
           {sender?.displayName?.[0]?.toUpperCase() ?? "A"}
         </div>
       )}
@@ -346,12 +335,12 @@ function MessageRow({ message, sender }: { message: MessageRecord; sender?: Send
             "p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words",
             isClient
               ? "bg-primary text-primary-foreground rounded-tr-none"
-              : "bg-card text-foreground rounded-tl-none border border-border/50 dark:border-white/[0.06]"
+              : "bg-muted text-foreground rounded-tl-none"
           )}
         >
           {message.body}
         </div>
-        <span className="text-[10px] text-muted-foreground mt-1 px-1">
+        <span className="text-[11px] text-muted-foreground mt-1 px-1">
           {!isClient && sender?.displayName ? `${sender.displayName} · ` : ""}
           {format(dt, "h:mm a")}
           {message.editedAt ? " · edited" : ""}
@@ -372,6 +361,19 @@ const SENTIMENT_OPTIONS: { value: Sentiment; label: string; Icon: typeof Smile }
   { value: "neutral", label: "Neutral", Icon: Meh },
   { value: "concerned", label: "Concerned", Icon: Frown },
 ];
+
+// Same sentiment → tone mapping as the admin Support tab.
+const SENTIMENT_TONE: Record<Sentiment, BadgeTone> = {
+  happy: "success",
+  neutral: "neutral",
+  concerned: "warning",
+};
+
+const SENTIMENT_SELECTED: Record<Sentiment, string> = {
+  happy: badgeTone.success,
+  neutral: "border-foreground/15 bg-muted text-foreground",
+  concerned: badgeTone.warning,
+};
 
 function FeedbackPanel({ initial }: FeedbackProps) {
   const queryClient = useQueryClient();
@@ -413,59 +415,62 @@ function FeedbackPanel({ initial }: FeedbackProps) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-card rounded-xl p-6 shadow-[0_4px_24px_rgba(32,48,68,0.04)] dark:shadow-none border border-border/50 dark:border-white/[0.06]">
-        <h3 className="text-lg font-bold text-foreground mb-1">Project Feedback</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          How are we doing? Your feedback goes straight to the team.
-        </p>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Project Feedback</CardTitle>
+          <CardDescription>
+            How are we doing? Your feedback goes straight to the team.
+          </CardDescription>
+        </CardHeader>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (!submitMutation.isPending) submitMutation.mutate();
           }}
-          className="space-y-5"
+          className="space-y-5 p-4 md:p-6"
         >
           <div>
-            <label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-2 block">
+            <p className="text-sm font-medium text-foreground mb-2">
               Overall Sentiment
-            </label>
-            <div className="flex gap-2">
+            </p>
+            <div className="grid grid-cols-3 gap-2">
               {SENTIMENT_OPTIONS.map(({ value, label, Icon }) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => setSentiment(value)}
+                  aria-pressed={sentiment === value}
                   className={cn(
-                    "flex-1 flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all",
+                    "flex min-w-0 flex-col items-center gap-1.5 rounded-2xl border p-3 outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
                     sentiment === value
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-transparent bg-muted/40 text-muted-foreground hover:bg-muted/60"
+                      ? SENTIMENT_SELECTED[value]
+                      : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  <Icon className="h-7 w-7" />
-                  <span className="text-[11px] font-bold">{label}</span>
+                  <Icon className="size-6" />
+                  <span className="text-xs font-medium">{label}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-2 block">
+            <p className="text-sm font-medium text-foreground mb-2">
               Service Quality
-            </label>
+            </p>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setRating(n)}
-                  className="p-1"
+                  className="rounded-full p-1 outline-none transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/30"
                   aria-label={`${n} star${n === 1 ? "" : "s"}`}
                 >
                   <Star
                     className={cn(
-                      "h-7 w-7 transition-colors",
+                      "size-6 transition-colors",
                       n <= rating ? "fill-primary text-primary" : "text-muted-foreground/30"
                     )}
                   />
@@ -477,34 +482,34 @@ function FeedbackPanel({ initial }: FeedbackProps) {
           <div>
             <label
               htmlFor="feedback-body"
-              className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-2 block"
+              className="text-sm font-medium text-foreground mb-2 block"
             >
               Detailed Message
             </label>
-            <textarea
+            <Textarea
               id="feedback-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={4}
               placeholder="Tell us more about your experience…"
-              className="w-full bg-muted/40 border border-border/50 rounded-xl text-sm p-3 placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
 
-          <button
+          <Button
             type="submit"
+            size="lg"
             disabled={submitMutation.isPending}
-            className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm shadow-sm hover:opacity-90 active:scale-[0.99] transition-all disabled:opacity-50"
+            className="w-full"
           >
             {submitMutation.isPending ? "Submitting…" : "Submit Feedback"}
-          </button>
+          </Button>
           {submitMutation.isError && (
             <p className="text-xs text-destructive">
               {(submitMutation.error as Error)?.message ?? "Failed to submit. Try again."}
             </p>
           )}
         </form>
-      </div>
+      </Card>
 
       <FeedbackHistory items={feedback} />
     </div>
@@ -514,8 +519,8 @@ function FeedbackPanel({ initial }: FeedbackProps) {
 function FeedbackHistory({ items }: { items: FeedbackWithReplies[] }) {
   if (items.length === 0) {
     return (
-      <div className="bg-muted/30 rounded-xl p-5 border border-dashed border-border/60 text-center">
-        <p className="text-xs uppercase tracking-widest font-bold text-muted-foreground mb-1">
+      <div className="rounded-3xl border border-dashed p-5 text-center">
+        <p className="text-sm font-medium text-foreground mb-1">
           History
         </p>
         <p className="text-sm text-muted-foreground">
@@ -527,7 +532,7 @@ function FeedbackHistory({ items }: { items: FeedbackWithReplies[] }) {
 
   return (
     <div className="space-y-3">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+      <h4 className="text-sm font-medium text-foreground">
         Your Feedback History
       </h4>
       {items.map((f) => (
@@ -539,45 +544,43 @@ function FeedbackHistory({ items }: { items: FeedbackWithReplies[] }) {
 
 function FeedbackHistoryCard({ item }: { item: FeedbackWithReplies }) {
   const dt = parseISO(item.createdAt.replace(" ", "T") + "Z");
-  const sentimentColor =
-    item.sentiment === "happy"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : item.sentiment === "neutral"
-        ? "text-muted-foreground"
-        : "text-amber-600 dark:text-amber-400";
 
   return (
-    <div className="bg-card rounded-xl p-4 border border-border/50 dark:border-white/[0.06]">
+    <Card className="p-4">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span className={cn("text-xs font-bold uppercase tracking-widest", sentimentColor)}>
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge
+            variant="outline"
+            tone={SENTIMENT_TONE[item.sentiment] ?? "neutral"}
+            className="capitalize"
+          >
             {item.sentiment}
-          </span>
+          </Badge>
           <span className="flex">
             {[1, 2, 3, 4, 5].map((n) => (
               <Star
                 key={n}
-                className={cn("h-3 w-3", n <= item.rating ? "fill-primary text-primary" : "text-muted-foreground/30")}
+                className={cn("size-3", n <= item.rating ? "fill-primary text-primary" : "text-muted-foreground/30")}
               />
             ))}
           </span>
         </div>
-        <span className="text-[10px] text-muted-foreground">{format(dt, "MMM d, yyyy")}</span>
+        <span className="text-[11px] text-muted-foreground shrink-0">{format(dt, "MMM d, yyyy")}</span>
       </div>
       {item.body && (
         <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{item.body}</p>
       )}
       {item.replies.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
+        <div className="mt-3 pt-3 border-t space-y-2">
           {item.replies.map((r) => {
             const replyDt = parseISO(r.createdAt.replace(" ", "T") + "Z");
             return (
-              <div key={r.id} className="bg-primary/5 rounded-lg p-3">
+              <div key={r.id} className="rounded-2xl bg-muted/50 p-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold text-primary">
+                  <span className="text-xs font-medium text-foreground">
                     {r.adminDisplayName ?? "Team"}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-[11px] text-muted-foreground">
                     {format(replyDt, "MMM d · h:mm a")}
                   </span>
                 </div>
@@ -587,6 +590,6 @@ function FeedbackHistoryCard({ item }: { item: FeedbackWithReplies }) {
           })}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

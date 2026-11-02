@@ -39,7 +39,7 @@ export function UserTopBar({ accountName, currency, logoPath, onMenuClick }: Use
             src={logoPath as string}
             alt={accountName ?? "Brand logo"}
             onError={() => setErroredSrc(logoPath ?? null)}
-            className="h-8 max-w-[140px] object-contain object-left transition-[filter] duration-200"
+            className="h-8 min-w-0 max-w-[140px] object-contain object-left transition-[filter] duration-200"
             style={theme === "dark" ? { filter: "invert(1)" } : undefined}
           />
         ) : accountName ? (

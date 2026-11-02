@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface ShareTarget {
   id: string;
@@ -15,14 +18,6 @@ interface Props {
   value: string[];
   onChange: (next: string[]) => void;
 }
-
-const ROLE_BADGE: Record<string, string> = {
-  setter: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  senior_closer: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
-  account_executive: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-  inbound_specialist: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
-  closer: "bg-slate-500/15 text-slate-700 dark:text-slate-400",
-};
 
 const ROLE_LABEL: Record<string, string> = {
   setter: "Setter",
@@ -73,55 +68,54 @@ export function SharePicker({ value, onChange }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <label className="text-sm font-medium text-foreground inline-flex items-center gap-1.5">
-          <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+        <label className="text-sm font-medium inline-flex items-center gap-1.5">
+          <UserPlus className="size-3.5 text-muted-foreground" />
           Share with
         </label>
         {value.length > 0 && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => onChange([])}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground"
           >
-            <X className="h-3 w-3" />
+            <X />
             Clear
-          </button>
+          </Button>
         )}
       </div>
 
       {selectedTargets.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selectedTargets.map((t) => (
-            <span
-              key={t.id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-sky-500/10 text-sky-700 dark:text-sky-400"
-            >
-              {t.displayName}
+            <Badge key={t.id} variant="secondary" className="max-w-full">
+              <span className="truncate">{t.displayName}</span>
               <button
                 type="button"
                 onClick={() => toggle(t.id)}
-                className="ml-0.5 text-sky-700/70 hover:text-sky-900 dark:text-sky-400/70 dark:hover:text-sky-300"
+                className="ml-0.5 text-muted-foreground hover:text-foreground"
                 aria-label={`Remove ${t.displayName}`}
               >
-                <X className="h-3 w-3" />
+                <X className="size-3" />
               </button>
-            </span>
+            </Badge>
           ))}
         </div>
       )}
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search teammates…"
-          className="w-full h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="pl-9"
         />
       </div>
 
-      <div className="max-h-48 overflow-y-auto rounded-lg border border-border/50 divide-y divide-border/40">
+      <div className="max-h-48 overflow-y-auto overscroll-contain rounded-2xl border divide-y">
         {isLoading ? (
           <div className="p-3 text-xs text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
@@ -137,20 +131,17 @@ export function SharePicker({ value, onChange }: Props) {
                 type="button"
                 onClick={() => toggle(t.id)}
                 className={cn(
-                  "w-full text-left px-3 py-2 hover:bg-accent transition-colors flex items-center justify-between gap-2",
-                  selected && "bg-sky-500/5"
+                  "w-full text-left px-3 py-2 hover:bg-muted/60 transition-colors flex items-center justify-between gap-2",
+                  selected && "bg-muted/60"
                 )}
               >
                 <div className="min-w-0 flex-1 flex items-center gap-2">
                   <span className="text-sm text-foreground truncate">{t.displayName}</span>
-                  <span className={cn(
-                    "inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide",
-                    ROLE_BADGE[t.role] ?? ROLE_BADGE.closer
-                  )}>
+                  <span className={cn(badgeVariants({ variant: "outline" }), "h-4 px-1.5 text-[10px] text-muted-foreground")}>
                     {ROLE_LABEL[t.role] ?? t.role}
                   </span>
                 </div>
-                {selected && <Check className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />}
+                {selected && <Check className="size-4 text-foreground shrink-0" />}
               </button>
             );
           })

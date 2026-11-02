@@ -17,6 +17,7 @@ import {
 } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { getCloserTrends } from "@/lib/salesTrends";
 
 export async function GET(request: Request) {
   // One DB-verified lookup covers auth (active row) and the closer record.
@@ -36,8 +37,11 @@ export async function GET(request: Request) {
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
   const prevBounds = since && until ? previousWindowBounds(since, until) : null;
+  // Card trend lines — only the dashboard asks (`trends=1`); the calendar's
+  // invalidations of this route skip the extra reads.
+  const withTrends = searchParams.get("trends") === "1";
 
-  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed] =
+  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed, trends] =
     await Promise.all([
       readDealsByCloser(session.closerId),
       getCloserDealStats(session.closerId, { since, until }),
@@ -57,6 +61,7 @@ export async function GET(request: Request) {
       prevBounds ? getCloserShowRate(session.closerId, prevBounds) : null,
       getAttendanceFollowUpsForCloser(session.closerId, "no_show"),
       getAttendanceFollowUpsForCloser(session.closerId, "showed"),
+      withTrends ? getCloserTrends(session.closerId, since, until) : null,
     ]);
   const windowShow = windowResult ?? lifetimeShow;
   // Splice the attendance-sourced show metrics into the bucket so
@@ -107,6 +112,7 @@ export async function GET(request: Request) {
       })),
       noShowFollowUps,
       showedFollowUps,
+      trends,
     },
   });
 }

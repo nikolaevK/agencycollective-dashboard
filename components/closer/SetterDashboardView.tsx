@@ -16,6 +16,7 @@ import type {
 } from "@/lib/appointments";
 import type { SetterFollowUp, SetterRecentDeal, SetterStats } from "@/lib/setterStats";
 import type { NoShowFollowUp } from "@/lib/eventAttendance";
+import type { SetterTrends } from "@/lib/metricSeries";
 import { TimeFrameSelector } from "@/components/shared/TimeFrameSelector";
 import { TIME_FRAME_LABELS, type TimeFrame, type TimeFrameKey } from "@/lib/timeFrame";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,8 @@ export interface SetterDashboardData {
   recentDeals: SetterRecentDeal[];
   followUps: SetterFollowUp[];
   noShowFollowUps: NoShowFollowUp[];
+  /** Card trend lines (requested with `trends=1`). */
+  trends?: SetterTrends | null;
 }
 
 type NoShowWindow = 7 | 30 | 90 | "all";
@@ -175,6 +178,7 @@ export function SetterDashboardView({ data, timeFrame, onTimeFrameChange, readOn
         windowLabel={windowLabel(timeFrame)}
         isLifetimeWindow={timeFrame.key === "all"}
         followUpCount={stats.followUpCount}
+        trends={data.trends}
       />
 
       {/* Follow-up queue */}

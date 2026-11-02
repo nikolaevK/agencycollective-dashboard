@@ -1,13 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { NoteRecord, SharedNoteRecord } from "@/lib/notes";
 import { NoteCard } from "@/components/closer/NoteCard";
-import { NoteEditor } from "@/components/closer/NoteEditor";
-import { LeadContextModal } from "@/components/closer/LeadContextModal";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
+
+// Click-to-open — loaded on first open, not with the board.
+const NoteEditor = dynamic(
+  () => import("@/components/closer/NoteEditor").then((m) => m.NoteEditor),
+  { ssr: false }
+);
+const LeadContextModal = dynamic(
+  () => import("@/components/closer/LeadContextModal").then((m) => m.LeadContextModal),
+  { ssr: false }
+);
 
 interface OwnNote extends NoteRecord {
   sharedWith: string[];
@@ -42,6 +54,7 @@ export function NotesBoard({ heading }: { heading: string }) {
     { googleEventId: string | null; dealId: string | null; label: string } | null
   >(null);
   const [showArchived, setShowArchived] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const { data, isLoading } = useQuery<NotesResponse>({
     queryKey: ["closer-notes"],
@@ -150,7 +163,7 @@ export function NotesBoard({ heading }: { heading: string }) {
   }
 
   async function handleDelete(note: NoteRecord) {
-    if (!confirm(`Delete "${note.title}"?`)) return;
+    if (!(await confirm({ title: `Delete "${note.title}"?`, destructive: true, confirmText: "Delete" }))) return;
     const res = await fetch(`/api/closer/notes/${note.id}`, { method: "DELETE" });
     if (res.ok) refetch();
   }
@@ -169,66 +182,63 @@ export function NotesBoard({ heading }: { heading: string }) {
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{heading}</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Your private scratchpad — prioritize tasks, tag context, attach a lead.
             </p>
           </div>
-          <button
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg ac-gradient text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus className="h-4 w-4" />
+          <Button onClick={() => setCreating(true)}>
+            <Plus />
             New note
-          </button>
+          </Button>
         </div>
 
         {/* Group-by pills */}
-        <div className="flex items-center gap-2 flex-wrap mb-6">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={groupMode}
+          // Radix reports "" when the active item is clicked again; a grouping
+          // can't be deselected, so ignore that.
+          onValueChange={(v) => {
+            if (v) setGroupMode(v as GroupMode);
+          }}
+          className="mb-6 flex-wrap"
+        >
           {([
             { v: "priority", l: "By priority" },
             { v: "due", l: "By due date" },
             { v: "tag", l: "By tag" },
             { v: "lead", l: "By lead" },
           ] as { v: GroupMode; l: string }[]).map((c) => (
-            <button
-              key={c.v}
-              onClick={() => setGroupMode(c.v)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                groupMode === c.v
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted/50 text-muted-foreground hover:text-foreground"
-              )}
-            >
+            <ToggleGroupItem key={c.v} value={c.v} className="px-3">
               {c.l}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* Content */}
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 rounded-xl bg-muted/50 animate-pulse" />
+              <Skeleton key={i} className="h-28 rounded-[24px]" />
             ))}
           </div>
         ) : notes.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/50 bg-card/50 p-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              No notes yet. Click <span className="font-semibold text-foreground">+ New note</span> to start.
-            </p>
-          </div>
+          <p className="rounded-3xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
+            No notes yet. Click <span className="font-medium text-foreground">+ New note</span> to start.
+          </p>
         ) : (
           <div className="space-y-8">
             {grouped.map((g) => (
               <section key={g.key}>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h2 className="min-w-0 truncate text-sm font-medium">
                     {g.label}
                   </h2>
-                  <span className="text-xs text-muted-foreground">{g.notes.length}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{g.notes.length}</span>
                 </div>
                 <div className="space-y-2">
                   {g.notes.map((n) => {
@@ -271,15 +281,17 @@ export function NotesBoard({ heading }: { heading: string }) {
         {/* Archived shares — collapsed by default */}
         {(data?.sharedArchived?.length ?? 0) > 0 && (
           <section className="mt-10">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowArchived((v) => !v)}
-              className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="-ml-3 text-muted-foreground"
             >
-              <Archive className="h-3 w-3" />
+              <Archive />
               Archived shared notes ({data?.sharedArchived.length ?? 0})
-              <span className="text-muted-foreground opacity-60">{showArchived ? "(hide)" : "(show)"}</span>
-            </button>
+              <span className="opacity-60">{showArchived ? "(hide)" : "(show)"}</span>
+            </Button>
             {showArchived && (
               <div className="space-y-2 mt-3">
                 {data?.sharedArchived.map((n) => {
@@ -337,6 +349,7 @@ export function NotesBoard({ heading }: { heading: string }) {
             onClose={() => setViewingLead(null)}
           />
         )}
+        {dialog}
       </div>
     </main>
   );

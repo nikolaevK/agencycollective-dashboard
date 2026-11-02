@@ -807,9 +807,15 @@ export async function getTeamMonthlyTrend(months = 12): Promise<TeamMonthlyTrend
  * Per-day, per-closer deal sums for the Sales Overview card trend lines
  * (bucketed by lib/metricSeries.ts). Effective date and CASE definitions are
  * aggregateBucket's — keep them in lockstep, so the buckets of a window add
- * up to that window's card totals.
+ * up to that window's card totals. `only` narrows to one closer's deals (the
+ * closer dashboard) or the deals credited to one setter (setter dashboard —
+ * the same sums and date basis as lib/setterStats' cards).
  */
-export async function getDealDayRows(since: string, until: string): Promise<DealDayRow[]> {
+export async function getDealDayRows(
+  since: string,
+  until: string,
+  only: { closerId?: string; setterId?: string } = {}
+): Promise<DealDayRow[]> {
   await ensureMigrated();
   const db = getDb();
   const result = await db.execute({
@@ -825,9 +831,16 @@ export async function getDealDayRows(since: string, until: string): Promise<Deal
             COALESCE(SUM(CASE WHEN status IN ('rescheduled', 'follow_up', 'not_closed') THEN 1 ELSE 0 END), 0) AS in_flight_count
           FROM deals
           WHERE COALESCE(closing_date, substr(created_at,1,10)) >= ?
-            AND COALESCE(closing_date, substr(created_at,1,10)) <= ?
+            AND COALESCE(closing_date, substr(created_at,1,10)) <= ?${
+              only.closerId ? "\n            AND closer_id = ?" : ""
+            }${only.setterId ? "\n            AND setter_id = ?" : ""}
           GROUP BY day, closer_id`,
-    args: [since, until],
+    args: [
+      since,
+      until,
+      ...(only.closerId ? [only.closerId] : []),
+      ...(only.setterId ? [only.setterId] : []),
+    ],
   });
   return result.rows.map((row) => ({
     day: String(row.day),

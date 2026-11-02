@@ -2,6 +2,8 @@
 
 import { Lightbulb, Target } from "lucide-react";
 import { formatCents } from "@/components/closers/types";
+import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 
 interface Props {
   quota: number | null; // cents; null while loading
@@ -23,59 +25,54 @@ export function DealSidebar({ quota, totalRevenue, recentDeals }: Props) {
   return (
     <div className="space-y-4">
       {/* Tip card */}
-      <div className="rounded-xl ac-gradient p-5 text-white">
+      <Card className="p-5">
         <div className="flex items-center gap-2 mb-3">
-          <Lightbulb className="h-5 w-5" />
-          <span className="text-sm font-semibold">Closer Tip</span>
+          <Lightbulb className="size-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Closer Tip</span>
         </div>
-        <p className="text-xs leading-relaxed opacity-90">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Always confirm deal value and service scope before marking a deal as closed.
           Link existing clients when possible for better tracking.
         </p>
-      </div>
+      </Card>
 
       {/* Deal Summary / Quota progress */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Target className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">Monthly Target</span>
+          <Target className="size-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Monthly Target</span>
         </div>
-        <div className="mb-2 flex items-baseline justify-between">
-          <span className="text-2xl font-bold text-foreground">{formatCents(totalRevenue)}</span>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatCents(totalRevenue)}</span>
           {quota !== null && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {hasQuota ? `of ${formatCents(quota)}` : "No quota set"}
             </span>
           )}
         </div>
-        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full ac-gradient transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+        <Progress value={progress} className="h-2 [&>div]:bg-chart-1 [&>div]:duration-500" />
         {hasQuota && (
           <p className="text-xs text-muted-foreground mt-2">
             {progress.toFixed(0)}% of monthly quota reached
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Recent closures */}
       {last3.length > 0 && (
-        <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
-          <h4 className="text-sm font-semibold text-foreground mb-3">Recent Closures</h4>
+        <Card className="p-5">
+          <h4 className="text-sm font-medium mb-3">Recent Closures</h4>
           <div className="space-y-3">
             {last3.map((deal) => (
               <div key={deal.id} className="flex items-center justify-between">
-                <span className="text-sm text-foreground truncate mr-2">{deal.clientName}</span>
-                <span className="text-sm font-semibold text-foreground shrink-0">
+                <span className="min-w-0 text-sm text-foreground truncate mr-2">{deal.clientName}</span>
+                <span className="text-sm font-medium tabular-nums text-foreground shrink-0">
                   {formatCents(deal.dealValue)}
                 </span>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -1,8 +1,6 @@
 import {
   LayoutDashboard,
   CalendarDays,
-  CheckCircle2,
-  XCircle,
   Plus,
   StickyNote,
   Users,
@@ -10,13 +8,16 @@ import {
   PhoneCall,
   Flag,
   RefreshCw,
-  AlertTriangle,
   KeyRound,
   BookOpen,
   Mail,
   Share2,
   Archive,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { BadgeDot, badgeTone, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CALENDAR_STATE_META, type CalendarStateKey } from "@/components/closer/calendarState";
 
 /* ------------------------------------------------------------------ */
 /* Layout primitives                                                   */
@@ -34,20 +35,20 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border overflow-hidden">
-      <div className="flex items-start gap-3 border-b border-border bg-muted/40 px-5 py-4">
-        <Icon className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+    <Card>
+      <CardHeader className="flex-row items-start gap-2 space-y-0">
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <CardTitle className="font-semibold tracking-tight">{title}</CardTitle>
           {subtitle && (
-            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">{subtitle}</p>
           )}
         </div>
-      </div>
-      <div className="px-5 py-4 text-sm text-muted-foreground leading-relaxed space-y-3">
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm leading-relaxed text-muted-foreground">
         {children}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -60,7 +61,7 @@ function SubSection({
 }) {
   return (
     <div className="space-y-2 pt-1">
-      <p className="font-semibold text-foreground text-[13px]">{title}</p>
+      <p className="font-medium text-foreground">{title}</p>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -69,7 +70,7 @@ function SubSection({
 function Step({ n, children }: { n: number; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary mt-0.5">
+      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-foreground">
         {n}
       </span>
       <span>{children}</span>
@@ -80,7 +81,7 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 function Bullet({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
       <span>{children}</span>
     </li>
   );
@@ -94,6 +95,23 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** A state name as the live UI shows it — the kit status chip (outline + dot).
+ *  A span, not the kit's <div> Badge: these sit inside paragraphs. */
+function State({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
+  return (
+    <span className={cn(badgeVariants({ variant: "outline", tone }), "gap-1.5 align-middle")}>
+      <BadgeDot tone={tone} />
+      {children}
+    </span>
+  );
+}
+
+/** A calendar card state chip, read from the calendar's own vocabulary. */
+function CalendarState({ k }: { k: CalendarStateKey }) {
+  const meta = CALENDAR_STATE_META[k];
+  return <State tone={meta.tone}>{meta.label}</State>;
+}
+
 function Note({
   tone = "info",
   children,
@@ -101,12 +119,13 @@ function Note({
   tone?: "info" | "warn";
   children: React.ReactNode;
 }) {
-  const cls =
-    tone === "warn"
-      ? "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400"
-      : "border-sky-500/20 bg-sky-500/5 text-sky-700 dark:text-sky-400";
   return (
-    <div className={`rounded-lg border px-3 py-2.5 text-xs ${cls}`}>
+    <div
+      className={cn(
+        "rounded-2xl px-4 py-3 text-xs",
+        tone === "warn" ? cn("border", badgeTone.warning) : "bg-muted/50 text-muted-foreground"
+      )}
+    >
       {children}
     </div>
   );
@@ -119,9 +138,9 @@ function Note({
 export default function CloserDocsPage() {
   return (
     <main className="flex-1 overflow-y-auto overflow-x-hidden">
-      <div className="mx-auto max-w-3xl px-4 py-8 md:px-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
+      <div className="mx-auto max-w-3xl px-4 py-8 md:px-6 space-y-4">
+        <div className="mb-2">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Portal documentation
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -202,6 +221,16 @@ export default function CloserDocsPage() {
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
+                  Trend lines
+                </span>{" "}
+                — Lifetime cards draw the last 12 months, one point per
+                month. Time-frame cards draw a running total that ends at the
+                card&apos;s number, with the previous period as a dashed
+                line. The Monthly target card plots closed revenue per month
+                against your target. Hover a line to read any point.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
                   Time-frame selector
                 </span>{" "}
                 — week, month, quarter, or custom. Every KPI updates as you
@@ -271,6 +300,16 @@ export default function CloserDocsPage() {
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
+                  Trend lines
+                </span>{" "}
+                — Appointments set, Deals credited, Revenue attributed and
+                Paid revenue draw a line: per month over the last 12 months
+                on Lifetime cards, a running total through the selected time
+                frame on the others. Commission and show rate stay as
+                numbers.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
                   Commission earned
                 </span>{" "}
                 — calculated from the tier you picked on each appointment
@@ -308,19 +347,52 @@ export default function CloserDocsPage() {
             You&apos;ll see every closer&apos;s events, not just yours —
             but only you can mark your own attendance on each event.
           </p>
+          <SubSection title="Card colors">
+            <p>
+              Each card has a colored edge and a chip naming its state, and
+              the row under the week picker counts this week&apos;s cards
+              per state. Things you did after the call win: a linked deal
+              first, then your Showed / No Show mark.
+            </p>
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <CalendarState k="upcoming" /> <CalendarState k="live" />{" "}
+                — the call hasn&apos;t happened yet, or is happening now.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="needs_outcome" /> — the call is over and
+                nobody has marked attendance or linked a deal. Mark it.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="showed" /> <CalendarState k="no_show" />{" "}
+                — the attendance you marked.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="deal_closed" />{" "}
+                <CalendarState k="deal_pending" />{" "}
+                <CalendarState k="deal_follow_up" />{" "}
+                <CalendarState k="deal_not_closed" /> — a deal is linked to
+                the event; the chip follows the deal&apos;s status. Click{" "}
+                <span className="font-medium text-foreground">Edit Deal</span>{" "}
+                to open it.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="cancelled" /> <CalendarState k="all_day" />{" "}
+                — cancelled in Google or by the setter, or an all-day block.
+              </Bullet>
+            </ul>
+          </SubSection>
           <SubSection title="Marking show / no show">
             <p>
               Every card has two buttons at the bottom:
             </p>
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <CheckCircle2 className="inline h-3 w-3 text-emerald-600" />{" "}
-                <span className="font-medium text-foreground">Showed</span>{" "}
+                <State tone="success">Showed</State>{" "}
                 — the prospect attended the call.
               </Bullet>
               <Bullet>
-                <XCircle className="inline h-3 w-3 text-red-600" />{" "}
-                <span className="font-medium text-foreground">No Show</span>{" "}
+                <State tone="danger">No Show</State>{" "}
                 — they didn&apos;t.
               </Bullet>
             </ul>
@@ -352,20 +424,17 @@ export default function CloserDocsPage() {
                 came from.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">
-                  Deal Linked
-                </span>{" "}
-                — green pill if a deal already exists for this event.
-                Click <span className="font-medium text-foreground">Edit Deal</span>{" "}
-                to open it.
+                <span className="font-medium text-foreground">Edit Deal</span>{" "}
+                — shown when a deal already exists for this event (the
+                state chip names its status).
               </Bullet>
               <Bullet>
-                <Flag className="inline h-3 w-3 text-sky-600" />{" "}
-                <span className="font-medium text-foreground">
+                <span className={cn(badgeVariants({ variant: "outline" }), "gap-1 align-middle")}>
+                  <Flag className="text-muted-foreground" />
                   Setter: NAME
                 </span>{" "}
-                — sky pill naming the setter who prepped the call. Their
-                pre/post-call notes appear in a panel below.
+                — names the setter who prepped the call. Their pre/post-call
+                notes appear in a panel below.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -402,23 +471,16 @@ export default function CloserDocsPage() {
           <SubSection title="States">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <CheckCircle2 className="inline h-3 w-3 text-emerald-600" />{" "}
-                <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                  Synced with GHL
-                </span>{" "}
+                <State tone="success">Synced with GHL</State>{" "}
                 — both systems agree. Nothing to do.
               </Bullet>
               <Bullet>
-                <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 text-[11px] font-semibold">
-                  <AlertTriangle className="h-3 w-3" /> Out of sync with GHL
-                </span>{" "}
+                <State tone="warning">Out of sync with GHL</State>{" "}
                 — they disagree. The chip names both observed values:
                 &quot;Dashboard: X · GHL: Y&quot;.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">
-                  Syncing…
-                </span>{" "}
+                <State tone="neutral">Syncing…</State>{" "}
                 — spinner during an in-flight click.
               </Bullet>
             </ul>
@@ -447,9 +509,7 @@ export default function CloserDocsPage() {
             </ul>
             <p>
               After either click the chip flips back to{" "}
-              <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                Synced
-              </span>{" "}
+              <State tone="success">Synced</State>{" "}
               within a second or two.
             </p>
           </SubSection>
@@ -549,6 +609,35 @@ export default function CloserDocsPage() {
             pre / post-call statuses, client info, free-form notes, and
             your commission tier choice.
           </p>
+          <SubSection title="Card colors">
+            <p>
+              Each card has a colored edge and a chip naming where the
+              appointment stands; the row under the week picker counts them.
+            </p>
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <CalendarState k="unclaimed" /> — nobody has claimed this
+                event yet.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="claimed" /> <CalendarState k="confirmed" />{" "}
+                <CalendarState k="rescheduled" /> — your pre-call work
+                before the call.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="live" />{" "}
+                <CalendarState k="awaiting_outcome" /> — the call is on now,
+                or over with no outcome yet.
+              </Bullet>
+              <Bullet>
+                <CalendarState k="showed" /> <CalendarState k="no_show" />{" "}
+                <CalendarState k="needs_followup" />{" "}
+                <CalendarState k="qualified" /> — what happened: the
+                closer&apos;s attendance mark, or your post-call status
+                (which wins, since it tracks working a no-show back).
+              </Bullet>
+            </ul>
+          </SubSection>
           <SubSection title="Claiming an event">
             <Step n={1}>
               Find a Google Calendar event you set up. Click{" "}
@@ -632,29 +721,21 @@ export default function CloserDocsPage() {
             </p>
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                  Tier A — Setter-Sourced
-                </span>
+                <State tone="success">Tier A — Setter-Sourced</State>
                 : 3 % of collected gross revenue. You found the lead.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-sky-700 dark:text-sky-400">
-                  Tier B — Setter-Recovered
-                </span>
+                <State tone="info">Tier B — Setter-Recovered</State>
                 : 2 % of collected gross revenue. The lead was nurtured by
                 automation; you recovered it.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-amber-700 dark:text-amber-400">
-                  Tier C — Setter-Confirmed (Self-Booked)
-                </span>
+                <State tone="warning">Tier C — Setter-Confirmed (Self-Booked)</State>
                 : $25 flat per attended call ≥ 2 minutes. You only
                 confirmed an already-self-booked appointment.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-muted-foreground">
-                  Tier D — System-Nurtured
-                </span>
+                <State tone="neutral">Tier D — System-Nurtured</State>
                 : no commission. You logged the appointment but didn&apos;t
                 add value.
               </Bullet>
@@ -720,7 +801,7 @@ export default function CloserDocsPage() {
           <SubSection title="Sharing">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <Share2 className="inline h-3 w-3" />{" "}
+                <Share2 className="inline size-3 text-muted-foreground" />{" "}
                 <span className="font-medium text-foreground">
                   Share with…
                 </span>{" "}
@@ -738,7 +819,7 @@ export default function CloserDocsPage() {
                 a 403 if they try.
               </Bullet>
               <Bullet>
-                <Archive className="inline h-3 w-3" />{" "}
+                <Archive className="inline size-3 text-muted-foreground" />{" "}
                 <span className="font-medium text-foreground">Archive</span>{" "}
                 — a recipient can dismiss a shared note from their board.
                 The owner&apos;s copy and other recipients are unaffected.

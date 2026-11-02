@@ -2,6 +2,10 @@
 
 import ReactMarkdown from "react-markdown";
 import { Download } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone, badgeVariants } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { resolveIcon } from "./icons";
 import type {
   WelcomeKitDoc,
@@ -11,7 +15,7 @@ import type {
 } from "@/lib/welcomeKit";
 
 /* ------------------------------------------------------------------ */
-/*  Markdown — portal-styled, sanitized by default (no raw HTML)        */
+/*  Markdown — kit-styled, sanitized by default (no raw HTML)           */
 /* ------------------------------------------------------------------ */
 
 const MD_COMPONENTS = {
@@ -34,19 +38,19 @@ const MD_COMPONENTS = {
       href={p.href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-primary hover:underline font-medium"
+      className="font-medium text-foreground underline underline-offset-4 hover:text-foreground/80"
     >
       {p.children}
     </a>
   ),
   h3: (p: { children?: React.ReactNode }) => (
-    <h3 className="text-sm font-bold mt-2 mb-1">{p.children}</h3>
+    <h3 className="text-sm font-semibold text-foreground mt-2 mb-1">{p.children}</h3>
   ),
   h4: (p: { children?: React.ReactNode }) => (
-    <h4 className="text-sm font-bold mt-2 mb-1">{p.children}</h4>
+    <h4 className="text-sm font-semibold text-foreground mt-2 mb-1">{p.children}</h4>
   ),
   code: (p: { children?: React.ReactNode }) => (
-    <code className="px-1 py-0.5 rounded bg-portal-surface-container text-xs font-mono">
+    <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
       {p.children}
     </code>
   ),
@@ -54,25 +58,25 @@ const MD_COMPONENTS = {
   // (white-space: pre, no scroll container) overflow the section card
   // horizontally on phones.
   pre: (p: { children?: React.ReactNode }) => (
-    <pre className="overflow-x-auto rounded-lg bg-portal-surface-container p-3 text-xs font-mono my-2 [&_code]:bg-transparent [&_code]:p-0">
+    <pre className="overflow-x-auto rounded-2xl bg-muted/50 p-4 text-xs font-mono text-foreground my-2 [&_code]:bg-transparent [&_code]:p-0">
       {p.children}
     </pre>
   ),
   table: (p: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-2 rounded-lg border border-border/50">
+    <div className="overflow-x-auto my-2 rounded-2xl border">
       <table className="w-full border-collapse text-xs">{p.children}</table>
     </div>
   ),
   th: (p: { children?: React.ReactNode }) => (
-    <th className="px-2.5 py-1.5 text-left font-semibold border-b border-border/50">
+    <th className="px-3 py-2 text-left font-medium text-foreground border-b bg-muted/40">
       {p.children}
     </th>
   ),
   td: (p: { children?: React.ReactNode }) => (
-    <td className="px-2.5 py-1.5 border-b border-border/30 last:border-b-0">{p.children}</td>
+    <td className="px-3 py-2 border-b last:border-b-0">{p.children}</td>
   ),
   blockquote: (p: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-2 border-primary/40 pl-3 italic my-2">
+    <blockquote className="border-l-2 pl-3 italic my-2">
       {p.children}
     </blockquote>
   ),
@@ -90,33 +94,19 @@ function MD({ children, className }: { children: string; className?: string }) {
 /*  Style maps                                                          */
 /* ------------------------------------------------------------------ */
 
-const VARIANT_STYLES: Record<WkVariant, { box: string; icon: string; text: string }> = {
-  info: {
-    box: "bg-primary/5 border border-primary/10",
-    icon: "text-primary",
-    text: "text-portal-on-surface",
-  },
-  success: {
-    box: "bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/20",
-    icon: "text-emerald-600",
-    text: "text-portal-on-surface",
-  },
-  warning: {
-    box: "bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/20",
-    icon: "text-amber-600",
-    text: "text-portal-on-surface",
-  },
-  danger: {
-    box: "bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/20",
-    icon: "text-red-600",
-    text: "text-portal-on-surface",
-  },
-  neutral: {
-    box: "bg-portal-surface-low border border-transparent",
-    icon: "text-portal-secondary-dim",
-    text: "text-portal-secondary-text",
-  },
+// Callouts use the kit status tones (faint tinted border + fill); the icon
+// takes the tone color, the copy stays readable foreground text.
+const VARIANT_STYLES: Record<WkVariant, string> = {
+  info: badgeTone.info,
+  success: badgeTone.success,
+  warning: badgeTone.warning,
+  danger: badgeTone.danger,
+  neutral: "border-transparent bg-muted/50 text-muted-foreground",
 };
+
+/** Neutral icon tile (no colored tiles in the kit). */
+const ICON_TILE =
+  "flex shrink-0 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground ring-1 ring-foreground/5 dark:ring-foreground/10";
 
 // Responsive column classes. Each step never exceeds the chosen count, so
 // picking "1 column" stays 1 across all breakpoints (no sm→2→md→1 flip).
@@ -134,34 +124,33 @@ const GRID_COLUMNS: Record<number, string> = {
 };
 
 /* ------------------------------------------------------------------ */
-/*  Section wrapper (matches the original portal design)               */
+/*  Section wrapper (kit Card)                                         */
 /* ------------------------------------------------------------------ */
 
 function Section({ section }: { section: WkSection }) {
   const Icon = resolveIcon(section.icon);
   return (
-    <section
-      id={section.id}
-      className="bg-portal-surface-lowest rounded-xl p-5 md:p-8 shadow-sm scroll-mt-24"
-    >
-      <div className="flex items-center gap-4 mb-8">
-        <div className="p-3 bg-violet-100 dark:bg-violet-900/30 rounded-lg text-primary shrink-0">
-          <Icon className="w-6 h-6" />
+    <section id={section.id} className="scroll-mt-24">
+      <Card className="p-5 md:p-8">
+        <div className="flex items-center gap-4 mb-6 md:mb-8">
+          <div className={cn(ICON_TILE, "size-11")}>
+            <Icon className="size-5" />
+          </div>
+          <div className="min-w-0">
+            {section.num && (
+              <p className="text-xs text-muted-foreground break-words">
+                {section.num}
+              </p>
+            )}
+            <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground break-words">{section.title}</h3>
+          </div>
         </div>
-        <div className="min-w-0">
-          {section.num && (
-            <p className="text-[10px] font-bold text-portal-outline-variant uppercase tracking-widest break-words">
-              {section.num}
-            </p>
-          )}
-          <h3 className="text-2xl font-bold break-words">{section.title}</h3>
+        <div className="space-y-6">
+          {section.blocks.map((block) => (
+            <Block key={block.id} block={block} />
+          ))}
         </div>
-      </div>
-      <div className="space-y-6">
-        {section.blocks.map((block) => (
-          <Block key={block.id} block={block} />
-        ))}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -174,18 +163,18 @@ function Block({ block }: { block: WkBlock }) {
   switch (block.type) {
     case "text":
       return block.body.trim() ? (
-        <MD className="text-portal-secondary-text break-words">{block.body}</MD>
+        <MD className="text-muted-foreground break-words [&_strong]:text-foreground">{block.body}</MD>
       ) : null;
 
     case "callout": {
-      const s = VARIANT_STYLES[block.variant];
       const Icon = block.icon ? resolveIcon(block.icon) : null;
+      const neutral = block.variant === "neutral";
       return (
-        <div className={`p-4 rounded-lg flex items-start gap-3 ${s.box}`}>
-          {Icon && <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${s.icon}`} />}
-          <div className={`min-w-0 ${s.text}`}>
+        <div className={cn("p-4 rounded-2xl border flex items-start gap-3", VARIANT_STYLES[block.variant])}>
+          {Icon && <Icon className="size-4 shrink-0 mt-0.5" />}
+          <div className={cn("min-w-0", neutral ? "text-muted-foreground" : "text-foreground")}>
             {block.title && (
-              <p className="text-sm font-bold mb-0.5">{block.title}</p>
+              <p className="text-sm font-semibold text-foreground mb-0.5">{block.title}</p>
             )}
             {block.body && <MD className="text-sm">{block.body}</MD>}
           </div>
@@ -195,11 +184,11 @@ function Block({ block }: { block: WkBlock }) {
 
     case "stat":
       return (
-        <div className="bg-primary p-6 rounded-xl text-white text-center flex flex-col items-center justify-center sm:max-w-xs">
-          <p className="text-5xl font-black leading-none mb-1 break-words max-w-full">{block.value}</p>
-          <p className="text-sm font-bold break-words max-w-full">{block.label}</p>
+        <div className="rounded-2xl bg-muted/50 p-6 text-center flex flex-col items-center justify-center ring-1 ring-foreground/5 dark:ring-foreground/10 sm:max-w-xs">
+          <p className="text-5xl font-semibold tracking-tight tabular-nums leading-none text-foreground mb-2 break-words max-w-full">{block.value}</p>
+          <p className="text-sm font-medium text-foreground break-words max-w-full">{block.label}</p>
           {block.caption && (
-            <p className="text-xs opacity-70 mt-2 leading-relaxed">{block.caption}</p>
+            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{block.caption}</p>
           )}
         </div>
       );
@@ -209,7 +198,7 @@ function Block({ block }: { block: WkBlock }) {
       return (
         <div>
           {block.title && (
-            <h4 className="text-xs font-bold text-portal-secondary-dim uppercase tracking-widest mb-4">
+            <h4 className="text-sm font-medium text-foreground mb-3">
               {block.title}
             </h4>
           )}
@@ -217,19 +206,19 @@ function Block({ block }: { block: WkBlock }) {
             {block.items.map((item, i) => (
               <li
                 key={i}
-                className="flex items-start gap-3 text-sm text-portal-on-surface"
+                className="flex items-start gap-3 text-sm text-foreground"
               >
                 {block.marker === "dot" ? (
-                  <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground/60 shrink-0 mt-2" />
                 ) : (
-                  <Marker className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <Marker className="size-4 text-muted-foreground shrink-0 mt-0.5" />
                 )}
-                <span>{item}</span>
+                <span className="min-w-0 break-words">{item}</span>
               </li>
             ))}
           </ul>
           {block.note && (
-            <p className="text-xs text-portal-secondary-text mt-4">{block.note}</p>
+            <p className="text-xs text-muted-foreground mt-4">{block.note}</p>
           )}
         </div>
       );
@@ -243,15 +232,15 @@ function Block({ block }: { block: WkBlock }) {
               const Icon = resolveIcon(it.icon);
               return (
                 <div key={it.id} className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5 text-primary" />
+                  <div className={cn(ICON_TILE, "size-10")}>
+                    <Icon className="size-5" />
                   </div>
                   <div className="min-w-0">
-                    <h5 className="font-bold text-sm text-portal-on-surface mb-1 break-words">
+                    <h5 className="font-medium text-sm text-foreground mb-1 break-words">
                       {it.label}
                     </h5>
                     {it.desc && (
-                      <p className="text-sm text-portal-secondary-text leading-relaxed break-words">
+                      <p className="text-sm text-muted-foreground leading-relaxed break-words">
                         {it.desc}
                       </p>
                     )}
@@ -269,12 +258,12 @@ function Block({ block }: { block: WkBlock }) {
             return (
               <div
                 key={it.id}
-                className="p-5 bg-portal-surface-low rounded-xl flex flex-col items-center text-center gap-2 min-w-0"
+                className="p-5 bg-muted/40 rounded-2xl flex flex-col items-center text-center gap-2 min-w-0"
               >
-                <Icon className="w-6 h-6 text-primary shrink-0" />
-                <p className="text-sm font-bold text-portal-on-surface break-words max-w-full">{it.label}</p>
+                <Icon className="size-5 text-muted-foreground shrink-0" />
+                <p className="text-sm font-medium text-foreground break-words max-w-full">{it.label}</p>
                 {it.desc && (
-                  <p className="text-xs text-portal-secondary-text break-words max-w-full">{it.desc}</p>
+                  <p className="text-xs text-muted-foreground break-words max-w-full">{it.desc}</p>
                 )}
               </div>
             );
@@ -290,26 +279,26 @@ function Block({ block }: { block: WkBlock }) {
           {block.items.map((col) => {
             const Icon = resolveIcon(col.icon);
             return (
-              <div key={col.id} className="p-6 bg-portal-surface-low rounded-xl min-w-0">
-                <div className="flex items-center gap-3 mb-1 min-w-0">
-                  <Icon className="w-5 h-5 text-primary shrink-0" />
-                  <h4 className="font-bold min-w-0 break-words">{col.title}</h4>
+              <div key={col.id} className="p-5 md:p-6 bg-muted/40 rounded-2xl min-w-0">
+                <div className="flex items-center gap-3 mb-2 min-w-0">
+                  <Icon className="size-4 text-muted-foreground shrink-0" />
+                  <h4 className="font-medium text-foreground min-w-0 break-words">{col.title}</h4>
                 </div>
                 {col.badge && (
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-3">
+                  <span className={cn(badgeVariants({ variant: "outline" }), "mb-3 h-auto max-w-full whitespace-normal break-words bg-background dark:bg-transparent")}>
                     {col.badge}
-                  </p>
+                  </span>
                 )}
                 {col.body && (
-                  <p className="text-sm text-portal-secondary-text mb-4 leading-relaxed">
+                  <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
                     {col.body}
                   </p>
                 )}
                 {col.bullets.length > 0 && (
-                  <ul className="space-y-1.5 text-sm text-portal-on-surface">
+                  <ul className="space-y-1.5 text-sm text-foreground">
                     {col.bullets.map((b, i) => (
                       <li key={i} className="flex items-start gap-2">
-                        <span className="w-1 h-1 rounded-full bg-primary shrink-0 mt-2" />
+                        <span className="size-1 rounded-full bg-muted-foreground/60 shrink-0 mt-2" />
                         <span className="min-w-0 break-words">{b}</span>
                       </li>
                     ))}
@@ -326,7 +315,7 @@ function Block({ block }: { block: WkBlock }) {
       return (
         <div>
           {block.title && (
-            <h4 className="text-xs font-bold text-portal-secondary-dim uppercase tracking-widest mb-4">
+            <h4 className="text-sm font-medium text-foreground mb-3">
               {block.title}
             </h4>
           )}
@@ -334,13 +323,13 @@ function Block({ block }: { block: WkBlock }) {
             {block.rows.map((row) => (
               <div
                 key={row.id}
-                className="flex items-center justify-between gap-3 p-3 bg-portal-surface-low rounded-lg"
+                className="flex items-center justify-between gap-3 px-4 py-3 bg-muted/40 rounded-2xl"
               >
-                <span className="text-sm font-medium text-portal-on-surface min-w-0 break-words">
+                <span className="text-sm font-medium text-foreground min-w-0 break-words">
                   {row.label}
                 </span>
                 {row.value && (
-                  <span className="text-[10px] font-bold text-portal-secondary-dim uppercase tracking-wider shrink-0">
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
                     {row.value}
                   </span>
                 )}
@@ -394,35 +383,39 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
   return (
     <div className="space-y-6">
       {/* ── Hero ── */}
-      <div className="relative overflow-hidden rounded-xl bg-primary/5 p-6 md:p-12 border border-primary/5 mb-12">
+      <Card className="relative p-6 md:p-12">
         <div className="relative z-10 max-w-2xl">
           {hero.badge && (
-            <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold tracking-widest uppercase mb-4">
+            <span className="mb-4 inline-flex max-w-full rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground break-words">
               {hero.badge}
             </span>
           )}
-          <h1 className="text-2xl md:text-4xl font-extrabold text-portal-on-surface mb-4 leading-tight break-words">
-            {hero.titleLead}
-            {hero.titleLead && (hero.titleHighlight || hero.titleTail) && <br />}
-            {hero.titleHighlight && (
-              <span className="text-primary">{hero.titleHighlight}</span>
+          <h1 className="text-2xl md:text-4xl font-semibold tracking-tight text-foreground mb-4 leading-tight break-words">
+            {/* Two-tone title: the highlight (and what follows it) reads in
+                full foreground, the lead-in steps back. */}
+            {hero.titleLead && (
+              <span className={hero.titleHighlight ? "text-muted-foreground" : undefined}>
+                {hero.titleLead}
+              </span>
             )}
+            {hero.titleLead && (hero.titleHighlight || hero.titleTail) && <br />}
+            {hero.titleHighlight && <span>{hero.titleHighlight}</span>}
             {hero.titleTail && ` ${hero.titleTail}`}
           </h1>
           {hero.subtitle && (
-            <p className="text-portal-secondary-text text-lg leading-relaxed">
+            <p className="text-muted-foreground text-base md:text-lg leading-relaxed">
               {hero.subtitle}
             </p>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* ── Bento grid: TOC + sections ── */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* TOC */}
         <div className="md:col-span-3 space-y-4">
-          <div className="bg-portal-surface-lowest rounded-xl p-6 shadow-sm sticky top-24">
-            <h3 className="text-sm font-bold text-portal-on-surface uppercase tracking-wider mb-6">
+          <Card className="p-6 sticky top-24">
+            <h3 className="text-sm font-medium text-foreground mb-4">
               Contents
             </h3>
             <nav className="space-y-3">
@@ -434,9 +427,9 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
                   <a
                     key={s.id}
                     href={`#${s.id}`}
-                    className="flex items-center gap-3 text-portal-secondary-text hover:text-primary transition-colors text-sm group"
+                    className="flex items-center gap-3 text-muted-foreground hover:text-foreground transition-colors text-sm group"
                   >
-                    <span className="text-[10px] font-bold text-portal-outline-variant group-hover:text-primary w-4 text-right shrink-0">
+                    <span className="text-[11px] font-medium tabular-nums text-muted-foreground/70 group-hover:text-foreground w-4 text-right shrink-0">
                       {displayLead}
                     </span>
                     <span className="min-w-0 break-words">{displayLabel}</span>
@@ -445,43 +438,43 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
               })}
             </nav>
             {showPdf && (
-              <div className="mt-8 pt-6 border-t border-portal-surface-container">
+              <div className="mt-6 pt-6 border-t">
                 <a
                   href={cta.pdfUrl}
                   download
-                  className="flex items-center gap-2 text-primary text-xs font-bold hover:underline"
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
                 >
-                  <Download className="w-4 h-4" />
-                  DOWNLOAD PDF VERSION
+                  <Download />
+                  Download PDF version
                 </a>
               </div>
             )}
-          </div>
+          </Card>
         </div>
 
         {/* Sections */}
-        <div className="md:col-span-9 space-y-8">
+        <div className="md:col-span-9 space-y-6">
           {sections.map((section) => (
             <Section key={section.id} section={section} />
           ))}
 
           {/* ── CTA ── */}
           {cta.enabled && (
-            <div className="bg-primary p-6 md:p-12 rounded-xl text-center relative overflow-hidden">
+            <Card className="p-6 md:p-12 text-center relative">
               <div className="relative z-10">
                 {cta.title && (
-                  <h3 className="text-2xl font-bold text-white mb-4">{cta.title}</h3>
+                  <h3 className="text-2xl font-semibold tracking-tight text-foreground mb-3">{cta.title}</h3>
                 )}
                 {cta.body && (
-                  <p className="text-white/80 font-medium mb-8 max-w-lg mx-auto">
+                  <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
                     {cta.body}
                   </p>
                 )}
-                <div className="flex flex-wrap justify-center gap-4">
+                <div className="flex flex-wrap justify-center gap-3">
                   {showCtaButton && (
                     <a
                       href={ctaHref || "#"}
-                      className="px-8 py-3 bg-white text-primary font-bold rounded-full hover:bg-primary/5 transition-colors"
+                      className={buttonVariants({ size: "lg" })}
                     >
                       {cta.buttonLabel}
                     </a>
@@ -490,16 +483,16 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
                     <a
                       href={cta.pdfUrl}
                       download
-                      className="px-8 py-3 border border-white/30 text-white font-bold rounded-full hover:bg-white/10 transition-colors inline-flex items-center gap-2"
+                      className={buttonVariants({ variant: "outline", size: "lg" })}
                     >
-                      <Download className="w-4 h-4" />
+                      <Download />
                       Download PDF
                     </a>
                   )}
                 </div>
               </div>
               <svg
-                className="absolute inset-0 w-full h-full opacity-10 pointer-events-none"
+                className="absolute inset-0 w-full h-full text-foreground opacity-[0.06] pointer-events-none"
                 xmlns="http://www.w3.org/2000/svg"
               >
                 <defs>
@@ -516,12 +509,12 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
                 </defs>
                 <rect width="100%" height="100%" fill="url(#wk-dot-pattern)" />
               </svg>
-            </div>
+            </Card>
           )}
 
           {/* ── Footer ── */}
-          <div className="mt-16 pt-8 border-t border-portal-surface-container text-center">
-            <p className="text-xs text-portal-secondary-text">
+          <div className="mt-10 pt-8 border-t text-center">
+            <p className="text-xs text-muted-foreground">
               &copy; {new Date().getFullYear()} Agency Collective. Confidential Client
               Resource.
             </p>

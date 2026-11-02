@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
-import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { StatusBadge, badgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
   PEPTIDE_AI_DEFAULT_CAP_CENTS,
   PEPTIDE_AI_OFF_REASON_LABEL,
   PEPTIDE_AI_STATE_LABEL,
+  PEPTIDE_AI_STATE_TONE,
   formatCycleDate,
   formatUsd,
   ordinalDay,
@@ -32,16 +33,8 @@ interface PeptideAiDetail {
   usage: PeptideAiUsage | null;
 }
 
-export const PEPTIDE_AI_STATE_TONE: Record<PeptideAiState, BadgeTone> = {
-  off: "neutral",
-  unknown: "neutral",
-  never_opened: "info",
-  not_used: "info",
-  blocked: "danger",
-  active: "success",
-  near_cap: "warning",
-  capped: "danger",
-};
+// Re-exported for existing importers (PeptideAiUsageTab).
+export { PEPTIDE_AI_STATE_TONE };
 
 /** Usage meter tint: near the limit = amber, at it = red, else the chart blue. */
 export function peptideAiMeterClass(state: PeptideAiState | null): string {

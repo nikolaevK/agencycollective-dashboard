@@ -89,27 +89,6 @@ export const POST_CALL_LABELS: Record<PostCallStatus, string> = {
   no_answer: "No answer",
 };
 
-export const PRE_CALL_BADGE: Record<PreCallStatus, string> = {
-  not_called: "bg-muted/60 text-muted-foreground",
-  auto_confirmed: "bg-teal-500/15 text-teal-700 dark:text-teal-400",
-  auto_no_answer: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  triaged_confirmed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  confirmed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  no_answer: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  voicemail: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
-  rescheduled: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400",
-  cancelled: "bg-red-500/15 text-red-700 dark:text-red-400",
-};
-
-export const POST_CALL_BADGE: Record<PostCallStatus, string> = {
-  not_called: "bg-muted/60 text-muted-foreground",
-  followed_up: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  needs_followup: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  qualified: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
-  disqualified: "bg-red-500/15 text-red-700 dark:text-red-400",
-  no_answer: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-};
-
 // ── Tier metadata for UI consumption ─────────────────────────────────
 // Centralized so the setter calendar, setter dashboard, admin deal view,
 // and audit log all describe each tier identically.

@@ -8,6 +8,7 @@ import {
   getSetterFollowUps,
 } from "@/lib/setterStats";
 import { enrichNoShowsFromCalendar, getNoShowFollowUpsTeamWide } from "@/lib/eventAttendance";
+import { getSetterTrends } from "@/lib/salesTrends";
 
 export async function GET(request: Request) {
   const setter = await getSetterFromSession();
@@ -22,11 +23,15 @@ export async function GET(request: Request) {
   const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
 
-  const [stats, recentDeals, followUps, rawNoShows] = await Promise.all([
+  // Card trend lines — only the dashboard asks (`trends=1`).
+  const withTrends = searchParams.get("trends") === "1";
+
+  const [stats, recentDeals, followUps, rawNoShows, trends] = await Promise.all([
     getSetterStats(setter.id, { since, until }),
     getSetterRecentDeals(setter.id),
     getSetterFollowUps(setter.id),
     getNoShowFollowUpsTeamWide(),
+    withTrends ? getSetterTrends(setter.id, since, until) : null,
   ]);
   const noShowFollowUps = await enrichNoShowsFromCalendar(rawNoShows);
 
@@ -42,6 +47,7 @@ export async function GET(request: Request) {
       recentDeals,
       followUps,
       noShowFollowUps,
+      trends,
     },
   });
 }

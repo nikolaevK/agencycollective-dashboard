@@ -4,14 +4,10 @@ import { useMemo, useRef, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Clock, Users, Video, ArrowRight, CheckCircle2, XCircle, User, Pencil, Flag, Mail, StickyNote, MapPin, ChevronDown, AlignLeft, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  PRE_CALL_LABELS,
-  POST_CALL_LABELS,
-  type PostCallStatus,
-  type PreCallStatus,
-} from "@/lib/appointmentRules";
+import { PRE_CALL_LABELS, POST_CALL_LABELS } from "@/lib/appointmentRules";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
-import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import type { DealStatus } from "@/lib/deals";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -21,7 +17,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DayHeader, dayHeaderInfo, makeCalendarRefs, useMidnightTick } from "@/components/closer/DayHeader";
+import {
+  CalendarStateChip,
+  CalendarStateLegend,
+  CalendarStatusBadge,
+  DayHeader,
+  dayHeaderInfo,
+  makeCalendarRefs,
+  useMidnightTick,
+  useNow,
+} from "@/components/closer/DayHeader";
+import {
+  ATTENDEE_RESPONSE_META,
+  CLOSER_STATE_ORDER,
+  EVENT_STATUS_PILL,
+  POST_CALL_TONE,
+  PRE_CALL_TONE,
+  calendarStateStyle,
+  closerEventState,
+  countCalendarStates,
+  type CloserCalendarState,
+} from "@/components/closer/calendarState";
 import { useGhlCrossReference } from "@/hooks/useGhlContacts";
 import { GhlEventChip, buildGhlCrossReferenceInputs } from "@/components/ghl/GhlEventChip";
 import {
@@ -61,6 +77,9 @@ export interface LinkedDealInfo {
   googleEventId: string;
   closerId: string;
   closerName?: string;
+  /** The deal's status — drives the card's state (Deal closed, Pending
+   *  signature, …). Without it a linked event reads "Deal linked". */
+  status?: DealStatus;
 }
 
 export interface GhlSyncEntry {
@@ -124,52 +143,6 @@ function dashboardStatusLabel(s: "showed" | "no_show" | null): string {
   if (s === "showed") return "Showed";
   if (s === "no_show") return "No-show";
   return "—";
-}
-
-const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; tone: BadgeTone }> = {
-  accepted: { label: "Accepted", tone: "success" },
-  declined: { label: "Declined", tone: "danger" },
-  tentative: { label: "Maybe", tone: "warning" },
-  needsAction: { label: "Pending", tone: "neutral" },
-};
-
-const STATUS_PILL: Record<string, { label: string; tone: BadgeTone }> = {
-  tentative: { label: "Tentative", tone: "warning" },
-  cancelled: { label: "Cancelled", tone: "danger" },
-};
-
-// Status tones for the setter's pre/post-call badges (labels stay the
-// shared PRE_CALL_LABELS / POST_CALL_LABELS).
-const PRE_CALL_TONE: Record<PreCallStatus, BadgeTone> = {
-  not_called: "neutral",
-  auto_confirmed: "success",
-  auto_no_answer: "warning",
-  triaged_confirmed: "success",
-  confirmed: "success",
-  no_answer: "warning",
-  voicemail: "info",
-  rescheduled: "info",
-  cancelled: "danger",
-};
-
-const POST_CALL_TONE: Record<PostCallStatus, BadgeTone> = {
-  not_called: "neutral",
-  followed_up: "success",
-  needs_followup: "warning",
-  qualified: "success",
-  disqualified: "danger",
-  no_answer: "warning",
-};
-
-// The calendar is read at a glance, so its green/red chips get a stronger
-// outline than the kit's default tone.
-const CALENDAR_OUTLINE: Partial<Record<BadgeTone, string>> = {
-  success: "border-emerald-500/50 dark:border-emerald-400/45",
-  danger: "border-red-500/50 dark:border-red-400/45",
-};
-
-function CalendarStatusBadge({ tone, className, ...props }: React.ComponentProps<typeof StatusBadge>) {
-  return <StatusBadge tone={tone} className={cn(tone && CALENDAR_OUTLINE[tone], className)} {...props} />;
 }
 
 function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
@@ -292,6 +265,8 @@ export function CalendarEventList({
   // Re-render at midnight so the "Today" badge tracks the calendar day,
   // not just the data refetch cadence.
   useMidnightTick();
+  // Minute clock for the time-based states (Live now / Needs outcome).
+  const now = useNow();
 
   // Single GHL cross-reference fetch covering every event on the screen.
   // Each card reads its row from `ghlData` instead of firing its own
@@ -306,6 +281,27 @@ export function CalendarEventList({
     return m;
   }, [linkedDeals]);
   const { data: ghlData } = useGhlCrossReference(ghlInputs);
+
+  // One state per event (rail + chip + legend count), from data already on
+  // hand — see components/closer/calendarState.ts for the precedence.
+  const eventStates = useMemo(() => {
+    const m = new Map<string, CloserCalendarState>();
+    for (const e of events) {
+      m.set(
+        e.id,
+        closerEventState({
+          event: e,
+          attendance: attendance?.[e.id],
+          dealLinked: linkedEventIds?.has(e.id) ?? false,
+          dealStatus: dealByEventId.get(e.id)?.status,
+          preCallStatus: appointments?.[e.id]?.preCallStatus,
+          now,
+        })
+      );
+    }
+    return m;
+  }, [events, attendance, linkedEventIds, dealByEventId, appointments, now]);
+  const stateCounts = useMemo(() => countCalendarStates(eventStates.values()), [eventStates]);
 
   // Scroll to "today" only when the week being shown actually changes —
   // not on every `events` array identity change. The poll-driven refetch
@@ -341,6 +337,8 @@ export function CalendarEventList({
   const calendarRefs = makeCalendarRefs();
 
   return (
+    <div>
+    <CalendarStateLegend counts={stateCounts} order={CLOSER_STATE_ORDER} />
     <div className="space-y-8">
       {Array.from(grouped.entries()).map(([dayKey, dayEvents]) => {
         const info = dayHeaderInfo(dayKey, calendarRefs);
@@ -368,6 +366,8 @@ export function CalendarEventList({
               const pendingButton = pendingAttendance.get(event.id);
               const isSyncing = pendingButton !== undefined;
               const pendingPushPull = pendingResync.get(event.id);
+              const state = eventStates.get(event.id) ?? "upcoming";
+              const look = calendarStateStyle(state);
 
               return (
                 // Two-column row on desktop (time gutter + event card);
@@ -385,12 +385,12 @@ export function CalendarEventList({
                   </div>
                   <Card
                     className={cn(
-                      "flex-1 min-w-0 p-4 transition-colors",
-                      isLinked
-                        ? "ring-emerald-500/60 dark:ring-emerald-400/50"
-                        : "hover:bg-muted/30"
+                      "relative flex-1 min-w-0 p-4 transition-colors hover:bg-muted/30",
+                      look.ring
                     )}
                   >
+                  {/* State rail — same color as the state chip + legend. */}
+                  <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", look.rail)} />
                   {/* Header: title row + Link as Deal button.
                       Mobile stacks them; desktop puts the button on the
                       right. */}
@@ -400,17 +400,18 @@ export function CalendarEventList({
                           (full width, wraps); badges wrap below it. On
                           desktop: inline with truncate on title. */}
                       <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
-                        <p className="text-sm font-semibold text-foreground break-words sm:break-normal sm:truncate sm:flex-1 sm:min-w-0">
+                        <p className={cn("text-sm font-semibold text-foreground break-words sm:break-normal sm:truncate sm:flex-1 sm:min-w-0", look.title)}>
                           {event.title}
                         </p>
                         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 sm:shrink-0">
+                          <CalendarStateChip
+                            state={state}
+                            title={state === "needs_outcome" && onAttendanceChange ? "Mark attendance" : undefined}
+                          />
                           {event.calendarName && (
                             <Badge variant="secondary" className="max-w-[14rem] font-normal text-muted-foreground" title={event.calendarName}>
                               <span className="truncate">{event.calendarName}</span>
                             </Badge>
-                          )}
-                          {isLinked && (
-                            <CalendarStatusBadge tone="success">Deal Linked</CalendarStatusBadge>
                           )}
                           {setterClaim && (
                             <Badge variant="outline" className="gap-1 font-medium">
@@ -418,9 +419,10 @@ export function CalendarEventList({
                               Setter: {setterClaim.setterName ?? "Unknown"}
                             </Badge>
                           )}
-                          {STATUS_PILL[event.status] && (
-                            <CalendarStatusBadge tone={STATUS_PILL[event.status].tone}>
-                              {STATUS_PILL[event.status].label}
+                          {/* The state chip already says "Cancelled" when that's the state. */}
+                          {EVENT_STATUS_PILL[event.status] && !(event.status === "cancelled" && state === "cancelled") && (
+                            <CalendarStatusBadge tone={EVENT_STATUS_PILL[event.status].tone}>
+                              {EVENT_STATUS_PILL[event.status].label}
                             </CalendarStatusBadge>
                           )}
                         </div>
@@ -535,9 +537,9 @@ export function CalendarEventList({
                                       >
                                         {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                       </a>
-                                      {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                        <CalendarStatusBadge tone={RESPONSE_BADGE[a.responseStatus].tone}>
-                                          {RESPONSE_BADGE[a.responseStatus].label}
+                                      {a.responseStatus && ATTENDEE_RESPONSE_META[a.responseStatus] && (
+                                        <CalendarStatusBadge tone={ATTENDEE_RESPONSE_META[a.responseStatus].tone}>
+                                          {ATTENDEE_RESPONSE_META[a.responseStatus].label}
                                         </CalendarStatusBadge>
                                       )}
                                     </li>
@@ -834,6 +836,7 @@ export function CalendarEventList({
         </section>
         );
       })}
+    </div>
     </div>
   );
 }

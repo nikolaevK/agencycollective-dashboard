@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useMemo, Suspense } from "react";
+import dynamic from "next/dynamic";
 import { BarChart3 } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useUserOverview } from "@/hooks/useUserOverview";
 import { useTopAds } from "@/hooks/useTopAds";
 import { useAllAccountsOverview } from "@/hooks/useAllAccountsOverview";
@@ -10,19 +12,29 @@ import { useCombinedOverview } from "@/hooks/useCombinedOverview";
 import { usePixelHealth } from "@/hooks/usePixelHealth";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { aggregateInsights } from "@/lib/meta/transformers";
+import { spansMultipleDays } from "@/lib/utils";
 import type { PixelStatsPeriod } from "@/types/dashboard";
 import { DashboardShell } from "@/components/layout/DashboardShell";
-import { KpiGrid } from "@/components/overview/KpiGrid";
-import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { rangeLabel } from "@/components/filters/DateRangePicker";
+import { MetaKpiCards } from "@/components/overview/MetaKpiCards";
+import { PanelSkeleton } from "@/components/overview/Skeletons";
 import { TopAdsCard } from "@/components/portal/TopAdsCard";
 import { AccountsOverviewGrid, ALL_ACCOUNTS_ID } from "@/components/portal/AccountsOverviewGrid";
 import { PixelHealthCard } from "@/components/drilldown/PixelHealthCard";
 import { ActivityFeedCard } from "@/components/drilldown/ActivityFeedCard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import PortalOverviewLoading from "./loading";
+
+// Recharts loads with the chart, not with the page.
+const MetaPerformanceChart = dynamic(
+  () => import("@/components/overview/MetaPerformanceChart").then((m) => m.MetaPerformanceChart),
+  { loading: () => <PanelSkeleton height={280} /> }
+);
 
 function OverviewContent() {
   const { dateRange } = useDateRange();
+  const hydrated = useHydrated();
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
   const [pixelPeriod, setPixelPeriod] = useState<PixelStatsPeriod>("last_7d");
 
@@ -76,6 +88,10 @@ function OverviewContent() {
   const displayMetrics = showAllMode ? aggregatedMetrics : data?.metrics;
   const displayTimeSeries = showAllMode ? combinedData?.timeSeries : data?.timeSeries;
   const displayLoading = showAllMode ? allAccountsLoading : isLoading;
+  // The combined daily series is its own request — its loading state, not
+  // the accounts grid's, decides whether the chart is still loading.
+  const chartLoading = showAllMode ? combinedLoading : isLoading;
+  const displayCurrency = showAllMode ? "USD" : data?.currency;
   const displayError = showAllMode ? combinedError : error;
   const displayTitle = showAllMode
     ? "all linked accounts"
@@ -88,11 +104,15 @@ function OverviewContent() {
   // legacy account_id of pre-existing clients).
   const noAccounts = !isLoading && data?.accountId === "";
 
+  // The shell's top bar reads the same overview query and may already hold
+  // its data at hydration (see useHydrated) — render the skeleton until then.
+  if (!hydrated) return <PortalOverviewLoading />;
+
   return (
     <DashboardShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Overview</h1>
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Overview</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {noAccounts
               ? "Your ad accounts will appear here once your account manager connects them."
@@ -138,38 +158,31 @@ function OverviewContent() {
         )}
 
         {allAccountsLoading && !allAccounts && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 animate-pulse rounded-xl bg-muted/60" />
+              <Skeleton key={i} className="h-28 rounded-3xl" />
             ))}
           </div>
         )}
 
-        {/* KPI Grid — works for both modes */}
-        <KpiGrid
+        {/* KPI cards — work for both modes */}
+        <MetaKpiCards
           metrics={displayMetrics}
+          timeSeries={displayTimeSeries}
+          // A failed daily series must not hold the trend lines' space forever.
+          showTrend={spansMultipleDays(dateRange) && !displayError}
           isLoading={displayLoading}
-          currency={showAllMode ? "USD" : data?.currency}
+          currency={displayCurrency}
         />
 
         {/* Performance Over Time — works for both modes */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Performance Over Time</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer
-              isLoading={displayLoading}
-              error={displayError as Error | null}
-              isEmpty={!displayLoading && (!displayTimeSeries || displayTimeSeries.length === 0)}
-              height={320}
-            >
-              {displayTimeSeries && displayTimeSeries.length > 0 && (
-                <TimeSeriesChart data={displayTimeSeries} height={320} />
-              )}
-            </ChartContainer>
-          </CardContent>
-        </Card>
+        <MetaPerformanceChart
+          data={displayTimeSeries}
+          isLoading={chartLoading}
+          error={displayError as Error | null}
+          currency={displayCurrency}
+          description={rangeLabel(dateRange)}
+        />
 
         {/* Per-account sections — only in single account mode */}
         {!showAllMode && (

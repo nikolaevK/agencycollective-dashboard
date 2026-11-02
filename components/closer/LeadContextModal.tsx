@@ -14,30 +14,31 @@ import {
   Mail,
   MapPin,
   PhoneCall,
-  PhoneOff,
   StickyNote,
   User,
   UserCircle2,
   Users,
   Video,
   X,
-  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DEAL_STATUS_STYLES } from "@/components/closers/DealStatusBadge";
+import { DealStatusBadge } from "@/components/closers/DealStatusBadge";
 import {
-  PRE_CALL_BADGE,
   PRE_CALL_LABELS,
-  POST_CALL_BADGE,
   POST_CALL_LABELS,
   type PreCallStatus,
   type PostCallStatus,
 } from "@/lib/appointmentRules";
-import type { CalendarEvent, AttendeeResponseStatus } from "@/components/closer/CalendarEventList";
+import type { CalendarEvent } from "@/components/closer/CalendarEventList";
 import { formatCents } from "@/components/closers/types";
 import { DealInvoiceStatusBadge } from "@/components/closers/DealInvoiceStatusBadge";
 import { DealContractStatusBadge } from "@/components/closers/DealContractStatusBadge";
 import { getSubAccount, isValidSubAccountId } from "@/lib/ghl/subAccounts";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ATTENDEE_RESPONSE_META, POST_CALL_TONE, PRE_CALL_TONE } from "@/components/closer/calendarState";
 
 interface Appointment {
   id: string;
@@ -111,13 +112,8 @@ interface Props {
   onClose: () => void;
 }
 
-
-const RESPONSE_BADGE: Record<AttendeeResponseStatus, { label: string; cls: string }> = {
-  accepted: { label: "Accepted", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  declined: { label: "Declined", cls: "bg-red-500/15 text-red-700 dark:text-red-400" },
-  tentative: { label: "Maybe", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  needsAction: { label: "Pending", cls: "bg-muted/60 text-muted-foreground" },
-};
+/** Inner record tile (one claim / deal / attendance mark). */
+const TILE = "rounded-2xl bg-muted/40 p-3";
 
 function formatWhen(iso: string | null | undefined, withTime = true): string {
   if (!iso) return "—";
@@ -159,28 +155,26 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-3xl mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[92vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4 rounded-t-2xl">
+      <div className={dialogOverlayClass} onClick={onClose} />
+      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-3xl mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-popover px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-foreground truncate">{headingTitle}</h3>
+            <h3 className="text-base font-medium truncate">{headingTitle}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               Full lead history across calendar, appointments, deals, and attendance.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-2 shrink-0">
+            <span className="sr-only">Close</span>
+            <X />
+          </Button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 space-y-6 sm:p-6">
           {isLoading && (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-24 rounded-xl bg-muted/50 animate-pulse" />
+                <Skeleton key={i} className="h-24" />
               ))}
             </div>
           )}
@@ -193,28 +187,26 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
+                        <Clock className="size-3" />
                         {formatWhen(event.start)}
                         {event.end && ` – ${formatWhen(event.end)}`}
                       </span>
                       {event.calendarName && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-muted text-[10px] font-medium">
-                          {event.calendarName}
-                        </span>
+                        <Badge variant="secondary" className="max-w-full">
+                          <span className="truncate">{event.calendarName}</span>
+                        </Badge>
                       )}
                       {ctx?.ghlLink && isValidSubAccountId(ctx.ghlLink.subAccountId) && (() => {
                         const sub = getSubAccount(ctx.ghlLink.subAccountId);
                         return (
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
-                              sub.badgeClass
-                            )}
+                          <Badge
+                            variant="outline"
+                            className={cn("gap-1 font-medium", sub.badgeClass)}
                             title={`Linked to GHL · ${sub.label}`}
                           >
-                            <span className="font-bold">{sub.shortLabel}</span>
+                            <span className="font-semibold">{sub.shortLabel}</span>
                             GHL · {sub.label}
-                          </span>
+                          </Badge>
                         );
                       })()}
                       {event.meetLink && (
@@ -224,37 +216,34 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-primary hover:underline"
                         >
-                          <Video className="h-3 w-3" />
+                          <Video className="size-3" />
                           Meet
                         </a>
                       )}
                       {event.location && (
                         <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
+                          <MapPin className="size-3 shrink-0" />
                           {event.location}
                         </span>
                       )}
                     </div>
                     {event.attendees.length > 0 && (
-                      <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                      <div className={TILE}>
                         <div className="flex items-start gap-1.5 text-xs">
-                          <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                          <Users className="size-3 mt-0.5 shrink-0 text-muted-foreground" />
                           <ul className="space-y-1 flex-1 min-w-0">
                             {event.attendees.map((a) => (
                               <li key={a.email} className="flex items-center gap-2 flex-wrap">
                                 <a
                                   href={`mailto:${a.email}`}
-                                  className="text-muted-foreground hover:text-foreground truncate"
+                                  className="min-w-0 max-w-full text-muted-foreground hover:text-foreground truncate"
                                 >
                                   {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
                                 </a>
-                                {a.responseStatus && RESPONSE_BADGE[a.responseStatus] && (
-                                  <span className={cn(
-                                    "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium",
-                                    RESPONSE_BADGE[a.responseStatus].cls
-                                  )}>
-                                    {RESPONSE_BADGE[a.responseStatus].label}
-                                  </span>
+                                {a.responseStatus && ATTENDEE_RESPONSE_META[a.responseStatus] && (
+                                  <StatusBadge tone={ATTENDEE_RESPONSE_META[a.responseStatus].tone}>
+                                    {ATTENDEE_RESPONSE_META[a.responseStatus].label}
+                                  </StatusBadge>
                                 )}
                               </li>
                             ))}
@@ -263,9 +252,9 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                       </div>
                     )}
                     {event.description && (
-                      <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                      <div className={TILE}>
                         <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                          <AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />
+                          <AlignLeft className="size-3 mt-0.5 shrink-0" />
                           <p className="whitespace-pre-wrap break-words">{event.description}</p>
                         </div>
                       </div>
@@ -278,33 +267,25 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
               <Section icon={PhoneCall} title={`Setter claims (${appointments.length})`} empty={appointments.length === 0 ? "No setter has claimed this event." : null}>
                 <div className="space-y-3">
                   {appointments.map((a) => (
-                    <div key={a.id} className="rounded-lg border border-border/40 bg-muted/10 p-3 space-y-2">
+                    <div key={a.id} className={cn(TILE, "space-y-2")}>
                       <div className="flex flex-wrap items-center gap-2">
                         {a.setterName && (
                           <span className="inline-flex items-center gap-1 text-sm font-medium text-foreground">
-                            <UserCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <UserCircle2 className="size-3.5 text-muted-foreground" />
                             {a.setterName}
                           </span>
                         )}
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold",
-                          PRE_CALL_BADGE[a.preCallStatus as PreCallStatus] ?? "bg-muted text-muted-foreground"
-                        )}>
-                          <PhoneCall className="h-3 w-3" />
+                        <StatusBadge tone={PRE_CALL_TONE[a.preCallStatus as PreCallStatus] ?? "neutral"}>
                           Pre: {PRE_CALL_LABELS[a.preCallStatus as PreCallStatus] ?? a.preCallStatus}
-                        </span>
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold",
-                          POST_CALL_BADGE[a.postCallStatus as PostCallStatus] ?? "bg-muted text-muted-foreground"
-                        )}>
-                          <PhoneOff className="h-3 w-3" />
+                        </StatusBadge>
+                        <StatusBadge tone={POST_CALL_TONE[a.postCallStatus as PostCallStatus] ?? "neutral"}>
                           Post: {POST_CALL_LABELS[a.postCallStatus as PostCallStatus] ?? a.postCallStatus}
-                        </span>
+                        </StatusBadge>
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         {a.clientName && (
                           <span className="inline-flex items-center gap-1">
-                            <User className="h-3 w-3" />
+                            <User className="size-3" />
                             {a.clientName}
                           </span>
                         )}
@@ -313,13 +294,13 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                             href={`mailto:${a.clientEmail}`}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                           >
-                            <Mail className="h-3 w-3" />
+                            <Mail className="size-3" />
                             {a.clientEmail}
                           </a>
                         )}
                         {a.scheduledAt && (
                           <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
+                            <Clock className="size-3" />
                             {formatWhen(a.scheduledAt)}
                           </span>
                         )}
@@ -329,7 +310,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                       </div>
                       {a.notes && (
                         <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                          <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
+                          <StickyNote className="size-3 mt-0.5 shrink-0" />
                           <p className="whitespace-pre-wrap break-words">{a.notes}</p>
                         </div>
                       )}
@@ -342,42 +323,32 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
               <Section icon={Briefcase} title={`Deals (${deals.length})`} empty={deals.length === 0 ? "No deal linked yet." : null}>
                 <div className="space-y-3">
                   {deals.map((d) => (
-                    <div key={d.id} className="rounded-lg border border-border/40 bg-muted/10 p-3 space-y-2">
+                    <div key={d.id} className={cn(TILE, "space-y-2")}>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-foreground">{d.clientName}</span>
-                        <span className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
-                          DEAL_STATUS_STYLES[d.status] ?? DEAL_STATUS_STYLES.follow_up
-                        )}>
-                          {d.status.replace(/_/g, " ")}
-                        </span>
-                        <span className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
-                          d.paidStatus === "paid"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                            : "bg-muted/60 text-muted-foreground"
-                        )}>
+                        <span className="min-w-0 text-sm font-medium text-foreground [overflow-wrap:anywhere]">{d.clientName}</span>
+                        <DealStatusBadge status={d.status} />
+                        <StatusBadge tone={d.paidStatus === "paid" ? "success" : "neutral"} className="capitalize">
                           {d.paidStatus}
-                        </span>
+                        </StatusBadge>
                         {d.invoiceStatus && <DealInvoiceStatusBadge status={d.invoiceStatus} />}
                         {d.contractStatus && <DealContractStatusBadge status={d.contractStatus} />}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         {d.dealValue > 0 && (
-                          <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                            <DollarSign className="h-3 w-3" />
+                          <span className="inline-flex items-center gap-1 font-medium tabular-nums text-foreground">
+                            <DollarSign className="size-3" />
                             {formatCents(d.dealValue)}
                           </span>
                         )}
                         {d.closerName && (
                           <span className="inline-flex items-center gap-1">
-                            <UserCircle2 className="h-3 w-3" />
+                            <UserCircle2 className="size-3" />
                             Closed by {d.closerName}
                           </span>
                         )}
                         {d.setterName && (
                           <span className="inline-flex items-center gap-1">
-                            <UserCircle2 className="h-3 w-3" />
+                            <UserCircle2 className="size-3" />
                             Set by {d.setterName}
                           </span>
                         )}
@@ -386,7 +357,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                             href={`mailto:${d.clientEmail}`}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                           >
-                            <Mail className="h-3 w-3" />
+                            <Mail className="size-3" />
                             {d.clientEmail}
                           </a>
                         )}
@@ -395,15 +366,15 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                             href={d.website.startsWith("http") ? d.website : `https://${d.website}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 text-primary hover:underline"
                           >
-                            <ExternalLink className="h-3 w-3" />
-                            {d.website.replace(/^https?:\/\//, "")}
+                            <ExternalLink className="size-3 shrink-0" />
+                            <span className="truncate">{d.website.replace(/^https?:\/\//, "")}</span>
                           </a>
                         )}
                         {d.closingDate && (
                           <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
+                            <Clock className="size-3" />
                             Closing {formatWhen(d.closingDate, false)}
                           </span>
                         )}
@@ -417,13 +388,13 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                       )}
                       {d.invoiceNumber && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <FileText className="h-3 w-3" />
+                          <FileText className="size-3" />
                           Invoice {d.invoiceNumber}
                         </div>
                       )}
                       {d.notes && (
                         <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                          <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
+                          <StickyNote className="size-3 mt-0.5 shrink-0" />
                           <p className="whitespace-pre-wrap break-words">{d.notes}</p>
                         </div>
                       )}
@@ -436,19 +407,13 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
               <Section icon={CheckCircle2} title={`Attendance (${attendance.length})`} empty={attendance.length === 0 ? "No show/no-show marks yet." : null}>
                 <div className="space-y-2">
                   {attendance.map((a) => (
-                    <div key={`${a.closerId}-${a.updatedAt}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/40 bg-muted/10 p-3">
-                      <span className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide",
-                        a.showStatus === "showed"
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                          : "bg-red-500/15 text-red-700 dark:text-red-400"
-                      )}>
-                        {a.showStatus === "showed" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                    <div key={`${a.closerId}-${a.updatedAt}`} className={cn(TILE, "flex flex-wrap items-center gap-2")}>
+                      <StatusBadge tone={a.showStatus === "showed" ? "success" : "danger"}>
                         {a.showStatus === "showed" ? "Showed" : "No show"}
-                      </span>
+                      </StatusBadge>
                       {a.closerName && (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <UserCircle2 className="h-3 w-3" />
+                          <UserCircle2 className="size-3" />
                           Marked by {a.closerName}
                         </span>
                       )}
@@ -481,8 +446,8 @@ function Section({
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</h4>
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <h4 className="text-sm font-medium">{title}</h4>
       </div>
       {empty ? <p className="text-xs text-muted-foreground italic">{empty}</p> : children}
     </section>

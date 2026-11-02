@@ -2,17 +2,14 @@
 
 import * as React from "react"
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { buttonVariants } from "@/components/ui/button"
+import dynamic from "next/dynamic"
+
+// Lazy: the AlertDialog (+ Radix focus/dismiss layers) stays out of every
+// page's first load. It's always rendered, so the chunk loads right after
+// hydration — not on the first confirm.
+const ConfirmDialog = dynamic(() => import("./confirm-dialog").then((m) => m.ConfirmDialog), {
+  ssr: false,
+})
 
 export interface ConfirmOptions {
   title: string
@@ -50,33 +47,7 @@ export function useConfirm() {
     setOptions(null)
   }, [])
 
-  const dialog = (
-    <AlertDialog open={options !== null} onOpenChange={(open) => !open && settle(false)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{options?.title}</AlertDialogTitle>
-          {options?.description != null && (
-            <AlertDialogDescription>{options.description}</AlertDialogDescription>
-          )}
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => settle(false)}>
-            {options?.cancelText ?? "Cancel"}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => settle(true)}
-            className={
-              options?.destructive
-                ? buttonVariants({ className: "bg-destructive text-destructive-foreground hover:bg-destructive/90" })
-                : undefined
-            }
-          >
-            {options?.confirmText ?? "Continue"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
+  const dialog = <ConfirmDialog options={options} onSettle={settle} />
 
   return { confirm, dialog }
 }

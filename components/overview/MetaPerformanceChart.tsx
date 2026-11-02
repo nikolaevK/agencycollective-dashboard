@@ -19,7 +19,17 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatCurrency, formatCurrencyCompact, formatNumber, formatPercent, formatRoas } from "@/lib/utils";
 import type { TimeSeriesDataPoint } from "@/types/dashboard";
 
-type SeriesKey = "spend" | "conversionValue" | "roas" | "conversions" | "costPerPurchase" | "ctr" | "cpc";
+type SeriesKey =
+  | "spend"
+  | "conversionValue"
+  | "roas"
+  | "conversions"
+  | "costPerPurchase"
+  | "impressions"
+  | "reach"
+  | "clicks"
+  | "ctr"
+  | "cpc";
 type Unit = "money" | "roas" | "count" | "percent";
 
 // One unit per view, so every view has a single y-axis. "Spend & revenue"
@@ -30,6 +40,9 @@ const VIEWS = [
   { id: "roas", label: "ROAS", series: ["roas"], unit: "roas" },
   { id: "conversions", label: "Purchases", series: ["conversions"], unit: "count" },
   { id: "costPerPurchase", label: "Cost / purchase", series: ["costPerPurchase"], unit: "money" },
+  // Delivery + traffic counts (the client portal's old chart plotted these).
+  { id: "reach", label: "Reach", series: ["impressions", "reach"], unit: "count" },
+  { id: "clicks", label: "Clicks", series: ["clicks"], unit: "count" },
   { id: "ctr", label: "CTR", series: ["ctr"], unit: "percent" },
   { id: "cpc", label: "CPC", series: ["cpc"], unit: "money" },
 ] as const satisfies readonly { id: string; label: string; series: readonly SeriesKey[]; unit: Unit }[];
@@ -42,6 +55,9 @@ const chartConfig = {
   roas: { label: "ROAS", color: "hsl(var(--chart-2))" },
   conversions: { label: "Purchases", color: "hsl(var(--chart-1))" },
   costPerPurchase: { label: "Cost per purchase", color: "hsl(var(--chart-1))" },
+  impressions: { label: "Impressions", color: "hsl(var(--chart-1))" },
+  reach: { label: "Reach", color: "hsl(var(--chart-2))" },
+  clicks: { label: "Clicks", color: "hsl(var(--chart-1))" },
   ctr: { label: "CTR", color: "hsl(var(--chart-1))" },
   cpc: { label: "CPC", color: "hsl(var(--chart-1))" },
 } satisfies ChartConfig;

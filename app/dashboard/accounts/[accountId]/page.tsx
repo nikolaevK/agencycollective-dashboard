@@ -14,7 +14,7 @@ import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb"
 import { CampaignTable } from "@/components/drilldown/CampaignTable";
 import { PixelHealthCard } from "@/components/drilldown/PixelHealthCard";
 import { ActivityFeedCard } from "@/components/drilldown/ActivityFeedCard";
-import { rangeLabel } from "@/components/filters/DateRangePicker";
+import { rangeLabel } from "@/components/filters/dateRangeLabel";
 import { MetaKpiCards } from "@/components/overview/MetaKpiCards";
 import { MetaPerformanceChart } from "@/components/overview/MetaPerformanceChart";
 import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";

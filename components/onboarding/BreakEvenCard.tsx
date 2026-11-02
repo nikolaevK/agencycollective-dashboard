@@ -2,6 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { computeBreakEven, EXAMPLE_COSTS, type CostInputs } from "@/lib/onboardingForm";
 
 /** Dollars (may be fractional) → "$1,234.56". */
@@ -34,45 +36,35 @@ export function BreakEvenCard({ costs, showExample = false }: { costs: CostInput
           : `At ${roas} ROAS ads pay for themselves and nothing else. The real target sits above this so it covers fees and profit.`;
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border border-primary/40 bg-primary/5",
-        isExample && "border-dashed"
-      )}
+    <Card
+      className={cn(isExample && "border border-dashed border-foreground/15 shadow-none ring-0")}
       aria-live="polite"
     >
       <div
         className={cn(
-          "flex items-center justify-between gap-3 border-b border-primary/30 px-4 py-2.5",
-          isExample && "border-dashed"
+          "flex items-center justify-between gap-3 border-b px-4 py-3",
+          isExample && "border-dashed border-foreground/15"
         )}
       >
-        <span className="text-[10px] font-bold uppercase tracking-widest text-primary">
-          What you need to break even
-        </span>
-        <span
-          className={cn(
-            "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-            isExample
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-              : "border-primary/40 bg-card text-primary"
-          )}
-        >
-          {isExample ? "Example numbers" : "Your numbers"}
-        </span>
+        <span className="min-w-0 text-sm font-medium text-foreground">What you need to break even</span>
+        {isExample ? (
+          <StatusBadge tone="warning">Example numbers</StatusBadge>
+        ) : (
+          <Badge variant="secondary">Your numbers</Badge>
+        )}
       </div>
       <div className={cn("grid grid-cols-2 sm:grid-cols-[1.3fr_1fr_1fr]", isExample && "[&_.v]:opacity-55")}>
-        <div className="col-span-2 flex flex-col gap-0.5 border-b border-border/60 px-4 py-3.5 sm:col-span-1 sm:border-b-0">
+        <div className="col-span-2 flex flex-col gap-1 border-b px-4 py-3.5 sm:col-span-1 sm:border-b-0">
           <span className="text-xs text-muted-foreground">Break-even ROAS</span>
-          <span className="v text-4xl font-bold leading-none tracking-tight text-primary">{roas}</span>
+          <span className="v text-4xl font-semibold leading-none tracking-tight tabular-nums text-foreground">{roas}</span>
           <span className="text-[11px] text-muted-foreground">Revenue per $1 of ad spend</span>
         </div>
-        <div className="flex min-w-0 flex-col gap-0.5 px-4 py-3.5 sm:border-l sm:border-border/60">
+        <div className="flex min-w-0 flex-col gap-1 px-4 py-3.5 sm:border-l">
           <span className="text-xs text-muted-foreground">Break-even CPA</span>
           <span className="v font-mono text-lg font-semibold tabular-nums text-foreground">{cpa}</span>
           <span className="text-[11px] text-muted-foreground">Max cost per order</span>
         </div>
-        <div className="flex min-w-0 flex-col gap-0.5 border-l border-border/60 px-4 py-3.5">
+        <div className="flex min-w-0 flex-col gap-1 border-l px-4 py-3.5">
           <span className="text-xs text-muted-foreground">Margin per order</span>
           <span className="v font-mono text-lg font-semibold tabular-nums text-foreground">{margin}</span>
           <span className="truncate text-[11px] text-muted-foreground">{leftOver}</span>
@@ -80,12 +72,14 @@ export function BreakEvenCard({ costs, showExample = false }: { costs: CostInput
       </div>
       <p
         className={cn(
-          "border-t border-border/60 px-4 py-2.5 text-xs",
-          losing ? "bg-red-500/10 text-red-700 dark:text-red-400" : "bg-card text-muted-foreground"
+          "border-t px-4 py-2.5 text-xs",
+          losing
+            ? "bg-red-500/[0.07] text-red-700 dark:bg-red-400/10 dark:text-red-300"
+            : "bg-muted/40 text-muted-foreground"
         )}
       >
         {foot}
       </p>
-    </div>
+    </Card>
   );
 }

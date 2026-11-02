@@ -20,7 +20,7 @@ export default function SetterDashboardPage() {
   const { data, isError } = useQuery<SetterDashboardData>({
     queryKey,
     queryFn: async () => {
-      const url = appendTimeFrameParams("/api/closer/setter/stats", timeFrame);
+      const url = appendTimeFrameParams("/api/closer/setter/stats?trends=1", timeFrame);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to load setter dashboard: ${res.status}`);
       const json = await res.json();

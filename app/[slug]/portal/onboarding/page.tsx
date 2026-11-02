@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import {
   Megaphone,
   Mail,
-  Check,
   CheckCircle2,
   Clock,
   Lock,
@@ -15,6 +14,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { Badge, StatusBadge, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useOnboardingProgress,
   useToggleOnboardingStep,
@@ -257,21 +262,6 @@ if (LOCAL_STEP_IDS.length !== VALID_STEP_IDS.length || !LOCAL_STEP_IDS.every((id
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 
-function StatusBadge({ completed }: { completed: boolean }) {
-  if (completed) {
-    return (
-      <span className="text-[10px] px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full font-bold shrink-0">
-        COMPLETE
-      </span>
-    );
-  }
-  return (
-    <span className="text-[10px] px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full font-bold shrink-0">
-      PENDING
-    </span>
-  );
-}
-
 function TaskCard({
   task,
   completed,
@@ -286,55 +276,44 @@ function TaskCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
-      className={cn(
-        "group bg-portal-surface-lowest rounded-xl transition-all",
-        completed
-          ? "border border-transparent hover:border-portal-surface-high"
-          : "border-2 border-primary/10 hover:border-primary/20"
-      )}
-    >
+    <Card>
       {/* Header — always visible */}
       <div
-        className="flex items-start gap-3 md:gap-4 p-4 md:p-6 cursor-pointer select-none"
+        className="flex cursor-pointer select-none items-start gap-3 p-4 transition-colors hover:bg-muted/30 md:gap-4 md:p-6"
         onClick={() => setExpanded((v) => !v)}
       >
-        {/* Checkbox */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle();
+        <Checkbox
+          checked={completed}
+          onCheckedChange={() => onToggle()}
+          onClick={(e) => e.stopPropagation()}
+          // Radix checkboxes ignore Enter; the old button toggled on it.
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onToggle();
           }}
           disabled={isPending}
-          className={cn(
-            "w-6 h-6 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors",
-            completed
-              ? "border-primary bg-primary text-white"
-              : "border-portal-outline bg-white dark:bg-transparent hover:border-primary",
-            isPending && "opacity-50"
-          )}
+          className="mt-0.5 size-5"
           aria-label={completed ? "Mark incomplete" : "Mark complete"}
-        >
-          {completed && <Check className="w-3 h-3" />}
-        </button>
+        />
 
         {/* Title + description */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                "font-bold text-portal-on-surface",
-                completed && "line-through opacity-50"
+                "font-medium text-foreground",
+                completed && "text-muted-foreground line-through"
               )}
             >
               {task.title}
             </span>
-            <StatusBadge completed={completed} />
+            <StatusBadge tone={completed ? "success" : "neutral"}>
+              {completed ? "Complete" : "Pending"}
+            </StatusBadge>
           </div>
           <p
             className={cn(
-              "text-sm text-portal-secondary-text leading-relaxed",
-              completed && "opacity-60"
+              "text-sm leading-relaxed text-muted-foreground",
+              completed && "opacity-70"
             )}
           >
             {task.description}
@@ -344,7 +323,7 @@ function TaskCard({
         {/* Expand chevron */}
         <ChevronDown
           className={cn(
-            "w-5 h-5 text-portal-outline-variant shrink-0 mt-1 transition-transform duration-200",
+            "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200",
             expanded && "rotate-180"
           )}
         />
@@ -352,24 +331,24 @@ function TaskCard({
 
       {/* Expandable detail panel */}
       {expanded && (
-        <div className="px-4 md:px-6 pb-4 md:pb-6 pt-0">
-          <div className="ml-7 md:ml-10 border-l-2 border-portal-surface-container pl-4 md:pl-5 space-y-3">
+        <div className="px-4 pb-4 pt-0 md:px-6 md:pb-6">
+          <div className="ml-8 space-y-3 border-l pl-4 md:ml-9 md:pl-5">
             {task.subSteps.map((sub, idx) => (
               <div key={idx} className="flex items-start gap-3">
-                <span className="text-xs font-bold text-portal-secondary-dim bg-portal-surface-low rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums text-muted-foreground">
                   {idx + 1}
                 </span>
-                <div className="text-sm text-portal-on-surface leading-relaxed">
+                <div className="min-w-0 text-sm leading-relaxed text-foreground">
                   <span>{sub.text}</span>
                   {sub.test && (
-                    <span className="flex items-center gap-1.5 mt-1.5 text-xs text-primary font-medium">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
                       Test: {sub.test}
                     </span>
                   )}
                   {sub.warning && (
-                    <span className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive font-medium">
-                      <AlertTriangle className="w-3.5 h-3.5" />
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive">
+                      <AlertTriangle className="size-3.5 shrink-0" />
                       {sub.warning}
                     </span>
                   )}
@@ -379,7 +358,7 @@ function TaskCard({
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -399,22 +378,18 @@ function SectionBlock({
 
   return (
     <section>
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-12 h-12 rounded-xl bg-portal-surface-low flex items-center justify-center text-primary">
-          <Icon className="w-6 h-6" />
+      <div className="mb-4 flex items-start gap-3">
+        <Icon className="mt-1 size-5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold tracking-tight">{section.title}</h2>
+          <p className="text-xs text-muted-foreground">{section.phase}</p>
         </div>
-        <div className="flex-1">
-          <h2 className="text-xl font-bold">{section.title}</h2>
-          <p className="text-xs font-medium text-portal-secondary-text">
-            {section.phase}
-          </p>
-        </div>
-        <span className="text-xs font-bold text-portal-secondary-text">
+        <Badge variant="secondary" className="mt-1 tabular-nums">
           {doneCount}/{section.tasks.length}
-        </span>
+        </Badge>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {section.tasks.map((task) => (
           <TaskCard
             key={task.id}
@@ -447,56 +422,45 @@ function MilestoneSummary({
       {
         label: "Meta Setup",
         count: `${metaDone}/${meta.tasks.length} Tasks`,
-        iconBg: metaDone === meta.tasks.length ? "bg-emerald-50 dark:bg-emerald-900/20" : "bg-amber-50 dark:bg-amber-900/20",
-        iconColor: metaDone === meta.tasks.length ? "text-emerald-600" : "text-amber-600",
+        tone: (metaDone === meta.tasks.length ? "success" : "warning") as BadgeTone,
         Icon: metaDone === meta.tasks.length ? CheckCircle2 : Clock,
       },
       {
         label: "Omnisend Setup",
         count: `${omnisendDone}/${omnisend.tasks.length} Tasks`,
-        iconBg: omnisendDone === omnisend.tasks.length ? "bg-emerald-50 dark:bg-emerald-900/20" : "bg-amber-50 dark:bg-amber-900/20",
-        iconColor: omnisendDone === omnisend.tasks.length ? "text-emerald-600" : "text-amber-600",
+        tone: (omnisendDone === omnisend.tasks.length ? "success" : "warning") as BadgeTone,
         Icon: omnisendDone === omnisend.tasks.length ? CheckCircle2 : Clock,
       },
       {
         label: "Content Audit",
         count: "Locked",
-        iconBg: "bg-slate-50 dark:bg-slate-800",
-        iconColor: "text-slate-400",
+        tone: "neutral" as BadgeTone,
         Icon: Lock,
       },
     ];
   }, [completedSteps]);
 
   return (
-    <div className="bg-portal-surface-lowest p-5 md:p-8 rounded-xl shadow-sm">
-      <h3 className="text-sm font-bold text-portal-secondary-dim uppercase tracking-widest mb-6">
-        Milestone Summary
-      </h3>
-      <div className="space-y-6">
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Milestone Summary</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-4 md:pt-5">
         {milestones.map((m) => (
-          <div key={m.label} className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center",
-                  m.iconBg,
-                  m.iconColor
-                )}
-              >
-                <m.Icon className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-medium text-portal-on-surface">
+          <div key={m.label} className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <m.Icon className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate text-sm font-medium text-foreground">
                 {m.label}
               </span>
             </div>
-            <span className="text-xs font-medium text-portal-secondary-text">
+            <StatusBadge tone={m.tone} className="tabular-nums">
               {m.count}
-            </span>
+            </StatusBadge>
           </div>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -506,7 +470,7 @@ function MilestoneSummary({
 
 function SetupChecklist() {
   const { data, isLoading } = useOnboardingProgress();
-  const { mutate: toggle, variables: pendingStep } = useToggleOnboardingStep();
+  const { mutate: toggle, variables: pendingStep, isPending: toggling } = useToggleOnboardingStep();
 
   const completedSteps = useMemo(() => {
     const set = new Set<string>();
@@ -529,74 +493,59 @@ function SetupChecklist() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header Section */}
-      <div className="mb-12">
-        <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-portal-on-surface mb-2">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">
               Onboarding Checklist
             </h1>
-            <p className="text-portal-secondary-text max-w-2xl">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Complete these steps to ensure your advertising ecosystem is
               fully optimized and integrated with the Agency Collective
               framework.
             </p>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-light text-primary">
+            <div className="text-3xl font-semibold tabular-nums tracking-tight">
               {isLoading ? "\u2014" : `${progress}%`}
             </div>
-            <div className="text-xs font-bold text-portal-secondary-dim uppercase tracking-wider">
-              Overall Progress
-            </div>
+            <div className="text-xs text-muted-foreground">Overall Progress</div>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="h-3 w-full bg-portal-surface-low rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progress}%`,
-              background:
-                "linear-gradient(90deg, hsl(263 70% 52%) 0%, hsl(261 100% 77%) 100%)",
-            }}
-          />
-        </div>
+        <Progress value={progress} className="h-2 [&>div]:bg-chart-1" />
       </div>
 
       {/* Bento Grid */}
-      <div className="grid grid-cols-12 gap-5 md:gap-8">
+      <div className="grid grid-cols-12 gap-5 md:gap-6">
         {/* Left Column */}
-        <div className="col-span-12 lg:col-span-4 space-y-8">
+        <div className="col-span-12 space-y-5 lg:col-span-4">
           <MilestoneSummary completedSteps={completedSteps} />
 
           {/* Need Assistance Card */}
-          <div className="relative overflow-hidden bg-primary p-6 md:p-8 rounded-xl text-white">
-            <div className="relative z-10">
-              <h3 className="text-lg font-bold mb-2">Need Assistance?</h3>
-              <p className="text-sm opacity-80 leading-relaxed">
-                Reach out in your dedicated Slack channel and our team will
-                help you through any step.
-              </p>
-            </div>
-            <MessageCircle
-              className="absolute -right-8 -bottom-8 opacity-10"
-              size={120}
-            />
-          </div>
+          <Card>
+            <CardHeader className="flex-row items-start gap-3 space-y-0">
+              <MessageCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 space-y-1">
+                <CardTitle>Need Assistance?</CardTitle>
+                <CardDescription className="leading-relaxed">
+                  Reach out in your dedicated Slack channel and our team will
+                  help you through any step.
+                </CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
         </div>
 
         {/* Right Column */}
-        <div className="col-span-12 lg:col-span-8 space-y-10">
+        <div className="col-span-12 space-y-8 lg:col-span-8">
           {isLoading ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 animate-pulse rounded-xl bg-muted/60"
-                />
+                <Skeleton key={i} className="h-24 rounded-3xl" />
               ))}
             </div>
           ) : (
@@ -606,8 +555,10 @@ function SetupChecklist() {
                 section={section}
                 completedSteps={completedSteps}
                 onToggle={handleToggle}
+                // `variables` outlive the request — only an in-flight toggle
+                // marks its step busy.
                 pendingStepId={
-                  typeof pendingStep === "string" ? pendingStep : null
+                  toggling && typeof pendingStep === "string" ? pendingStep : null
                 }
               />
             ))
@@ -650,40 +601,26 @@ function OnboardingContent() {
 
   return (
     <DashboardShell>
-      <div className="space-y-8">
-        <div
-          role="tablist"
-          aria-label="Onboarding"
-          className="grid grid-cols-2 gap-1 rounded-xl bg-portal-surface-low p-1 sm:inline-grid sm:w-auto"
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setPicked(t.id)}
-              className={cn(
-                "flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:px-5",
-                tab === t.id
-                  ? "bg-portal-surface-lowest text-primary shadow-sm"
-                  : "text-portal-secondary-text hover:text-portal-on-surface"
-              )}
-            >
-              {t.label}
-              <span
-                className={cn(
-                  "hidden rounded-full px-1.5 py-0.5 text-[10px] font-bold sm:inline",
-                  t.id === "questionnaire" && form.data?.status === "submitted"
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    : "bg-primary/10 text-primary"
-                )}
-              >
-                {t.badge}
-              </span>
-            </button>
-          ))}
-        </div>
+      <div className="space-y-6">
+        <Tabs value={tab} onValueChange={(v) => setPicked(v as OnboardingTab)}>
+          <TabsList aria-label="Onboarding" className="w-full sm:w-fit">
+            {tabs.map((t) => (
+              <TabsTrigger key={t.id} value={t.id} className="sm:px-4">
+                {t.label}
+                <span
+                  className={cn(
+                    t.id === "questionnaire" && form.data?.status === "submitted"
+                      ? badgeVariants({ variant: "outline", tone: "success" })
+                      : badgeVariants({ variant: "secondary" }),
+                    "hidden tabular-nums sm:inline-flex"
+                  )}
+                >
+                  {t.badge}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         {/* Both stay mounted so switching tabs never drops unsaved answers. */}
         <div hidden={tab !== "questionnaire"}>

@@ -2,9 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, CloudOff, Loader2, ShieldAlert } from "lucide-react";
+import dynamic from "next/dynamic";
+import { AlertTriangle, Check, CheckCircle2, CloudOff, Loader2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
+import { StatusBadge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ACCESS_PLATFORMS,
   ACCESS_STATUSES,
@@ -72,11 +81,7 @@ function toAnswers(f: FormState): OnboardingAnswers {
 const AUTOSAVE_MS = 900;
 const RETRY_MS = 5000;
 
-// ── Presentational bits (portal tokens) ────────────────────────────────────
-
-// text-base below sm: iOS zooms into any input under 16px on focus.
-const INPUT =
-  "w-full rounded-lg border border-portal-surface-high bg-portal-surface px-3 py-2.5 text-base text-portal-on-surface placeholder:text-portal-outline-variant/70 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 sm:text-sm";
+// ── Presentational bits (kit) ──────────────────────────────────────────────
 
 function Field({
   id,
@@ -93,46 +98,21 @@ function Field({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-semibold text-portal-on-surface">
+      <Label htmlFor={id} className="block leading-snug text-foreground">
         {label}
-        {optional && <span className="ml-1 text-xs font-normal text-portal-secondary-text">({optional})</span>}
-      </label>
-      {hint && <p className="-mt-0.5 text-xs text-portal-secondary-text">{hint}</p>}
+        {optional && <span className="ml-1 text-xs font-normal text-muted-foreground">({optional})</span>}
+      </Label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {children}
     </div>
   );
 }
 
-function Select({
-  id,
-  value,
-  options,
-  onChange,
-}: {
-  id: string;
-  value: string | null;
-  options: Option[];
-  onChange: (v: string | null) => void;
-}) {
-  return (
-    <div className="relative">
-      <select
-        id={id}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || null)}
-        className={cn(INPUT, "cursor-pointer appearance-none pr-9")}
-      >
-        <option value="">Select…</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-portal-secondary-text" />
-    </div>
-  );
-}
+// Lazy: the Radix Select (+ its popover machinery) is ~25 kB for two fields
+// below the fold; the placeholder matches the trigger's box.
+const ChoiceSelect = dynamic(() => import("./ChoiceSelect").then((m) => m.ChoiceSelect), {
+  loading: () => <div aria-hidden className="h-9 w-full rounded-3xl bg-input/50" />,
+});
 
 function MoneyInput({
   id,
@@ -153,13 +133,13 @@ function MoneyInput({
     <div className="relative">
       <span
         className={cn(
-          "pointer-events-none absolute top-1/2 -translate-y-1/2 font-mono text-sm text-portal-secondary-text",
+          "pointer-events-none absolute top-1/2 -translate-y-1/2 font-mono text-sm text-muted-foreground",
           percent ? "right-3" : "left-3"
         )}
       >
         {percent ? "%" : "$"}
       </span>
-      <input
+      <Input
         id={id}
         type="text"
         inputMode="decimal"
@@ -167,7 +147,7 @@ function MoneyInput({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9.,]/g, "").slice(0, 16))}
-        className={cn(INPUT, "font-mono tabular-nums", percent ? "pr-8" : "pl-7", className)}
+        className={cn("font-mono tabular-nums", percent ? "pr-8" : "pl-7", className)}
       />
     </div>
   );
@@ -192,7 +172,7 @@ function Chips({
 }) {
   return (
     <fieldset className="min-w-0">
-      <legend className="mb-2 text-sm font-semibold text-portal-on-surface">{legend}</legend>
+      <legend className="mb-2 text-sm font-medium text-foreground">{legend}</legend>
       <div className="flex flex-wrap gap-2">
         {options.map((o) => {
           const checked = selected.includes(o.value);
@@ -200,10 +180,10 @@ function Chips({
             <label
               key={o.value}
               className={cn(
-                "relative inline-flex cursor-pointer select-none items-center gap-2 rounded-full border px-3.5 py-2 text-sm leading-tight transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
+                "relative inline-flex cursor-pointer select-none items-center gap-2 rounded-4xl border px-3.5 py-2 text-sm leading-tight transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/30",
                 checked
-                  ? "border-primary bg-primary/10 font-medium text-primary"
-                  : "border-portal-surface-high bg-portal-surface text-portal-secondary-text hover:border-primary/40"
+                  ? "border-foreground/20 bg-muted font-medium text-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground dark:bg-transparent dark:hover:bg-input/30"
               )}
             >
               <input
@@ -216,19 +196,24 @@ function Chips({
               />
               <span
                 className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center border",
-                  multiple ? "rounded-[4px]" : "rounded-full",
-                  checked ? "border-primary bg-primary text-white" : "border-portal-outline-variant"
+                  "flex size-4 shrink-0 items-center justify-center",
+                  multiple ? "rounded-[5px]" : "rounded-full",
+                  checked ? "bg-primary text-primary-foreground" : "bg-input/90"
                 )}
               >
-                {checked && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                {checked &&
+                  (multiple ? (
+                    <Check className="size-3" strokeWidth={3} />
+                  ) : (
+                    <span className="size-1.5 rounded-full bg-primary-foreground" />
+                  ))}
               </span>
               {o.label}
             </label>
           );
         })}
       </div>
-      {hint && <p className="mt-2 text-xs text-portal-secondary-text">{hint}</p>}
+      {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
     </fieldset>
   );
 }
@@ -236,15 +221,15 @@ function Chips({
 function Section({ index, children }: { index: number; children: ReactNode }) {
   const def = ONBOARDING_SECTIONS[index];
   return (
-    <section id={`onb-${def.id}`} className="scroll-mt-4 space-y-4">
+    <section id={`onb-${def.id}`} className="scroll-mt-4 space-y-3">
       <div className="space-y-1">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-primary">
+        <p className="text-xs text-muted-foreground">
           {index + 1} of {ONBOARDING_SECTIONS.length}
         </p>
-        <h2 className="text-xl font-bold tracking-tight text-portal-on-surface md:text-2xl">{def.heading}</h2>
-        {def.why && <p className="max-w-2xl text-sm text-portal-secondary-text">{def.why}</p>}
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">{def.heading}</h2>
+        {def.why && <p className="max-w-2xl text-sm text-muted-foreground">{def.why}</p>}
       </div>
-      <div className="space-y-5 rounded-xl bg-portal-surface-lowest p-4 shadow-sm md:p-6">{children}</div>
+      <Card className="space-y-5 p-4 md:p-6">{children}</Card>
     </section>
   );
 }
@@ -270,29 +255,29 @@ type SaveState = "idle" | "saving" | "saved" | "error" | "failed" | "expired";
 function SaveIndicator({ state }: { state: SaveState }) {
   if (state === "saving")
     return (
-      <span className="inline-flex items-center gap-1 normal-case tracking-normal">
-        <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+      <span className="inline-flex shrink-0 items-center gap-1">
+        <Loader2 className="size-3 animate-spin" /> Saving…
       </span>
     );
   if (state === "saved")
     return (
-      <span className="inline-flex items-center gap-1 normal-case tracking-normal text-emerald-600 dark:text-emerald-400">
-        <Check className="h-3 w-3" /> Saved
+      <span className="inline-flex shrink-0 items-center gap-1 text-emerald-700 dark:text-emerald-300">
+        <Check className="size-3" /> Saved
       </span>
     );
   if (state === "error" || state === "failed")
     return (
-      <span className="inline-flex items-center gap-1 normal-case tracking-normal text-red-600 dark:text-red-400">
-        <CloudOff className="h-3 w-3" /> {state === "error" ? "Not saved — retrying" : "Not saved"}
+      <span className="inline-flex shrink-0 items-center gap-1 text-destructive">
+        <CloudOff className="size-3" /> {state === "error" ? "Not saved — retrying" : "Not saved"}
       </span>
     );
   if (state === "expired")
     return (
       <a
         href="/?portal=client"
-        className="inline-flex items-center gap-1 normal-case tracking-normal text-red-600 underline underline-offset-2 dark:text-red-400"
+        className="inline-flex shrink-0 items-center gap-1 text-destructive underline underline-offset-2"
       >
-        <CloudOff className="h-3 w-3" /> Signed out — log in again
+        <CloudOff className="size-3" /> Signed out — log in again
       </a>
     );
   return null;
@@ -489,15 +474,15 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
   });
 
   const submittedNote = (
-    <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+    <div className={cn("flex items-start gap-3 rounded-2xl border p-4", badgeTone.success)}>
+      <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-portal-on-surface">
+        <p className="text-sm font-medium text-foreground">
           {justSubmitted
             ? "Thanks — your answers are with your account manager."
             : `Submitted ${formatDate(record.submittedAt)}`}
         </p>
-        <p className="mt-0.5 text-xs text-portal-secondary-text">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           You can keep updating your answers. Changes save automatically, and your account manager always
           sees the latest version.
         </p>
@@ -506,34 +491,34 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
   );
 
   return (
-    <div className="space-y-10" id="onboarding-top">
+    <div className="space-y-8" id="onboarding-top">
       {/* Intro */}
-      <div className="rounded-xl bg-portal-surface-lowest p-5 shadow-sm md:p-8">
-        <p className="mb-4 text-[11px] font-bold uppercase tracking-widest text-portal-secondary-dim">
+      <Card className="p-5 md:p-8">
+        <p className="mb-3 text-xs text-muted-foreground">
           Agency Collective · New client onboarding
         </p>
-        <h1 className="text-3xl font-bold tracking-tight text-portal-on-surface md:text-4xl">
-          Let&apos;s get you <span className="text-primary">set up</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+          Let&apos;s get you set up
         </h1>
-        <p className="mt-3 max-w-2xl text-portal-secondary-text">
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Five short sections: your brand, your goals, your cost per order, and which platforms we&apos;ll need
           access to. Rough numbers are fine. We tighten everything up on the kickoff call.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           {[
-            <><b className="font-semibold text-portal-on-surface">About 10 minutes</b></>,
-            <>Saves as you type, so you can <b className="font-semibold text-portal-on-surface">come back later</b></>,
-            <><b className="font-semibold text-portal-on-surface">No passwords</b> anywhere on this form</>,
+            <><b className="font-medium text-foreground">About 10 minutes</b></>,
+            <>Saves as you type, so you can <b className="font-medium text-foreground">come back later</b></>,
+            <><b className="font-medium text-foreground">No passwords</b> anywhere on this form</>,
           ].map((fact, i) => (
             <span
               key={i}
-              className="rounded-full border border-portal-surface-high bg-portal-surface px-3 py-1.5 text-xs text-portal-secondary-text"
+              className="rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground"
             >
               {fact}
             </span>
           ))}
         </div>
-      </div>
+      </Card>
 
       {submitted && submittedNote}
 
@@ -541,22 +526,22 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
       <Section index={0}>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_brand" label="Brand name">
-            <input id="q_brand" type="text" autoComplete="organization" maxLength={TEXT_MAX} className={INPUT} {...text("brandName")} />
+            <Input id="q_brand" type="text" autoComplete="organization" maxLength={TEXT_MAX} {...text("brandName")} />
           </Field>
           <Field id="q_site" label="Website">
-            <input id="q_site" type="text" inputMode="url" autoCapitalize="off" placeholder="https://" maxLength={URL_MAX} className={INPUT} {...text("website")} />
+            <Input id="q_site" type="text" inputMode="url" autoCapitalize="off" placeholder="https://" maxLength={URL_MAX} {...text("website")} />
           </Field>
         </div>
         <Chips legend="What you sell" name="sells" options={SELLS_OPTIONS} selected={form.sells} multiple onPick={(v) => toggleMulti("sells", v)} />
         <Field id="q_hero" label="Main product you want us to push">
-          <input id="q_hero" type="text" placeholder="e.g. Daily Greens 30ct" maxLength={TEXT_MAX} className={INPUT} {...text("heroProduct")} />
+          <Input id="q_hero" type="text" placeholder="e.g. Daily Greens 30ct" maxLength={TEXT_MAX} {...text("heroProduct")} />
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_contact" label="Main point of contact" hint="Name, email, phone">
-            <input id="q_contact" type="text" maxLength={TEXT_MAX} className={INPUT} {...text("mainContact")} />
+            <Input id="q_contact" type="text" maxLength={TEXT_MAX} {...text("mainContact")} />
           </Field>
           <Field id="q_approver" label="Who approves ads?" optional="if different" hint="Name, email">
-            <input id="q_approver" type="text" maxLength={TEXT_MAX} className={INPUT} {...text("adApprover")} />
+            <Input id="q_approver" type="text" maxLength={TEXT_MAX} {...text("adApprover")} />
           </Field>
         </div>
       </Section>
@@ -565,7 +550,7 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
       <Section index={1}>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_rev" label="Monthly revenue right now">
-            <Select id="q_rev" value={form.monthlyRevenue} options={REVENUE_OPTIONS} onChange={(v) => update("monthlyRevenue", v)} />
+            <ChoiceSelect id="q_rev" value={form.monthlyRevenue} options={REVENUE_OPTIONS} onChange={(v) => update("monthlyRevenue", v)} />
           </Field>
           <Field id="q_spend_now" label="Monthly ad spend right now">
             <MoneyInput id="q_spend_now" placeholder="0" value={form.adSpendNowCents} onChange={(v) => update("adSpendNowCents", v)} />
@@ -573,7 +558,7 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
         </div>
         <Chips legend="Channels running now" name="channels" options={CHANNEL_OPTIONS} selected={form.channels} multiple onPick={(v) => toggleMulti("channels", v)} />
         <Field id="q_roas_now" label="Current ROAS or MER" optional="if you know it">
-          <input id="q_roas_now" type="text" placeholder="e.g. 2.1 on Meta, 3.4 blended" maxLength={TEXT_MAX} className={INPUT} {...text("roasNow")} />
+          <Input id="q_roas_now" type="text" placeholder="e.g. 2.1 on Meta, 3.4 blended" maxLength={TEXT_MAX} {...text("roasNow")} />
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_spend_start" label="Monthly ad spend to start with">
@@ -592,25 +577,25 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
         />
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_target" label="ROAS or CPA target" optional="if you have one">
-            <input id="q_target" type="text" placeholder="e.g. 2.5 ROAS or $45 CPA" maxLength={TEXT_MAX} className={INPUT} {...text("target")} />
+            <Input id="q_target" type="text" placeholder="e.g. 2.5 ROAS or $45 CPA" maxLength={TEXT_MAX} {...text("target")} />
           </Field>
           <Field id="q_win" label="What does a win look like in 90 days?">
-            <input id="q_win" type="text" placeholder="One line" maxLength={TEXT_MAX} className={INPUT} {...text("win90d")} />
+            <Input id="q_win" type="text" placeholder="One line" maxLength={TEXT_MAX} {...text("win90d")} />
           </Field>
         </div>
       </Section>
 
       {/* 3 · Cost per order */}
       <Section index={2}>
-        <div className="divide-y divide-portal-surface-high overflow-hidden rounded-xl border border-portal-surface-high">
+        <div className="divide-y overflow-hidden rounded-2xl border">
           {COST_ROWS.map((row) => (
             <div
               key={row.key}
-              className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-3 bg-portal-surface-lowest px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:px-4"
+              className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-3 px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:px-4"
             >
-              <label htmlFor={`e_${row.key}`} className="cursor-pointer text-sm font-semibold leading-snug text-portal-on-surface">
+              <label htmlFor={`e_${row.key}`} className="cursor-pointer text-sm font-medium leading-snug text-foreground">
                 {row.label}
-                <small className="mt-0.5 block text-xs font-normal text-portal-secondary-text">{row.hint}</small>
+                <small className="mt-0.5 block text-xs font-normal text-muted-foreground">{row.hint}</small>
               </label>
               <MoneyInput
                 id={`e_${row.key}`}
@@ -643,29 +628,29 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
           selected={form.storePlatform ? [form.storePlatform] : []}
           onPick={(v) => update("storePlatform", v)}
         />
-        <div className="divide-y divide-portal-surface-high overflow-hidden rounded-xl border border-portal-surface-high">
+        <div className="divide-y overflow-hidden rounded-2xl border">
           {ACCESS_PLATFORMS.map((p) => (
             <div
               key={p.value}
               role="radiogroup"
               aria-labelledby={`acc_${p.value}`}
-              className="grid gap-2.5 bg-portal-surface-lowest px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-4"
+              className="grid gap-2.5 px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-4"
             >
               <div id={`acc_${p.value}`} className="min-w-0">
-                <p className="text-sm font-semibold text-portal-on-surface">{p.label}</p>
-                <p className="text-xs text-portal-secondary-text">{p.hint}</p>
+                <p className="text-sm font-medium text-foreground">{p.label}</p>
+                <p className="text-xs text-muted-foreground">{p.hint}</p>
               </div>
-              <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-portal-surface-high bg-portal-surface sm:inline-grid">
+              <div className="grid grid-cols-3 gap-1 rounded-3xl bg-muted p-1 sm:inline-grid">
                 {ACCESS_STATUSES.map((s) => {
                   const checked = form.access[p.value] === s.value;
                   return (
                     <label
                       key={s.value}
                       className={cn(
-                        "relative flex cursor-pointer items-center justify-center border-l border-portal-surface-high px-2 py-2 text-center text-xs leading-tight transition-colors first:border-l-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-primary/50 sm:whitespace-nowrap sm:px-3",
+                        "relative flex cursor-pointer items-center justify-center rounded-3xl px-2 py-1.5 text-center text-xs font-medium leading-tight transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/30 sm:whitespace-nowrap sm:px-3",
                         checked
-                          ? "bg-primary font-semibold text-white"
-                          : "text-portal-secondary-text hover:bg-portal-surface-low"
+                          ? "bg-background text-foreground shadow-sm dark:bg-input/30"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       <input
@@ -686,10 +671,10 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="q_access_who" label="Who can give us access?" hint="Name, email">
-            <input id="q_access_who" type="text" maxLength={TEXT_MAX} className={INPUT} {...text("accessContact")} />
+            <Input id="q_access_who" type="text" maxLength={TEXT_MAX} {...text("accessContact")} />
           </Field>
           <Field id="q_web" label="Who manages your website?" hint="For installing pixels and page changes">
-            <Select id="q_web" value={form.websiteManager} options={WEBSITE_MANAGER_OPTIONS} onChange={(v) => update("websiteManager", v)} />
+            <ChoiceSelect id="q_web" value={form.websiteManager} options={WEBSITE_MANAGER_OPTIONS} onChange={(v) => update("websiteManager", v)} />
           </Field>
         </div>
         <Field
@@ -697,12 +682,12 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
           label="Link to your brand assets"
           hint="One Google Drive or Dropbox folder: logos, product photos, past ads. You can also upload files under My Brand."
         >
-          <input id="q_assets" type="text" inputMode="url" autoCapitalize="off" placeholder="https://" maxLength={URL_MAX} className={INPUT} {...text("assetsUrl")} />
+          <Input id="q_assets" type="text" inputMode="url" autoCapitalize="off" placeholder="https://" maxLength={URL_MAX} {...text("assetsUrl")} />
         </Field>
-        <p className="flex gap-2.5 rounded-r-lg border-l-[3px] border-amber-500 bg-amber-500/10 px-3.5 py-3 text-sm text-portal-secondary-text">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className={cn("flex gap-2.5 rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
+          <ShieldAlert className="mt-0.5 size-4 shrink-0" />
           <span>
-            <b className="font-semibold text-amber-700 dark:text-amber-400">Never send passwords.</b> Not on this form,
+            <b className="font-semibold">Never send passwords.</b> Not on this form,
             not in Slack, not by email. Everything we need works through partner or user invites.
           </span>
         </p>
@@ -715,100 +700,79 @@ function QuestionnaireForm({ initial }: { initial: OnboardingFormDto }) {
           label="Anything we should know?"
           hint="Past agencies, what hasn't worked, ad account bans or restrictions, compliance limits, launch dates"
         >
-          <textarea id="q_notes" rows={4} maxLength={NOTES_MAX} className={cn(INPUT, "min-h-[96px] resize-y")} {...text("notes")} />
+          <Textarea id="q_notes" rows={4} maxLength={NOTES_MAX} className="min-h-[96px] resize-y" {...text("notes")} />
         </Field>
       </Section>
 
       {/* Send */}
-      <div className="space-y-4 rounded-xl border-2 border-primary/20 bg-portal-surface-lowest p-5 md:p-7">
+      <Card className="space-y-4 p-5 md:p-7">
         {submitted ? (
           submittedNote
         ) : (
           <>
             <div className="space-y-1">
-              <h2 className="text-xl font-bold tracking-tight text-portal-on-surface md:text-2xl">Send it to us</h2>
-              <p className="max-w-2xl text-sm text-portal-secondary-text">
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">Send it to us</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
                 Submit and your answers go straight to your account manager. You can still edit them afterwards.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={submit}
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-              >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Button type="button" size="lg" onClick={submit} disabled={submitting}>
+                {submitting && <Loader2 className="animate-spin" />}
                 Submit answers
-              </button>
+              </Button>
               {confirmClear ? (
-                <span className="flex flex-wrap items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                <span className="flex flex-wrap items-center gap-2 text-sm text-destructive">
                   Clear every answer on this form?
-                  <button type="button" onClick={clearForm} className="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-semibold hover:bg-red-500/10">
+                  <Button type="button" variant="destructive" size="sm" onClick={clearForm}>
                     Yes, clear it
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmClear(false)}
-                    className="rounded-lg border border-portal-surface-high px-3 py-2 text-xs font-semibold text-portal-on-surface hover:bg-portal-surface-low"
-                  >
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setConfirmClear(false)}>
                     Keep my answers
-                  </button>
+                  </Button>
                 </span>
               ) : (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={() => setConfirmClear(true)}
-                  className="px-2 py-2 text-sm font-medium text-portal-secondary-text hover:text-red-600"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
                   Clear form
-                </button>
+                </Button>
               )}
             </div>
           </>
         )}
         {submitError && (
-          <p className="flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400" role="alert">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
+          <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
+            <AlertTriangle className="size-4 shrink-0" />
             {submitError}
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Sticky progress bar — sits above the mobile bottom nav */}
       <div className="sticky bottom-[calc(5.5rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-4">
-        <div className="flex items-center gap-3 rounded-xl border border-portal-surface-high bg-portal-surface-lowest/95 px-4 py-3 shadow-lg backdrop-blur">
+        <div className="flex items-center gap-3 rounded-3xl bg-card/95 px-4 py-3 shadow-lg ring-1 ring-foreground/10 backdrop-blur">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wider text-portal-secondary-text">
-              <span className="truncate">
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate tabular-nums">
                 {answered} of {TOTAL_QUESTIONS} answered
               </span>
               <SaveIndicator state={saveState} />
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-portal-surface-low">
-              <div
-                className="h-full rounded-full transition-[width] duration-300"
-                style={{
-                  width: `${pct}%`,
-                  background: "linear-gradient(90deg, hsl(263 70% 52%) 0%, hsl(261 100% 77%) 100%)",
-                }}
-              />
-            </div>
+            <Progress value={pct} className="h-1.5 [&>div]:bg-chart-1" />
           </div>
           {submitted ? (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold uppercase text-emerald-700 dark:text-emerald-400">
-              <Check className="h-3 w-3" /> Submitted
-            </span>
+            <StatusBadge tone="success" className="shrink-0">
+              Submitted
+            </StatusBadge>
           ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={submitting}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-            >
-              {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <Button type="button" size="sm" onClick={submit} disabled={submitting} className="shrink-0">
+              {submitting && <Loader2 className="animate-spin" />}
               Submit
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -823,14 +787,14 @@ export function OnboardingQuestionnaire() {
     return (
       <div className="space-y-6">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-40 animate-pulse rounded-xl bg-muted/60" />
+          <Skeleton key={i} className="h-40 rounded-3xl" />
         ))}
       </div>
     );
   }
   if (error || !data) {
     return (
-      <p className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-600 dark:text-red-400">
+      <p className={cn("rounded-2xl border p-4 text-sm", badgeTone.danger)}>
         We couldn&apos;t load your questionnaire. Refresh the page to try again.
       </p>
     );

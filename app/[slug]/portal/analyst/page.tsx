@@ -3,6 +3,8 @@ import { getSession } from "@/lib/session";
 import { findUser } from "@/lib/users";
 import { readActiveAccountsForUser } from "@/lib/clientAccounts";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { badgeTone } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { AnalystInterface } from "./AnalystInterface";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +25,10 @@ export default async function PortalAnalystPage({
   if (!user.analystEnabled) {
     return (
       <DashboardShell>
-        <div className="max-w-2xl space-y-3">
-          <h1 className="text-2xl font-bold">AI Analyst</h1>
-          <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-            <p className="font-semibold text-sm">AI Analyst is currently unavailable on your account.</p>
+        <div className="max-w-2xl space-y-4">
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">AI Analyst</h1>
+          <div className={cn("rounded-3xl border px-4 py-3", badgeTone.warning)}>
+            <p className="font-medium text-sm">AI Analyst is currently unavailable on your account.</p>
             <p className="mt-1 text-sm opacity-90">
               Please contact your account manager if you&apos;d like to request access.
             </p>
@@ -41,8 +43,8 @@ export default async function PortalAnalystPage({
   if (accounts.length === 0) {
     return (
       <DashboardShell>
-        <div className="space-y-3">
-          <h1 className="text-2xl font-bold">AI Analyst</h1>
+        <div className="space-y-1">
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">AI Analyst</h1>
           <p className="text-sm text-muted-foreground">
             No connected ad accounts yet. Once your team links an ad account to your portal,
             you&apos;ll be able to chat with the analyst about its performance.

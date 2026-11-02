@@ -378,6 +378,31 @@ export async function getSetterRecentDeals(
   }));
 }
 
+/**
+ * Appointments one setter set, per day, on the cards' basis (scheduled_at's
+ * date, else created_at's — aggregateSetterBucket) — the setter dashboard's
+ * "Appointments set" trend. Read-only.
+ */
+export async function getSetterAppointmentDayRows(
+  setterId: string,
+  since: string,
+  until: string
+): Promise<Array<{ day: string; count: number }>> {
+  await ensureMigrated();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT COALESCE(substr(scheduled_at,1,10), substr(created_at,1,10)) AS day,
+                 COUNT(*) AS c
+            FROM appointments
+           WHERE setter_id = ?
+             AND COALESCE(substr(scheduled_at,1,10), substr(created_at,1,10)) >= ?
+             AND COALESCE(substr(scheduled_at,1,10), substr(created_at,1,10)) <= ?
+           GROUP BY day`,
+    args: [setterId, since, until],
+  });
+  return result.rows.map((row) => ({ day: String(row.day), count: Number(row.c ?? 0) }));
+}
+
 export async function getSetterFollowUps(
   setterId: string,
   limit: number = 20

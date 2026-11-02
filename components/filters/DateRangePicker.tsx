@@ -1,32 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { Calendar, ChevronDown } from "lucide-react";
+import { useId, useState } from "react";
+import dynamic from "next/dynamic";
+import { Calendar, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { DateRangeInput, DatePreset } from "@/types/api";
+import { DATE_RANGE_PRESETS, rangeLabel } from "./dateRangeLabel";
 
-const PRESETS: Array<{ label: string; value: DatePreset }> = [
-  { label: "Today", value: "today" },
-  { label: "Yesterday", value: "yesterday" },
-  { label: "Last 7 days", value: "last_7d" },
-  { label: "Last 14 days", value: "last_14d" },
-  { label: "Last 30 days", value: "last_30d" },
-  { label: "Last 90 days", value: "last_90d" },
-  { label: "This month", value: "this_month" },
-  { label: "Last month", value: "last_month" },
-];
+// Lazy: this picker sits in every page's top bar, and the date fields (with
+// date-fns) are only needed once "Custom range" is opened.
+const DatePicker = dynamic(() => import("@/components/ui/date-picker").then((m) => m.DatePicker), {
+  ssr: false,
+  loading: () => <div aria-hidden className="h-9 w-full rounded-3xl bg-input/50" />,
+});
 
-function presetLabel(preset: DatePreset): string {
-  return PRESETS.find((p) => p.value === preset)?.label ?? preset;
-}
+const PRESETS = DATE_RANGE_PRESETS;
 
-export function rangeLabel(range: DateRangeInput): string {
-  if (range.preset) return presetLabel(range.preset);
-  if (range.since && range.until) {
-    return `${range.since} – ${range.until}`;
-  }
-  return "Select range";
-}
+// Re-exported for existing importers; label-only callers should import from
+// ./dateRangeLabel (no popover in their bundle).
+export { rangeLabel };
 
 interface DateRangePickerProps {
   value: DateRangeInput;
@@ -38,6 +33,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [customSince, setCustomSince] = useState(value.since ?? "");
   const [customUntil, setCustomUntil] = useState(value.until ?? "");
   const [showCustom, setShowCustom] = useState(!value.preset);
+  const fieldId = useId();
 
   function selectPreset(preset: DatePreset) {
     onChange({ preset });
@@ -53,105 +49,96 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full md:w-auto items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-      >
-        <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="truncate">{rangeLabel(value)}</span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-auto",
-            open && "rotate-180"
-          )}
-        />
-      </button>
+    <div>
+      {/* Modal: an outside click only closes the menu (like the old backdrop),
+          it never lands on the page underneath. */}
+      <Popover open={open} onOpenChange={setOpen} modal>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-start gap-2 md:w-auto">
+            <Calendar className="text-muted-foreground" />
+            <span className="min-w-0 truncate">{rangeLabel(value)}</span>
+            <ChevronDown
+              className={cn("ml-auto text-muted-foreground transition-transform", open && "rotate-180")}
+            />
+          </Button>
+        </PopoverTrigger>
 
-      {open && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-
-          {/* Dropdown — right-anchored at a real width on all screens; the old
-              left-0 right-0 mobile branch collapsed it to the trigger's ~150px */}
-          <div className="absolute right-0 w-72 max-w-[calc(100vw-2rem)] top-full z-20 mt-2 rounded-lg border bg-popover shadow-lg">
-            <div className="p-2">
-              <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Presets
-              </p>
-              {PRESETS.map((preset) => (
-                <button
-                  key={preset.value}
-                  onClick={() => selectPreset(preset.value)}
-                  className={cn(
-                    "flex w-full items-center rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent",
-                    value.preset === preset.value && "bg-primary/10 text-primary font-medium"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="border-t p-2">
+        {/* Right-anchored at a real width on all screens (a full-width mobile
+            trigger must not stretch or shrink it). */}
+        <PopoverContent
+          align="end"
+          sideOffset={8}
+          collisionPadding={16}
+          className="max-h-[var(--radix-popover-content-available-height)] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-1.5"
+        >
+          <p className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">Presets</p>
+          {PRESETS.map((preset) => {
+            const active = value.preset === preset.value;
+            return (
               <button
-                onClick={() => setShowCustom(!showCustom)}
-                className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                key={preset.value}
+                type="button"
+                onClick={() => selectPreset(preset.value)}
+                aria-pressed={active}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+                  active && "font-medium"
+                )}
               >
-                Custom range
-                <ChevronDown
-                  className={cn(
-                    "h-3 w-3 transition-transform",
-                    showCustom && "rotate-180"
-                  )}
-                />
+                {preset.label}
+                {active && <Check className="size-4" />}
               </button>
+            );
+          })}
 
-              {showCustom && (
-                <div className="mt-2 space-y-2 px-2">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="flex-1">
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        From
-                      </label>
-                      <input
-                        type="date"
-                        value={customSince}
-                        onChange={(e) => setCustomSince(e.target.value)}
-                        max={customUntil || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-xs"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        To
-                      </label>
-                      <input
-                        type="date"
-                        value={customUntil}
-                        onChange={(e) => setCustomUntil(e.target.value)}
-                        min={customSince || undefined}
-                        className="w-full rounded border bg-background px-2 py-1 text-xs"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={applyCustom}
-                    disabled={!customSince || !customUntil || customSince > customUntil}
-                    className="w-full rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50 hover:bg-primary/90"
-                  >
-                    Apply
-                  </button>
-                </div>
-              )}
+          <div className="-mx-1.5 my-1.5 h-px bg-border/50" />
+
+          <button
+            type="button"
+            onClick={() => setShowCustom(!showCustom)}
+            aria-expanded={showCustom}
+            className="flex w-full items-center justify-between rounded-2xl px-3 py-2 text-sm font-medium outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+          >
+            Custom range
+            <ChevronDown className={cn("size-4 transition-transform", showCustom && "rotate-180")} />
+          </button>
+
+          {showCustom && (
+            <div className="space-y-3 px-3 pb-2 pt-1">
+              <div className="space-y-1.5">
+                <Label htmlFor={`${fieldId}-from`} className="text-xs font-normal text-muted-foreground">
+                  From
+                </Label>
+                <DatePicker
+                  id={`${fieldId}-from`}
+                  value={customSince}
+                  onValueChange={setCustomSince}
+                  max={customUntil || undefined}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${fieldId}-to`} className="text-xs font-normal text-muted-foreground">
+                  To
+                </Label>
+                <DatePicker
+                  id={`${fieldId}-to`}
+                  value={customUntil}
+                  onValueChange={setCustomUntil}
+                  min={customSince || undefined}
+                />
+              </div>
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={applyCustom}
+                disabled={!customSince || !customUntil || customSince > customUntil}
+              >
+                Apply
+              </Button>
             </div>
-          </div>
-        </>
-      )}
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

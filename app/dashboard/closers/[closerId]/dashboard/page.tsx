@@ -40,7 +40,7 @@ export default function AdminCloserDashboardViewPage() {
     queryKey,
     queryFn: async () => {
       const url = appendTimeFrameParams(
-        `/api/admin/closers/${closerId}/dashboard-data`,
+        `/api/admin/closers/${closerId}/dashboard-data?trends=1`,
         timeFrame
       );
       const res = await fetch(url);

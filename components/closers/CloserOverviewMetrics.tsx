@@ -1,11 +1,10 @@
 "use client";
 
 import { Award, Clock, DollarSign, FileText, Target, Trophy, UserCheck, Wallet } from "lucide-react";
-import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { formatCents } from "@/components/closers/types";
 import { MetricSparkline } from "@/components/shared/MetricSparkline";
-import { windowTrend } from "@/components/shared/windowTrend";
+import { monthlyTrend, windowTrend, type CardTrend } from "@/components/shared/windowTrend";
 import { TrendDelta } from "@/components/shared/TrendDelta";
 import { computeCloseRate } from "@/lib/closeRate";
 import type { DealMetricBucket } from "@/lib/deals";
@@ -49,7 +48,6 @@ interface MetricCard {
   trend?: CardTrend;
 }
 
-type CardTrend = Omit<React.ComponentProps<typeof MetricSparkline>, "label">;
 
 // Theme chart pair (globals.css), same mapping as the Revenue Trend chart.
 const CLOSED_COLOR = "hsl(var(--chart-1))";
@@ -59,23 +57,6 @@ const asPct = (v: number) => `${v}%`;
 
 function bucketCloseRate(b: DealMetricBucket): number {
   return computeCloseRate(b.closedCount, b.pendingCount, b.inFlightCount);
-}
-
-/** Lifetime cards: one value per month over the last 12 months. */
-function monthlyTrend(
-  buckets: SeriesBucket[] | null | undefined,
-  pick: (b: SeriesBucket) => number | null,
-  color: string,
-  fmt: (v: number) => string
-): CardTrend | undefined {
-  if (!buckets || buckets.length < 2) return undefined;
-  return {
-    points: buckets.map((b) => ({ label: format(parseISO(b.start), "MMM yyyy"), value: pick(b) })),
-    color,
-    format: fmt,
-    caption: "Last 12 months",
-    hint: "Per month",
-  };
 }
 
 function runningCloseRate(buckets: SeriesBucket[]): (number | null)[] {

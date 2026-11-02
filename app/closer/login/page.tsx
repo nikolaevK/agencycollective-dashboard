@@ -5,6 +5,10 @@ import Image from "next/image";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { checkCloserAction, closerLoginAction, closerSetPasswordAction } from "@/app/actions/closerAuth";
 
 type Step = "email" | "createPassword" | "login";
@@ -17,11 +21,6 @@ function Spinner() {
     </svg>
   );
 }
-
-const INPUT_CLS =
-  "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50 transition-shadow";
-
-const BTN_CLS = "ac-gradient";
 
 export default function CloserLoginPage() {
   const { theme } = useTheme();
@@ -76,28 +75,15 @@ export default function CloserLoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full opacity-20 blur-3xl"
-        style={{
-          background: "radial-gradient(ellipse, hsl(263 70% 55%), hsl(210 100% 56%) 60%, transparent)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-40 left-1/4 h-[400px] w-[600px] rounded-full opacity-10 blur-3xl"
-        style={{ background: "radial-gradient(ellipse, hsl(210 100% 56%), transparent)" }}
-      />
-
-      <div className="absolute right-6 top-6">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-muted/40 py-16">
+      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>
 
       <div className="relative z-10 w-full max-w-md px-4">
-        <div className="rounded-2xl border border-border bg-card shadow-2xl">
+        <Card className="shadow-xl">
           {/* Header */}
-          <div className="flex flex-col items-center gap-5 border-b border-border px-8 py-8">
+          <div className="flex flex-col items-center gap-5 border-b px-6 py-8 sm:px-8">
             <div className="relative h-12 w-48">
               <Image
                 src="/images/ac-logo.png"
@@ -108,7 +94,7 @@ export default function CloserLoginPage() {
               />
             </div>
             <div className="space-y-1 text-center">
-              <h1 className="text-xl font-bold tracking-tight text-foreground">Closer Portal</h1>
+              <h1 className="text-xl font-semibold tracking-tight">Closer Portal</h1>
               <p className="text-sm text-muted-foreground">
                 {step === "email" && "Sign in to manage your sales performance"}
                 {step === "createPassword" && "Create your password to get started"}
@@ -117,15 +103,15 @@ export default function CloserLoginPage() {
             </div>
           </div>
 
-          <div className="px-8 py-6">
+          <div className="px-6 py-6 sm:px-8">
             {/* Step 1 — Email */}
             {step === "email" && (
               <form onSubmit={handleCheckUser} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label htmlFor="email" className="text-sm font-medium text-foreground">
+                <div className="space-y-2">
+                  <Label htmlFor="email">
                     Email Address
-                  </label>
-                  <input
+                  </Label>
+                  <Input
                     id="email"
                     type="email"
                     value={email}
@@ -133,20 +119,21 @@ export default function CloserLoginPage() {
                     placeholder="Enter your email address"
                     required
                     autoFocus
-                    className={INPUT_CLS}
+                    className="h-10"
                   />
                   <p className="text-xs text-muted-foreground">
                     The email address associated with your closer account.
                   </p>
                 </div>
                 {error && <ErrorBox message={error} />}
-                <button
+                <Button
                   type="submit"
+                  size="lg"
                   disabled={isPending || !email.trim()}
-                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
+                  className="mt-2 w-full"
                 >
                   {isPending ? <><Spinner /> Checking...</> : "Continue"}
-                </button>
+                </Button>
               </form>
             )}
 
@@ -154,8 +141,8 @@ export default function CloserLoginPage() {
             {step === "createPassword" && (
               <form onSubmit={handleCreatePassword} className="space-y-4">
                 <UserBadge email={email} onBack={goBack} />
-                <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
-                  <p className="text-xs text-primary/80">
+                <div className="rounded-2xl bg-muted/60 px-3 py-2.5">
+                  <p className="text-xs text-muted-foreground">
                     First time signing in — please create a password for your account.
                   </p>
                 </div>
@@ -179,13 +166,14 @@ export default function CloserLoginPage() {
                   placeholder="Repeat your password"
                 />
                 {error && <ErrorBox message={error} />}
-                <button
+                <Button
                   type="submit"
+                  size="lg"
                   disabled={isPending || !password || !confirmPassword}
-                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
+                  className="mt-2 w-full"
                 >
                   {isPending ? <><Spinner /> Creating account...</> : "Create Password & Sign In"}
-                </button>
+                </Button>
               </form>
             )}
 
@@ -204,23 +192,24 @@ export default function CloserLoginPage() {
                   autoFocus
                 />
                 {error && <ErrorBox message={error} />}
-                <button
+                <Button
                   type="submit"
+                  size="lg"
                   disabled={isPending || !password}
-                  className={`relative mt-2 inline-flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-opacity disabled:pointer-events-none disabled:opacity-50 ${BTN_CLS}`}
+                  className="mt-2 w-full"
                 >
                   {isPending ? <><Spinner /> Signing in...</> : "Sign In"}
-                </button>
+                </Button>
               </form>
             )}
           </div>
 
-          <div className="border-t border-border px-8 py-4 text-center">
+          <div className="border-t px-6 py-4 text-center sm:px-8">
             <p className="text-xs text-muted-foreground">
               Powered by <span className="font-medium text-foreground">Agency Collective</span>
             </p>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
@@ -230,7 +219,7 @@ export default function CloserLoginPage() {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+    <div className="rounded-2xl bg-destructive/10 px-3 py-2.5">
       <p className="text-sm text-destructive">{message}</p>
     </div>
   );
@@ -238,17 +227,19 @@ function ErrorBox({ message }: { message: string }) {
 
 function UserBadge({ email, onBack }: { email: string; onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
-      <span className="text-xs text-muted-foreground">Signing in as</span>
-      <span className="text-xs font-semibold text-foreground truncate">{email}</span>
-      <button
+    <div className="flex items-center gap-2 rounded-3xl bg-muted/60 py-1 pl-3 pr-1">
+      <span className="shrink-0 text-xs text-muted-foreground">Signing in as</span>
+      <span className="min-w-0 text-xs font-medium text-foreground truncate">{email}</span>
+      <Button
         type="button"
+        variant="ghost"
+        size="xs"
         onClick={onBack}
-        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        className="ml-auto text-muted-foreground"
       >
-        <ArrowLeft className="h-3 w-3" />
+        <ArrowLeft />
         Change
-      </button>
+      </Button>
     </div>
   );
 }
@@ -260,10 +251,10 @@ function PasswordField({
   show: boolean; onToggle: () => void; placeholder: string; autoFocus?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-foreground">{label}</label>
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <input
+        <Input
           id={id}
           type={show ? "text" : "password"}
           value={value}
@@ -271,7 +262,7 @@ function PasswordField({
           placeholder={placeholder}
           required
           autoFocus={autoFocus}
-          className={`${INPUT_CLS} pr-10`}
+          className="h-10 pr-10"
         />
         <button
           type="button"
@@ -279,7 +270,7 @@ function PasswordField({
           className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           tabIndex={-1}
         >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
         </button>
       </div>
     </div>

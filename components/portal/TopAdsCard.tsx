@@ -1,9 +1,10 @@
 "use client";
 
 import { ImageIcon } from "lucide-react";
+import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";
 import type { MetaAdWithCreative } from "@/lib/meta/types";
 
 interface TopAdsCardProps {
@@ -61,19 +62,11 @@ function fmt(value: number, currency: string, type: "currency" | "number" | "per
   return value.toLocaleString();
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  ACTIVE:   "bg-green-500/15 text-green-600 dark:text-green-400",
-  PAUSED:   "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400",
-  ARCHIVED: "bg-muted text-muted-foreground",
-};
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <span className="flex flex-col items-center gap-0.5">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground leading-none">
-        {label}
-      </span>
-      <span className="text-xs font-semibold tabular-nums">{value}</span>
+    <span className="flex flex-col gap-0.5">
+      <span className="text-[11px] leading-none text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium tabular-nums">{value}</span>
     </span>
   );
 }
@@ -82,14 +75,14 @@ export function TopAdsCard({ ads, isLoading, currency = "USD" }: TopAdsCardProps
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Top Ads by Spend</CardTitle>
+        <CardTitle>Top Ads by Spend</CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0 md:p-0">
         {isLoading ? (
-          <div className="divide-y">
+          <div className="divide-y border-t">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="flex items-start gap-4 p-4">
-                <Skeleton className="h-20 w-20 shrink-0 rounded-lg" />
+              <div key={i} className="flex items-start gap-4 p-4 md:px-6">
+                <Skeleton className="h-20 w-20 shrink-0 rounded-2xl" />
                 <div className="flex-1 space-y-2 pt-1">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/3" />
@@ -100,26 +93,25 @@ export function TopAdsCard({ ads, isLoading, currency = "USD" }: TopAdsCardProps
             ))}
           </div>
         ) : !ads || ads.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-            <ImageIcon className="h-8 w-8 mb-2 opacity-40" />
+          <div className="mx-4 mb-4 flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed py-10 text-muted-foreground md:mx-6 md:mb-6">
+            <ImageIcon className="size-6" />
             <p className="text-sm">No ad data available for this period</p>
           </div>
         ) : (
-          <ol className="divide-y">
+          <ol className="divide-y border-t">
             {ads.map((ad, idx) => {
               const thumb = getAdThumbnail(ad);
               const insight = getInsight(ad);
-              const statusColor = STATUS_COLORS[ad.effective_status] ?? STATUS_COLORS.ARCHIVED;
 
               return (
-                <li key={ad.id} className="flex items-start gap-3 p-4">
+                <li key={ad.id} className="flex items-start gap-3 p-4 md:px-6">
                   {/* Rank */}
-                  <span className="shrink-0 w-5 pt-1 text-center text-sm font-semibold text-muted-foreground">
+                  <span className="shrink-0 w-5 pt-1 text-center text-sm font-medium tabular-nums text-muted-foreground">
                     {idx + 1}
                   </span>
 
                   {/* Thumbnail */}
-                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-foreground/5">
                     {thumb ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -129,7 +121,7 @@ export function TopAdsCard({ ads, isLoading, currency = "USD" }: TopAdsCardProps
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
+                        <ImageIcon className="size-6 text-muted-foreground/60" />
                       </div>
                     )}
                   </div>
@@ -143,15 +135,9 @@ export function TopAdsCard({ ads, isLoading, currency = "USD" }: TopAdsCardProps
                       </p>
                     )}
 
-                    <span
-                      className={cn(
-                        "mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
-                        statusColor
-                      )}
-                    >
-                      {ad.effective_status.charAt(0) +
-                        ad.effective_status.slice(1).toLowerCase()}
-                    </span>
+                    <StatusBadge tone={metaStatusTone(ad.effective_status)} className="mt-1.5">
+                      {metaStatusLabel(ad.effective_status)}
+                    </StatusBadge>
 
                     <div className="mt-2 flex items-center gap-3 flex-wrap">
                       <Stat label="Impr" value={fmt(insight.impressions, currency, "number")} />
@@ -162,7 +148,7 @@ export function TopAdsCard({ ads, isLoading, currency = "USD" }: TopAdsCardProps
                   </div>
 
                   {/* Spend */}
-                  <p className="shrink-0 pt-0.5 text-sm font-bold tabular-nums">
+                  <p className="shrink-0 pt-0.5 text-sm font-semibold tabular-nums">
                     {fmt(insight.spend, currency, "currency")}
                   </p>
                 </li>

@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { DollarSign, TrendingUp, ShoppingCart, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
 import { cn, formatCurrency, formatRoas } from "@/lib/utils";
 import { aggregateInsights } from "@/lib/meta/transformers";
+import { StatusBadge } from "@/components/ui/badge";
+import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";
 import type { AccountOverview } from "@/hooks/useAllAccountsOverview";
+import type { InsightMetrics } from "@/types/dashboard";
 
 export const ALL_ACCOUNTS_ID = "__all__";
 
@@ -12,6 +15,36 @@ interface AccountsOverviewGridProps {
   accounts: AccountOverview[];
   selectedAccountId?: string;
   onSelectAccount: (accountId: string) => void;
+}
+
+/** Selectable account card — kit card look, a darker ring when selected. */
+function cardClass(selected: boolean) {
+  return cn(
+    "flex min-w-0 flex-col gap-3 rounded-[min(calc(var(--radius)*2.6),24px)] bg-card p-4 text-left text-card-foreground shadow outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+    selected
+      ? "ring-2 ring-foreground/80"
+      : "ring-1 ring-foreground/5 hover:bg-muted/50 dark:ring-foreground/10"
+  );
+}
+
+function Metrics({ metrics }: { metrics: InsightMetrics }) {
+  const items = [
+    { label: "Spend", value: formatCurrency(metrics.spend) },
+    { label: "ROAS", value: formatRoas(metrics.roas) },
+    { label: "Conv.", value: new Intl.NumberFormat("en-US").format(metrics.conversions) },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0">
+          <p className="text-xs text-muted-foreground">{item.label}</p>
+          <p className="truncate text-sm font-semibold tabular-nums" title={item.value}>
+            {item.value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AccountsOverviewGrid({ accounts, selectedAccountId, onSelectAccount }: AccountsOverviewGridProps) {
@@ -28,58 +61,26 @@ export function AccountsOverviewGrid({ accounts, selectedAccountId, onSelectAcco
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-base font-bold text-foreground">Accounts</h2>
-        <p className="text-xs text-muted-foreground">Select an account to view detailed performance, or view all combined.</p>
+        <h2 className="text-base font-semibold">Accounts</h2>
+        <p className="text-sm text-muted-foreground">Select an account to view detailed performance, or view all combined.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* All Accounts combined card */}
         <button
+          type="button"
           onClick={() => onSelectAccount(ALL_ACCOUNTS_ID)}
-          className={cn(
-            "text-left p-4 rounded-xl border transition-all",
-            isAllSelected
-              ? "border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/20"
-              : "border-border/50 dark:border-white/[0.06] bg-card hover:border-primary/30 hover:shadow-md"
-          )}
+          aria-pressed={isAllSelected}
+          className={cardClass(isAllSelected)}
         >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <Layers className="h-3.5 w-3.5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-foreground truncate">All Accounts</p>
-                <p className="text-[10px] text-muted-foreground">{accounts.length} accounts combined</p>
-              </div>
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">All Accounts</p>
+              <p className="text-xs text-muted-foreground">{accounts.length} accounts combined</p>
             </div>
+            <Layers className="size-4 shrink-0 text-muted-foreground" />
           </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <div className="flex items-center gap-1 mb-0.5">
-                <DollarSign className="h-2.5 w-2.5 text-muted-foreground" />
-                <p className="text-[9px] font-bold text-muted-foreground uppercase">Spend</p>
-              </div>
-              <p className="text-xs font-bold text-foreground">{formatCurrency(aggregated.spend)}</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-1 mb-0.5">
-                <TrendingUp className="h-2.5 w-2.5 text-muted-foreground" />
-                <p className="text-[9px] font-bold text-muted-foreground uppercase">ROAS</p>
-              </div>
-              <p className="text-xs font-bold text-foreground">{formatRoas(aggregated.roas)}</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-1 mb-0.5">
-                <ShoppingCart className="h-2.5 w-2.5 text-muted-foreground" />
-                <p className="text-[9px] font-bold text-muted-foreground uppercase">Conv.</p>
-              </div>
-              <p className="text-xs font-bold text-foreground">
-                {new Intl.NumberFormat("en-US").format(aggregated.conversions)}
-              </p>
-            </div>
-          </div>
+          <Metrics metrics={aggregated} />
         </button>
 
         {/* Individual account cards */}
@@ -87,61 +88,26 @@ export function AccountsOverviewGrid({ accounts, selectedAccountId, onSelectAcco
           const isSelected = account.accountId === selectedAccountId;
           return (
             <button
+              type="button"
               key={account.accountId}
               onClick={() => onSelectAccount(account.accountId)}
-              className={cn(
-                "text-left p-4 rounded-xl border transition-all",
-                isSelected
-                  ? "border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/20"
-                  : "border-border/50 dark:border-white/[0.06] bg-card hover:border-primary/30 hover:shadow-md"
-              )}
+              aria-pressed={isSelected}
+              className={cardClass(isSelected)}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex min-w-0 items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-foreground truncate">
+                  <p className="truncate text-sm font-medium">
                     {account.label || account.name}
                   </p>
-                  <p className="text-[10px] text-muted-foreground font-mono truncate">
+                  <p className="truncate font-mono text-xs text-muted-foreground">
                     {account.accountId}
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                  <span className={cn(
-                    "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded",
-                    account.status === "ACTIVE"
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                      : "bg-red-500/10 text-red-600 dark:text-red-400"
-                  )}>
-                    {account.status}
-                  </span>
-                </div>
+                <StatusBadge tone={metaStatusTone(account.status)} className="shrink-0">
+                  {metaStatusLabel(account.status)}
+                </StatusBadge>
               </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <DollarSign className="h-2.5 w-2.5 text-muted-foreground" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase">Spend</p>
-                  </div>
-                  <p className="text-xs font-bold text-foreground">{formatCurrency(account.metrics.spend)}</p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <TrendingUp className="h-2.5 w-2.5 text-muted-foreground" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase">ROAS</p>
-                  </div>
-                  <p className="text-xs font-bold text-foreground">{formatRoas(account.metrics.roas)}</p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <ShoppingCart className="h-2.5 w-2.5 text-muted-foreground" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase">Conv.</p>
-                  </div>
-                  <p className="text-xs font-bold text-foreground">
-                    {new Intl.NumberFormat("en-US").format(account.metrics.conversions)}
-                  </p>
-                </div>
-              </div>
+              <Metrics metrics={account.metrics} />
             </button>
           );
         })}

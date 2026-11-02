@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { addWeeks, endOfWeek, format, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
 import type { CalendarEvent } from "@/components/closer/CalendarEventList";
 import { SetterCalendarEventList } from "@/components/closer/SetterCalendarEventList";
 import { SetterAppointmentEditor } from "@/components/closer/SetterAppointmentEditor";
+import { MobileFiltersSheet } from "@/components/closer/MobileFiltersSheet";
+import { useElementHeightVar } from "@/hooks/useElementHeightVar";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AppointmentRecord } from "@/lib/appointments";
 
 interface AppointmentsResponse {
@@ -21,6 +25,11 @@ export default function SetterAppointmentsPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarFilter, setCalendarFilter] = useState("all");
   const [editing, setEditing] = useState<{ event: CalendarEvent; appt: AppointmentRecord } | null>(null);
+
+  // Mirror the sticky nav's height into --calendar-nav-h (like the closer
+  // and admin calendars) so the sticky day headers pin flush below it.
+  const navRef = useRef<HTMLDivElement>(null);
+  useElementHeightVar(navRef, "--calendar-nav-h");
 
   const weekStart = useMemo(() => {
     const base = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -143,7 +152,7 @@ export default function SetterAppointmentsPage() {
     <main className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Appointments</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Appointments</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Claim calendar events you&apos;re setting for and track pre/post-call status.
           </p>
@@ -158,76 +167,111 @@ export default function SetterAppointmentsPage() {
             {/* Sticky week navigator + filter — same pattern as the closer
                 and admin calendar pages so prev/next stays reachable from
                 any scroll position. */}
-            <div className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40">
+            <div
+              ref={navRef}
+              className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b"
+            >
               <div className="flex items-center justify-between">
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w - 1)}
                   aria-label="Previous week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-foreground">
+                  <ChevronLeft />
+                </Button>
+                <div className="flex flex-col items-center text-center">
+                  <p className="text-sm font-semibold tracking-tight text-foreground">
                     {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
                   </p>
                   {weekOffset !== 0 && (
-                    <button
+                    <Button
+                      variant="link"
+                      size="xs"
                       onClick={() => setWeekOffset(0)}
-                      className="text-xs text-primary hover:underline mt-0.5"
+                      className="h-auto px-0 mt-0.5 text-muted-foreground hover:text-foreground"
                     >
                       Back to this week
-                    </button>
+                    </Button>
                   )}
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w + 1)}
                   aria-label="Next week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  <ChevronRight />
+                </Button>
               </div>
 
               {calendarOwners.length > 1 && (
-                <div className="flex items-center gap-2 flex-wrap mt-3">
-                  <button
-                    onClick={() => setCalendarFilter("all")}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                      activeFilter === "all"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                    )}
+                <>
+                  {/* Desktop filter row; on mobile the same choices sit in
+                      the Filters dialog so long labels don't wrap the nav. */}
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    size="sm"
+                    value={activeFilter}
+                    // Radix reports "" when the active pill is clicked again;
+                    // that pill is `activeFilter`, so this sets exactly what
+                    // its old onClick did (incl. clearing a stale owner on "All").
+                    onValueChange={(v) => setCalendarFilter(v || activeFilter)}
+                    aria-label="Filter by calendar"
+                    className="hidden sm:flex flex-wrap justify-start mt-3"
                   >
-                    All ({events.length})
-                  </button>
-                  {calendarOwners.map((owner) => {
-                    const count = events.filter((e) => e.calendarName === owner).length;
-                    return (
-                      <button
-                        key={owner}
-                        onClick={() => setCalendarFilter(owner)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                          activeFilter === owner
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                        )}
+                    <ToggleGroupItem value="all" className="px-3 text-xs">
+                      All ({events.length})
+                    </ToggleGroupItem>
+                    {calendarOwners.map((owner) => {
+                      const count = events.filter((e) => e.calendarName === owner).length;
+                      return (
+                        <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                          <UserRound className="size-3" />
+                          {owner} ({count})
+                        </ToggleGroupItem>
+                      );
+                    })}
+                  </ToggleGroup>
+
+                  <MobileFiltersSheet activeCount={activeFilter !== "all" ? 1 : 0}>
+                    <div>
+                      <p className="text-sm font-medium text-foreground mb-2">
+                        Calendar
+                      </p>
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        size="sm"
+                        value={activeFilter}
+                        onValueChange={(v) => setCalendarFilter(v || activeFilter)}
+                        aria-label="Filter by calendar"
+                        className="flex-wrap justify-start"
                       >
-                        <UserRound className="h-3 w-3" />
-                        {owner} ({count})
-                      </button>
-                    );
-                  })}
-                </div>
+                        <ToggleGroupItem value="all" className="px-3 text-xs">
+                          All ({events.length})
+                        </ToggleGroupItem>
+                        {calendarOwners.map((owner) => {
+                          const count = events.filter((e) => e.calendarName === owner).length;
+                          return (
+                            <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                              <UserRound className="size-3" />
+                              {owner} ({count})
+                            </ToggleGroupItem>
+                          );
+                        })}
+                      </ToggleGroup>
+                    </div>
+                  </MobileFiltersSheet>
+                </>
               )}
             </div>
 
             {eventsLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 rounded-xl bg-muted/50 animate-pulse" />
+                  <Skeleton key={i} className="h-20" />
                 ))}
               </div>
             ) : (

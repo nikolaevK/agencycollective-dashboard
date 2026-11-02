@@ -137,7 +137,7 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4">
+      <nav className="flex-1 overflow-y-auto overscroll-contain space-y-0.5 px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40">
           Portal
         </p>
@@ -247,7 +247,7 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
             <Gem className="h-4 w-4 shrink-0" />
             <span className="flex-1 leading-snug">{navConfig.moreLabel || "More from Agency Collective"}</span>
             {moreNew && (
-              <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white">
+              <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-primary-foreground">
                 New
               </span>
             )}
@@ -265,7 +265,7 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
           <span className="flex-1">Support</span>
           {unreadSupport > 0 && (
             <span
-              className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"
+              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-semibold text-destructive-foreground"
               aria-label={`${unreadSupport} unread message${unreadSupport === 1 ? "" : "s"}`}
             >
               {unreadSupport > 99 ? "99+" : unreadSupport}

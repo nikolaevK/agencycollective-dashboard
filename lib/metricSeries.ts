@@ -59,6 +59,23 @@ export interface OverviewTrends {
   } | null;
 }
 
+/** A setter's bucket: the deals credited to them (same sums as a closer's —
+ *  closedRevenue = revenue attributed, closedCount = deals credited) plus the
+ *  appointments they set, by the setter cards' date basis. */
+export interface SetterSeriesBucket extends SeriesBucket {
+  appointments: number;
+}
+
+/** Card trend lines for the setter dashboard (OverviewTrends' setter twin). */
+export interface SetterTrends {
+  lifetime: SetterSeriesBucket[];
+  window: {
+    granularity: SeriesGranularity;
+    current: SetterSeriesBucket[];
+    previous: SetterSeriesBucket[] | null;
+  } | null;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function toMs(ymd: string): number {
@@ -174,10 +191,27 @@ export function bucketize(
   return buckets;
 }
 
+/** Per-day counts folded into `ranges` (index-aligned), same bucket rule as
+ *  bucketize: a day past the last bucket's end is outside the window. */
+export function bucketCounts(
+  ranges: SeriesRange[],
+  rows: ReadonlyArray<{ day: string; count: number }>
+): number[] {
+  const out = ranges.map(() => 0);
+  for (const r of rows) {
+    if (ranges.length === 0 || r.day < ranges[0].start) continue;
+    let i = ranges.length - 1;
+    while (i > 0 && ranges[i].start > r.day) i--;
+    if (i === ranges.length - 1 && r.day > ranges[i].end) continue;
+    out[i] += r.count;
+  }
+  return out;
+}
+
 /** Running total of one value — a window card's line ends at its number. */
-export function runningTotal(
-  buckets: SeriesBucket[],
-  pick: (b: SeriesBucket) => number
+export function runningTotal<B extends SeriesBucket>(
+  buckets: B[],
+  pick: (b: B) => number
 ): number[] {
   let sum = 0;
   return buckets.map((b) => (sum += pick(b)));

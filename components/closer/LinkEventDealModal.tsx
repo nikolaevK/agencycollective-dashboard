@@ -1,7 +1,10 @@
 "use client";
 
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { UnifiedDealForm } from "@/components/shared/UnifiedDealForm";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
 import type { CalendarEvent } from "./CalendarEventList";
 
 interface Props {
@@ -14,26 +17,24 @@ export function LinkEventDealModal({ event, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className={dialogOverlayClass} onClick={onClose} />
+      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">Link as Deal</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 border-b sm:px-6">
+          <div className="min-w-0">
+            <h3 className="text-base font-medium">Link as Deal</h3>
+            <p className="text-xs text-muted-foreground mt-0.5 [overflow-wrap:anywhere]">
               Create a deal from &ldquo;{event.title}&rdquo;
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-2 shrink-0">
+            <span className="sr-only">Close</span>
+            <X />
+          </Button>
         </div>
 
         {/* Form */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <UnifiedDealForm
             key={event.id}
             mode="create"

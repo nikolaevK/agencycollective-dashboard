@@ -94,7 +94,7 @@ export function CloserSidebar({ displayName, role, isOpen = false, onClose }: Cl
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4">
+      <nav className="flex-1 overflow-y-auto overscroll-contain space-y-0.5 px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40">
           {isSetter ? "Appointments" : "Sales"}
         </p>
@@ -111,15 +111,15 @@ export function CloserSidebar({ displayName, role, isOpen = false, onClose }: Cl
               href={item.href}
               onClick={onClose}
               className={cn(
-                "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium mb-0.5",
+                "ac-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
                 isActive && "active"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{item.label}</span>
+              <span>{item.label}</span>
               {showNotesBadge && (
                 <span
-                  className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"
+                  className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white"
                   aria-label={`${unreadNotes} unread shared note${unreadNotes === 1 ? "" : "s"}`}
                 >
                   {unreadNotes > 99 ? "99+" : unreadNotes}

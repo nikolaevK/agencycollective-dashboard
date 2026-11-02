@@ -51,7 +51,7 @@ export function BottomNav({ onMenuClick }: BottomNavProps) {
               className={cn(
                 "flex items-center gap-1.5 transition-colors",
                 isActive
-                  ? "bg-gradient-to-br from-primary to-[#7c3aed] text-white rounded-xl px-3 py-2"
+                  ? "rounded-full bg-primary px-3 py-2 text-primary-foreground"
                   : "flex-col text-muted-foreground"
               )}
             >
@@ -77,7 +77,7 @@ export function BottomNav({ onMenuClick }: BottomNavProps) {
           className={cn(
             "flex items-center gap-1.5 transition-colors",
             isMoreActive
-              ? "bg-gradient-to-br from-primary to-[#7c3aed] text-white rounded-xl px-3 py-2"
+              ? "rounded-full bg-primary px-3 py-2 text-primary-foreground"
               : "flex-col text-muted-foreground"
           )}
         >

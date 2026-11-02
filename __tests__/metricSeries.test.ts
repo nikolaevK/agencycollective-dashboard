@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  bucketCounts,
   bucketRanges,
   bucketize,
   lastMonthsRanges,
@@ -144,5 +145,39 @@ describe("runningTotal / ratePct", () => {
     expect(ratePct(2, 3)).toBe(66.7);
     expect(ratePct(0, 4)).toBe(0);
     expect(ratePct(0, 0)).toBeNull();
+  });
+});
+
+describe("bucketCounts", () => {
+  it("folds per-day counts with bucketize's window rule", () => {
+    const ranges = bucketRanges("2026-10-01", "2026-10-14", "week");
+    expect(
+      bucketCounts(ranges, [
+        { day: "2026-09-30", count: 9 }, // before the window
+        { day: "2026-10-01", count: 1 },
+        { day: "2026-10-07", count: 2 },
+        { day: "2026-10-08", count: 3 },
+        { day: "2026-10-14", count: 1 },
+        { day: "2026-10-15", count: 9 }, // after the window
+      ])
+    ).toEqual([3, 4]);
+  });
+
+  it("sums to the same total as the window's SQL bounds", () => {
+    const ranges = lastMonthsRanges("2026-11-02", 12);
+    const rows = [
+      { day: "2025-12-01", count: 2 },
+      { day: "2026-06-15", count: 1 },
+      { day: "2026-11-30", count: 4 },
+    ];
+    const counts = bucketCounts(ranges, rows);
+    expect(counts).toHaveLength(12);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(7);
+    expect(counts[0]).toBe(2);
+    expect(counts[11]).toBe(4);
+  });
+
+  it("returns zeros for an empty window", () => {
+    expect(bucketCounts([], [{ day: "2026-10-01", count: 1 }])).toEqual([]);
   });
 });

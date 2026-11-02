@@ -6,10 +6,10 @@ export default function MyBrandPage() {
     <DashboardShell>
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
-          <h1 className="mb-2 text-2xl font-bold tracking-tight text-portal-on-surface md:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">
             My Brand
           </h1>
-          <p className="max-w-2xl text-portal-secondary-text">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Share your brand book, product photos and asset folders with our team. Everything here
             is visible to your account manager and creative team.
           </p>

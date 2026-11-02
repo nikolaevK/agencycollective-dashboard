@@ -20,7 +20,7 @@ export default function CloserDashboardPage() {
     // Time frame in the key so refetch fires when the user picks a new range.
     queryKey: ["closer-stats", timeFrame.key, timeFrame.since ?? "", timeFrame.until ?? ""],
     queryFn: async () => {
-      const url = appendTimeFrameParams("/api/closer/stats", timeFrame);
+      const url = appendTimeFrameParams("/api/closer/stats?trends=1", timeFrame);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to load dashboard: ${res.status}`);
       const json = await res.json();

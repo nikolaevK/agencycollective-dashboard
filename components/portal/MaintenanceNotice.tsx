@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const ACK_KEY = "ac-maintenance-ack";
 
@@ -39,7 +42,7 @@ export function MaintenanceNotice({ message }: { message: string }) {
       <div
         role="status"
         aria-live="polite"
-        className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2.5 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        className={cn("flex items-start gap-2 border-b px-4 py-2.5 md:px-6", badgeTone.warning)}
       >
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p className="text-sm font-medium leading-snug">{message}</p>
@@ -49,29 +52,26 @@ export function MaintenanceNotice({ message }: { message: string }) {
       {showAlert && (
         <div
           aria-label="Maintenance notice"
-          className="fixed bottom-20 right-4 z-50 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-amber-300 bg-card p-4 shadow-2xl dark:border-amber-800 md:bottom-4"
+          className="fixed bottom-20 right-4 z-50 w-[calc(100%-2rem)] max-w-sm rounded-3xl bg-card p-4 text-card-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10 md:bottom-4"
         >
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            </div>
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold text-foreground">Maintenance in progress</h3>
-              <p className="mt-0.5 text-sm leading-snug text-muted-foreground">{message}</p>
-              <button
-                onClick={dismiss}
-                className="mt-3 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600"
-              >
+              <h3 className="text-sm font-semibold text-foreground">Maintenance in progress</h3>
+              <p className="mt-1 text-sm leading-snug text-muted-foreground">{message}</p>
+              <Button size="sm" onClick={dismiss} className="mt-3">
                 Got it
-              </button>
+              </Button>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={dismiss}
-              className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+              className="-mr-1 -mt-1 text-muted-foreground"
               aria-label="Dismiss"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
         </div>
       )}

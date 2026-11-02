@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Badge, BadgeDot, type BadgeTone } from "@/components/ui/badge";
+import {
+  CALENDAR_CHIP_OUTLINE,
+  CALENDAR_STATE_META,
+  calendarStateStyle,
+  type CalendarStateKey,
+} from "@/components/closer/calendarState";
 
 export interface DayHeaderInfo {
   /** Big number ("27"). */
@@ -64,6 +70,28 @@ export function useMidnightTick(): void {
     // Re-run after each tick to schedule the *next* midnight; using `[tick]`
     // (instead of no deps) avoids reset-on-every-render churn.
   }, [tick]);
+}
+
+/**
+ * The current time (epoch ms), re-read at every minute boundary so the
+ * time-based event states ("Live now", "Needs outcome") roll over without
+ * waiting for a data refetch. Calls start on the minute, so aligning the
+ * tick to it flips them within a second.
+ */
+export function useNow(intervalMs = 60_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        setNow(Date.now());
+        schedule();
+      }, intervalMs - (Date.now() % intervalMs));
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [intervalMs]);
+  return now;
 }
 
 export function dayHeaderInfo(dateStr: string, refs: DayCalendarRefs): DayHeaderInfo {
@@ -163,5 +191,63 @@ export function DayHeader({ info, eventCount }: DayHeaderProps) {
         </span>
       </div>
     </div>
+  );
+}
+
+// ── Shared calendar chips (closer, admin and setter lists) ───────────────
+
+/** Kit status chip with the calendar's brighter outline. `pulse` animates
+ *  the dot (the "Live now" state). */
+export function CalendarStatusBadge({
+  tone = "neutral",
+  pulse,
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { tone?: BadgeTone; pulse?: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      tone={tone}
+      className={cn("gap-1.5 font-medium", CALENDAR_CHIP_OUTLINE[tone], className)}
+      {...props}
+    >
+      <BadgeDot tone={tone} className={pulse ? "motion-safe:animate-pulse" : undefined} />
+      {children}
+    </Badge>
+  );
+}
+
+/** The card's state chip. */
+export function CalendarStateChip({ state, title }: { state: CalendarStateKey; title?: string }) {
+  const meta = CALENDAR_STATE_META[state];
+  return (
+    <CalendarStatusBadge tone={meta.tone} pulse={state === "live"} title={title}>
+      {meta.label}
+    </CalendarStatusBadge>
+  );
+}
+
+/** One-line (wrapping) key under the week nav: each state present in the
+ *  list, its rail color and how many events are in it. */
+export function CalendarStateLegend({
+  counts,
+  order,
+}: {
+  counts: Partial<Record<CalendarStateKey, number>>;
+  order: readonly CalendarStateKey[];
+}) {
+  const present = order.filter((key) => (counts[key] ?? 0) > 0);
+  if (present.length === 0) return null;
+  return (
+    <ul aria-label="Event states" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      {present.map((key) => (
+        <li key={key} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span aria-hidden className={cn("h-3 w-1 shrink-0 rounded-full", calendarStateStyle(key).rail)} />
+          {CALENDAR_STATE_META[key].label}
+          <span className="font-medium tabular-nums text-foreground">{counts[key]}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

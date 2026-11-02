@@ -3,6 +3,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DealEntryForm } from "@/components/closer/DealEntryForm";
 import { DealSidebar } from "@/components/closer/DealSidebar";
+import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import type { CloserDealStats } from "@/lib/deals";
 import { appendTimeFrameParams, buildTimeFrame } from "@/lib/timeFrame";
 
@@ -64,7 +66,7 @@ export default function NewDealPage() {
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Record New Deal</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Record New Deal</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Streamline your closing data and track your progress
           </p>
@@ -72,10 +74,10 @@ export default function NewDealPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Main form */}
-          <div className="lg:col-span-8">
-            <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-6">
+          <div className="min-w-0 lg:col-span-8">
+            <Card className="p-4 sm:p-6">
               <DealEntryForm onSuccess={handleSuccess} />
-            </div>
+            </Card>
           </div>
 
           {/* Right sidebar - desktop only */}
@@ -102,24 +104,20 @@ export default function NewDealPage() {
         {/* Mobile progress card */}
         <div className="lg:hidden mt-6">
           {data && (
-            <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
+            <Card className="p-5">
               <div className="flex items-baseline justify-between mb-2">
-                <span className="text-sm font-semibold text-foreground">Monthly Target</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm font-medium">Monthly Target</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
                   {data.closer.quota > 0
                     ? `${Math.min(Math.round((monthRevenue / data.closer.quota) * 100), 100)}%`
                     : "No quota set"}
                 </span>
               </div>
-              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full ac-gradient transition-all duration-500"
-                  style={{
-                    width: `${data.closer.quota > 0 ? Math.min((monthRevenue / data.closer.quota) * 100, 100) : 0}%`,
-                  }}
-                />
-              </div>
-            </div>
+              <Progress
+                value={data.closer.quota > 0 ? Math.min((monthRevenue / data.closer.quota) * 100, 100) : 0}
+                className="h-2 [&>div]:bg-chart-1 [&>div]:duration-500"
+              />
+            </Card>
           )}
         </div>
       </div>

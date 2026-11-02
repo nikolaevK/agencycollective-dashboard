@@ -20,7 +20,7 @@ function Shell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
@@ -60,7 +60,7 @@ export function PortalShell({
   return (
     <Suspense
       fallback={
-        <div className="flex h-screen overflow-hidden">
+        <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden">
           <div className="hidden md:flex md:w-64 border-r bg-card" />
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="h-16 border-b bg-card" />

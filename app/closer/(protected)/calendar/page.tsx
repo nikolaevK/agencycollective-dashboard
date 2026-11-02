@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { GoogleConnectCard } from "@/components/closer/GoogleConnectCard";
@@ -17,6 +17,10 @@ import { SUB_ACCOUNTS } from "@/lib/ghl/subAccounts";
 import { useElementHeightVar } from "@/hooks/useElementHeightVar";
 import { MobileFiltersSheet } from "@/components/closer/MobileFiltersSheet";
 import { ScrollToTopButton } from "@/components/closer/ScrollToTopButton";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DealPublic } from "@/components/closers/types";
 import type { AppointmentIndexEntry } from "@/lib/appointments";
 
@@ -145,6 +149,7 @@ export default function CloserCalendarPage() {
         dealId: d.id,
         googleEventId: d.googleEventId!,
         closerId: d.closerId,
+        status: d.status,
       }));
   }, [deals]);
 
@@ -266,7 +271,7 @@ export default function CloserCalendarPage() {
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Calendar</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Calendar</h1>
           <p className="text-sm text-muted-foreground mt-1">
             View appointments and link them to deals
           </p>
@@ -287,72 +292,70 @@ export default function CloserCalendarPage() {
                 chips reachable from any scroll position. */}
             <div
               ref={navRef}
-              className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40"
+              className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-3 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b"
             >
               <div className="flex items-center justify-between">
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w - 1)}
                   aria-label="Previous week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-foreground">
+                  <ChevronLeft />
+                </Button>
+                <div className="flex flex-col items-center text-center">
+                  <p className="text-sm font-semibold tracking-tight text-foreground">
                     {format(currentWeekStart, "MMM d")} – {format(currentWeekEnd, "MMM d, yyyy")}
                   </p>
                   {weekOffset !== 0 && (
-                    <button
+                    <Button
+                      variant="link"
+                      size="xs"
                       onClick={() => setWeekOffset(0)}
-                      className="text-xs text-primary hover:underline mt-0.5"
+                      className="h-auto px-0 mt-0.5 text-muted-foreground hover:text-foreground"
                     >
                       Back to this week
-                    </button>
+                    </Button>
                   )}
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setWeekOffset((w) => w + 1)}
                   aria-label="Next week"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent transition-colors"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  <ChevronRight />
+                </Button>
               </div>
 
               {/* Desktop filter rows — hidden on mobile where they'd wrap
                   to 7+ lines for long pill labels (emails). */}
               {calendarOwners.length > 1 && (
-                <div className="hidden sm:flex items-center gap-2 flex-wrap mt-3">
-                  <button
-                    onClick={() => setCalendarFilter("all")}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                      activeFilter === "all"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                    )}
-                  >
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={activeFilter}
+                  // Radix reports "" when the active pill is clicked again;
+                  // that pill is `activeFilter`, so this sets exactly what
+                  // its old onClick did (incl. clearing a stale owner on "All").
+                  onValueChange={(v) => setCalendarFilter(v || activeFilter)}
+                  aria-label="Filter by calendar"
+                  className="hidden sm:flex flex-wrap justify-start mt-3"
+                >
+                  <ToggleGroupItem value="all" className="px-3 text-xs">
                     All ({events.length})
-                  </button>
+                  </ToggleGroupItem>
                   {calendarOwners.map((owner) => {
                     const count = events.filter((e) => e.calendarName === owner).length;
                     return (
-                      <button
-                        key={owner}
-                        onClick={() => setCalendarFilter(owner)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                          activeFilter === owner
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <UserRound className="h-3 w-3" />
+                      <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                        <UserRound className="size-3" />
                         {owner} ({count})
-                      </button>
+                      </ToggleGroupItem>
                     );
                   })}
-                </div>
+                </ToggleGroup>
               )}
 
               <div className="hidden sm:block">
@@ -372,40 +375,31 @@ export default function CloserCalendarPage() {
               >
                 {calendarOwners.length > 1 && (
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    <p className="text-sm font-medium text-foreground mb-2">
                       Calendar
                     </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() => setCalendarFilter("all")}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                          activeFilter === "all"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      size="sm"
+                      value={activeFilter}
+                      onValueChange={(v) => setCalendarFilter(v || activeFilter)}
+                      aria-label="Filter by calendar"
+                      className="flex-wrap justify-start"
+                    >
+                      <ToggleGroupItem value="all" className="px-3 text-xs">
                         All ({events.length})
-                      </button>
+                      </ToggleGroupItem>
                       {calendarOwners.map((owner) => {
                         const count = events.filter((e) => e.calendarName === owner).length;
                         return (
-                          <button
-                            key={owner}
-                            onClick={() => setCalendarFilter(owner)}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                              activeFilter === owner
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted/50 text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <UserRound className="h-3 w-3" />
+                          <ToggleGroupItem key={owner} value={owner} className="px-3 text-xs">
+                            <UserRound className="size-3" />
                             {owner} ({count})
-                          </button>
+                          </ToggleGroupItem>
                         );
                       })}
-                    </div>
+                    </ToggleGroup>
                   </div>
                 )}
                 <SubAccountFilterPills
@@ -420,7 +414,7 @@ export default function CloserCalendarPage() {
             {eventsLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 rounded-xl bg-muted/50 animate-pulse" />
+                  <Skeleton key={i} className="h-20" />
                 ))}
               </div>
             ) : (
@@ -459,19 +453,21 @@ export default function CloserCalendarPage() {
           if (!deal) return null;
           return (
             <div className="fixed inset-0 z-[60] flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setEditingDealId(null)} />
-              <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                  <h3 className="text-lg font-semibold text-foreground">Edit Deal</h3>
-                  <button
+              <div className={dialogOverlayClass} onClick={() => setEditingDealId(null)} />
+              <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto overscroll-contain")}>
+                <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b bg-popover">
+                  <h3 className="text-base font-medium">Edit Deal</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => setEditingDealId(null)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                     aria-label="Close"
+                    className="-mr-2"
                   >
-                    <span aria-hidden className="text-lg leading-none">&times;</span>
-                  </button>
+                    <X />
+                  </Button>
                 </div>
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <UnifiedDealForm
                     key={deal.id}
                     mode="edit"

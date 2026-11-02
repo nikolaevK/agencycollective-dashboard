@@ -19,6 +19,7 @@ import {
 } from "@/lib/eventAttendance";
 import { getDealInvoiceStatuses } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
+import { getCloserTrends, getSetterTrends } from "@/lib/salesTrends";
 import {
   getSetterStats,
   getSetterRecentDeals,
@@ -65,13 +66,17 @@ export async function GET(
   const since = sinceRaw && dateRe.test(sinceRaw) ? sinceRaw : undefined;
   const until = untilRaw && dateRe.test(untilRaw) ? untilRaw : undefined;
   const timeFrame = { since: since ?? null, until: until ?? null };
+  // Card trend lines (`trends=1`) — the same per-person series the user's own
+  // dashboard reads.
+  const withTrends = searchParams.get("trends") === "1";
 
   if (target.role === "setter") {
-    const [stats, recentDeals, followUps, rawNoShows] = await Promise.all([
+    const [stats, recentDeals, followUps, rawNoShows, trends] = await Promise.all([
       getSetterStats(target.id, { since, until }),
       getSetterRecentDeals(target.id),
       getSetterFollowUps(target.id),
       getNoShowFollowUpsTeamWide(),
+      withTrends ? getSetterTrends(target.id, since, until) : null,
     ]);
     const noShowFollowUps = await enrichNoShowsFromCalendar(rawNoShows);
 
@@ -89,6 +94,7 @@ export async function GET(
           recentDeals,
           followUps,
           noShowFollowUps,
+          trends,
         },
       },
     });
@@ -96,7 +102,7 @@ export async function GET(
 
   // Closer (default for any non-setter role).
   const prevBounds = since && until ? previousWindowBounds(since, until) : null;
-  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed] =
+  const [deals, stats, monthToDate, chartDeals, lifetimeShow, windowResult, previousShowResult, rawNoShows, rawShowed, trends] =
     await Promise.all([
       readDealsByCloser(target.id),
       getCloserDealStats(target.id, { since, until }),
@@ -107,6 +113,7 @@ export async function GET(
       prevBounds ? getCloserShowRate(target.id, prevBounds) : null,
       getAttendanceFollowUpsForCloser(target.id, "no_show"),
       getAttendanceFollowUpsForCloser(target.id, "showed"),
+      withTrends ? getCloserTrends(target.id, since, until) : null,
     ]);
   const windowShow = windowResult ?? lifetimeShow;
   // Splice in attendance-sourced show metrics so the admin sees the same
@@ -159,6 +166,7 @@ export async function GET(
         })),
         noShowFollowUps,
         showedFollowUps,
+        trends,
       },
     },
   });

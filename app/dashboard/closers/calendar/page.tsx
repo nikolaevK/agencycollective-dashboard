@@ -226,6 +226,7 @@ export default function AdminCalendarPage() {
         googleEventId: d.googleEventId!,
         closerId: d.closerId,
         closerName: d.closerName,
+        status: d.status,
       }));
   }, [allDeals]);
 
