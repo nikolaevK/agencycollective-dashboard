@@ -3,6 +3,19 @@
 import { useQuery } from "@tanstack/react-query";
 import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import type { PaymentInfo, PaymentType } from "@/types/invoice";
+import { badgeTone } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+// Radix SelectItem can't hold "" — the default style maps to this.
+const DEFAULT_STYLE = "__default__";
 
 /**
  * Invoice-style picker for the re-bill / ad-account invoice drawers: default
@@ -63,30 +76,30 @@ export function InvoiceStyleSelect({ selectedId, onSelect, paymentType }: Props)
     selected !== undefined && profilePaymentBlock(selected, paymentType) === null;
 
   return (
-    <div>
-      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-        Invoice style
-      </label>
-      <select
-        className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-        value={selectedId ?? ""}
-        onChange={(e) =>
-          onSelect(profiles.find((p) => p.id === e.target.value) ?? null)
-        }
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">Invoice style</Label>
+      <Select
+        value={selectedId ?? DEFAULT_STYLE}
+        onValueChange={(v) => onSelect(profiles.find((p) => p.id === v) ?? null)}
       >
-        <option value="">Agency Collective (default)</option>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      <p className="mt-1 text-[11px] text-muted-foreground">
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={DEFAULT_STYLE}>Agency Collective (default)</SelectItem>
+          {profiles.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
         Applies that profile&apos;s logo, sender and payment details to the PDF,
         and brands the invoice email (subject, body and sign-off) to match.
       </p>
       {selected && templateMissing && (
-        <p className="mt-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
+        <p className={cn("rounded-2xl border px-3 py-2 text-xs", badgeTone.warning)}>
           {selected.name} has no {paymentType} payment template, so the PDF
           keeps the payment details currently loaded — they may not belong to{" "}
           {selected.name}. Preview before sending, or add the template under

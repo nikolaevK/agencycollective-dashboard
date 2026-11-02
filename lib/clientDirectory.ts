@@ -48,6 +48,7 @@ import {
 } from "./clientProfile";
 import { listAdAccounts, listAdAccountsForUser, type AdAccount } from "./adAccounts";
 import { inWorkspaceScope, type WorkspaceScope } from "./workspaces";
+import { foldClientMonths, hasActivity, type ClientMonthSeries } from "./clientTrendSeries";
 
 /**
  * Filter directory (or any workspace-carrying) rows down to an actor's
@@ -94,6 +95,10 @@ export interface ClientDirectoryRow {
   payoutMrr: number; // derived recurring MRR (cents) — latest month's amount_due
   totalRevenue: number; // derived total paid across all months (cents)
   joinedAt: string | null; // resolved start date (yyyy-mm-dd)
+  /** Join date from users.joined_at or the payouts only — null when unknown
+   *  (joinedAt then falls back to createdAt, which is "now" for every row).
+   *  Feeds roster-growth / new-client charts. */
+  knownJoinedAt: string | null;
   // Re-bill schedule
   billing: ClientBilling | null;
   schedule: RebillSchedule;
@@ -283,8 +288,8 @@ function buildRow(
 
   // Resolved start date: explicit users.joined_at → payout date_joined →
   // account creation date. Drives the directory column + billing anchor.
-  const joinedAt =
-    datePart(user.joinedAt) ?? earliestPayoutJoin ?? datePart(user.createdAt);
+  const knownJoinedAt = datePart(user.joinedAt) ?? earliestPayoutJoin;
+  const joinedAt = knownJoinedAt ?? datePart(user.createdAt);
 
   // All (year, month) pairs that have a payout for this client — PLUS the
   // cycle months of paid invoices, so a cycle an admin settled by hand
@@ -351,6 +356,7 @@ function buildRow(
     payoutMrr,
     totalRevenue,
     joinedAt,
+    knownJoinedAt,
     billing,
     schedule,
     // Only still-sent invoices surface. Once promoted to paid (or marked
@@ -563,6 +569,35 @@ export async function getClientDetail(
     t
   );
   return { row, history: matched };
+}
+
+// ---------------------------------------------------------------------------
+// Directory trend lines — read-only. Each in-scope client's matched payout
+// months (the SAME matching the directory's MRR / revenue use) folded into the
+// window months; the page sums them over the clients it shows.
+// ---------------------------------------------------------------------------
+
+export async function getClientRevenueTrends(
+  scope: WorkspaceScope,
+  months: string[]
+): Promise<ClientMonthSeries[]> {
+  const [users, histories, rebillByBrand] = await Promise.all([
+    readUsers(),
+    getAllBrandHistories(),
+    getRebillPayoutMonthsByBrand(),
+  ]);
+  return users
+    .filter((user) => inWorkspaceScope(scope, user.workspace))
+    .map((user) => {
+      const matched = matchHistories(user, histories);
+      return foldClientMonths(
+        user.id,
+        months,
+        matched.map((h) => h.months),
+        matched.map((h) => rebillByBrand.get(h.normalizedName) ?? [])
+      );
+    })
+    .filter(hasActivity);
 }
 
 // ---------------------------------------------------------------------------

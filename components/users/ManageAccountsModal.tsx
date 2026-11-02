@@ -1,8 +1,19 @@
 "use client";
 
 import { useState, useMemo, useTransition } from "react";
-import { X, Plus, Trash2, ToggleLeft, ToggleRight, Search } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Plus, Trash2, Search } from "lucide-react";
+import { StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDateRange } from "@/hooks/useDateRange";
 import { addClientAccountAction, removeClientAccountAction, toggleClientAccountAction } from "@/app/actions/clientAccounts";
@@ -97,66 +108,67 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        // Focus the dialog itself, not the first account's active switch —
+        // a stray Space there would unlink it from the portal.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus();
+        }}
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border shrink-0">
-          <div>
-            <h3 className="text-lg font-bold text-foreground">Manage Accounts</h3>
-            <p className="text-sm text-muted-foreground">{client.displayName}</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted/50 rounded-lg transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>Manage Accounts</DialogTitle>
+          <DialogDescription>{client.displayName}</DialogDescription>
+        </DialogHeader>
 
         {/* Linked accounts */}
-        <div className="p-6 space-y-3 overflow-y-auto flex-1 min-h-0">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
+          <p className="text-xs text-muted-foreground">
             Linked Accounts ({client.accounts.length})
           </p>
           {client.accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
+            <p className="py-4 text-center text-sm text-muted-foreground">
               No Meta accounts linked yet. Add one below.
             </p>
           ) : (
             client.accounts.map((account) => (
               <div
                 key={account.id}
-                className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/20"
+                className="flex items-center justify-between rounded-2xl bg-muted/50 p-3"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                  <p className="truncate text-sm font-medium">
                     {account.label || metaNameMap.get(account.accountId) || account.accountId}
                   </p>
-                  <p className="text-xs text-muted-foreground font-mono truncate">
+                  <p className="truncate font-mono text-xs text-muted-foreground">
                     {account.accountId}
                   </p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0 ml-3">
-                  <button
-                    onClick={() => handleToggle(account)}
+                <div className="ml-3 flex shrink-0 items-center gap-2">
+                  <Switch
+                    checked={account.isActive}
+                    onCheckedChange={() => handleToggle(account)}
                     disabled={isPending}
-                    className="p-1.5 rounded-lg hover:bg-muted/50 transition-colors"
                     title={account.isActive ? "Set inactive" : "Set active"}
-                  >
-                    {account.isActive ? (
-                      <ToggleRight className="h-5 w-5 text-emerald-500" />
-                    ) : (
-                      <ToggleLeft className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </button>
-                  <button
+                    aria-label={account.isActive ? "Set inactive" : "Set active"}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => handleRemove(account)}
                     disabled={isPending}
-                    className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
                     title="Remove account"
+                    aria-label="Remove account"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >
-                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
             ))
@@ -164,71 +176,75 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
         </div>
 
         {/* Add account section */}
-        <div className="p-6 border-t border-border shrink-0 space-y-3">
+        <div className="shrink-0 space-y-3 border-t p-6">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <p className="text-xs text-muted-foreground">
               Add Account
             </p>
-            <button
+            <Button
+              variant="link"
+              size="xs"
               onClick={() => setManualMode(!manualMode)}
-              className="text-[10px] font-bold text-primary uppercase tracking-widest hover:underline"
+              className="px-0"
             >
               {manualMode ? "Browse accounts" : "Enter ID manually"}
-            </button>
+            </Button>
           </div>
 
           {manualMode ? (
             /* Manual entry fallback */
             <form onSubmit={handleManualAdd} className="space-y-3">
               <div className="flex gap-3">
-                <input
+                <Input
                   type="text"
                   value={manualAccountId}
                   onChange={(e) => setManualAccountId(e.target.value)}
                   placeholder="act_123456789"
-                  className="flex-1 bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-2.5 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors font-mono"
+                  aria-label="Ad account ID"
+                  className="flex-1 font-mono"
                 />
-                <input
+                <Input
                   type="text"
                   value={manualLabel}
                   onChange={(e) => setManualLabel(e.target.value)}
                   placeholder="Label (optional)"
-                  className="w-36 bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-2.5 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
+                  aria-label="Label (optional)"
+                  className="w-36"
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <button
+              <Button
                 type="submit"
                 disabled={isPending || !manualAccountId.trim()}
-                className="w-full py-2.5 rounded-xl font-semibold text-sm text-white shadow-sm hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2 ac-gradient"
+                className="w-full"
               >
-                <Plus className="h-4 w-4" />
+                <Plus />
                 {isPending ? "Adding..." : "Add Account"}
-              </button>
+              </Button>
             </form>
           ) : (
             /* Searchable account picker */
             <div className="space-y-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search accounts by name or ID..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
+                  className="pl-9"
                 />
               </div>
 
-              <div className="max-h-[200px] overflow-y-auto rounded-xl border border-border/50 divide-y divide-border/30">
+              <div className="max-h-[200px] divide-y overflow-y-auto rounded-2xl ring-1 ring-foreground/5">
                 {metaLoading ? (
-                  <div className="p-4 space-y-2">
+                  <div className="space-y-2 p-3">
                     {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-10 animate-pulse rounded-lg bg-muted/60" />
+                      <Skeleton key={i} className="h-10" />
                     ))}
                   </div>
                 ) : available.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">
+                  <p className="py-6 text-center text-sm text-muted-foreground">
                     {search
                       ? "No matching accounts found."
                       : metaAccounts && metaAccounts.length > 0
@@ -241,27 +257,22 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
                       key={account.id}
                       onClick={() => handleLink(account.id, account.name)}
                       disabled={isPending}
-                      className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors disabled:opacity-50"
+                      className="flex w-full items-center justify-between px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 disabled:opacity-50"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
+                        <p className="truncate text-sm font-medium">
                           {account.name}
                         </p>
                         <div className="flex items-center gap-2">
-                          <p className="text-xs text-muted-foreground font-mono truncate">
+                          <p className="truncate font-mono text-xs text-muted-foreground">
                             {account.id}
                           </p>
-                          <span className={cn(
-                            "text-[9px] font-bold uppercase",
-                            account.status === "ACTIVE"
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-red-500 dark:text-red-400"
-                          )}>
+                          <StatusBadge tone={account.status === "ACTIVE" ? "success" : "danger"}>
                             {account.status}
-                          </span>
+                          </StatusBadge>
                         </div>
                       </div>
-                      <Plus className="h-4 w-4 text-primary shrink-0 ml-2" />
+                      <Plus className="ml-2 size-4 shrink-0 text-muted-foreground" />
                     </button>
                   ))
                 )}
@@ -271,7 +282,7 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

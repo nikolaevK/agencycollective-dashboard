@@ -13,19 +13,38 @@ import {
   ClipboardList,
   ReceiptText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { updateUserAction } from "@/app/actions/users";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useAdmin } from "@/components/providers/AdminProvider";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { ClientPeptideAiCard } from "./ClientPeptideAiCard";
 import { TeamPicker } from "./TeamPicker";
 import {
-  STAGE_CHIP_CLS,
-  HEALTH_CHIP_CLS,
-  PLATFORM_CHIP_CLS,
-  MANUAL_BILLING_CHIP_CLS,
-  SERVICE_CHIP_CLS,
+  STAGE_TONE,
+  HEALTH_TONE,
+  MANUAL_BILLING_TONE,
+  toneOf,
   parseMoneyToCents,
 } from "./rosterPresentation";
 import {
@@ -179,11 +198,11 @@ export function ClientSettingsTab({
   }
 
   const designBoardLive = client.designBoardEnabled && Boolean(client.designBoardUrl);
-  const designTone = designBoardLive
-    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+  const designTone: BadgeTone = designBoardLive
+    ? "success"
     : client.designBoardEnabled
-      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-      : "bg-red-500/10 text-red-600 dark:text-red-400";
+      ? "warning"
+      : "neutral";
   const designLabel = designBoardLive
     ? "Design Board live"
     : client.designBoardEnabled
@@ -206,6 +225,7 @@ export function ClientSettingsTab({
         setError(res.error);
       } else {
         queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+        queryClient.invalidateQueries({ queryKey: ["admin-client-trends"] });
         queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
         queryClient.invalidateQueries({ queryKey: ["client-billing", client.id] });
         onChanged();
@@ -218,414 +238,378 @@ export function ClientSettingsTab({
   return (
     <div className="space-y-6">
       {/* Profile + accounts */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
-        <h3 className="text-sm font-bold text-foreground mb-1">Profile & access</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Name, email, category, status, logo, AI Analyst and Design Board access.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={onEdit}
-            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Pencil className="h-4 w-4" />
-            Edit profile
-          </button>
-          <button
-            onClick={onManageAccounts}
-            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Link2 className="h-4 w-4" />
-            Manage Meta accounts
-          </button>
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-              client.analystEnabled
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "bg-red-500/10 text-red-600 dark:text-red-400"
-            )}
-          >
-            {client.analystEnabled ? (
-              <ShieldCheck className="h-3.5 w-3.5" />
-            ) : (
-              <ShieldOff className="h-3.5 w-3.5" />
-            )}
-            AI Analyst {client.analystEnabled ? "enabled" : "disabled"}
-          </span>
-          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold", designTone)}>
-            <Frame className="h-3.5 w-3.5" />
-            {designLabel}
-          </span>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Profile & access</CardTitle>
+          <CardDescription>
+            Name, email, category, status, logo, AI Analyst and Design Board access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="outline" onClick={onEdit}>
+              <Pencil />
+              Edit profile
+            </Button>
+            <Button variant="outline" onClick={onManageAccounts}>
+              <Link2 />
+              Manage Meta accounts
+            </Button>
+            <Badge
+              variant="outline"
+              tone={client.analystEnabled ? "success" : "neutral"}
+              className="gap-1.5"
+            >
+              {client.analystEnabled ? <ShieldCheck /> : <ShieldOff />}
+              AI Analyst {client.analystEnabled ? "enabled" : "disabled"}
+            </Badge>
+            <Badge variant="outline" tone={designTone} className="gap-1.5">
+              <Frame />
+              {designLabel}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
 
       <ClientPeptideAiCard userId={client.id} clientStatus={client.status} />
 
       {/* Payout link */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Database className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">Payout-DB link</h3>
-          {client.isLinked ? (
-            <span className="ml-1 inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-              Linked
-            </span>
-          ) : (
-            <span className="ml-1 inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-              Not linked
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          The brand name this client maps to in the Payout DB. Drives MRR, payment
-          history, documents and the re-bill schedule. Currently matched to{" "}
-          <span className="font-medium text-foreground">
-            {client.matchedBrand ?? "— none —"}
-          </span>
-          .
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Payout brand name
-            </label>
-            {admin.isExternal ? (
-              // The payout link is internally managed (it's the only thing
-              // that matches billing history for partner-book clients) —
-              // read-only for external partner admins; the server rejects
-              // edits too.
-              <p className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                {payoutBrand || "Managed by the agency"}
-              </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <Database className="size-4 text-muted-foreground" />
+            Payout-DB link
+            {client.isLinked ? (
+              <StatusBadge tone="success">Linked</StatusBadge>
             ) : (
-              <input
-                type="text"
-                value={payoutBrand}
-                onChange={(e) => setPayoutBrand(e.target.value)}
-                placeholder="e.g. Inner Glow"
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              <StatusBadge tone="warning">Not linked</StatusBadge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            The brand name this client maps to in the Payout DB. Drives MRR, payment
+            history, documents and the re-bill schedule. Currently matched to{" "}
+            <span className="font-medium text-foreground">
+              {client.matchedBrand ?? "— none —"}
+            </span>
+            .
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid content-start gap-2">
+              <Label>Payout brand name</Label>
+              {admin.isExternal ? (
+                // The payout link is internally managed (it's the only thing
+                // that matches billing history for partner-book clients) —
+                // read-only for external partner admins; the server rejects
+                // edits too.
+                <p className="rounded-3xl bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                  {payoutBrand || "Managed by the agency"}
+                </p>
+              ) : (
+                <Input
+                  type="text"
+                  value={payoutBrand}
+                  onChange={(e) => setPayoutBrand(e.target.value)}
+                  placeholder="e.g. Inner Glow"
+                />
+              )}
+            </div>
+            <div className="grid content-start gap-2">
+              <Label>Date joined</Label>
+              <DatePicker
+                value={joinedAt}
+                onValueChange={setJoinedAt}
+                aria-label="Date joined"
+                yearNavigation
               />
+            </div>
+            {canManage && workspaces.length > 1 && (
+              <div className="grid content-start gap-2">
+                <Label>Workspace</Label>
+                <Select value={workspace} onValueChange={setWorkspace}>
+                  <SelectTrigger aria-label="Workspace">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((w) => (
+                      <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Moving a client changes which team&apos;s Client Directory it appears in.
+                </p>
+              </div>
             )}
           </div>
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Date joined
-            </label>
-            <input
-              type="date"
-              value={joinedAt}
-              onChange={(e) => setJoinedAt(e.target.value)}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <div className="flex items-center gap-3">
+            <Button onClick={saveLink} disabled={isPending}>
+              <Save />
+              {isPending ? "Saving…" : "Save link"}
+            </Button>
+            {saved && <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>}
           </div>
-          {canManage && workspaces.length > 1 && (
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Workspace
-              </label>
-              <select
-                value={workspace}
-                onChange={(e) => setWorkspace(e.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                {workspaces.map((w) => (
-                  <option key={w.value} value={w.value}>{w.label}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Moving a client changes which team&apos;s Client Directory it appears in.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={saveLink}
-            disabled={isPending}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {isPending ? "Saving…" : "Save link"}
-          </button>
-          {saved && <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Roster profile */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">Roster profile</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Stage, health, services and team show as chips in the directory — changes
-          here save immediately. Book, website and comp terms save with the button below.
-        </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="size-4 text-muted-foreground" />
+            Roster profile
+          </CardTitle>
+          <CardDescription>
+            Stage, health, services and team show as chips in the directory — changes
+            here save immediately. Book, website and comp terms save with the button below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <RosterField label="Stage">
+              <ChipMultiSelect
+                value={profile.stages}
+                options={stageOptions}
+                toneOf={(v) => toneOf(STAGE_TONE, v)}
+                onChange={(stages) => patchNow({ stages })}
+                onCreateOption={addStageOption}
+              />
+            </RosterField>
+            <RosterField label="Client health">
+              <ChipMultiSelect
+                value={profile.health}
+                options={healthOptions}
+                toneOf={(v) => toneOf(HEALTH_TONE, v)}
+                onChange={(health) => patchNow({ health })}
+                onCreateOption={addHealthOption}
+              />
+            </RosterField>
+            <RosterField label="Ad platforms">
+              <ChipMultiSelect
+                value={profile.adPlatforms}
+                options={platformOptions}
+                onChange={(adPlatforms) => patchNow({ adPlatforms })}
+                onCreateOption={addPlatformOption}
+              />
+            </RosterField>
+            <RosterField label="Services">
+              <ChipMultiSelect
+                value={profile.services}
+                options={SERVICE_OPTIONS}
+                onChange={(services) => patchNow({ services })}
+              />
+            </RosterField>
+            <RosterField label="Lead — Head of Ads">
+              <TeamPicker
+                role="lead"
+                members={client.team.filter((m) => m.role === "lead")}
+                onChange={(members) => saveTeamNow("lead", members)}
+              />
+            </RosterField>
+            <RosterField label="Media buyer">
+              <TeamPicker
+                role="media_buyer"
+                members={client.team.filter((m) => m.role === "media_buyer")}
+                onChange={(members) => saveTeamNow("media_buyer", members)}
+              />
+            </RosterField>
+            <RosterField label="Client Success Manager">
+              <TeamPicker
+                role="csm"
+                members={client.team.filter((m) => m.role === "csm")}
+                onChange={(members) => saveTeamNow("csm", members)}
+              />
+            </RosterField>
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <RosterField label="Stage">
-            <ChipMultiSelect
-              value={profile.stages}
-              options={stageOptions}
-              colorOf={(v) => STAGE_CHIP_CLS[v]}
-              onChange={(stages) => patchNow({ stages })}
-              onCreateOption={addStageOption}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <span className="text-sm font-medium">Ads</span>
+            <AdsSwitch
+              platform="Meta"
+              running={profile.adsRunning}
+              onToggle={() => patchNow({ adsRunning: !profile.adsRunning })}
             />
-          </RosterField>
-          <RosterField label="Client health">
-            <ChipMultiSelect
-              value={profile.health}
-              options={healthOptions}
-              colorOf={(v) => HEALTH_CHIP_CLS[v]}
-              onChange={(health) => patchNow({ health })}
-              onCreateOption={addHealthOption}
+            <AdsSwitch
+              platform="TikTok"
+              running={profile.tiktokAdsRunning}
+              onToggle={() => patchNow({ tiktokAdsRunning: !profile.tiktokAdsRunning })}
             />
-          </RosterField>
-          <RosterField label="Ad platforms">
-            <ChipMultiSelect
-              value={profile.adPlatforms}
-              options={platformOptions}
-              colorOf={(v) => PLATFORM_CHIP_CLS[v]}
-              onChange={(adPlatforms) => patchNow({ adPlatforms })}
-              onCreateOption={addPlatformOption}
-            />
-          </RosterField>
-          <RosterField label="Services">
-            <ChipMultiSelect
-              value={profile.services}
-              options={SERVICE_OPTIONS}
-              colorOf={(v) => SERVICE_CHIP_CLS[v]}
-              onChange={(services) => patchNow({ services })}
-            />
-          </RosterField>
-          <RosterField label="Lead — Head of Ads">
-            <TeamPicker
-              role="lead"
-              members={client.team.filter((m) => m.role === "lead")}
-              onChange={(members) => saveTeamNow("lead", members)}
-            />
-          </RosterField>
-          <RosterField label="Media buyer">
-            <TeamPicker
-              role="media_buyer"
-              members={client.team.filter((m) => m.role === "media_buyer")}
-              onChange={(members) => saveTeamNow("media_buyer", members)}
-            />
-          </RosterField>
-          <RosterField label="Client Success Manager">
-            <TeamPicker
-              role="csm"
-              members={client.team.filter((m) => m.role === "csm")}
-              onChange={(members) => saveTeamNow("csm", members)}
-            />
-          </RosterField>
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Ads
-          </span>
-          <button
-            type="button"
-            onClick={() => patchNow({ adsRunning: !profile.adsRunning })}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-              profile.adsRunning
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "bg-muted text-muted-foreground"
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid content-start gap-2">
+              <Label>Book</Label>
+              <Select value={book} onValueChange={(v) => setBook(v as ClientBook)}>
+                <SelectTrigger aria-label="Book">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BOOK_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid content-start gap-2">
+              <Label>Website</Label>
+              <Input
+                type="text"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="clientsite.com"
+              />
+            </div>
+            <div className="grid content-start gap-2">
+              <Label>Perf fee</Label>
+              <Input
+                type="text"
+                value={perfFee}
+                onChange={(e) => setPerfFee(e.target.value)}
+                placeholder={client.derivedPerfFee ? `${client.derivedPerfFee} (auto)` : "e.g. 5%"}
+              />
+              {client.derivedPerfFee && (
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use {client.derivedPerfFee}, derived from this client&apos;s ad accounts.
+                </p>
+              )}
+            </div>
+            <div className="grid content-start gap-2">
+              <Label>Rev / threshold</Label>
+              <Input
+                type="text"
+                value={revThreshold}
+                onChange={(e) => setRevThreshold(e.target.value)}
+                placeholder="e.g. $25K+"
+              />
+            </div>
+            <div className="grid content-start gap-2 sm:col-span-2">
+              <Label>Roster notes</Label>
+              <Textarea
+                value={rosterNotes}
+                onChange={(e) => setRosterNotes(e.target.value)}
+                rows={2}
+                maxLength={2000}
+                placeholder="Quick note shown in the directory's Notes column…"
+                className="resize-y"
+              />
+            </div>
+          </div>
+
+          {rosterError && <p className="text-sm text-destructive">{rosterError}</p>}
+
+          <div className="flex items-center gap-3">
+            <Button onClick={saveRosterFields} disabled={patchProfile.isPending}>
+              <Save />
+              {patchProfile.isPending ? "Saving…" : "Save roster fields"}
+            </Button>
+            {rosterSaved && (
+              <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>
             )}
-          >
-            {profile.adsRunning
-              ? "Meta: Running — click to pause"
-              : "Meta: Paused — click to resume"}
-          </button>
-          <button
-            type="button"
-            onClick={() => patchNow({ tiktokAdsRunning: !profile.tiktokAdsRunning })}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-              profile.tiktokAdsRunning
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            {profile.tiktokAdsRunning
-              ? "TikTok: Running — click to pause"
-              : "TikTok: Paused — click to resume"}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Book
-            </label>
-            <select
-              value={book}
-              onChange={(e) => setBook(e.target.value as ClientBook)}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              {BOOK_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
           </div>
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Website
-            </label>
-            <input
-              type="text"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              placeholder="clientsite.com"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Perf fee
-            </label>
-            <input
-              type="text"
-              value={perfFee}
-              onChange={(e) => setPerfFee(e.target.value)}
-              placeholder={client.derivedPerfFee ? `${client.derivedPerfFee} (auto)` : "e.g. 5%"}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            {client.derivedPerfFee && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Leave empty to use {client.derivedPerfFee}, derived from this client&apos;s ad accounts.
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Rev / threshold
-            </label>
-            <input
-              type="text"
-              value={revThreshold}
-              onChange={(e) => setRevThreshold(e.target.value)}
-              placeholder="e.g. $25K+"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Roster notes
-            </label>
-            <textarea
-              value={rosterNotes}
-              onChange={(e) => setRosterNotes(e.target.value)}
-              rows={2}
-              maxLength={2000}
-              placeholder="Quick note shown in the directory's Notes column…"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 resize-y"
-            />
-          </div>
-        </div>
-
-        {rosterError && <p className="text-sm text-destructive">{rosterError}</p>}
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={saveRosterFields}
-            disabled={patchProfile.isPending}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {patchProfile.isPending ? "Saving…" : "Save roster fields"}
-          </button>
-          {rosterSaved && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>
-          )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Manual billing — PepAds only */}
       {profile.book === "pepads" && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <ReceiptText className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <h3 className="text-sm font-bold text-foreground">Manual billing (PepAds)</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            This client is on the PepAds book: the computed re-bill schedule and its
-            alerts don&apos;t apply. Billing status and the next re-bill date below are
-            maintained by hand (also editable inline on the directory row).
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <RosterField label="Billing status">
-              <ChipMultiSelect
-                value={profile.manualBilling}
-                options={MANUAL_BILLING_OPTIONS}
-                colorOf={(v) => MANUAL_BILLING_CHIP_CLS[v]}
-                onChange={(manualBilling) =>
-                  patchNow({
-                    manualBilling: manualBilling as ClientProfilePatch["manualBilling"],
-                  })
-                }
-              />
-            </RosterField>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Next re-bill
-              </label>
-              <input
-                type="date"
-                value={manualNextRebill}
-                onChange={(e) => {
-                  setManualNextRebill(e.target.value);
-                  patchNow({ manualNextRebill: e.target.value || null });
-                }}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ReceiptText className="size-4 text-muted-foreground" />
+              Manual billing (PepAds)
+            </CardTitle>
+            <CardDescription>
+              This client is on the PepAds book: the computed re-bill schedule and its
+              alerts don&apos;t apply. Billing status and the next re-bill date below are
+              maintained by hand (also editable inline on the directory row).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <RosterField label="Billing status">
+                <ChipMultiSelect
+                  value={profile.manualBilling}
+                  options={MANUAL_BILLING_OPTIONS}
+                  toneOf={(v) => toneOf(MANUAL_BILLING_TONE, v)}
+                  onChange={(manualBilling) =>
+                    patchNow({
+                      manualBilling: manualBilling as ClientProfilePatch["manualBilling"],
+                    })
+                  }
+                />
+              </RosterField>
+              <div className="grid content-start gap-2">
+                <Label>Next re-bill</Label>
+                <DatePicker
+                  value={manualNextRebill}
+                  onValueChange={(v) => {
+                    setManualNextRebill(v);
+                    patchNow({ manualNextRebill: v || null });
+                  }}
+                  aria-label="Next re-bill"
+                />
+              </div>
+              <div className="grid content-start gap-2">
+                <Label>Monthly MRR ($)</Label>
+                <Input
+                  type="text"
+                  value={manualMrr}
+                  onChange={(e) => setManualMrr(e.target.value)}
+                  onBlur={() => patchMoney("manualMrrCents", manualMrr)}
+                  placeholder="e.g. 7000 or 7k"
+                />
+              </div>
+              <div className="grid content-start gap-2">
+                <Label>LTV ($)</Label>
+                <Input
+                  type="text"
+                  value={manualLtv}
+                  onChange={(e) => setManualLtv(e.target.value)}
+                  onBlur={() => patchMoney("manualLtvCents", manualLtv)}
+                  placeholder="e.g. 25000 or 25k"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Monthly MRR ($)
-              </label>
-              <input
-                type="text"
-                value={manualMrr}
-                onChange={(e) => setManualMrr(e.target.value)}
-                onBlur={() => patchMoney("manualMrrCents", manualMrr)}
-                placeholder="e.g. 7000 or 7k"
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                LTV ($)
-              </label>
-              <input
-                type="text"
-                value={manualLtv}
-                onChange={(e) => setManualLtv(e.target.value)}
-                onBlur={() => patchMoney("manualLtvCents", manualLtv)}
-                placeholder="e.g. 25000 or 25k"
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
 }
 
+/** On/off switch for one ad platform's running state. */
+function AdsSwitch({
+  platform,
+  running,
+  onToggle,
+}: {
+  platform: string;
+  running: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className="flex cursor-pointer items-center gap-2.5 text-sm"
+      title={running ? "Click to pause" : "Click to resume"}
+    >
+      <Switch checked={running} onCheckedChange={onToggle} />
+      <span>
+        {platform}:{" "}
+        <span className={running ? "font-medium text-foreground" : "text-muted-foreground"}>
+          {running ? "Running" : "Paused"}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function RosterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-        {label}
-      </label>
+    <div className="grid content-start gap-2">
+      <Label>{label}</Label>
       {children}
     </div>
   );

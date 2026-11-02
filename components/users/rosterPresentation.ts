@@ -1,3 +1,4 @@
+import type { BadgeTone } from "@/components/ui/badge";
 import { MANUAL_BILLING_OPTIONS, SERVICE_OPTIONS } from "@/lib/clientProfile";
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,42 @@ export const SERVICE_CHIP_CLS: Record<string, string> = {
   creatives: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   email: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
 };
+
+// ---------------------------------------------------------------------------
+// Kit tones (components/ui/badge StatusBadge / badgeVariants) for the shadcn
+// Client Directory. Status-like vocab maps to a meaning; categories (services,
+// ad platforms) and admin-added custom options stay neutral. The *_CHIP_CLS
+// maps above remain for the not-yet-migrated Team hub / Meta Accounts pages.
+// ---------------------------------------------------------------------------
+
+export const STAGE_TONE: Record<string, BadgeTone> = {
+  onboarding: "neutral",
+  launched: "info",
+  warmup: "warning",
+  phase3: "info",
+  optimizing: "info",
+  scaling: "success",
+};
+
+export const HEALTH_TONE: Record<string, BadgeTone> = {
+  happy: "success",
+  mad: "danger",
+  money: "success",
+  struggling: "warning",
+  testing: "info",
+};
+
+export const MANUAL_BILLING_TONE: Record<string, BadgeTone> = {
+  extended: "neutral",
+  paid: "success",
+  upcoming: "neutral",
+  paused: "neutral",
+};
+
+/** Tone for a roster option value (unknown/custom → neutral). */
+export function toneOf(map: Record<string, BadgeTone>, value: string): BadgeTone {
+  return map[value] ?? "neutral";
+}
 
 function toLabelMap(
   options: ReadonlyArray<{ value: string; label: string }>

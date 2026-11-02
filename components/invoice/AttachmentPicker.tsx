@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { Paperclip, Plus, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_SIZE,
@@ -101,59 +102,57 @@ export function AttachmentPicker({ state }: { state: EmailAttachmentsState }) {
   const attachTotal = attachments.reduce((s, f) => s + f.size, 0);
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-          Attachments (optional)
-        </label>
-        <span className="text-[11px] text-muted-foreground">
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between">
+        <Label className="text-xs text-muted-foreground">Attachments (optional)</Label>
+        <span className="text-xs text-muted-foreground tabular-nums">
           {attachments.length}/{MAX_ATTACHMENT_COUNT} ·{" "}
           {formatAttachmentBytes(attachTotal)}/
           {formatAttachmentBytes(MAX_TOTAL_ATTACHMENT_SIZE)}
         </span>
       </div>
-      <div className="rounded-lg border bg-background p-2 space-y-2">
+      <div className="space-y-2 rounded-2xl bg-input/50 p-2">
         {attachments.length > 0 && (
           <ul className="space-y-1.5">
             {attachments.map((f, i) => (
               <li
                 key={`${f.name}-${f.size}-${i}`}
-                className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5"
+                className="flex items-center gap-2 rounded-xl bg-background px-2.5 py-1.5 ring-1 ring-foreground/5"
               >
-                <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="flex-1 min-w-0 text-xs text-foreground truncate">
+                <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-xs text-foreground">
                   {f.name}
                 </span>
-                <span className="text-[11px] text-muted-foreground shrink-0">
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {formatAttachmentBytes(f.size)}
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
                   onClick={() => removeAt(i)}
                   aria-label={`Remove ${f.name}`}
-                  className="p-0.5 rounded hover:bg-background/60 text-muted-foreground hover:text-destructive transition-colors"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <X className="h-3 w-3" />
-                </button>
+                  <X />
+                </Button>
               </li>
             ))}
           </ul>
         )}
-        <div className="flex items-center gap-2">
-          <button
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             onClick={() => fileInputRef.current?.click()}
             disabled={attachments.length >= MAX_ATTACHMENT_COUNT}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted/50 transition-colors",
-              attachments.length >= MAX_ATTACHMENT_COUNT && "opacity-50"
-            )}
           >
-            <Plus className="h-3 w-3" />
+            <Plus />
             Add file{attachments.length === 0 ? "s" : ""}
-          </button>
+          </Button>
           {attachments.length === 0 && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Max {MAX_ATTACHMENT_COUNT} files,{" "}
               {formatAttachmentBytes(MAX_ATTACHMENT_SIZE)} each. No .exe/.js/etc.
             </span>
@@ -171,7 +170,7 @@ export function AttachmentPicker({ state }: { state: EmailAttachmentsState }) {
         />
       </div>
       {attachError && (
-        <p className="mt-1.5 text-[11px] text-destructive">{attachError}</p>
+        <p className="text-xs text-destructive">{attachError}</p>
       )}
     </div>
   );

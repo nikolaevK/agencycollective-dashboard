@@ -1,7 +1,15 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CATEGORIES } from "./types";
 import { DateRangeDropdown, type DateRangeValue } from "./DateRangeDropdown";
 import type { UserStatus } from "@/lib/users";
@@ -69,8 +77,10 @@ export function filtersActive(f: ClientFilterState): boolean {
   );
 }
 
-const SELECT_CLS =
-  "rounded-md border bg-background px-3 py-2 text-sm font-medium shadow-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
+// Radix SelectItem can't hold "" — the "All categories" option maps to it.
+const ALL_CATEGORIES = "__all__";
+
+const SELECT_TRIGGER_CLS = "w-auto min-w-[9rem]";
 
 export function ClientFilters({
   value,
@@ -90,83 +100,98 @@ export function ClientFilters({
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="text"
             value={value.search}
             onChange={(e) => set("search", e.target.value)}
             placeholder="Search name, email, brand, category…"
-            className="w-full pl-9 pr-4 py-2 bg-background border rounded-md text-sm text-foreground placeholder:text-muted-foreground shadow-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+            aria-label="Search clients"
+            className="pl-9"
           />
         </div>
 
         {/* Status */}
-        <select
+        <Select
           value={value.status}
-          onChange={(e) => set("status", e.target.value as ClientFilterState["status"])}
-          className={SELECT_CLS}
+          onValueChange={(v) => set("status", v as ClientFilterState["status"])}
         >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="onboarding">Onboarding</option>
-          <option value="inactive">Inactive</option>
-          <option value="archived">Archived</option>
-        </select>
+          <SelectTrigger className={SELECT_TRIGGER_CLS} aria-label="Status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="onboarding">Onboarding</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
 
         {/* Workspace (separate directories for outside teams) */}
         {workspaces.length > 1 && (
-          <select
-            value={value.workspace}
-            onChange={(e) => set("workspace", e.target.value)}
-            className={SELECT_CLS}
-          >
-            <option value="all">All workspaces</option>
-            {workspaces.map((w) => (
-              <option key={w.value} value={w.value}>{w.label}</option>
-            ))}
-          </select>
+          <Select value={value.workspace} onValueChange={(v) => set("workspace", v)}>
+            <SelectTrigger className={SELECT_TRIGGER_CLS} aria-label="Workspace">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All workspaces</SelectItem>
+              {workspaces.map((w) => (
+                <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
         {/* Book */}
-        <select
+        <Select
           value={value.book}
-          onChange={(e) => set("book", e.target.value as ClientFilterState["book"])}
-          className={SELECT_CLS}
+          onValueChange={(v) => set("book", v as ClientFilterState["book"])}
         >
-          <option value="all">All books</option>
-          <option value="agency">Agency Collective</option>
-          <option value="pepads">PepAds</option>
-        </select>
+          <SelectTrigger className={SELECT_TRIGGER_CLS} aria-label="Book">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All books</SelectItem>
+            <SelectItem value="agency">Agency Collective</SelectItem>
+            <SelectItem value="pepads">PepAds</SelectItem>
+          </SelectContent>
+        </Select>
 
         {/* Re-bill status */}
-        <select
-          value={value.rebill}
-          onChange={(e) => set("rebill", e.target.value as RebillFilter)}
-          className={SELECT_CLS}
-        >
-          <option value="all">All re-bill</option>
-          <option value="overdue">Overdue</option>
-          <option value="due">Due soon</option>
-          <option value="invoice_sent">Invoice sent</option>
-          <option value="upcoming">Upcoming</option>
-          <option value="extended">Extended</option>
-          <option value="paused">Paused</option>
-          <option value="unscheduled">Unscheduled</option>
-        </select>
+        <Select value={value.rebill} onValueChange={(v) => set("rebill", v as RebillFilter)}>
+          <SelectTrigger className={SELECT_TRIGGER_CLS} aria-label="Re-bill status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All re-bill</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
+            <SelectItem value="due">Due soon</SelectItem>
+            <SelectItem value="invoice_sent">Invoice sent</SelectItem>
+            <SelectItem value="upcoming">Upcoming</SelectItem>
+            <SelectItem value="extended">Extended</SelectItem>
+            <SelectItem value="paused">Paused</SelectItem>
+            <SelectItem value="unscheduled">Unscheduled</SelectItem>
+          </SelectContent>
+        </Select>
 
         {/* Category */}
-        <select
-          value={value.category}
-          onChange={(e) => set("category", e.target.value)}
-          className={SELECT_CLS}
+        <Select
+          value={value.category || ALL_CATEGORIES}
+          onValueChange={(v) => set("category", v === ALL_CATEGORIES ? "" : v)}
         >
-          <option value="">All categories</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className={SELECT_TRIGGER_CLS} aria-label="Category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_CATEGORIES}>All categories</SelectItem>
+            {CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {/* Date joined */}
         <DateRangeDropdown
@@ -185,15 +210,16 @@ export function ClientFilters({
 
       <div className="flex flex-wrap items-center gap-2">
         {/* MRR range */}
-        <div className="flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 shadow-sm">
-          <span className="text-xs font-medium text-muted-foreground">MRR $</span>
+        <div className="flex h-9 items-center gap-1.5 rounded-3xl border border-transparent bg-input/50 px-3 transition-[box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
+          <span className="text-xs text-muted-foreground">MRR $</span>
           <input
             type="number"
             min={0}
             value={value.mrrMin}
             onChange={(e) => set("mrrMin", e.target.value)}
             placeholder="min"
-            className="w-16 bg-transparent text-sm text-foreground focus:outline-none"
+            aria-label="Minimum MRR"
+            className="w-16 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <span className="text-muted-foreground">–</span>
           <input
@@ -202,22 +228,21 @@ export function ClientFilters({
             value={value.mrrMax}
             onChange={(e) => set("mrrMax", e.target.value)}
             placeholder="max"
-            className="w-16 bg-transparent text-sm text-foreground focus:outline-none"
+            aria-label="Maximum MRR"
+            className="w-16 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
 
         {filtersActive(value) && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => onChange(DEFAULT_FILTERS)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium shadow-sm",
-              "text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            )}
+            className="text-muted-foreground"
           >
-            <X className="h-3.5 w-3.5" />
+            <X />
             Clear filters
-          </button>
+          </Button>
         )}
       </div>
     </div>

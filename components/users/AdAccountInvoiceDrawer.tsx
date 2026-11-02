@@ -5,6 +5,16 @@ import { pdf } from "@react-pdf/renderer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Send, Download, Eye, Loader2, Check, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
 import { InvoiceDrawerShell } from "@/components/invoice/InvoiceDrawerShell";
 import { InvoicePreviewDialog } from "@/components/invoice/InvoicePreviewDialog";
@@ -43,10 +53,24 @@ function todayYmd(): string {
   const t = new Date();
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 }
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block";
+// Segmented control look (TabsList-style track + raised active pill) for the
+// Local/International payment switch — same as the deal invoice drawer.
+const SEGMENT_TRACK = "rounded-3xl bg-muted p-1";
+const SEGMENT_ITEM =
+  "h-9 sm:h-7 rounded-full px-3 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+
+// Radix Select items can't carry an empty value — the "Next cycle — default"
+// option (cycleAnchor "") maps to this.
+const NEXT_CYCLE = "__next__";
+
+// Draft status → badge tone (pending waits for review, sent, rejected).
+const DRAFT_TONE: Record<string, BadgeTone> = {
+  pending: "warning",
+  sent: "success",
+  rejected: "danger",
+};
+
+const NOTICE = "rounded-2xl border px-4 py-3 text-sm";
 
 // Ad-spend fee options: 2.0%–7.0% in 0.5% steps (basis points).
 const FEE_OPTIONS: { bps: number; label: string }[] = [];
@@ -99,11 +123,15 @@ interface Props {
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  // overflow-visible: dropdowns inside (preset services, style picker) must
+  // not be clipped.
   return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-background/40 p-4">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
-      {children}
-    </section>
+    <Card className="overflow-visible">
+      <section className="space-y-4 p-4">
+        <h4 className="text-sm font-medium text-foreground">{title}</h4>
+        {children}
+      </section>
+    </Card>
   );
 }
 
@@ -604,77 +632,45 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
   const lockedIds = [retainerIdRef.current!, adSpendIdRef.current!];
 
   const footer = data ? (
-    <div className="space-y-2">
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+    <div className="space-y-3">
+      {error && <div className={cn(NOTICE, badgeTone.danger)}>{error}</div>}
       {notice && !error && (
-        <div
-          className={cn(
-            "rounded-lg border px-3 py-2 text-sm",
-            notice.type === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "border-destructive/30 bg-destructive/10 text-destructive"
-          )}
-        >
+        <div className={cn(NOTICE, notice.type === "success" ? badgeTone.success : badgeTone.danger)}>
           {notice.text}
         </div>
       )}
       {sent && (
-        <div
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm",
-            savedOk
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-          )}
-        >
-          <Check className="h-4 w-4" />
+        <div className={cn(NOTICE, "flex items-center gap-1.5", savedOk ? badgeTone.success : badgeTone.warning)}>
+          <Check className="size-4 shrink-0" />
           {savedOk ? "Invoice sent and filed." : "Invoice emailed, but filing the copy failed."}
         </div>
       )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {dirty && !sent && (
-          <span className="mr-auto text-[11px] font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
+          <span className="mr-auto text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
         )}
         {adAccount && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={handleSaveDraft}
             disabled={busy !== null || sent || draftReviewed}
             title="Save without sending — it waits under Drafts for review"
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
           >
-            {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {busy === "save" ? <Loader2 className="animate-spin" /> : <Save />}
             {draftId ? "Update draft" : "Save draft"}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          onClick={() => setPreviewOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-        >
-          <Eye className="h-4 w-4" /> Preview
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={busy !== null}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
-        >
-          {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} PDF
-        </button>
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={busy !== null || sent || draftReviewed}
-          className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-        >
-          {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : sent ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+        <Button type="button" variant="outline" onClick={() => setPreviewOpen(true)}>
+          <Eye /> Preview
+        </Button>
+        <Button type="button" variant="outline" onClick={handleDownload} disabled={busy !== null}>
+          {busy === "download" ? <Loader2 className="animate-spin" /> : <Download />} PDF
+        </Button>
+        <Button type="button" onClick={handleSend} disabled={busy !== null || sent || draftReviewed}>
+          {busy === "send" ? <Loader2 className="animate-spin" /> : sent ? <Check /> : <Send />}
           {busy === "send" ? "Sending…" : sent ? "Sent" : draft ? "Approve & send" : "Send invoice"}
-        </button>
+        </Button>
       </div>
     </div>
   ) : null;
@@ -686,9 +682,9 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
         size="lg"
         badges={
           draft ? (
-            <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+            <StatusBadge tone={DRAFT_TONE[draft.status] ?? "neutral"}>
               {draft.status === "pending" ? "Draft" : draft.status === "sent" ? "Draft · sent" : "Draft · rejected"}
-            </span>
+            </StatusBadge>
           ) : undefined
         }
         subtitle={
@@ -704,21 +700,17 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
         footer={footer}
       >
         {loading ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
+              <Skeleton key={i} className="h-24 w-full rounded-3xl" />
             ))}
           </div>
         ) : !data ? (
-          <div className="p-8 text-center space-y-3">
+          <div className="space-y-3 p-8 text-center">
             <p className="text-sm text-destructive">{error ?? "Failed to load invoice."}</p>
-            <button
-              type="button"
-              onClick={close}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-            >
+            <Button type="button" variant="outline" onClick={close}>
               Close
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -730,22 +722,20 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
               {/* Account context (free invoices type these in; attached accounts
                   show them read-only since they come from the account). */}
               {isFree && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="adinv-account" className={LABEL}>Account name</label>
-                    <input
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="adinv-account">Account name</Label>
+                    <Input
                       id="adinv-account"
-                      className={FIELD}
                       value={accountName}
                       onChange={(e) => setAccountName(e.target.value)}
                       placeholder="OT_AC_brand-CC"
                     />
                   </div>
-                  <div>
-                    <label htmlFor="adinv-vendor" className={LABEL}>Vendor</label>
-                    <input
+                  <div className="grid gap-2">
+                    <Label htmlFor="adinv-vendor">Vendor</Label>
+                    <Input
                       id="adinv-vendor"
-                      className={FIELD}
                       value={vendor}
                       onChange={(e) => setVendor(e.target.value)}
                       placeholder="ConceptSF"
@@ -753,76 +743,75 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
-                <div>
-                  <label htmlFor="adinv-retainer" className={LABEL}>Monthly retainer ($)</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:items-end">
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-retainer">Monthly retainer ($)</Label>
+                  <Input
                     id="adinv-retainer"
                     type="number"
                     min={0}
                     step="0.01"
                     inputMode="decimal"
-                    className={FIELD}
+                    className="tabular-nums"
                     value={retainerDollars}
                     onChange={(e) => setRetainerDollars(e.target.value.startsWith("-") ? "" : e.target.value)}
                     placeholder="1500"
                   />
                 </div>
-                <div>
-                  <label htmlFor="adinv-spend" className={LABEL}>Ad spend ($)</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-spend">Ad spend ($)</Label>
+                  <Input
                     id="adinv-spend"
                     type="number"
                     min={0}
                     step="0.01"
                     inputMode="decimal"
-                    className={FIELD}
+                    className="tabular-nums"
                     value={spendDollars}
                     onChange={(e) => setSpendDollars(e.target.value.startsWith("-") ? "" : e.target.value)}
                     placeholder="41499.35"
                   />
                 </div>
-                <div>
-                  <label htmlFor="adinv-fee" className={LABEL}>Ad spend fee %</label>
-                  <select
-                    id="adinv-fee"
-                    className={FIELD}
-                    value={feeBps}
-                    onChange={(e) => setFeeBps(Number(e.target.value))}
-                  >
-                    {/* An off-grid stored fee still shows correctly. */}
-                    {!FEE_OPTIONS.some((o) => o.bps === feeBps) && (
-                      <option value={feeBps}>{(feeBps / 100).toFixed(2)}%</option>
-                    )}
-                    {FEE_OPTIONS.map((o) => (
-                      <option key={o.bps} value={o.bps}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-fee">Ad spend fee %</Label>
+                  <Select value={String(feeBps)} onValueChange={(v) => setFeeBps(Number(v))}>
+                    <SelectTrigger id="adinv-fee">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* An off-grid stored fee still shows correctly. */}
+                      {!FEE_OPTIONS.some((o) => o.bps === feeBps) && (
+                        <SelectItem value={String(feeBps)}>{(feeBps / 100).toFixed(2)}%</SelectItem>
+                      )}
+                      {FEE_OPTIONS.map((o) => (
+                        <SelectItem key={o.bps} value={String(o.bps)}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Leave retainer or ad spend at 0 to omit that line. These lines are calculated — edit them here, not in the line items below.
               </p>
             </Section>
 
             <Section title="Recipient">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="adinv-billto" className={LABEL}>Bill to</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-billto">Bill to</Label>
+                  <Input
                     id="adinv-billto"
-                    className={FIELD}
                     value={data.receiver.name}
                     onChange={(e) => patchReceiver({ name: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="adinv-email" className={LABEL}>Recipient email</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-email">Recipient email</Label>
+                  <Input
                     id="adinv-email"
-                    className={cn(FIELD, data.receiver.email.trim() && !isValidEmail(data.receiver.email) && "border-destructive/60")}
+                    aria-invalid={data.receiver.email.trim() && !isValidEmail(data.receiver.email) ? true : undefined}
                     type="email"
                     value={data.receiver.email}
                     onChange={(e) => patchReceiver({ email: e.target.value })}
@@ -830,8 +819,10 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
                   />
                 </div>
               </div>
-              <div>
-                <label htmlFor="adinv-cc" className={LABEL}>CC (optional)</label>
+              <div className="grid gap-2">
+                <Label htmlFor="adinv-cc">
+                  CC <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
                 <CcChipsInput field={cc} id="adinv-cc" exclude={[data.receiver.email]} />
               </div>
               <AttachmentPicker state={attach} />
@@ -840,61 +831,62 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
             <Section title="Details">
               {/* Billing cycle (attached accounts only) */}
               {adAccount && (
-                <div>
-                  <label htmlFor="adinv-cycle" className={LABEL}>Billing cycle</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <select
-                      id="adinv-cycle"
-                      className={FIELD}
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-cycle">Billing cycle</Label>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Select
                       value={
-                        cycleAnchor === "" ||
+                        (cycleAnchor === "" ||
                         cycleChoices.some((c) => c.offset !== 0 && c.date === cycleAnchor)
                           ? cycleAnchor
-                          : "custom"
+                          : "custom") || NEXT_CYCLE
                       }
-                      onChange={(e) => {
-                        const v = e.target.value;
+                      onValueChange={(raw) => {
+                        const v = raw === NEXT_CYCLE ? "" : raw;
                         setDirty(true);
                         if (v === "custom") setCycleAnchor(adAccount.nextRebillAt ?? todayYmd());
                         else setCycleAnchor(v);
                       }}
                     >
-                      <option value="">
-                        Next cycle{adAccount.nextRebillAt ? ` (${formatDate(adAccount.nextRebillAt)})` : ""} — default
-                      </option>
-                      {cycleChoices
-                        .filter((c) => c.offset !== 0)
-                        .map((c) => (
-                          <option key={c.date} value={c.date}>
-                            {formatDate(c.date)} ({c.offset < 0 ? "previous" : "future"})
-                          </option>
-                        ))}
-                      <option value="custom">Custom date…</option>
-                    </select>
+                      <SelectTrigger id="adinv-cycle">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NEXT_CYCLE}>
+                          Next cycle{adAccount.nextRebillAt ? ` (${formatDate(adAccount.nextRebillAt)})` : ""} — default
+                        </SelectItem>
+                        {cycleChoices
+                          .filter((c) => c.offset !== 0)
+                          .map((c) => (
+                            <SelectItem key={c.date} value={c.date}>
+                              {formatDate(c.date)} ({c.offset < 0 ? "previous" : "future"})
+                            </SelectItem>
+                          ))}
+                        <SelectItem value="custom">Custom date…</SelectItem>
+                      </SelectContent>
+                    </Select>
                     {cycleAnchor !== "" && (
-                      <input
-                        type="date"
+                      <DatePicker
                         aria-label="Custom billing cycle date"
-                        className={FIELD}
                         value={cycleAnchor}
-                        onChange={(e) => {
+                        onValueChange={(v) => {
                           setDirty(true);
-                          setCycleAnchor(e.target.value);
+                          setCycleAnchor(v);
                         }}
                       />
                     )}
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Which monthly cycle this invoice covers. It replaces only an awaiting invoice
                     for the SAME cycle (a re-send); the default cycle lights &ldquo;Invoice
                     sent&rdquo;. Any other cycle is recorded alongside — for a delayed or upcoming
                     month.
                   </p>
                   {(openSplit.replaced.length > 0 || openSplit.others.length > 0) && (
-                    <div className="mt-2 space-y-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-xs">
+                    <div className="space-y-2 rounded-2xl bg-muted/50 p-3 text-xs">
                       {openSplit.replaced.map((i) => (
                         <p key={i.id} className="text-amber-700 dark:text-amber-400">
-                          Replaces <span className="font-semibold">{i.invoiceNumber}</span> (sent{" "}
+                          Replaces <span className="font-medium">{i.invoiceNumber}</span> (sent{" "}
                           {formatDate(i.sentAt)} for this cycle) — it stays in history as
                           Superseded. To chase payment instead, use Follow up in the account&rsquo;s
                           Invoices.
@@ -910,19 +902,18 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
                           </p>
                           {openSplit.others.map((i) => (
                             <label key={i.id} className="flex items-start gap-2 text-foreground">
-                              <input
-                                type="checkbox"
-                                className="mt-0.5"
+                              <Checkbox
+                                className="mt-px"
                                 checked={replaceIds.includes(i.id)}
                                 disabled={sent || busy !== null}
-                                onChange={(e) =>
+                                onCheckedChange={(v) =>
                                   setReplaceIds((ids) =>
-                                    e.target.checked ? [...ids, i.id] : ids.filter((x) => x !== i.id)
+                                    v === true ? [...ids, i.id] : ids.filter((x) => x !== i.id)
                                   )
                                 }
                               />
                               <span>
-                                Replace <span className="font-semibold">{i.invoiceNumber}</span>{" "}
+                                Replace <span className="font-medium">{i.invoiceNumber}</span>{" "}
                                 <span className="text-muted-foreground">
                                   (cycle {formatDate(i.cycleAnchor)}, sent {formatDate(i.sentAt)})
                                 </span>
@@ -943,47 +934,43 @@ export function AdAccountInvoiceDrawer({ adAccount, onClose, onSent, draftId: in
                 paymentType={paymentType}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
-                <div>
-                  <label htmlFor="adinv-date" className={LABEL}>Invoice date</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:items-end">
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-date">Invoice date</Label>
+                  <DatePicker
                     id="adinv-date"
-                    type="date"
-                    className={FIELD}
                     value={data.details.invoiceDate}
-                    onChange={(e) => patchDetails({ invoiceDate: e.target.value })}
+                    onValueChange={(v) => patchDetails({ invoiceDate: v })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="adinv-due" className={LABEL}>Due date</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="adinv-due">Due date</Label>
+                  <DatePicker
                     id="adinv-due"
-                    type="date"
-                    className={FIELD}
                     value={data.details.dueDate}
-                    onChange={(e) => patchDetails({ dueDate: e.target.value })}
+                    onValueChange={(v) => patchDetails({ dueDate: v })}
                   />
                 </div>
-                <div>
-                  <span className={LABEL}>Payment</span>
-                  <div className="flex rounded-lg border bg-background p-0.5">
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium leading-none">Payment</span>
+                  <ToggleGroup
+                    type="single"
+                    // Each option stays its own Tab stop, as the old buttons were.
+                    rovingFocus={false}
+                    value={paymentType}
+                    // Radix reports "" when the selected option is clicked
+                    // again; the old buttons re-applied that type then, so
+                    // keep doing that.
+                    onValueChange={(v) => changePaymentType((v || paymentType) as PaymentType)}
+                    aria-label="Payment"
+                    className={cn("w-full", SEGMENT_TRACK)}
+                  >
                     {(["local", "international"] as PaymentType[]).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        aria-pressed={paymentType === t}
-                        onClick={() => changePaymentType(t)}
-                        className={cn(
-                          "h-9 flex-1 rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition-colors sm:h-auto",
-                          paymentType === t
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
+                      <ToggleGroupItem key={t} value={t} className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2 capitalize")}>
                         {t}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
               </div>
             </Section>

@@ -18,16 +18,20 @@ import {
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { ClientFilters, DEFAULT_FILTERS, type ClientFilterState } from "@/components/users/ClientFilters";
-import { AddClientModal } from "@/components/users/AddClientModal";
-import { RebillAlertsPanel, useRebillAlerts } from "@/components/users/RebillAlertsPanel";
+import { RebillAlertsPanel } from "@/components/users/RebillAlertsPanel";
+import { useRebillAlerts } from "@/components/users/useRebillAlerts";
 import { SentInvoicesPanel, useSentInvoices } from "@/components/users/SentInvoicesPanel";
-import { UsersSupportTab } from "@/components/users/UsersSupportTab";
-import { AdAccountsDirectory } from "@/components/users/AdAccountsDirectory";
-import { PeptideAiUsageTab } from "@/components/users/PeptideAiUsageTab";
 import { InvoiceDraftsPanel, useInvoiceDrafts } from "@/components/users/InvoiceDraftsList";
-import { CrossSellTab } from "@/components/offers/admin/CrossSellTab";
 import { useNewOfferRequestCount } from "@/components/offers/admin/OfferRequestsInbox";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
+import type { ClientTrends } from "@/lib/clientTrendSeries";
+import { businessTodayYmd } from "@/lib/businessTime";
 import dynamic from "next/dynamic";
 // Lazy-loaded: the builder pulls in react-markdown (via WelcomeKitRenderer)
 // that only the rarely-opened Welcome Kit tab needs.
@@ -38,12 +42,35 @@ const WelcomeKitBuilder = dynamic(
     ),
   { ssr: false }
 );
+// Lazy: the other tabs and the Add Client modal load when first opened, so
+// the Directory's first load doesn't ship them.
+const AdAccountsDirectory = dynamic(() => import("@/components/users/AdAccountsDirectory").then((m) => m.AdAccountsDirectory), { loading: () => <Skeleton className="h-[420px] w-full rounded-3xl" /> });
+const UsersSupportTab = dynamic(() => import("@/components/users/UsersSupportTab").then((m) => m.UsersSupportTab), { loading: () => <Skeleton className="h-[420px] w-full rounded-3xl" /> });
+const PeptideAiUsageTab = dynamic(() => import("@/components/users/PeptideAiUsageTab").then((m) => m.PeptideAiUsageTab), { loading: () => <Skeleton className="h-[420px] w-full rounded-3xl" /> });
+const CrossSellTab = dynamic(() => import("@/components/offers/admin/CrossSellTab").then((m) => m.CrossSellTab), { loading: () => <Skeleton className="h-[420px] w-full rounded-3xl" /> });
+const AddClientModal = dynamic(() => import("@/components/users/AddClientModal").then((m) => m.AddClientModal), { ssr: false });
+// Lazy: the Insights view is the only recharts-heavy part of the tab.
+const ClientInsights = dynamic(
+  () => import("@/components/users/ClientInsights").then((m) => m.ClientInsights),
+  { loading: () => <Skeleton className="h-[380px] w-full rounded-3xl" /> }
+);
 import { MaintenanceToggle } from "@/components/users/MaintenanceToggle";
-import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { ClientPublic } from "@/components/users/types";
 
 type TabId = "clients" | "adAccounts" | "support" | "welcomeKit" | "peptideAi" | "crossSell";
+type DirectoryView = "roster" | "insights";
+
+// Stable empty list while loading — a fresh [] per render would re-run every
+// memo (and memoized chart) below it.
+const NO_CLIENTS: ClientPublic[] = [];
+
+async function fetchClientTrends(): Promise<ClientTrends> {
+  const res = await fetch("/api/admin/clients/trends");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  return json.data as ClientTrends;
+}
 
 async function fetchClients(): Promise<ClientPublic[]> {
   const res = await fetch("/api/admin/users");
@@ -168,6 +195,7 @@ export default function UsersPage() {
   const router = useRouter();
   const admin = useAdmin();
   const [tab, setTab] = useState<TabId>("clients");
+  const [view, setView] = useState<DirectoryView>("roster");
   // Invoice drafts awaiting review (agent-prepared or saved from a drawer).
   const [draftsOpen, setDraftsOpen] = useState(false);
   const { data: pendingDrafts = [] } = useInvoiceDrafts();
@@ -212,7 +240,7 @@ export default function UsersPage() {
   const newOfferRequests = useNewOfferRequestCount(!admin.isExternal);
 
   const {
-    data: clients = [],
+    data: clients = NO_CLIENTS,
     isLoading,
     isError,
     refetch,
@@ -227,10 +255,33 @@ export default function UsersPage() {
     enabled: tab === "clients",
   });
 
+  // Read-only 12-month payout activity per client — card trend lines + Insights.
+  const {
+    data: trends,
+    isLoading: trendsLoading,
+    isError: trendsError,
+  } = useQuery({
+    queryKey: ["admin-client-trends"],
+    queryFn: fetchClientTrends,
+    staleTime: 600_000,
+    refetchOnWindowFocus: false,
+    enabled: tab === "clients",
+  });
+  // The business month the cards describe: the trend window's last month
+  // (server); the same business-timezone month until it loads.
+  const month = trends?.months[trends.months.length - 1] ?? businessTodayYmd().slice(0, 7);
+  const { workspaces } = useWorkspaces();
+  const scopeLabel =
+    filters.workspace === "all"
+      ? workspaces.length > 1
+        ? "All workspaces"
+        : "All clients"
+      : workspaces.find((w) => w.value === filters.workspace)?.label ?? filters.workspace;
+
   // Shared with the alerts panel via the same query key (deduped).
   const { data: alerts, isError: alertsError } = useRebillAlerts();
   // Same dedupe pattern — feeds the summary card + the SentInvoicesPanel.
-  const { data: sentInvoices } = useSentInvoices();
+  const { data: sentInvoices, isError: sentInvoicesError } = useSentInvoices();
 
   const filtered = useMemo(() => applyFilters(clients, filters), [clients, filters]);
 
@@ -264,17 +315,6 @@ export default function UsersPage() {
     [workspaceClients]
   );
 
-  // Monthly MRR reflects ACTIVE clients only (same definition as the "Active"
-  // card below) — paused/onboarding/inactive/archived clients don't count
-  // toward recurring revenue even though their row still shows its own MRR.
-  // PepAds clients contribute their manual MRR (their book has no payout-
-  // derived recurring revenue).
-  const totalMrr = workspaceClients.reduce(
-    (s, c) => s + (c.status === "active" ? effectiveMrrCents(c) : 0),
-    0
-  );
-  const activeClients = workspaceClients.filter((c) => c.status === "active").length;
-
   // Alert / sent-invoice counts scoped to the workspace context (the shared
   // queries are actor-scoped server-side, which for an unscoped admin means
   // ALL books — the page trims them to the selected one).
@@ -287,6 +327,7 @@ export default function UsersPage() {
 
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-client-trends"] });
     queryClient.invalidateQueries({ queryKey: ["admin-rebill-alerts"] });
     queryClient.invalidateQueries({ queryKey: ["admin-sent-invoices"] });
   }
@@ -307,104 +348,85 @@ export default function UsersPage() {
     <DashboardShell wide>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-foreground">Client Directory</h1>
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Client Directory</h2>
             <p className="text-sm text-muted-foreground mt-1">
               Cross-referenced with the Payout DB — MRR, join dates, billing schedule.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex bg-muted rounded-lg p-1 self-start max-w-full overflow-x-auto">
-              <TabButton active={tab === "clients"} onClick={() => setTab("clients")}>
-                Directory
-              </TabButton>
-              <TabButton active={tab === "adAccounts"} onClick={() => setTab("adAccounts")}>
-                Ad Accounts
-              </TabButton>
-              <TabButton
-                active={tab === "support"}
-                onClick={() => setTab("support")}
-                badge={unreadSupport}
-              >
-                Support
-              </TabButton>
-              <TabButton active={tab === "peptideAi"} onClick={() => setTab("peptideAi")}>
-                Peptide AI
-              </TabButton>
-              {!admin.isExternal && (
-                <TabButton active={tab === "welcomeKit"} onClick={() => setTab("welcomeKit")}>
-                  Welcome Kit
-                </TabButton>
-              )}
-              {!admin.isExternal && (
-                <TabButton
-                  active={tab === "crossSell"}
-                  onClick={() => setTab("crossSell")}
-                  badge={newOfferRequests}
-                >
-                  Cross-sell
-                </TabButton>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
             {!admin.isExternal && <MaintenanceToggle />}
             {(tab === "clients" || tab === "adAccounts") && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setDraftsOpen(true)}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors",
-                  pendingDrafts.length > 0
-                    ? "border-violet-500/40 bg-violet-500/5 text-violet-700 hover:bg-violet-500/10 dark:text-violet-300"
-                    : "border-border/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                )}
                 title="Invoice drafts awaiting review"
               >
-                <Bot className="h-4 w-4" />
+                <Bot />
                 Drafts
                 {pendingDrafts.length > 0 && (
-                  <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 px-1.5 tabular-nums">
                     {pendingDrafts.length}
-                  </span>
+                  </Badge>
                 )}
-              </button>
+              </Button>
             )}
             {tab === "clients" && (
               <>
-                <button
+                <Button
+                  variant="outline"
                   onClick={handleCopyCsv}
                   disabled={workspaceClients.length === 0}
-                  className="hidden md:flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                  className="hidden md:inline-flex"
                   title="Copy the roster (all columns, current workspace, ignoring other filters) as CSV"
                 >
-                  {csvCopied ? (
-                    <Check className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
+                  {csvCopied ? <Check className="text-emerald-600 dark:text-emerald-400" /> : <Copy />}
                   {csvCopied ? "Copied" : "Copy CSV"}
-                </button>
-                <button
-                  onClick={() => setShowAdd(true)}
-                  className="hidden md:flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
-                >
-                  <Plus className="h-4 w-4" />
+                </Button>
+                <Button onClick={() => setShowAdd(true)} className="hidden md:inline-flex">
+                  <Plus />
                   Add Client
-                </button>
+                </Button>
               </>
             )}
           </div>
         </div>
 
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+          <div className="overflow-x-auto">
+            <TabsList>
+              <TabsTrigger value="clients">Directory</TabsTrigger>
+              <TabsTrigger value="adAccounts">Ad Accounts</TabsTrigger>
+              <TabsTrigger value="support">
+                Support
+                <CountBadge count={unreadSupport} />
+              </TabsTrigger>
+              <TabsTrigger value="peptideAi">Peptide AI</TabsTrigger>
+              {!admin.isExternal && <TabsTrigger value="welcomeKit">Welcome Kit</TabsTrigger>}
+              {!admin.isExternal && (
+                <TabsTrigger value="crossSell">
+                  Cross-sell
+                  <CountBadge count={newOfferRequests} />
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
+        </Tabs>
+
         {tab === "clients" && (
           <>
             <ClientSummaryCards
-              totalClients={workspaceClients.length}
-              activeClients={activeClients}
-              totalMrr={totalMrr}
+              clients={workspaceClients}
+              trends={trends}
+              trendsLoading={trendsLoading}
+              month={month}
               rebillsDue={alertsError && !alerts ? null : visibleRebills.length}
               overdueCount={visibleRebills.filter((r) => r.status === "overdue").length}
-              sentInvoices={visibleSentInvoices.length}
+              dueMrr={visibleRebills.reduce((s, r) => s + r.payoutMrr, 0)}
+              sentInvoices={sentInvoicesError && !sentInvoices ? null : visibleSentInvoices.length}
+              sentAmount={visibleSentInvoices.reduce((s, i) => s + i.amountCents, 0)}
               onRebillsClick={() => setAlertsOpen(true)}
               onSentInvoicesClick={() => setSentInvoicesOpen(true)}
               isLoading={isLoading}
@@ -421,40 +443,75 @@ export default function UsersPage() {
               restrictToUserIds={workspaceClientIds}
             />
 
-            <RosterDashboard
-              clients={countable}
-              filters={filters}
-              onFiltersChange={setFilters}
-            />
+            {/* Panels inherit the page's type (TabsContent defaults to text-sm). */}
+            <Tabs value={view} onValueChange={(v) => setView(v as DirectoryView)} className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="roster">Roster</TabsTrigger>
+                <TabsTrigger value="insights">Insights</TabsTrigger>
+              </TabsList>
 
-            <TeamFilterCards
-              clients={countable}
-              selected={filters.team}
-              onSelect={(team) => setFilters((f) => ({ ...f, team }))}
-            />
+              <TabsContent value="insights" className="text-[length:inherit] leading-[inherit]">
+                {isError ? (
+                  <QueryErrorState
+                    title="Couldn't load the Client Directory"
+                    onRetry={() => refetch()}
+                  />
+                ) : isLoading ? (
+                  <Skeleton className="h-[380px] w-full rounded-3xl" />
+                ) : (
+                  <ClientInsights
+                    clients={workspaceClients}
+                    trends={trends}
+                    trendsError={trendsError}
+                    month={month}
+                    scopeLabel={scopeLabel}
+                  />
+                )}
+              </TabsContent>
 
-            <ClientFilters value={filters} onChange={setFilters} />
+              {/* Kept mounted while Insights is open: switching back doesn't
+                  rebuild the table or reset its filters/pagination. */}
+              <TabsContent
+                value="roster"
+                forceMount
+                className="space-y-6 text-[length:inherit] leading-[inherit] data-[state=inactive]:hidden"
+              >
+                <RosterDashboard
+                  clients={countable}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                />
 
-            {isError ? (
-              <QueryErrorState
-                title="Couldn't load the Client Directory"
-                onRetry={() => refetch()}
-              />
-            ) : isLoading ? (
-              <div className="rounded-xl border border-border/50 bg-card p-8">
-                <div className="space-y-3">
-                  {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <ClientDirectory
-                clients={filtered}
-                onRefresh={handleRefresh}
-                resetKey={JSON.stringify(filters)}
-              />
-            )}
+                <TeamFilterCards
+                  clients={countable}
+                  selected={filters.team}
+                  onSelect={(team) => setFilters((f) => ({ ...f, team }))}
+                />
+
+                <ClientFilters value={filters} onChange={setFilters} />
+
+                {isError ? (
+                  <QueryErrorState
+                    title="Couldn't load the Client Directory"
+                    onRetry={() => refetch()}
+                  />
+                ) : isLoading ? (
+                  <Card>
+                    <CardContent className="space-y-3 p-6 md:p-6">
+                      {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <Skeleton key={i} className="h-12 w-full rounded-2xl" />
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ClientDirectory
+                    clients={filtered}
+                    onRefresh={handleRefresh}
+                    resetKey={JSON.stringify(filters)}
+                  />
+                )}
+              </TabsContent>
+            </Tabs>
           </>
         )}
 
@@ -471,13 +528,14 @@ export default function UsersPage() {
 
       {/* Mobile FAB */}
       {tab === "clients" && (
-        <button
+        <Button
           onClick={() => setShowAdd(true)}
-          className="md:hidden fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl shadow-primary/30 ac-gradient active:scale-95 transition-transform"
+          size="icon-lg"
+          className="md:hidden fixed bottom-20 right-4 z-40 size-14 rounded-full shadow-lg [&_svg:not([class*='size-'])]:size-6"
           aria-label="Add client"
         >
-          <Plus className="h-6 w-6" />
-        </button>
+          <Plus />
+        </Button>
       )}
 
       {showAdd && (
@@ -489,34 +547,12 @@ export default function UsersPage() {
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-  badge,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  badge?: number;
-}) {
+/** Attention count on a tab (unread support threads, new service requests). */
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-4 py-1.5 rounded-md text-sm font-semibold transition-colors flex items-center gap-2",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {children}
-      {badge !== undefined && badge > 0 && (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
-          {badge > 99 ? "99+" : badge}
-        </span>
-      )}
-    </button>
+    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white tabular-nums">
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }

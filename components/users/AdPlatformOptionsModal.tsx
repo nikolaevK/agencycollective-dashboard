@@ -1,7 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { X, Plus, Pencil, Trash2, Check, Lock } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Lock } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { AD_PLATFORM_OPTIONS } from "@/lib/clientProfile";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
 import type { PlatformOption } from "@/lib/adPlatformOptions";
@@ -44,40 +56,32 @@ export function AdPlatformOptionsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative mt-16 w-full max-w-md rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click (Escape in a rename field cancels the
+        // rename only).
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Ad platform options</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Shared across every client&apos;s roster row.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-          >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>Ad platform options</DialogTitle>
+          <DialogDescription>
+            Shared across every client&apos;s roster row.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pb-6">
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
               {error}
             </div>
           )}
 
           {/* Add */}
           <div className="flex items-center gap-2">
-            <input
+            <Input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -89,17 +93,16 @@ export function AdPlatformOptionsModal({ onClose }: { onClose: () => void }) {
               placeholder="Add a platform option…"
               maxLength={40}
               disabled={busy}
-              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
+              className="min-w-0 flex-1"
             />
-            <button
+            <Button
               type="button"
               onClick={handleAdd}
               disabled={busy || !draft.trim()}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
             >
-              <Plus className="h-4 w-4" />
+              <Plus />
               Add
-            </button>
+            </Button>
           </div>
 
           {/* List */}
@@ -107,11 +110,11 @@ export function AdPlatformOptionsModal({ onClose }: { onClose: () => void }) {
             {AD_PLATFORM_OPTIONS.map((o) => (
               <div
                 key={o.value}
-                className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2"
+                className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2"
               >
-                <span className="text-sm font-medium text-foreground">{o.label}</span>
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Lock className="h-3 w-3" />
+                <span className="text-sm font-medium">{o.label}</span>
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Lock className="size-3" />
                   Built-in
                 </span>
               </div>
@@ -134,8 +137,8 @@ export function AdPlatformOptionsModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -152,6 +155,7 @@ function CustomOptionRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(option.label);
+  const { confirm, dialog } = useConfirm();
 
   async function save() {
     const next = label.trim();
@@ -166,9 +170,9 @@ function CustomOptionRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-background px-3 py-2">
+    <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 ring-1 ring-foreground/5">
       {editing ? (
-        <input
+        <Input
           autoFocus
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -184,49 +188,66 @@ function CustomOptionRow({
           }}
           maxLength={40}
           disabled={busy}
-          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-primary disabled:opacity-50"
+          aria-label="Option name"
+          className="h-8 min-w-0 flex-1"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {option.label}
         </span>
       )}
 
       <div className="flex shrink-0 items-center gap-1">
         {editing ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={save}
             disabled={busy}
-            className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40"
             aria-label="Save name"
+            title="Save name"
           >
-            <Check className="h-4 w-4" />
-          </button>
+            <Check />
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setEditing(true)}
             disabled={busy}
-            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
             aria-label="Rename option"
+            title="Rename option"
+            className="text-muted-foreground"
           >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+            <Pencil />
+          </Button>
         )}
-        <button
+        <Button
           type="button"
-          onClick={() => {
-            if (confirm(`Remove "${option.label}"? Clients already tagged with it keep the tag.`))
+          variant="ghost"
+          size="icon-sm"
+          onClick={async () => {
+            if (
+              await confirm({
+                title: `Remove "${option.label}"?`,
+                description: "Clients already tagged with it keep the tag.",
+                confirmText: "Remove",
+                destructive: true,
+              })
+            )
               onRemove();
           }}
           disabled={busy}
-          className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-40"
           aria-label="Remove option"
+          title="Remove option"
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+          <Trash2 />
+        </Button>
       </div>
+      {dialog}
     </div>
   );
 }

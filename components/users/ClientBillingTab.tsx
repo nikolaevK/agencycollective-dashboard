@@ -43,6 +43,31 @@ import { billingDateInputValue } from "@/lib/clientBilling";
 import type { ClientBilling, RebillSchedule } from "@/lib/clientBilling";
 import type { BrandHistory } from "@/lib/payouts";
 import type { RebillInvoice } from "@/lib/clientRebillInvoices";
+import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
+
+// Radix Select items can't carry an empty value — "Latest payment (default)"
+// (mrrMonthOverride "") maps to this.
+const NONE = "__none__";
+
+const NOTICE = "rounded-2xl border px-4 py-3 text-sm";
 
 interface BillingResponse {
   billing: ClientBilling | null;
@@ -102,14 +127,14 @@ async function fetchInvoiceHistory(userId: string): Promise<HistoryInvoice[]> {
 
 const INVOICE_STATUS_STYLES: Record<
   RebillInvoice["status"],
-  { label: string; cls: string }
+  { label: string; tone: BadgeTone }
 > = {
-  sent: { label: "Awaiting", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  paid: { label: "Paid", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  unpaid: { label: "Unpaid", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
-  superseded: { label: "Superseded", cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
+  sent: { label: "Awaiting", tone: "info" },
+  paid: { label: "Paid", tone: "success" },
+  unpaid: { label: "Unpaid", tone: "danger" },
+  superseded: { label: "Superseded", tone: "neutral" },
 };
-const UNKNOWN_STATUS_CLS = "bg-muted text-muted-foreground";
+const UNKNOWN_STATUS_TONE: BadgeTone = "neutral";
 
 async function fetchBilling(userId: string): Promise<BillingResponse> {
   const res = await fetch(`/api/admin/clients/${userId}/billing`);
@@ -134,6 +159,7 @@ export function ClientBillingTab({
   isPepads?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const { isExternal } = useAdmin();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["client-billing", userId],
@@ -202,9 +228,13 @@ export function ClientBillingTab({
     if (!data?.activeSentInvoice) return;
     const inv = data.activeSentInvoice;
     if (
-      !confirm(
-        `Mark invoice ${inv.invoiceNumber} as unpaid for this period?\n\nThis is a historical marker — the schedule is not advanced. The client returns to overdue alerts until you Pause/Extend or a payout lands.`
-      )
+      !(await confirm({
+        title: `Mark invoice ${inv.invoiceNumber} as unpaid for this period?`,
+        description:
+          "This is a historical marker — the schedule is not advanced. The client returns to overdue alerts until you Pause/Extend or a payout lands.",
+        confirmText: "Mark unpaid",
+        destructive: true,
+      }))
     )
       return;
     setMarkingUnpaid(true);
@@ -292,8 +322,8 @@ export function ClientBillingTab({
   if (isLoading || !data || !form) {
     return (
       <div className="space-y-4">
-        <div className="h-32 w-full animate-pulse rounded-xl bg-muted/50" />
-        <div className="h-64 w-full animate-pulse rounded-xl bg-muted/50" />
+        <Skeleton className="h-32 w-full rounded-3xl" />
+        <Skeleton className="h-64 w-full rounded-3xl" />
       </div>
     );
   }
@@ -322,6 +352,9 @@ export function ClientBillingTab({
     setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const activeInvoice = data.activeSentInvoice;
+  // The MRR-month select shows "Latest payment (default)" for a pinned month
+  // that's no longer in the list — what the native select displayed.
+  const mrrMonthValues = months.map((m) => `${m.year}-${String(m.month).padStart(2, "0")}`);
 
   return (
     <div className="space-y-6">
@@ -330,15 +363,13 @@ export function ClientBillingTab({
           a payout for the cycle lands in the Payout DB (auto-promoted to
           paid) or the admin marks it unpaid below. */}
       {activeInvoice && (
-        <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.04] dark:bg-violet-500/[0.06] p-4">
+        <div className={cn("rounded-2xl border p-4", badgeTone.info)}>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400 shrink-0">
-              <Send className="h-4 w-4" />
-            </span>
+            <Send className="size-4 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-foreground">
+              <p className="text-sm font-medium text-foreground">
                 Invoice {activeInvoice.invoiceNumber} sent ·{" "}
-                {formatCentsExact(activeInvoice.amountCents)}
+                <span className="tabular-nums">{formatCentsExact(activeInvoice.amountCents)}</span>
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Sent {formatDate(activeInvoice.sentAt)} for the{" "}
@@ -348,39 +379,31 @@ export function ClientBillingTab({
                   : "Awaiting payment in the Payout DB — will auto-clear when a payout lands."}
               </p>
               {unpaidError && (
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1.5">
+                <p className="text-xs text-destructive mt-1.5">
                   {unpaidError}
                 </p>
               )}
             </div>
-            <FollowUpButton
-              onClick={() => setFollowUpInv(activeInvoice)}
-              className="sm:h-auto px-3 py-1.5 text-xs"
-            />
-            <button
+            <FollowUpButton onClick={() => setFollowUpInv(activeInvoice)} />
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleMarkUnpaid}
               disabled={markingUnpaid}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg border border-violet-500/40 px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 hover:bg-violet-500/10 transition-colors shrink-0",
-                markingUnpaid && "opacity-50"
-              )}
+              className="h-9 shrink-0 text-xs sm:h-8"
               title="Record that this period went unpaid. Schedule is not advanced."
             >
-              {markingUnpaid ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5" />
-              )}
+              {markingUnpaid ? <Loader2 className="animate-spin" /> : <XCircle />}
               Mark unpaid
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {/* PepAds: schedule below is informational only */}
       {isPepads && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-          <p className="text-xs text-amber-700 dark:text-amber-400">
+        <div className={cn(NOTICE, badgeTone.warning)}>
+          <p>
             This client is on the PepAds book — billing status is maintained manually
             (see Settings or the directory row). The computed schedule below is shown
             for reference only and raises no alerts.
@@ -393,211 +416,216 @@ export function ClientBillingTab({
       <InvoiceDraftsList filter={{ userId, kind: "client_rebill" }} onChanged={onChanged} />
 
       {/* Schedule summary */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <CalendarClock className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">Re-bill schedule</h3>
-          <RebillStatusChip status={data.schedule.status} paid={data.schedule.paid} className="ml-1" />
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center gap-2 space-y-0">
+          <CalendarClock className="size-4 text-muted-foreground" />
+          <CardTitle>Re-bill schedule</CardTitle>
+          <RebillStatusChip status={data.schedule.status} paid={data.schedule.paid} />
           {/* Secondary, low-emphasis: backfill a historical/external send so
               it picks up the new invoice_sent state without re-emailing. */}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowRegister(true)}
-            className="ml-auto text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+            className="ml-auto text-muted-foreground"
             title="Register an invoice that was sent outside this UI (no email goes out)"
           >
             Register existing
-          </button>
-          <button
-            onClick={() => setShowInvoice(true)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
-          >
-            <Send className="h-3.5 w-3.5" /> Send re-bill invoice
-          </button>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Stat label="Anchor (joined)" value={formatDate(data.schedule.anchorDate)} />
-          <Stat
-            label="Billing day"
-            value={data.schedule.billingDay ? `Day ${data.schedule.billingDay}` : "—"}
-          />
-          <Stat label="Last re-bill" value={formatDate(data.schedule.lastRebilledAt)} />
-          <Stat label="Next re-bill" value={formatDate(data.schedule.nextRebillAt)} />
-        </div>
-        {!data.payoutBrand && (
-          <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
-            Not linked to a Payout-DB brand — re-bill history is inferred by name.
-            Set the link in Settings for accurate tracking.
-          </p>
-        )}
-      </div>
+          </Button>
+          <Button size="sm" onClick={() => setShowInvoice(true)}>
+            <Send /> Send re-bill invoice
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Stat label="Anchor (joined)" value={formatDate(data.schedule.anchorDate)} />
+            <Stat
+              label="Billing day"
+              value={data.schedule.billingDay ? `Day ${data.schedule.billingDay}` : "—"}
+            />
+            <Stat label="Last re-bill" value={formatDate(data.schedule.lastRebilledAt)} />
+            <Stat label="Next re-bill" value={formatDate(data.schedule.nextRebillAt)} />
+          </div>
+          {!data.payoutBrand && (
+            <p className="mt-4 text-xs text-amber-600 dark:text-amber-400">
+              Not linked to a Payout-DB brand — re-bill history is inferred by name.
+              Set the link in Settings for accurate tracking.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Config */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-        <h3 className="text-sm font-bold text-foreground">Billing configuration</h3>
-
-        {/* Pause (exception) */}
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.paused}
-            onChange={(e) => set("paused", e.target.checked)}
-            className="mt-1"
-          />
-          <div>
-            <p className="text-sm font-medium text-foreground">Pause re-billing (exception)</p>
-            <p className="text-xs text-muted-foreground">
-              Suppresses all re-bill alerts for this client until unpaused.
-            </p>
+      <Card>
+        <CardHeader>
+          <CardTitle>Billing configuration</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Pause (exception) */}
+          <div className="flex items-start gap-3">
+            <Switch
+              id="billing-paused"
+              checked={form.paused}
+              onCheckedChange={(v) => set("paused", v)}
+              className="mt-0.5"
+            />
+            <label htmlFor="billing-paused" className="cursor-pointer">
+              <span className="block text-sm font-medium text-foreground">Pause re-billing (exception)</span>
+              <span className="block text-xs text-muted-foreground">
+                Suppresses all re-bill alerts for this client until unpaused.
+              </span>
+            </label>
           </div>
-        </label>
-        {form.paused && (
-          <input
-            type="text"
-            value={form.pauseReason}
-            onChange={(e) => set("pauseReason", e.target.value)}
-            placeholder="Reason (optional)"
-            className={FIELD}
-          />
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Billing day of month" hint="Blank = same day as the join date">
-            <input
-              type="number"
-              min={1}
-              max={31}
-              value={form.billingDay}
-              onChange={(e) => set("billingDay", clampNumberInput(e.target.value, 1, 31))}
-              placeholder="auto"
-              className={FIELD}
+          {form.paused && (
+            <Input
+              type="text"
+              value={form.pauseReason}
+              onChange={(e) => set("pauseReason", e.target.value)}
+              placeholder="Reason (optional)"
+              aria-label="Pause reason"
             />
-          </Field>
-          <Field label="Alert lead time (days)" hint="How early a re-bill shows as due">
-            <input
-              type="number"
-              min={0}
-              value={form.leadDays}
-              onChange={(e) => set("leadDays", clampNumberInput(e.target.value, 0))}
-              className={FIELD}
-            />
-          </Field>
-          <Field label="Extend until (extension)" hint="Defer the next re-bill to this date">
-            <input
-              type="date"
-              value={form.extendUntil}
-              onChange={(e) => set("extendUntil", e.target.value)}
-              className={FIELD}
-            />
-          </Field>
-          <Field label="Manual last re-bill" hint="Overrides the date derived from payouts">
-            <input
-              type="date"
-              value={form.lastRebilledOverride}
-              onChange={(e) => set("lastRebilledOverride", e.target.value)}
-              className={FIELD}
-            />
-          </Field>
-          <Field
-            label="MRR source month"
-            hint="Which payment counts as recurring MRR. Default = latest; pin a prior month to ignore one-off service charges."
-          >
-            <select
-              value={form.mrrMonthOverride}
-              onChange={(e) => set("mrrMonthOverride", e.target.value)}
-              className={FIELD}
-            >
-              <option value="">Latest payment (default)</option>
-              {months.map((m) => (
-                <option
-                  key={`${m.year}-${m.month}`}
-                  value={`${m.year}-${String(m.month).padStart(2, "0")}`}
-                >
-                  {monthLabel(m.year, m.month)} · {formatMoney(m.amountDue)}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <Field label="Internal billing notes">
-          <textarea
-            value={form.settingsNotes}
-            onChange={(e) => set("settingsNotes", e.target.value)}
-            rows={3}
-            className={cn(FIELD, "resize-y")}
-          />
-        </Field>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {saving ? "Saving…" : "Save billing settings"}
-          </button>
-          {saved && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>
           )}
-          {error && <span className="text-sm text-destructive">{error}</span>}
-        </div>
-      </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Billing day of month" hint="Blank = same day as the join date" htmlFor="billing-day">
+              <Input
+                id="billing-day"
+                type="number"
+                min={1}
+                max={31}
+                value={form.billingDay}
+                onChange={(e) => set("billingDay", clampNumberInput(e.target.value, 1, 31))}
+                placeholder="auto"
+              />
+            </Field>
+            <Field label="Alert lead time (days)" hint="How early a re-bill shows as due" htmlFor="billing-lead-days">
+              <Input
+                id="billing-lead-days"
+                type="number"
+                min={0}
+                value={form.leadDays}
+                onChange={(e) => set("leadDays", clampNumberInput(e.target.value, 0))}
+              />
+            </Field>
+            <Field label="Extend until (extension)" hint="Defer the next re-bill to this date" htmlFor="billing-extend-until">
+              <DatePicker
+                id="billing-extend-until"
+                value={form.extendUntil}
+                onValueChange={(v) => set("extendUntil", v)}
+              />
+            </Field>
+            <Field label="Manual last re-bill" hint="Overrides the date derived from payouts" htmlFor="billing-last-rebill">
+              <DatePicker
+                id="billing-last-rebill"
+                value={form.lastRebilledOverride}
+                onValueChange={(v) => set("lastRebilledOverride", v)}
+              />
+            </Field>
+            <Field
+              label="MRR source month"
+              hint="Which payment counts as recurring MRR. Default = latest; pin a prior month to ignore one-off service charges."
+              htmlFor="billing-mrr-month"
+            >
+              <Select
+                value={mrrMonthValues.includes(form.mrrMonthOverride) ? form.mrrMonthOverride : NONE}
+                onValueChange={(v) => set("mrrMonthOverride", v === NONE ? "" : v)}
+              >
+                <SelectTrigger id="billing-mrr-month">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Latest payment (default)</SelectItem>
+                  {months.map((m) => (
+                    <SelectItem
+                      key={`${m.year}-${m.month}`}
+                      value={`${m.year}-${String(m.month).padStart(2, "0")}`}
+                    >
+                      {monthLabel(m.year, m.month)} · {formatMoney(m.amountDue)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          <Field label="Internal billing notes" htmlFor="billing-notes">
+            <Textarea
+              id="billing-notes"
+              value={form.settingsNotes}
+              onChange={(e) => set("settingsNotes", e.target.value)}
+              rows={3}
+              className="resize-y"
+            />
+          </Field>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={handleSave} disabled={saving}>
+              <Save />
+              {saving ? "Saving…" : "Save billing settings"}
+            </Button>
+            {saved && (
+              <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>
+            )}
+            {error && <span className="text-sm text-destructive">{error}</span>}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Invoice history + manual overrides */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-        <div className="flex items-center gap-2 p-5 border-b border-border/50">
-          <Send className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">Re-bill invoices</h3>
+      <Card>
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b">
+          <Send className="size-4 text-muted-foreground" />
+          <CardTitle>Re-bill invoices</CardTitle>
           {invoiceHistoryData && (
-            <span className="ml-auto text-xs text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
               {invoiceHistory.length} invoice{invoiceHistory.length !== 1 ? "s" : ""}
             </span>
           )}
-        </div>
+        </CardHeader>
         {data.schedule.nextRebillAt && (
-          <p className="px-5 pt-3 text-xs text-muted-foreground">
+          <p className="px-4 pt-4 md:px-6 text-xs text-muted-foreground">
             Current billing cycle:{" "}
-            <span className="font-semibold text-foreground">
+            <span className="font-medium text-foreground">
               {formatDate(data.schedule.nextRebillAt)}
             </span>
             {" "}— an awaiting invoice anchored to this date shows as &ldquo;Invoice sent&rdquo;.
-            Use <span className="font-semibold">Manage</span> to mark an invoice paid/unpaid, link a
+            Use <span className="font-medium text-foreground">Manage</span> to mark an invoice paid/unpaid, link a
             payout, move it to another cycle, or hand it back to the automation.
           </p>
         )}
         {historyLoading ? (
-          <div className="p-5 space-y-2">
+          <div className="p-4 md:p-6 space-y-2">
             {[1, 2].map((i) => (
-              <div key={i} className="h-16 w-full animate-pulse rounded-lg bg-muted/60" />
+              <Skeleton key={i} className="h-16 w-full" />
             ))}
           </div>
         ) : historyError && !invoiceHistoryData ? (
-          <div className="flex flex-col items-center gap-2 p-6 text-center">
-            <p className="text-sm text-red-600 dark:text-red-400">
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <p className="text-sm text-destructive">
               Couldn&rsquo;t load re-bill invoices.
             </p>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => refetchHistory()}
               disabled={historyFetching}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50"
             >
-              {historyFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+              {historyFetching ? <Loader2 className="animate-spin" /> : <RotateCw />}
               Retry
-            </button>
+            </Button>
           </div>
         ) : invoiceHistory.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
             No re-bill invoices recorded for this client.
           </p>
         ) : (
-          <ul className="p-5 space-y-2">
+          <ul className="p-4 md:p-6 space-y-2">
             {invoiceHistory.map((inv) => {
               // Fallback: an unexpected status must not crash the tab.
               const st = INVOICE_STATUS_STYLES[inv.status] ?? {
                 label: String(inv.status),
-                cls: UNKNOWN_STATUS_CLS,
+                tone: UNKNOWN_STATUS_TONE,
               };
               const isCurrent =
                 inv.status === "sent" &&
@@ -606,26 +634,19 @@ export function ClientBillingTab({
               return (
                 <li
                   key={inv.id}
-                  className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3 flex-wrap"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 ring-1 ring-foreground/5 dark:ring-foreground/10"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-foreground truncate">
+                      <p className="text-sm font-medium text-foreground truncate">
                         {inv.invoiceNumber}
                       </p>
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                          st.cls
-                        )}
-                      >
-                        {st.label}
-                      </span>
+                      <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">
                       sent {formatDate(inv.sentAt)} · cycle {formatDate(inv.cycleAnchor)}
                       {isCurrent && (
-                        <span className="ml-1 text-primary font-semibold">(current)</span>
+                        <span className="ml-1 font-medium text-foreground">(current)</span>
                       )}
                     </p>
                     <InvoiceProvenance invoice={inv} />
@@ -636,7 +657,7 @@ export function ClientBillingTab({
                         <button
                           type="button"
                           onClick={() => setFollowUpInv(inv)}
-                          className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
                         >
                           {inv.followUps!.count} follow-up
                           {inv.followUps!.count !== 1 ? "s" : ""} on record
@@ -645,21 +666,22 @@ export function ClientBillingTab({
                     )}
                   </div>
                   {inv.amountCents > 0 && (
-                    <span className="text-sm font-semibold text-foreground shrink-0">
+                    <span className="text-sm font-semibold tracking-tight tabular-nums text-foreground shrink-0">
                       {formatCentsExact(inv.amountCents)}
                     </span>
                   )}
                   {inv.payoutDocumentId && (
-                    <a
-                      href={`/api/admin/clients/${userId}/documents/${inv.payoutDocumentId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Download the invoice PDF filed at send time"
-                      className="flex h-9 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0 sm:h-auto"
-                    >
-                      <FileText className="h-3 w-3" />
-                      PDF
-                    </a>
+                    <Button asChild variant="outline" size="sm" className="h-9 shrink-0 text-xs sm:h-8">
+                      <a
+                        href={`/api/admin/clients/${userId}/documents/${inv.payoutDocumentId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Download the invoice PDF filed at send time"
+                      >
+                        <FileText />
+                        PDF
+                      </a>
+                    </Button>
                   )}
                   {canFollowUp(inv.status) && (
                     <FollowUpButton onClick={() => setFollowUpInv(inv)} />
@@ -683,46 +705,46 @@ export function ClientBillingTab({
             })}
           </ul>
         )}
-      </div>
+      </Card>
 
       {/* Payment history */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-        <div className="flex items-center gap-2 p-5 border-b border-border/50">
-          <History className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">Payment history</h3>
-          <span className="ml-auto text-xs text-muted-foreground">
+      <Card>
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b">
+          <History className="size-4 text-muted-foreground" />
+          <CardTitle>Payment history</CardTitle>
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
             {formatMoney(data.totalRevenue)} total paid
           </span>
-        </div>
+        </CardHeader>
         {months.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
             No payout records found for this client.
           </p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="px-5 py-2.5 font-bold">Month</th>
-                <th className="px-5 py-2.5 font-bold text-right">Due</th>
-                <th className="px-5 py-2.5 font-bold text-right">Paid</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="px-4 md:px-6 text-muted-foreground">Month</TableHead>
+                <TableHead className="px-4 md:px-6 text-right text-muted-foreground">Due</TableHead>
+                <TableHead className="px-4 md:px-6 text-right text-muted-foreground">Paid</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {months.map((m) => (
-                <tr key={`${m.year}-${m.month}`} className="border-b border-border/40">
-                  <td className="px-5 py-2.5 text-foreground">{monthLabel(m.year, m.month)}</td>
-                  <td className="px-5 py-2.5 text-right text-muted-foreground">
+                <TableRow key={`${m.year}-${m.month}`}>
+                  <TableCell className="px-4 md:px-6 text-foreground">{monthLabel(m.year, m.month)}</TableCell>
+                  <TableCell className="px-4 md:px-6 text-right tabular-nums text-muted-foreground">
                     {formatMoney(m.amountDue)}
-                  </td>
-                  <td className="px-5 py-2.5 text-right font-medium text-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 md:px-6 text-right font-medium tabular-nums text-foreground">
                     {formatMoney(m.amountPaid)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       {showInvoice && (
         <ClientInvoiceDrawer
@@ -787,18 +809,16 @@ export function ClientBillingTab({
           }}
         />
       )}
+      {dialog}
     </div>
   );
 }
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
-      <p className="text-sm font-semibold text-foreground mt-0.5">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium tabular-nums text-foreground mt-1">{value}</p>
     </div>
   );
 }
@@ -806,19 +826,19 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Field({
   label,
   hint,
+  htmlFor,
   children,
 }: {
   label: string;
   hint?: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-        {label}
-      </label>
+    <div className="grid gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-      {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

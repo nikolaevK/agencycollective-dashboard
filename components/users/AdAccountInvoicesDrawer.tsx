@@ -12,6 +12,17 @@ import {
 import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { Badge, StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import { dialogOverlayClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { sheetPanelClass } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatDate } from "./format";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
 import { useAdmin } from "@/components/providers/AdminProvider";
@@ -27,10 +38,7 @@ import {
 } from "./InvoiceFollowUpDialog";
 import { canFollowUp, type FollowUpSummary } from "@/lib/invoiceFollowUpRules";
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block leading-tight";
+const NOTICE = "rounded-2xl border px-4 py-3 text-sm";
 // Same check the register route applies — fail fast instead of a 400.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -48,13 +56,13 @@ interface AccountInvoice extends OverridableInvoice {
   followUps?: FollowUpSummary;
 }
 
-const STATUS_STYLES: Record<InvoiceStatus, { label: string; cls: string }> = {
-  sent: { label: "Awaiting", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  paid: { label: "Paid", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  unpaid: { label: "Unpaid", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
-  superseded: { label: "Superseded", cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
+const STATUS_STYLES: Record<InvoiceStatus, { label: string; tone: BadgeTone }> = {
+  sent: { label: "Awaiting", tone: "info" },
+  paid: { label: "Paid", tone: "success" },
+  unpaid: { label: "Unpaid", tone: "danger" },
+  superseded: { label: "Superseded", tone: "neutral" },
 };
-const UNKNOWN_STATUS_CLS = "bg-muted text-muted-foreground";
+const UNKNOWN_STATUS_TONE: BadgeTone = "neutral";
 
 function typeLabel(t: AdInvoiceType): string {
   return t === "combined" ? "Retainer + ad spend" : t === "ad_spend" ? "Ad spend fee" : "Retainer";
@@ -108,22 +116,31 @@ export function AdAccountInvoicesDrawer({
   // Payout linking reads the ledger — hidden for external (partner) scopes.
   const { isExternal } = useAdmin();
   const [followUpInv, setFollowUpInv] = useState<AccountInvoice | null>(null);
+  const { confirm, dialog } = useConfirm();
 
-  function confirmDiscardRegister(): boolean {
+  async function confirmDiscardRegister(): Promise<boolean> {
     return (
       !showRegister ||
       !registerDirty ||
-      confirm("Discard the backdated invoice you started entering?")
+      (await confirm({
+        title: "Discard the backdated invoice you started entering?",
+        confirmText: "Discard",
+        destructive: true,
+      }))
     );
   }
   function hideRegister() {
     setShowRegister(false);
     setRegisterDirty(false);
   }
-  function requestClose() {
-    if (confirmDiscardRegister()) onClose();
+  async function requestClose() {
+    if (await confirmDiscardRegister()) onClose();
   }
-  useEscapeKey(requestClose);
+  // The confirm dialog (Radix) handles its own Escape and marks it handled,
+  // so it never reaches this layer.
+  useEscapeKey(() => {
+    void requestClose();
+  });
 
   function refreshAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-ad-account-invoices", accountId] });
@@ -133,55 +150,58 @@ export function AdAccountInvoicesDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={requestClose}>
+    <div className={cn(dialogOverlayClass, "z-[60] flex justify-end")} onClick={requestClose}>
       <div
-        className="relative h-full w-full max-w-xl overflow-y-auto bg-card shadow-xl border-l border-border/50"
+        className={cn(sheetPanelClass, "relative h-full w-full max-w-xl overflow-y-auto overscroll-contain border-l")}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-card px-5 py-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-popover px-5 py-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground truncate">Invoices</h2>
-            <p className="text-xs text-muted-foreground truncate">{accountName}</p>
+            <h2 className="truncate text-base font-semibold tracking-tight text-foreground">Invoices</h2>
+            <p className="truncate text-sm text-muted-foreground">{accountName}</p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
             aria-label="Close"
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+            className="-mr-2 text-muted-foreground"
           >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
+            <X />
+          </Button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="space-y-4 p-5">
           {defaultCycleAnchor && (
             <p className="text-xs text-muted-foreground">
               Current billing cycle:{" "}
-              <span className="font-semibold text-foreground">{formatDate(defaultCycleAnchor)}</span>
+              <span className="font-medium text-foreground">{formatDate(defaultCycleAnchor)}</span>
               {" "}— an awaiting invoice anchored to this date shows as &ldquo;Invoice sent&rdquo;.
-              Use <span className="font-semibold">Manage</span> on any invoice to mark it paid/unpaid,
+              Use <span className="font-medium text-foreground">Manage</span> on any invoice to mark it paid/unpaid,
               link a payout, or move it to another cycle.
             </p>
           )}
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               History
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
+              <Badge variant="secondary" className="tabular-nums">
                 {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
-              </span>
-            </p>
-            <button
+              </Badge>
+            </div>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               aria-expanded={showRegister}
-              onClick={() => {
+              onClick={async () => {
                 if (!showRegister) setShowRegister(true);
-                else if (confirmDiscardRegister()) hideRegister();
+                else if (await confirmDiscardRegister()) hideRegister();
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus />
               Register backdated
-            </button>
+            </Button>
           </div>
 
           {showRegister && (
@@ -202,11 +222,11 @@ export function AdAccountInvoicesDrawer({
           {isLoading ? (
             <div className="space-y-2">
               {[1, 2].map((i) => (
-                <div key={i} className="h-16 w-full animate-pulse rounded-lg bg-muted/60" />
+                <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
           ) : isError ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className={cn(NOTICE, badgeTone.danger)}>
               Failed to load invoices.
             </div>
           ) : invoices.length === 0 ? (
@@ -219,32 +239,25 @@ export function AdAccountInvoicesDrawer({
                 // Fallback: an unexpected status must not crash the drawer.
                 const s = STATUS_STYLES[inv.status] ?? {
                   label: String(inv.status),
-                  cls: UNKNOWN_STATUS_CLS,
+                  tone: UNKNOWN_STATUS_TONE,
                 };
                 return (
                   <li
                     key={inv.id}
-                    className="rounded-lg border border-border/50 p-3 flex items-center justify-between gap-3 flex-wrap"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 ring-1 ring-foreground/5 dark:ring-foreground/10"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-foreground truncate">
+                        <p className="truncate text-sm font-medium text-foreground">
                           {inv.invoiceNumber}
                         </p>
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                            s.cls
-                          )}
-                        >
-                          {s.label}
-                        </span>
+                        <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">
+                      <p className="truncate text-xs text-muted-foreground">
                         {typeLabel(inv.invoiceType)} · sent {formatDate(inv.sentAt)} · cycle{" "}
                         {formatDate(inv.cycleAnchor)}
                         {inv.status === "sent" && defaultCycleAnchor && inv.cycleAnchor === defaultCycleAnchor && (
-                          <span className="ml-1 text-primary font-semibold">(current)</span>
+                          <span className="ml-1 font-medium text-foreground">(current)</span>
                         )}
                       </p>
                       <InvoiceProvenance invoice={inv} />
@@ -255,7 +268,7 @@ export function AdAccountInvoicesDrawer({
                           <button
                             type="button"
                             onClick={() => setFollowUpInv(inv)}
-                            className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                            className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
                           >
                             {inv.followUps!.count} follow-up
                             {inv.followUps!.count !== 1 ? "s" : ""} on record
@@ -263,23 +276,24 @@ export function AdAccountInvoicesDrawer({
                         )
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       {inv.amountCents > 0 && (
-                        <span className="text-sm font-semibold text-foreground">
+                        <span className="text-sm font-semibold tracking-tight tabular-nums text-foreground">
                           {formatCentsExact(inv.amountCents)}
                         </span>
                       )}
                       {inv.payoutDocumentId && (
-                        <a
-                          href={`/api/admin/ad-accounts/invoices/${inv.id}/document`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="View stored PDF"
-                          className="flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                        >
-                          <FileText className="h-3 w-3" />
-                          PDF
-                        </a>
+                        <Button asChild variant="outline" size="xs">
+                          <a
+                            href={`/api/admin/ad-accounts/invoices/${inv.id}/document`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View stored PDF"
+                          >
+                            <FileText />
+                            PDF
+                          </a>
+                        </Button>
                       )}
                       {canFollowUp(inv.status) && (
                         <FollowUpButton onClick={() => setFollowUpInv(inv)} />
@@ -303,6 +317,9 @@ export function AdAccountInvoicesDrawer({
             </ul>
           )}
         </div>
+        {/* Inside the panel: its stopPropagation keeps clicks in the
+            (portaled) confirm from reaching the backdrop's close handler. */}
+        {dialog}
       </div>
 
       {followUpInv && (
@@ -432,98 +449,103 @@ function RegisterForm({
   }
 
   return (
-    <div className="rounded-lg border border-primary/30 bg-primary/[0.03] p-3 space-y-3">
-      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+    <Card className="space-y-4 p-4">
+      <p className="text-sm font-medium text-foreground">
         Register backdated invoice
       </p>
-      <div>
-        <label className={LABEL}>Invoice number</label>
-        <input
-          className={FIELD}
+      <div className="grid gap-2">
+        <Label htmlFor="adreg-number">Invoice number</Label>
+        <Input
+          id="adreg-number"
           value={invoiceNumber}
           onChange={(e) => setInvoiceNumber(e.target.value)}
           placeholder="INV-20260301-ABC"
           maxLength={100}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:items-end">
-        <div className="flex flex-col">
-          <label className={LABEL}>Sent date</label>
-          <input
-            type="date"
-            className={FIELD}
+      <div className="grid grid-cols-2 gap-4 sm:items-end">
+        <div className="grid gap-2">
+          <Label htmlFor="adreg-sent">Sent date</Label>
+          <DatePicker
+            id="adreg-sent"
             value={sentDate}
-            onChange={(e) => setSentDate(e.target.value)}
+            onValueChange={setSentDate}
           />
         </div>
-        <div className="flex flex-col">
-          <label className={LABEL}>Cycle (billing date)</label>
-          <input
-            type="date"
-            className={FIELD}
+        <div className="grid gap-2">
+          <Label htmlFor="adreg-cycle">Cycle (billing date)</Label>
+          <DatePicker
+            id="adreg-cycle"
             value={cycleAnchor}
-            onChange={(e) => setCycleAnchor(e.target.value)}
+            onValueChange={setCycleAnchor}
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:items-end">
-        <div className="flex flex-col">
-          <label className={LABEL}>Amount (USD)</label>
-          <input
+      <div className="grid grid-cols-2 gap-4 sm:items-end">
+        <div className="grid gap-2">
+          <Label htmlFor="adreg-amount">Amount (USD)</Label>
+          <Input
+            id="adreg-amount"
             type="number"
             min={0}
             step="0.01"
-            className={FIELD}
+            className="tabular-nums"
             value={amountDollars}
             onChange={(e) => setAmountDollars(e.target.value)}
             placeholder="0.00"
           />
         </div>
-        <div className="flex flex-col">
-          <label className={LABEL}>Type</label>
-          <select
-            className={FIELD}
-            value={invoiceType}
-            onChange={(e) => setInvoiceType(e.target.value as AdInvoiceType)}
-          >
-            <option value="retainer">Retainer</option>
-            <option value="ad_spend">Ad spend fee</option>
-            <option value="combined">Retainer + ad spend</option>
-          </select>
+        <div className="grid gap-2">
+          <Label htmlFor="adreg-type">Type</Label>
+          <Select value={invoiceType} onValueChange={(v) => setInvoiceType(v as AdInvoiceType)}>
+            <SelectTrigger id="adreg-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="retainer">Retainer</SelectItem>
+              <SelectItem value="ad_spend">Ad spend fee</SelectItem>
+              <SelectItem value="combined">Retainer + ad spend</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
-      <div>
-        <label className={LABEL}>Recipient email (optional)</label>
-        <input
+      <div className="grid gap-2">
+        <Label htmlFor="adreg-email">Recipient email (optional)</Label>
+        <Input
+          id="adreg-email"
           type="email"
-          className={FIELD}
           value={recipientEmail}
           onChange={(e) => setRecipientEmail(e.target.value)}
           placeholder="client@company.com"
           maxLength={254}
         />
       </div>
-      <div>
-        <label className={LABEL}>Invoice PDF (optional)</label>
+      <div className="grid gap-2">
+        <Label>Invoice PDF (optional)</Label>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors"
           >
-            <Paperclip className="h-3.5 w-3.5" />
+            <Paperclip />
             {file ? "Change PDF" : "Upload PDF"}
-          </button>
+          </Button>
           {file && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+            <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
               <span className="truncate">{file.name}</span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label="Remove PDF"
+                title="Remove PDF"
+                className="text-muted-foreground"
                 onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ""; }}
               >
-                <X className="h-3 w-3" />
-              </button>
+                <X />
+              </Button>
             </span>
           )}
           <input
@@ -537,28 +559,20 @@ function RegisterForm({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className={cn(NOTICE, badgeTone.danger)}>
           {error}
         </div>
       )}
 
       <div className="flex items-center justify-end gap-2">
-        <button
-          onClick={onCancel}
-          disabled={submitting}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={submitting}>
           Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={submitting}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-        >
-          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        </Button>
+        <Button type="button" size="sm" onClick={submit} disabled={submitting}>
+          {submitting && <Loader2 className="animate-spin" />}
           {submitting ? "Saving…" : "Register"}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

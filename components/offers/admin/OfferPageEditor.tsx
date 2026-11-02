@@ -3,8 +3,15 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RotateCcw } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { OfferPageHero } from "../OfferPageHero";
 import { OfferCard } from "../OfferCard";
 import { OfferRequestPanel } from "../OfferRequestPanel";
@@ -18,9 +25,6 @@ import {
   type OfferPageOverrides,
   type OfferPageSettings,
 } from "@/lib/portalOfferRules";
-
-const inputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 const GROUPS: { title: string; hint?: string; fields: { key: keyof OfferPageSettings; label: string; long?: boolean }[] }[] = [
   {
@@ -99,7 +103,7 @@ export function OfferPageEditor() {
   const [formKey, setFormKey] = useState(0);
   const [saved, setSaved] = useState(false);
   if (isError) return <QueryErrorState title="Couldn't load the page design" onRetry={() => refetch()} />;
-  if (!data) return <div className="h-64 animate-pulse rounded-xl bg-muted/60" />;
+  if (!data) return <Skeleton className="h-64" />;
   return (
     <PageForm
       key={formKey}
@@ -138,6 +142,7 @@ function PageForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const { data: catalog } = useQuery({ queryKey: CATALOG_KEY, queryFn: fetchCatalog });
   const sample = catalog?.find((o) => o.active) ?? catalog?.[0] ?? null;
@@ -187,7 +192,14 @@ function PageForm({
   }
 
   async function reset() {
-    if (!confirm("Reset all page text to the defaults and remove the header image?")) return;
+    if (
+      !(await confirm({
+        title: "Reset all page text to the defaults and remove the header image?",
+        confirmText: "Reset",
+        destructive: true,
+      }))
+    )
+      return;
     setSaving(true);
     setError(null);
     try {
@@ -203,7 +215,7 @@ function PageForm({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <div className="space-y-6">
+      <Card className="space-y-6 p-4 md:p-6">
         <p className="text-sm text-muted-foreground">
           Leave a field blank to use the default shown in grey. &quot;Hide&quot; removes an optional line altogether.
         </p>
@@ -224,38 +236,28 @@ function PageForm({
         ))}
 
         {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={reset}
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
-          >
-            <RotateCcw className="h-4 w-4" />
+          <Button type="button" variant="ghost" onClick={reset} disabled={saving} className="text-muted-foreground">
+            <RotateCcw />
             Reset to defaults
-          </button>
+          </Button>
           <div className="flex items-center gap-3">
-            {saved && !dirty && <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">Saved — live for clients</span>}
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {saved && !dirty && <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Saved — live for clients</span>}
+            <Button type="button" onClick={save} disabled={saving}>
+              {saving && <Loader2 className="animate-spin" />}
               Save page design
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       <div className="space-y-4 self-start xl:sticky xl:top-4">
-        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Client preview</p>
-        <p className="text-sm font-semibold text-foreground">Sidebar: {previewSettings.navLabel}</p>
+        <p className="text-xs font-medium text-muted-foreground">Client preview</p>
+        <p className="text-sm font-medium text-foreground">Sidebar: {previewSettings.navLabel}</p>
         <OfferPageHero settings={previewSettings} imageUrl={hero.previewUrl} />
         <div className="grid gap-4 sm:grid-cols-2">
           <OfferCard
@@ -289,6 +291,7 @@ function PageForm({
           />
         </div>
       </div>
+      {dialog}
     </div>
   );
 }
@@ -310,8 +313,8 @@ function FieldGroup({
 }) {
   return (
     <div className="space-y-3">
-      <div className="border-b border-border/50 pb-1">
-        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{group.title}</p>
+      <div className="border-b pb-2">
+        <p className="text-sm font-medium text-foreground">{group.title}</p>
         {group.hint && <p className="text-xs text-muted-foreground">{group.hint}</p>}
       </div>
       {group.fields.map((f) => {
@@ -324,22 +327,19 @@ function FieldGroup({
           placeholder: isHidden ? "Hidden from clients" : defaults[f.key],
           maxLength: OFFER_PAGE_LIMITS[f.key],
           disabled: isHidden,
-          className: cn(inputClass, "disabled:cursor-not-allowed disabled:opacity-60"),
         };
         return (
           <div key={f.key} className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
-              <label htmlFor={id} className="text-sm font-semibold text-foreground">
-                {f.label}
-              </label>
+              <Label htmlFor={id}>{f.label}</Label>
               {HIDEABLE_OFFER_PAGE_FIELDS.includes(f.key) && (
-                <label className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <input type="checkbox" checked={isHidden} onChange={(e) => onHide(f.key, e.target.checked)} />
+                <Label className="shrink-0 cursor-pointer gap-1.5 text-xs font-normal text-muted-foreground">
+                  <Checkbox checked={isHidden} onCheckedChange={(v) => onHide(f.key, v === true)} />
                   Hide
-                </label>
+                </Label>
               )}
             </div>
-            {f.long ? <textarea rows={3} {...input} /> : <input {...input} />}
+            {f.long ? <Textarea rows={3} {...input} className="resize-y" /> : <Input {...input} />}
           </div>
         );
       })}

@@ -5,6 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdmin } from "@/components/providers/AdminProvider";
+import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import type { PeptideAiPolicy, PeptideAiSetting } from "@/lib/peptideAi";
 import {
   PEPTIDE_AI_DEFAULT_CAP_CENTS,
@@ -25,16 +32,25 @@ interface PeptideAiDetail {
   usage: PeptideAiUsage | null;
 }
 
-export const PEPTIDE_AI_STATE_CLS: Record<PeptideAiState, string> = {
-  off: "bg-muted text-muted-foreground",
-  unknown: "bg-muted text-muted-foreground",
-  never_opened: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
-  not_used: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
-  blocked: "bg-red-500/10 text-red-600 dark:text-red-400",
-  active: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  near_cap: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  capped: "bg-red-500/10 text-red-600 dark:text-red-400",
+export const PEPTIDE_AI_STATE_TONE: Record<PeptideAiState, BadgeTone> = {
+  off: "neutral",
+  unknown: "neutral",
+  never_opened: "info",
+  not_used: "info",
+  blocked: "danger",
+  active: "success",
+  near_cap: "warning",
+  capped: "danger",
 };
+
+/** Usage meter tint: near the limit = amber, at it = red, else the chart blue. */
+export function peptideAiMeterClass(state: PeptideAiState | null): string {
+  return state === "capped"
+    ? "[&>div]:bg-red-500"
+    : state === "near_cap"
+      ? "[&>div]:bg-amber-500"
+      : "[&>div]:bg-chart-1";
+}
 
 async function readJson(res: Response): Promise<PeptideAiDetail> {
   const json = await res.json().catch(() => ({}));
@@ -107,115 +123,99 @@ export function ClientPeptideAiCard({ userId, clientStatus }: { userId: string; 
   const share = usage ? Math.min(1, usage.spentCents / cap) : 0;
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <FlaskConical className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-bold text-foreground">Peptide AI</h3>
-        {state && (
-          <span className={cn("ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold", PEPTIDE_AI_STATE_CLS[state])}>
-            {state === "off" && data?.policy.offReason
-              ? `Off · ${PEPTIDE_AI_OFF_REASON_LABEL[data.policy.offReason].toLowerCase()}`
-              : PEPTIDE_AI_STATE_LABEL[state]}
-          </span>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <FlaskConical className="size-4 text-muted-foreground" />
+          <CardTitle>Peptide AI</CardTitle>
+          {state && (
+            <StatusBadge tone={PEPTIDE_AI_STATE_TONE[state]} className="ml-1">
+              {state === "off" && data?.policy.offReason
+                ? `Off · ${PEPTIDE_AI_OFF_REASON_LABEL[data.policy.offReason].toLowerCase()}`
+                : PEPTIDE_AI_STATE_LABEL[state]}
+            </StatusBadge>
+          )}
+        </div>
+        <CardDescription className="text-xs">
+          The Peptide AI tab in this client&apos;s portal. The monthly budget resets on their billing day,
+          doesn&apos;t roll over, and is enforced by Peptide AI before every request. It switches off by
+          itself while the client is inactive or their billing is paused.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {isLoading || !data ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            {!data.configured && (
+              <p className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
+                Peptide AI isn&apos;t connected on this deployment (PEPTIDE_AI_URL / PEPTIDE_AI_SHARED_SECRET).
+              </p>
+            )}
+
+            {/* The switch below can be on while the client is still off: say so
+                plainly, or the two read as a contradiction. */}
+            {data.policy.offReason && data.policy.offReason !== "disabled" && (
+              <p className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
+                <span className="font-medium">Currently off for this client — </span>
+                {data.policy.offReason === "paused"
+                  ? "their billing is paused (Billing tab). "
+                  : "the client is inactive or archived. "}
+                The switch below stays on, and Peptide AI comes back by itself once that changes.
+              </p>
+            )}
+
+            <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2">
+              <Label className="font-normal sm:pb-2">
+                <Switch checked={enabled} disabled={isExternal} onCheckedChange={setEnabled} />
+                Allow Peptide AI for this client
+              </Label>
+              <div className="space-y-2">
+                <Label htmlFor={`peptide-ai-cap-${userId}`}>Monthly budget (USD)</Label>
+                <Input
+                  id={`peptide-ai-cap-${userId}`}
+                  type="text"
+                  inputMode="decimal"
+                  value={capDollars}
+                  disabled={isExternal}
+                  onChange={(e) => setCapDollars(e.target.value)}
+                  placeholder={`${(PEPTIDE_AI_DEFAULT_CAP_CENTS / 100).toFixed(2)} (default)`}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 tabular-nums">
+                <span className="font-medium text-foreground">
+                  {usage ? formatUsd(usage.spentCents) : "$0.00"} of {formatUsd(cap)} used
+                </span>
+                <span className="text-muted-foreground">
+                  {usage?.periodEnd
+                    ? `resets ${formatCycleDate(usage.periodEnd)}`
+                    : `resets on the ${ordinalDay(data.policy.anchorDay)}`}
+                  {usage?.lastActiveAt ? ` · last used ${formatCycleDate(usage.lastActiveAt)}` : ""}
+                </span>
+              </div>
+              <Progress value={share * 100} className={cn("h-1.5", peptideAiMeterClass(state))} />
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {isExternal ? (
+              <p className="text-xs text-muted-foreground">Managed by the agency.</p>
+            ) : (
+            <div className="flex items-center gap-3">
+              <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                <Save />
+                {save.isPending ? "Saving…" : "Save Peptide AI"}
+              </Button>
+              {saved && <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>}
+            </div>
+            )}
+          </>
         )}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        The Peptide AI tab in this client&apos;s portal. The monthly budget resets on their billing day,
-        doesn&apos;t roll over, and is enforced by Peptide AI before every request. It switches off by
-        itself while the client is inactive or their billing is paused.
-      </p>
-
-      {isLoading || !data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <>
-          {!data.configured && (
-            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              Peptide AI isn&apos;t connected on this deployment (PEPTIDE_AI_URL / PEPTIDE_AI_SHARED_SECRET).
-            </p>
-          )}
-
-          {/* The switch below can be on while the client is still off: say so
-              plainly, or the two read as a contradiction. */}
-          {data.policy.offReason && data.policy.offReason !== "disabled" && (
-            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-              <span className="font-semibold">Currently off for this client — </span>
-              {data.policy.offReason === "paused"
-                ? "their billing is paused (Billing tab). "
-                : "the client is inactive or archived. "}
-              The switch below stays on, and Peptide AI comes back by itself once that changes.
-            </p>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={enabled}
-                disabled={isExternal}
-                onChange={(e) => setEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              Allow Peptide AI for this client
-            </label>
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Monthly budget (USD)
-              </label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={capDollars}
-                disabled={isExternal}
-                onChange={(e) => setCapDollars(e.target.value)}
-                placeholder={`${(PEPTIDE_AI_DEFAULT_CAP_CENTS / 100).toFixed(2)} (default)`}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5 text-xs">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 tabular-nums">
-              <span className="font-medium text-foreground">
-                {usage ? formatUsd(usage.spentCents) : "$0.00"} of {formatUsd(cap)} used
-              </span>
-              <span className="text-muted-foreground">
-                {usage?.periodEnd
-                  ? `resets ${formatCycleDate(usage.periodEnd)}`
-                  : `resets on the ${ordinalDay(data.policy.anchorDay)}`}
-                {usage?.lastActiveAt ? ` · last used ${formatCycleDate(usage.lastActiveAt)}` : ""}
-              </span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  "h-full rounded-full",
-                  state === "capped" ? "bg-red-500" : state === "near_cap" ? "bg-amber-500" : "bg-primary"
-                )}
-                style={{ width: `${share * 100}%` }}
-              />
-            </div>
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          {isExternal ? (
-            <p className="text-xs text-muted-foreground">Managed by the agency.</p>
-          ) : (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => save.mutate()}
-              disabled={save.isPending}
-              className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              {save.isPending ? "Saving…" : "Save Peptide AI"}
-            </button>
-            {saved && <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>}
-          </div>
-          )}
-        </>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

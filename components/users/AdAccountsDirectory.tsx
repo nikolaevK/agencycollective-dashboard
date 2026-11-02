@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import {
@@ -16,9 +16,32 @@ import {
   ReceiptText,
   HelpCircle,
   CreditCard,
+  MoreHorizontal,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, StatusBadge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { AdAccountFormModal } from "./AdAccountFormModal";
 import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
@@ -87,6 +110,7 @@ export function AdAccountsDirectory() {
   const [guideOpen, setGuideOpen] = useState(false);
   const admin = useAdmin();
   const [paymentSettingsOpen, setPaymentSettingsOpen] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ad-accounts"],
@@ -148,7 +172,14 @@ export function AdAccountsDirectory() {
   }
 
   async function handleDelete(row: AdAccountDirectoryRow) {
-    if (!confirm(`Remove ad account "${row.accountName}"? This cannot be undone.`))
+    if (
+      !(await confirm({
+        title: `Remove ad account "${row.accountName}"?`,
+        description: "This cannot be undone.",
+        confirmText: "Remove",
+        destructive: true,
+      }))
+    )
       return;
     try {
       const res = await fetch(`/api/admin/ad-accounts/${row.id}`, { method: "DELETE" });
@@ -176,7 +207,6 @@ export function AdAccountsDirectory() {
           icon={CheckCircle2}
           label="Active"
           value={String(summary?.active ?? 0)}
-          color="text-emerald-600 dark:text-emerald-400"
           loading={isLoading}
         />
         <SummaryCard
@@ -192,58 +222,58 @@ export function AdAccountsDirectory() {
           value={String(summary?.billsDue ?? 0)}
           color={
             (summary?.billsDue ?? 0) > 0
-              ? "text-amber-600 dark:text-amber-400"
+              ? "text-amber-700 dark:text-amber-400"
               : undefined
           }
           sub={summary?.overdue ? `${summary.overdue} overdue` : "none overdue"}
           loading={isLoading}
           onClick={() => setAlertsOpen((o) => !o)}
+          expanded={alertsOpen}
         />
         <SummaryCard
           icon={FileText}
           label="Invoices Sent"
           value={String(sentCount)}
-          color={sentCount > 0 ? "text-violet-600 dark:text-violet-400" : undefined}
+          color={sentCount > 0 ? "text-sky-700 dark:text-sky-400" : undefined}
           sub="awaiting payment"
           loading={isLoading}
           onClick={() => setSentOpen((o) => !o)}
+          expanded={sentOpen}
         />
       </div>
 
       {/* Re-bill alerts panel — ad accounts whose monthly bill is due/overdue */}
       {alertsOpen && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-amber-500/20">
-            <p className="text-sm font-bold text-foreground">
-              Ad accounts to re-bill
-              <span className="ml-2 text-xs font-medium text-muted-foreground">
-                {alertRows.length} due/overdue
-              </span>
-            </p>
-            <button
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 border-b py-3 md:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <CardTitle>Ad accounts to re-bill</CardTitle>
+              <Badge variant="secondary">{alertRows.length} due/overdue</Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setAlertsOpen(false)}
-              className="p-1 rounded-lg hover:bg-amber-500/10 transition-colors"
               aria-label="Close"
+              className="text-muted-foreground"
             >
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
+              <X />
+            </Button>
+          </CardHeader>
           {alertRows.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
               No ad accounts are due for re-billing. 🎉
             </p>
           ) : (
-            <ul className="divide-y divide-amber-500/10">
+            <ul className="divide-y">
               {alertRows.map((row) => (
                 <li
                   key={row.id}
-                  className="flex items-center justify-between gap-3 px-4 py-2.5 flex-wrap"
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 md:px-6"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">
-                      {row.accountName}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="truncate text-sm font-medium">{row.accountName}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       {row.clientName ?? "Unattached"}
                       {row.schedule.nextRebillAt
                         ? ` · due ${formatDate(row.schedule.nextRebillAt)}`
@@ -251,21 +281,18 @@ export function AdAccountsDirectory() {
                       {` · ${formatMoney(row.monthlyRetainerCents)}/mo`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <RebillStatusChip status={row.schedule.status} paid={row.schedule.paid} />
-                    <button
-                      onClick={() => setInvoiceTarget(toInvoiceTarget(row))}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
-                    >
-                      <Send className="h-3.5 w-3.5" />
+                    <Button size="sm" onClick={() => setInvoiceTarget(toInvoiceTarget(row))}>
+                      <Send />
                       Send invoice
-                    </button>
+                    </Button>
                   </div>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Sent invoices panel — stored ad-account invoices awaiting payment */}
@@ -273,135 +300,118 @@ export function AdAccountsDirectory() {
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <input
+        <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search account, vendor, client…"
-          className="w-full sm:flex-1 sm:max-w-sm rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          aria-label="Search ad accounts"
+          className="w-full sm:flex-1 sm:max-w-sm"
         />
         <div className="flex flex-wrap items-center gap-2">
-          <button
+          <Button
+            variant="outline"
             onClick={() => setGuideOpen(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="flex-1 sm:flex-none"
             title="How Ad Accounts billing works"
           >
-            <HelpCircle className="h-4 w-4" />
-            <span className="whitespace-nowrap">Guide</span>
-          </button>
+            <HelpCircle />
+            Guide
+          </Button>
           {!admin.isExternal && (
-            <button
+            <Button
+              variant="outline"
               onClick={() => setPaymentSettingsOpen(true)}
-              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              className="flex-1 sm:flex-none"
               title="Edit the bank details on ad-account invoices"
             >
-              <CreditCard className="h-4 w-4" />
-              <span className="whitespace-nowrap">Payment settings</span>
-            </button>
+              <CreditCard />
+              Payment settings
+            </Button>
           )}
           {/* A free invoice (no account) is internal-only — the send route
               refuses it for partner books, so don't offer it there. */}
           {!admin.isExternal && (
-            <button
+            <Button
+              variant="outline"
               onClick={() => setInvoiceTarget(null)}
-              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"
+              className="flex-1 sm:flex-none"
             >
-              <Send className="h-4 w-4" />
-              <span className="whitespace-nowrap">Send ad invoice</span>
-            </button>
+              <Send />
+              Send ad invoice
+            </Button>
           )}
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="whitespace-nowrap">Add Ad Account</span>
-          </button>
+          <Button onClick={() => setShowAdd(true)} className="flex-1 sm:flex-none">
+            <Plus />
+            Add Ad Account
+          </Button>
         </div>
       </div>
 
       {isError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
           Failed to load ad accounts. Refresh the page to try again.
         </div>
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+      <Card>
         {/* Desktop table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
-                <Th className="pl-4">Account</Th>
-                <Th>Client</Th>
-                <Th className="text-right">Ad Spend Fee</Th>
-                <Th className="text-right">Monthly Retainer</Th>
-                <Th>Status</Th>
-                <Th>Next Bill</Th>
-                <Th className="text-right pr-4">Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="px-4 text-muted-foreground">Account</TableHead>
+                <TableHead className="text-muted-foreground">Client</TableHead>
+                <TableHead className="text-right text-muted-foreground">Ad Spend Fee</TableHead>
+                <TableHead className="text-right text-muted-foreground">Monthly Retainer</TableHead>
+                <TableHead className="text-muted-foreground">Status</TableHead>
+                <TableHead className="text-muted-foreground">Next Bill</TableHead>
+                <TableHead className="px-4 text-right text-muted-foreground">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {isLoading ? (
                 [1, 2, 3, 4].map((i) => (
-                  <tr key={i} className="border-b border-border/50">
-                    <td colSpan={7} className="px-4 py-3">
-                      <div className="h-8 w-full animate-pulse rounded-lg bg-muted/60" />
-                    </td>
-                  </tr>
+                  <TableRow key={i} className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="px-4">
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
                 ))
               ) : paginated.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     No ad accounts yet. Click “Add Ad Account” to create one.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 paginated.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border/50 dark:border-white/[0.06] hover:bg-muted/20 transition-colors"
-                  >
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-bold text-foreground truncate">
-                        {row.accountName}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
+                  <TableRow key={row.id}>
+                    <TableCell className="px-4">
+                      <p className="truncate font-medium">{row.accountName}</p>
+                      <p className="truncate text-xs text-muted-foreground">
                         {[row.vendor, row.platform].filter(Boolean).join(" · ") || "—"}
                       </p>
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       {row.clientName ? (
-                        <span className="text-sm text-foreground">{row.clientName}</span>
+                        <span>{row.clientName}</span>
                       ) : (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-semibold uppercase">
-                          Unattached
-                        </span>
+                        <Badge variant="secondary">Unattached</Badge>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-sm font-semibold text-foreground">
-                        {feeLabel(row.adSpendFeeBps)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                        {formatMoney(row.monthlyRetainerCents)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
-                          row.status === "active"
-                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                            : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                        )}
-                      >
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {feeLabel(row.adSpendFeeBps)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(row.monthlyRetainerCents)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge tone={row.status === "active" ? "success" : "neutral"}>
                         {row.status === "active" ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <RebillStatusChip status={row.schedule.status} paid={row.schedule.paid} />
                         {row.schedule.nextRebillAt && (
@@ -410,151 +420,104 @@ export function AdAccountsDirectory() {
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <IconBtn
-                          title="Invoices"
-                          onClick={() => setInvoicesRow(row)}
-                        >
-                          <ReceiptText className="h-4 w-4" />
-                        </IconBtn>
-                        <IconBtn
-                          title="Send invoice"
-                          onClick={() => setInvoiceTarget(toInvoiceTarget(row))}
-                        >
-                          <Send className="h-4 w-4" />
-                        </IconBtn>
-                        <IconBtn title="Edit" onClick={() => setEditing(row)}>
-                          <Pencil className="h-4 w-4" />
-                        </IconBtn>
-                        <IconBtn
-                          title="Remove"
-                          danger
-                          onClick={() => handleDelete(row)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </IconBtn>
+                    </TableCell>
+                    <TableCell className="px-4">
+                      <div className="flex items-center justify-end">
+                        <RowActions
+                          accountName={row.accountName}
+                          onInvoices={() => setInvoicesRow(row)}
+                          onSend={() => setInvoiceTarget(toInvoiceTarget(row))}
+                          onEdit={() => setEditing(row)}
+                          onRemove={() => handleDelete(row)}
+                        />
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Mobile cards */}
-        <div className="md:hidden p-3 space-y-3">
+        <div className="md:hidden">
           {isLoading ? (
-            [1, 2, 3].map((i) => (
-              <div key={i} className="h-24 w-full animate-pulse rounded-xl bg-muted/60" />
-            ))
+            <div className="space-y-3 p-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
           ) : paginated.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No ad accounts yet.
             </p>
           ) : (
-            paginated.map((row) => (
-              <div
-                key={row.id}
-                className="rounded-xl border border-border/50 dark:border-white/[0.06] p-4 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground truncate">
-                      {row.accountName}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {[row.vendor, row.platform].filter(Boolean).join(" · ") || "—"}
-                    </p>
+            <div className="divide-y">
+              {paginated.map((row) => (
+                <div key={row.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{row.accountName}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[row.vendor, row.platform].filter(Boolean).join(" · ") || "—"}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <StatusBadge tone={row.status === "active" ? "success" : "neutral"}>
+                        {row.status === "active" ? "Active" : "Inactive"}
+                      </StatusBadge>
+                      <RowActions
+                        accountName={row.accountName}
+                        onInvoices={() => setInvoicesRow(row)}
+                        onSend={() => setInvoiceTarget(toInvoiceTarget(row))}
+                        onEdit={() => setEditing(row)}
+                        onRemove={() => handleDelete(row)}
+                      />
+                    </div>
                   </div>
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0",
-                      row.status === "active"
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                    )}
-                  >
-                    {row.status === "active" ? "Active" : "Inactive"}
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <Field label="Client">
-                    {row.clientName ? (
-                      <span className="text-foreground">{row.clientName}</span>
-                    ) : (
-                      <span className="text-muted-foreground">Unattached</span>
-                    )}
-                  </Field>
-                  <Field label="Ad spend fee">
-                    <span className="font-semibold text-foreground">
-                      {feeLabel(row.adSpendFeeBps)}
-                    </span>
-                  </Field>
-                  <Field label="Monthly retainer">
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                      {formatMoney(row.monthlyRetainerCents)}
-                    </span>
-                  </Field>
-                  <Field label="Next bill">
-                    <span className="flex items-center gap-1.5">
-                      <RebillStatusChip status={row.schedule.status} paid={row.schedule.paid} />
-                    </span>
-                  </Field>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <Field label="Client">
+                      {row.clientName ? (
+                        <span>{row.clientName}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Unattached</span>
+                      )}
+                    </Field>
+                    <Field label="Ad spend fee">
+                      <span className="font-medium tabular-nums">
+                        {feeLabel(row.adSpendFeeBps)}
+                      </span>
+                    </Field>
+                    <Field label="Monthly retainer">
+                      <span className="font-medium tabular-nums">
+                        {formatMoney(row.monthlyRetainerCents)}
+                      </span>
+                    </Field>
+                    <Field label="Next bill">
+                      <span className="flex items-center gap-1.5">
+                        <RebillStatusChip status={row.schedule.status} paid={row.schedule.paid} />
+                      </span>
+                    </Field>
+                  </div>
                 </div>
-
-                <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-2">
-                  <IconBtn title="Invoices" onClick={() => setInvoicesRow(row)}>
-                    <ReceiptText className="h-4 w-4" />
-                  </IconBtn>
-                  <IconBtn
-                    title="Send invoice"
-                    onClick={() => setInvoiceTarget(toInvoiceTarget(row))}
-                  >
-                    <Send className="h-4 w-4" />
-                  </IconBtn>
-                  <IconBtn title="Edit" onClick={() => setEditing(row)}>
-                    <Pencil className="h-4 w-4" />
-                  </IconBtn>
-                  <IconBtn title="Remove" danger onClick={() => handleDelete(row)}>
-                    <Trash2 className="h-4 w-4" />
-                  </IconBtn>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border/50">
-            <p className="text-xs font-medium text-muted-foreground">
-              Showing {paginated.length} of {filtered.length}
-            </p>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => setPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
-              >
-                &lsaquo;
-              </button>
-              <span className="px-2 flex items-center text-sm font-semibold text-foreground">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
-              >
-                &rsaquo;
-              </button>
-            </div>
+          <div className="border-t px-4 pb-3">
+            <Pagination
+              page={currentPage}
+              pageSize={PAGE_SIZE}
+              totalItems={filtered.length}
+              onPageChange={setPage}
+              itemLabel={`Showing ${paginated.length} of ${filtered.length}`}
+            />
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Modals + drawer */}
       {showAdd && (
@@ -590,58 +553,91 @@ export function AdAccountsDirectory() {
       {paymentSettingsOpen && (
         <AdAccountPaymentSettingsModal onClose={() => setPaymentSettingsOpen(false)} />
       )}
+      {dialog}
     </div>
-  );
-}
-
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <th
-      className={cn(
-        "px-4 py-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider",
-        className
-      )}
-    >
-      {children}
-    </th>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-medium text-muted-foreground uppercase">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <div className="mt-0.5">{children}</div>
     </div>
   );
 }
 
-function IconBtn({
-  children,
-  title,
-  onClick,
-  danger,
+/** Per-row actions: invoice history, send, edit, remove. */
+function RowActions({
+  accountName,
+  onInvoices,
+  onSend,
+  onEdit,
+  onRemove,
 }: {
-  children: React.ReactNode;
-  title: string;
-  onClick: () => void;
-  danger?: boolean;
+  accountName: string;
+  onInvoices: () => void;
+  onSend: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
 }) {
+  // The invoice drawers are hand-built and move focus into themselves on
+  // open — don't let the closing menu pull it back to the trigger behind them.
+  const keepFocus = useRef(false);
+  // The drawers return focus to whatever was focused when they opened; make
+  // that the row's trigger (the menu item is gone by then), not <body>.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const openDrawer = (open: () => void) => {
+    keepFocus.current = true;
+    triggerRef.current?.focus();
+    open();
+  };
   return (
-    <button
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      className={cn(
-        // 40px touch target on phones, dense on desktop where a pointer is precise.
-        "p-2.5 md:p-1.5 rounded-md text-muted-foreground transition-colors",
-        danger
-          ? "hover:bg-destructive/10 hover:text-destructive"
-          : "hover:bg-muted hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
+    // modal={false}: the items open drawers / dialogs; a modal menu closing
+    // underneath them can leave <body> pointer-events stuck.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          ref={triggerRef}
+          variant="ghost"
+          size="icon-sm"
+          title="Actions"
+          aria-label={`Actions for ${accountName}`}
+          // 40px touch target on phones, dense on desktop where a pointer is precise.
+          className="size-10 text-muted-foreground md:size-8"
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-44"
+        onCloseAutoFocus={(e) => {
+          if (keepFocus.current) {
+            keepFocus.current = false;
+            e.preventDefault();
+          }
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={() => openDrawer(onInvoices)}
+        >
+          <ReceiptText /> Invoices
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => openDrawer(onSend)}
+        >
+          <Send /> Send invoice
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onEdit}>
+          <Pencil /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+          <Trash2 /> Remove
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -653,6 +649,7 @@ function SummaryCard({
   color,
   loading,
   onClick,
+  expanded,
 }: {
   icon: typeof Megaphone;
   label: string;
@@ -661,30 +658,46 @@ function SummaryCard({
   color?: string;
   loading?: boolean;
   onClick?: () => void;
+  /** Whether the panel this card toggles is open (clickable cards only). */
+  expanded?: boolean;
 }) {
-  const Comp = onClick ? "button" : "div";
-  return (
-    <Comp
-      onClick={onClick}
+  const card = (
+    <Card
       className={cn(
-        "rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 text-left transition-all",
-        onClick && "hover:border-primary/30 hover:shadow-sm cursor-pointer"
+        "flex h-full min-w-0 flex-col",
+        onClick && "transition-colors group-hover:bg-muted/50"
       )}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      </div>
-      {loading ? (
-        <div className="h-8 w-20 rounded bg-muted/50 animate-pulse mt-1" />
-      ) : (
-        <>
-          <p className={cn("text-2xl font-bold mt-1", color ?? "text-foreground")}>
-            {value}
-          </p>
-          {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-        </>
-      )}
-    </Comp>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2 md:pb-2">
+        <CardDescription className="truncate">{label}</CardDescription>
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-1">
+        {loading ? (
+          <Skeleton className="h-8 w-20" />
+        ) : (
+          <>
+            <div
+              className={cn("truncate text-2xl font-semibold tracking-tight tabular-nums", color)}
+              title={value}
+            >
+              {value}
+            </div>
+            {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+  if (!onClick) return card;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={expanded}
+      className="group block w-full min-w-0 rounded-[min(calc(var(--radius)*2.6),24px)] text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
+    >
+      {card}
+    </button>
   );
 }

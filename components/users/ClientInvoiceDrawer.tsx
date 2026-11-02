@@ -36,10 +36,31 @@ import type {
   PaymentInfo,
   PaymentType,
 } from "@/types/invoice";
+import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL = "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block";
+// Segmented control look (TabsList-style track + raised active pill) for the
+// Local/International payment switch — same as the deal invoice drawer.
+const SEGMENT_TRACK = "rounded-3xl bg-muted p-1";
+const SEGMENT_ITEM =
+  "h-9 sm:h-7 rounded-full px-3 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+
+// Draft status → badge tone (pending waits for review, sent, rejected).
+const DRAFT_TONE: Record<string, BadgeTone> = {
+  pending: "warning",
+  sent: "success",
+  rejected: "danger",
+};
+
+const NOTICE = "rounded-2xl border px-4 py-3 text-sm";
 
 interface Props {
   userId: string;
@@ -76,11 +97,15 @@ async function fetchPrefill(
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  // overflow-visible: dropdowns inside (preset services, style picker) must
+  // not be clipped.
   return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-background/40 p-4">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
-      {children}
-    </section>
+    <Card className="overflow-visible">
+      <section className="space-y-4 p-4">
+        <h4 className="text-sm font-medium text-foreground">{title}</h4>
+        {children}
+      </section>
+    </Card>
   );
 }
 
@@ -96,6 +121,7 @@ export function ClientInvoiceDrawer({
   onFollowUpInstead,
 }: Props) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [data, setDataRaw] = useState<InvoiceData | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("local");
   // Invoice style — null = default Agency Collective, otherwise a saved
@@ -492,34 +518,22 @@ export function ClientInvoiceDrawer({
   const draftReviewed = !!draft && draft.status !== "pending";
 
   const footer = data ? (
-    <div className="space-y-2">
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+    <div className="space-y-3">
+      {error && <div className={cn(NOTICE, badgeTone.danger)}>{error}</div>}
       {notice && !error && (
-        <div
-          className={cn(
-            "rounded-lg border px-3 py-2 text-sm",
-            notice.type === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "border-destructive/30 bg-destructive/10 text-destructive"
-          )}
-        >
+        <div className={cn(NOTICE, notice.type === "success" ? badgeTone.success : badgeTone.danger)}>
           {notice.text}
         </div>
       )}
       {sent && (
         <div
           className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm",
-            savedOk && recordedOk
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            NOTICE,
+            "flex items-center gap-1.5",
+            savedOk && recordedOk ? badgeTone.success : badgeTone.warning
           )}
         >
-          <Check className="h-4 w-4" />
+          <Check className="size-4 shrink-0" />
           {!recordedOk
             ? "Invoice emailed, but it wasn't recorded on the billing ledger — use “Register existing” so it shows as sent."
             : savedOk
@@ -529,48 +543,28 @@ export function ClientInvoiceDrawer({
       )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {dirty && !sent && (
-          <span className="mr-auto text-[11px] font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
+          <span className="mr-auto text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
         )}
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={handleSaveDraft}
           disabled={busy !== null || sent || draftReviewed}
           title="Save without sending — it waits under Drafts for review"
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
         >
-          {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {busy === "save" ? <Loader2 className="animate-spin" /> : <Save />}
           {draftId ? "Update draft" : "Save draft"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setPreviewOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-        >
-          <Eye className="h-4 w-4" /> Preview
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={busy !== null}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
-        >
-          {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} PDF
-        </button>
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={busy !== null || sent || draftReviewed}
-          className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-        >
-          {busy === "send" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : sent ? (
-            <Check className="h-4 w-4" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => setPreviewOpen(true)}>
+          <Eye /> Preview
+        </Button>
+        <Button type="button" variant="outline" onClick={handleDownload} disabled={busy !== null}>
+          {busy === "download" ? <Loader2 className="animate-spin" /> : <Download />} PDF
+        </Button>
+        <Button type="button" onClick={handleSend} disabled={busy !== null || sent || draftReviewed}>
+          {busy === "send" ? <Loader2 className="animate-spin" /> : sent ? <Check /> : <Send />}
           {busy === "send" ? "Sending…" : sent ? "Sent" : draft ? "Approve & send" : "Send invoice"}
-        </button>
+        </Button>
       </div>
     </div>
   ) : null;
@@ -582,9 +576,9 @@ export function ClientInvoiceDrawer({
         size="lg"
         badges={
           draft ? (
-            <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+            <StatusBadge tone={DRAFT_TONE[draft.status] ?? "neutral"}>
               {draft.status === "pending" ? "Draft" : draft.status === "sent" ? "Draft · sent" : "Draft · rejected"}
-            </span>
+            </StatusBadge>
           ) : undefined
         }
         subtitle={
@@ -600,75 +594,69 @@ export function ClientInvoiceDrawer({
         footer={footer}
       >
         {loading ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
+              <Skeleton key={i} className="h-24 w-full rounded-3xl" />
             ))}
           </div>
         ) : !data ? (
-          <div className="p-8 text-center space-y-3">
+          <div className="space-y-3 p-8 text-center">
             <p className="text-sm text-destructive">{error ?? "Failed to load invoice."}</p>
-            <button
-              type="button"
-              onClick={close}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-            >
+            <Button type="button" variant="outline" onClick={close}>
               Close
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
             {draft && <InvoiceDraftBanner draft={draft} />}
             {replaced.map((inv) => (
-              <div
-                key={inv.id}
-                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400"
-              >
+              <div key={inv.id} className={cn(NOTICE, "text-xs", badgeTone.warning)}>
                 <p>
-                  <span className="font-semibold">{inv.invoiceNumber}</span> was already sent{" "}
+                  <span className="font-medium">{inv.invoiceNumber}</span> was already sent{" "}
                   {formatDate(inv.sentAt)} for the {formatDate(inv.cycleAnchor)} cycle and is
                   awaiting payment. Sending this invoice replaces it — the original is kept in
                   history as Superseded.
                 </p>
                 {onFollowUpInstead && (
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => {
-                      if (dirty && !confirm("Discard your changes to this invoice?")) return;
+                    variant="link"
+                    size="xs"
+                    onClick={async () => {
+                      if (dirty && !(await confirm({ title: "Discard your changes to this invoice?", destructive: true, confirmText: "Discard" }))) return;
                       onFollowUpInstead(inv.id);
                     }}
-                    className="mt-1.5 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-foreground"
+                    className="mt-1.5 h-auto whitespace-normal px-0 text-left text-xs text-inherit underline hover:text-foreground"
                   >
-                    <BellRing className="h-3 w-3" />
+                    <BellRing />
                     Just chasing payment? Send a follow-up instead
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
             {otherOpenInvoices.length > 0 && (
-              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-xs">
+              <div className="rounded-2xl bg-muted/50 p-3 text-xs">
                 <p className="text-muted-foreground">
                   Also awaiting payment — kept as-is unless this invoice re-issues one of them
                   {sameMonthIds.length > 0 && " (same-month invoices are pre-selected)"}:
                 </p>
-                <ul className="mt-1.5 space-y-1">
+                <ul className="mt-2 space-y-1.5">
                   {otherOpenInvoices.map((inv) => (
                     <li key={inv.id}>
                       <label className="flex items-start gap-2 text-foreground">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
+                        <Checkbox
+                          className="mt-px"
                           checked={replaceIds.includes(inv.id)}
                           disabled={sent || busy !== null}
-                          onChange={(e) => {
+                          onCheckedChange={(v) => {
                             setReplaceTouched(true);
                             setReplaceIds((ids) =>
-                              e.target.checked ? [...ids, inv.id] : ids.filter((x) => x !== inv.id)
+                              v === true ? [...ids, inv.id] : ids.filter((x) => x !== inv.id)
                             );
                           }}
                         />
                         <span>
-                          Replace <span className="font-semibold">{inv.invoiceNumber}</span>{" "}
+                          Replace <span className="font-medium">{inv.invoiceNumber}</span>{" "}
                           <span className="text-muted-foreground">
                             (cycle {formatDate(inv.cycleAnchor)}, sent {formatDate(inv.sentAt)}) — it
                             stays in history as Superseded
@@ -682,21 +670,20 @@ export function ClientInvoiceDrawer({
             )}
 
             <Section title="Recipient">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="rebill-billto" className={LABEL}>Bill to</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="rebill-billto">Bill to</Label>
+                  <Input
                     id="rebill-billto"
-                    className={FIELD}
                     value={data.receiver.name}
                     onChange={(e) => patchReceiver({ name: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="rebill-email" className={LABEL}>Client email</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="rebill-email">Client email</Label>
+                  <Input
                     id="rebill-email"
-                    className={cn(FIELD, data.receiver.email.trim() && !isValidEmail(data.receiver.email) && "border-destructive/60")}
+                    aria-invalid={data.receiver.email.trim() && !isValidEmail(data.receiver.email) ? true : undefined}
                     type="email"
                     value={data.receiver.email}
                     onChange={(e) => patchReceiver({ email: e.target.value })}
@@ -704,8 +691,10 @@ export function ClientInvoiceDrawer({
                   />
                 </div>
               </div>
-              <div>
-                <label htmlFor="rebill-cc" className={LABEL}>CC (optional)</label>
+              <div className="grid gap-2">
+                <Label htmlFor="rebill-cc">
+                  CC <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
                 <CcChipsInput field={cc} id="rebill-cc" exclude={[data.receiver.email]} />
               </div>
               {/* Attachments (optional) — included with the email alongside the
@@ -721,47 +710,43 @@ export function ClientInvoiceDrawer({
                 onSelect={applyStyle}
                 paymentType={paymentType}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label htmlFor="rebill-date" className={LABEL}>Invoice date</label>
-                  <input
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:items-end">
+                <div className="grid gap-2">
+                  <Label htmlFor="rebill-date">Invoice date</Label>
+                  <DatePicker
                     id="rebill-date"
-                    type="date"
-                    className={FIELD}
                     value={data.details.invoiceDate}
-                    onChange={(e) => patchDetails({ invoiceDate: e.target.value })}
+                    onValueChange={(v) => patchDetails({ invoiceDate: v })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="rebill-due" className={LABEL}>Due date</label>
-                  <input
+                <div className="grid gap-2">
+                  <Label htmlFor="rebill-due">Due date</Label>
+                  <DatePicker
                     id="rebill-due"
-                    type="date"
-                    className={FIELD}
                     value={data.details.dueDate}
-                    onChange={(e) => patchDetails({ dueDate: e.target.value })}
+                    onValueChange={(v) => patchDetails({ dueDate: v })}
                   />
                 </div>
-                <div>
-                  <span className={LABEL}>Payment</span>
-                  <div className="flex rounded-lg border bg-background p-0.5">
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium leading-none">Payment</span>
+                  <ToggleGroup
+                    type="single"
+                    // Each option stays its own Tab stop, as the old buttons were.
+                    rovingFocus={false}
+                    value={paymentType}
+                    // Radix reports "" when the selected option is clicked
+                    // again; the old buttons re-applied that type then, so
+                    // keep doing that.
+                    onValueChange={(v) => changePaymentType((v || paymentType) as PaymentType)}
+                    aria-label="Payment"
+                    className={cn("w-full", SEGMENT_TRACK)}
+                  >
                     {(["local", "international"] as PaymentType[]).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        aria-pressed={paymentType === t}
-                        onClick={() => changePaymentType(t)}
-                        className={cn(
-                          "h-9 flex-1 rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition-colors sm:h-auto",
-                          paymentType === t
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
+                      <ToggleGroupItem key={t} value={t} className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2 capitalize")}>
                         {t}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
               </div>
             </Section>
@@ -800,6 +785,7 @@ export function ClientInvoiceDrawer({
           onClose={() => setPreviewOpen(false)}
         />
       )}
+      {dialog}
     </>
   );
 }

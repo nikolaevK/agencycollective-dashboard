@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Gem } from "lucide-react";
+import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import {
   OFFER_REQUEST_STATUS_LABELS,
@@ -40,46 +42,58 @@ export function ClientOfferActivityCard({ userId }: { userId: string }) {
   );
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card p-5 dark:border-white/[0.06]">
-      <div className="mb-3 flex items-center gap-2">
-        <Gem className="h-4 w-4 text-violet-500" />
-        <h2 className="text-sm font-bold text-foreground">Interested in</h2>
-        <span className="text-xs text-muted-foreground">· More from Agency Collective, in their portal</span>
-      </div>
-      <ul className="divide-y divide-border/50">
-        {data.views.map((v) => {
-          const req = requestsByOffer.get(v.offerId);
-          return (
-            <li key={v.offerId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-              <span className="font-semibold text-foreground">{v.title}</span>
+    <Card>
+      <CardHeader className="pb-3 md:pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Gem className="size-4 text-muted-foreground" />
+          <CardTitle>Interested in</CardTitle>
+          <span className="text-xs text-muted-foreground">· More from Agency Collective, in their portal</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y">
+          {data.views.map((v) => {
+            const req = requestsByOffer.get(v.offerId);
+            return (
+              <li key={v.offerId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="font-medium text-foreground">{v.title}</span>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  Viewed {v.viewCount}×{v.linkClicks > 0 && ` · ${v.linkClicks} link click${v.linkClicks === 1 ? "" : "s"}`} · last{" "}
+                  {formatDate(v.lastViewedAt)}
+                  {req && <RequestChip status={req.status} kind={req.kind} />}
+                </span>
+              </li>
+            );
+          })}
+          {requestOnly.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+              <span className="font-medium text-foreground">{r.offerTitle}</span>
               <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                Viewed {v.viewCount}×{v.linkClicks > 0 && ` · ${v.linkClicks} link click${v.linkClicks === 1 ? "" : "s"}`} · last{" "}
-                {formatDate(v.lastViewedAt)}
-                {req && <RequestChip status={req.status} kind={req.kind} />}
+                Requested {formatDate(r.createdAt)}
+                <RequestChip status={r.status} kind={r.kind} />
               </span>
             </li>
-          );
-        })}
-        {requestOnly.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-            <span className="font-semibold text-foreground">{r.offerTitle}</span>
-            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-              Requested {formatDate(r.createdAt)}
-              <RequestChip status={r.status} kind={r.kind} />
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
 const isOpen = (s: OfferRequestStatus) => OPEN_REQUEST_STATUSES.includes(s);
 
+/** Lead status → chip tone (same map as the Requests inbox). */
+const REQUEST_TONE: Record<OfferRequestStatus, BadgeTone> = {
+  new: "info",
+  contacted: "warning",
+  won: "success",
+  lost: "neutral",
+};
+
 function RequestChip({ status, kind }: { status: OfferRequestStatus; kind: string }) {
   return (
-    <span className="rounded-full bg-violet-500/10 px-2 py-0.5 font-semibold text-violet-700 dark:text-violet-300">
+    <StatusBadge tone={REQUEST_TONE[status]}>
       {kind === "book_call" ? "Call" : "Request"}: {OFFER_REQUEST_STATUS_LABELS[status]}
-    </span>
+    </StatusBadge>
   );
 }

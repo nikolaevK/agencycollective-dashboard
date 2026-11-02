@@ -1,10 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
-import { Plus, Send, Pencil, Trash2, Megaphone, ReceiptText, HelpCircle } from "lucide-react";
+import {
+  Plus,
+  Send,
+  Pencil,
+  Trash2,
+  Megaphone,
+  ReceiptText,
+  HelpCircle,
+  MoreHorizontal,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusBadge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { AdAccountFormModal } from "./AdAccountFormModal";
 import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
@@ -49,6 +70,7 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [invoicesRow, setInvoicesRow] = useState<AdAccountDirectoryRow | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ad-accounts"],
@@ -87,7 +109,14 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
   }
 
   async function handleDelete(row: AdAccountDirectoryRow) {
-    if (!confirm(`Remove ad account "${row.accountName}"?`)) return;
+    if (
+      !(await confirm({
+        title: `Remove ad account "${row.accountName}"?`,
+        confirmText: "Remove",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       const res = await fetch(`/api/admin/ad-accounts/${row.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -99,76 +128,69 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-foreground">Ad Accounts</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-base font-medium">Ad Accounts</h2>
           <p className="text-sm text-muted-foreground">
             Agency ad accounts this client has purchased — retainer + ad-spend fee.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setGuideOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             title="How Ad Accounts billing works"
           >
-            <HelpCircle className="h-4 w-4" />
+            <HelpCircle />
             Guide
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all"
-          >
-            <Plus className="h-4 w-4" />
+          </Button>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus />
             Add
-          </button>
+          </Button>
         </div>
       </div>
 
       {isError ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
           Failed to load ad accounts. Refresh to try again.
         </div>
       ) : isLoading ? (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="h-16 w-full animate-pulse rounded-xl bg-muted/60" />
+            <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border/50 bg-card p-8 text-center">
-          <Megaphone className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+        <Card className="flex flex-col items-center gap-2 p-8 text-center">
+          <Megaphone className="size-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             No ad accounts yet.{" "}
-            <button onClick={() => setShowAdd(true)} className="text-primary hover:underline">
+            <Button
+              variant="link"
+              onClick={() => setShowAdd(true)}
+              className="h-auto p-0 text-foreground"
+            >
               Add one
-            </button>
+            </Button>
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="space-y-2">
+        <Card className="divide-y">
           {rows.map((row) => (
             <div
               key={row.id}
-              className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4 flex items-center justify-between gap-4 flex-wrap"
+              className="flex flex-wrap items-center justify-between gap-4 p-4"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-bold text-foreground truncate">
-                    {row.accountName}
-                  </p>
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold",
-                      row.status === "active"
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                    )}
-                  >
+                  <p className="truncate text-sm font-medium">{row.accountName}</p>
+                  <StatusBadge tone={row.status === "active" ? "success" : "neutral"}>
                     {row.status === "active" ? "Active" : "Inactive"}
-                  </span>
+                  </StatusBadge>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {[row.vendor, row.platform].filter(Boolean).join(" · ") || "—"} ·{" "}
                   {feeLabel(row.adSpendFeeBps)} fee · {formatMoney(row.monthlyRetainerCents)}/mo
                 </p>
@@ -182,40 +204,17 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    title="Invoices"
-                    onClick={() => setInvoicesRow(row)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  >
-                    <ReceiptText className="h-4 w-4" />
-                  </button>
-                  <button
-                    title="Send invoice"
-                    onClick={() => openInvoice(row)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                  <button
-                    title="Edit"
-                    onClick={() => setEditing(row)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
-                    title="Remove"
-                    onClick={() => handleDelete(row)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                <RowActions
+                  accountName={row.accountName}
+                  onInvoices={() => setInvoicesRow(row)}
+                  onSend={() => openInvoice(row)}
+                  onEdit={() => setEditing(row)}
+                  onRemove={() => handleDelete(row)}
+                />
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       {showAdd && (
@@ -257,6 +256,80 @@ export function ClientAdAccountsTab({ userId, clientName }: Props) {
         />
       )}
       {guideOpen && <AdAccountsGuide onClose={() => setGuideOpen(false)} />}
+      {dialog}
     </div>
+  );
+}
+
+/** Per-row actions: invoice history, send, edit, remove. */
+function RowActions({
+  accountName,
+  onInvoices,
+  onSend,
+  onEdit,
+  onRemove,
+}: {
+  accountName: string;
+  onInvoices: () => void;
+  onSend: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  // The invoice drawers are hand-built and move focus into themselves on
+  // open — don't let the closing menu pull it back to the trigger behind them.
+  const keepFocus = useRef(false);
+  // The drawers return focus to whatever was focused when they opened; make
+  // that the row's trigger (the menu item is gone by then), not <body>.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const openDrawer = (open: () => void) => {
+    keepFocus.current = true;
+    triggerRef.current?.focus();
+    open();
+  };
+  return (
+    // modal={false}: the items open drawers / dialogs; a modal menu closing
+    // underneath them can leave <body> pointer-events stuck.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          ref={triggerRef}
+          variant="ghost"
+          size="icon-sm"
+          title="Actions"
+          aria-label={`Actions for ${accountName}`}
+          className="text-muted-foreground"
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-44"
+        onCloseAutoFocus={(e) => {
+          if (keepFocus.current) {
+            keepFocus.current = false;
+            e.preventDefault();
+          }
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={() => openDrawer(onInvoices)}
+        >
+          <ReceiptText /> Invoices
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => openDrawer(onSend)}
+        >
+          <Send /> Send invoice
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onEdit}>
+          <Pencil /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+          <Trash2 /> Remove
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -1,7 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useRef } from "react";
 import { MoreVertical, Pencil, Link2, Eye, Archive, Trash2, ArchiveRestore, ClipboardPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { ClientPublic } from "./types";
 
 interface ClientActionsMenuProps {
@@ -21,90 +29,80 @@ export function ClientActionsMenu({
   onArchive,
   onDelete,
 }: ClientActionsMenuProps) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
+  // An item that opens a modal must keep its focus (e.g. the task dialog's
+  // autofocused title) — don't send focus back to the trigger after a pick.
+  const pickedRef = useRef(false);
+  const pick = (action: () => void) => () => {
+    pickedRef.current = true;
+    action();
+  };
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-primary rounded-lg hover:bg-muted/50 transition-colors"
-        aria-label="Client actions"
+    // modal={false}: items open dialogs; a modal menu closing underneath them
+    // can leave <body> pointer-events stuck.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground"
+          aria-label="Client actions"
+        >
+          <MoreVertical />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={(e) => {
+          if (pickedRef.current) {
+            pickedRef.current = false;
+            e.preventDefault();
+          }
+        }}
       >
-        <MoreVertical className="h-4 w-4" />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-border bg-card shadow-xl z-50 py-1 animate-in fade-in-0 zoom-in-95">
-          <button
-            onClick={() => { setOpen(false); onEdit(); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            Edit Client
-          </button>
-          <button
-            onClick={() => { setOpen(false); onManageAccounts(); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-            Manage Accounts
-          </button>
-          <button
-            onClick={() => { setOpen(false); onNewTask(); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <ClipboardPlus className="h-3.5 w-3.5 text-muted-foreground" />
-            New Team Task
-          </button>
-          {client.slug && (
+        <DropdownMenuItem onSelect={pick(onEdit)}>
+          <Pencil className="text-muted-foreground" />
+          Edit Client
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={pick(onManageAccounts)}>
+          <Link2 className="text-muted-foreground" />
+          Manage Accounts
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={pick(onNewTask)}>
+          <ClipboardPlus className="text-muted-foreground" />
+          New Team Task
+        </DropdownMenuItem>
+        {client.slug && (
+          <DropdownMenuItem asChild>
             <a
               href={`/${client.slug}/portal/overview`}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => setOpen(false)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
             >
-              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+              <Eye className="text-muted-foreground" />
               View Portal
             </a>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={pick(onArchive)}>
+          {client.status === "archived" ? (
+            <>
+              <ArchiveRestore className="text-muted-foreground" />
+              Restore
+            </>
+          ) : (
+            <>
+              <Archive className="text-muted-foreground" />
+              Archive
+            </>
           )}
-          <div className="my-1 h-px bg-border" />
-          <button
-            onClick={() => { setOpen(false); onArchive(); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            {client.status === "archived" ? (
-              <>
-                <ArchiveRestore className="h-3.5 w-3.5 text-muted-foreground" />
-                Restore
-              </>
-            ) : (
-              <>
-                <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-                Archive
-              </>
-            )}
-          </button>
-          <button
-            onClick={() => { setOpen(false); onDelete(); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onSelect={pick(onDelete)}>
+          <Trash2 />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

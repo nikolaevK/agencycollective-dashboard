@@ -2,16 +2,34 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
 import type { ClientPublic } from "./types";
 import type { AdAccountDirectoryRow } from "@/lib/adAccountDirectory";
 import { billingDateInputValue } from "@/lib/clientBilling";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block leading-tight";
+// Radix SelectItem can't hold "" — the empty "Unattached" / "—" options map to this.
+const NONE = "__none__";
 
 const PLATFORMS = ["Meta", "TikTok", "Google"];
 
@@ -156,67 +174,71 @@ export function AdAccountFormModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative mt-10 w-full max-w-lg rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X,
+        // Cancel or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        // The old modal focused nothing on open — on phones focusing the
+        // first input would pop the keyboard over the form.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).focus();
+        }}
+        aria-describedby={undefined}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
       >
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <h2 className="text-lg font-bold text-foreground">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>
             {isEdit ? "Edit ad account" : "Add ad account"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-          >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pb-2">
           {/* Client link */}
           {!lockClient && (
-            <div>
-              <label className={LABEL}>Client (optional)</label>
-              <select
-                className={FIELD}
-                value={userId}
-                onChange={(e) => {
-                  const next = e.target.value;
+            <div className="grid gap-2">
+              <Label htmlFor="ad-account-client">Client (optional)</Label>
+              <Select
+                value={userId || NONE}
+                onValueChange={(v) => {
+                  const next = v === NONE ? "" : v;
                   setUserId(next);
                   // Selecting a client auto-generates the account name "AC_<client>".
                   const c = clients.find((x) => x.id === next);
                   if (c) setAccountName(acName(c.displayName));
                 }}
               >
-                <option value="">— Unattached —</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.displayName}
-                    {c.email ? ` · ${c.email}` : ""}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="ad-account-client">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>— Unattached —</SelectItem>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.displayName}
+                      {c.email ? ` · ${c.email}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={LABEL}>Account name</label>
-              <input
-                className={FIELD}
+            <div className="grid gap-2">
+              <Label htmlFor="ad-account-name">Account name</Label>
+              <Input
+                id="ad-account-name"
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
                 placeholder="OT_AC_orbitrexpeptide-CC"
               />
             </div>
-            <div>
-              <label className={LABEL}>Vendor</label>
-              <input
-                className={FIELD}
+            <div className="grid gap-2">
+              <Label htmlFor="ad-account-vendor">Vendor</Label>
+              <Input
+                id="ad-account-vendor"
                 value={vendor}
                 onChange={(e) => setVendor(e.target.value)}
                 placeholder="ConceptSF"
@@ -225,42 +247,56 @@ export function AdAccountFormModal({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:items-end">
-            <div className="flex flex-col">
-              <label className={LABEL}>Platform</label>
-              <select
-                className={FIELD}
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
+            <div className="grid gap-2">
+              <Label htmlFor="ad-account-platform">Platform</Label>
+              <Select
+                value={platform || NONE}
+                onValueChange={(v) => setPlatform(v === NONE ? "" : v)}
               >
-                <option value="">—</option>
-                {PLATFORMS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="ad-account-platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>—</SelectItem>
+                  {PLATFORMS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                  {/* A platform stored outside the list (e.g. set via the API)
+                      shows as itself instead of a blank trigger; it's saved
+                      back unchanged either way. */}
+                  {platform && !PLATFORMS.includes(platform) && (
+                    <SelectItem value={platform}>{platform}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex flex-col">
-              <label className={LABEL}>Ad spend fee</label>
-              <select
-                className={FIELD}
-                value={feeBps}
-                onChange={(e) => setFeeBps(Number(e.target.value))}
+            <div className="grid gap-2">
+              <Label htmlFor="ad-account-fee">Ad spend fee</Label>
+              <Select
+                value={String(feeBps)}
+                onValueChange={(v) => setFeeBps(Number(v))}
               >
-                {FEE_OPTIONS.map((o) => (
-                  <option key={o.bps} value={o.bps}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="ad-account-fee">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FEE_OPTIONS.map((o) => (
+                    <SelectItem key={o.bps} value={String(o.bps)}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex flex-col col-span-2 sm:col-span-1">
-              <label className={LABEL}>Retainer ($)</label>
-              <input
+            <div className="grid gap-2 col-span-2 sm:col-span-1">
+              <Label htmlFor="ad-account-retainer">Retainer ($)</Label>
+              <Input
+                id="ad-account-retainer"
                 type="number"
                 min={0}
                 step="0.01"
-                className={FIELD}
                 value={retainerDollars}
                 onChange={(e) => setRetainerDollars(e.target.value)}
                 placeholder="1500"
@@ -268,128 +304,115 @@ export function AdAccountFormModal({
             </div>
           </div>
 
-          <div>
-            <label className={LABEL}>Status</label>
-            <div className="flex rounded-lg border bg-background p-0.5 w-full max-w-[220px]">
-              {(["active", "inactive"] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatus(s)}
-                  className={cn(
-                    "flex-1 rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition-colors",
-                    status === s
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div className="grid gap-2">
+            <Label>Status</Label>
+            <Tabs
+              value={status}
+              onValueChange={(v) => setStatus(v as "active" | "inactive")}
+            >
+              <TabsList className="w-full max-w-[220px]">
+                {(["active", "inactive"] as const).map((s) => (
+                  <TabsTrigger key={s} value={s} className="capitalize">
+                    {s}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* Billing schedule controls — drive the monthly bill status
               (upcoming / due / overdue / invoice sent) shown in the directory. */}
-          <div className="rounded-lg border border-border/50 p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                Billing schedule
-              </p>
-              <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
-                <input
-                  type="checkbox"
+          <div className="space-y-3 rounded-2xl p-4 ring-1 ring-foreground/5 dark:ring-foreground/10">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium">Billing schedule</p>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="ad-account-billing-paused"
+                  size="sm"
                   checked={billingPaused}
-                  onChange={(e) => setBillingPaused(e.target.checked)}
-                  className="h-4 w-4 rounded border-border accent-primary"
+                  onCheckedChange={setBillingPaused}
                 />
-                Pause billing
-              </label>
+                <Label htmlFor="ad-account-billing-paused" className="cursor-pointer text-xs">
+                  Pause billing
+                </Label>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:items-end">
-              <div className="flex flex-col">
-                <label className={LABEL}>Billing day</label>
-                <input
+              <div className="grid gap-2">
+                <Label htmlFor="ad-account-billing-day">Billing day</Label>
+                <Input
+                  id="ad-account-billing-day"
                   type="number"
                   min={1}
                   max={31}
-                  className={FIELD}
                   value={billingDay}
                   onChange={(e) => setBillingDay(e.target.value)}
                   placeholder="auto"
                 />
               </div>
-              <div className="flex flex-col">
-                <label className={LABEL}>Alert lead (days)</label>
-                <input
+              <div className="grid gap-2">
+                <Label htmlFor="ad-account-lead-days">Alert lead (days)</Label>
+                <Input
+                  id="ad-account-lead-days"
                   type="number"
                   min={0}
-                  className={FIELD}
                   value={leadDays}
                   onChange={(e) => setLeadDays(e.target.value)}
                   placeholder="5"
                 />
               </div>
-              <div className="flex flex-col">
-                <label className={LABEL}>Extend until</label>
-                <input
-                  type="date"
-                  className={FIELD}
+              <div className="grid gap-2">
+                <Label htmlFor="ad-account-extend-until">Extend until</Label>
+                <DatePicker
+                  id="ad-account-extend-until"
                   value={extendUntil}
-                  onChange={(e) => setExtendUntil(e.target.value)}
+                  onValueChange={setExtendUntil}
                 />
               </div>
-              <div className="flex flex-col">
-                <label className={LABEL}>Last billed</label>
-                <input
-                  type="date"
-                  className={FIELD}
+              <div className="grid gap-2">
+                <Label htmlFor="ad-account-last-billed">Last billed</Label>
+                <DatePicker
+                  id="ad-account-last-billed"
                   value={lastBilledOverride}
-                  onChange={(e) => setLastBilledOverride(e.target.value)}
+                  onValueChange={setLastBilledOverride}
                 />
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Billing day defaults to the account&apos;s creation day. &ldquo;Last
               billed&rdquo; overrides the date derived from payouts; the next bill
               is one month after it.
             </p>
           </div>
 
-          <div>
-            <label className={LABEL}>Notes (optional)</label>
-            <textarea
+          <div className="grid gap-2">
+            <Label htmlFor="ad-account-notes">Notes (optional)</Label>
+            <Textarea
+              id="ad-account-notes"
               rows={2}
-              className={cn(FIELD, "resize-y")}
+              className="resize-y"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border/50 px-5 py-3">
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-          >
+        <DialogFooter className="shrink-0 px-6 pt-4 pb-6">
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={busy}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          </Button>
+          <Button onClick={handleSave} disabled={busy}>
+            {busy && <Loader2 className="animate-spin" />}
             {isEdit ? "Save changes" : "Add account"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

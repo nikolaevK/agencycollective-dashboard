@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import { Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import type { ClientPublic } from "./types";
 import type { TeamRole } from "@/lib/clientProfile";
 
@@ -28,6 +32,15 @@ const ROLE_LABEL: Record<TeamRole, string> = {
 // Buyers first (the primary roster view), then leads, then CSMs — each role
 // is its own card group, never merged.
 const ROLE_RANK: Record<TeamRole, number> = { media_buyer: 0, lead: 1, csm: 2 };
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 /**
  * Clickable per-person filter cards (one per assigned admin × role across the
@@ -80,10 +93,10 @@ export function TeamFilterCards({
   const totalRunning = clients.filter((c) => c.profile.adsRunning).length;
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+    <div className="-m-1 flex gap-2 overflow-x-auto p-1">
       <CardButton
         active={selected === null}
-        title="All"
+        name="All"
         count={clients.length}
         running={totalRunning}
         paused={clients.length - totalRunning}
@@ -95,7 +108,8 @@ export function TeamFilterCards({
           active={
             selected?.adminId === card.adminId && selected?.role === card.role
           }
-          title={`${ROLE_LABEL[card.role]} · ${card.name}`}
+          role={ROLE_LABEL[card.role]}
+          name={card.name}
           count={card.clientCount}
           running={card.running}
           paused={card.paused}
@@ -114,54 +128,59 @@ export function TeamFilterCards({
 
 function CardButton({
   active,
-  title,
+  role,
+  name,
   count,
   running,
   paused,
   onClick,
 }: {
   active: boolean;
-  title: string;
+  /** Role label ("Media Buyer" …); omitted for the "All" card. */
+  role?: string;
+  name: string;
   count: number;
   running: number;
   paused: number;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Card
       className={cn(
-        "shrink-0 min-w-[140px] rounded-xl border p-3 text-left transition-all",
-        active
-          ? "border-primary ring-2 ring-primary/20 bg-primary/[0.03]"
-          : "border-border/50 bg-card hover:border-border"
+        "shrink-0 min-w-[160px] transition-shadow",
+        active && "bg-muted/50 ring-2 ring-ring/40 dark:ring-ring/40"
       )}
     >
-      <p
-        className={cn(
-          "text-xs font-bold leading-tight",
-          active ? "text-primary" : "text-foreground"
-        )}
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className="flex h-full w-full flex-col gap-2 p-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50"
       >
-        {title}
-      </p>
-      <p className="text-2xl font-black text-foreground mt-1 leading-none">
-        {count}
-        <span className="ml-1 text-[10px] font-semibold text-muted-foreground uppercase">
-          clients
-        </span>
-      </p>
-      <div className="flex gap-1.5 mt-2">
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-          {running} running
-        </span>
-        {paused > 0 && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
-            {paused} paused
+        <span className="flex min-h-8 min-w-0 items-center gap-2">
+          <Avatar className="size-7">
+            <AvatarFallback className="text-[10px] font-medium">
+              {role ? getInitials(name) : <Users className="size-3.5" />}
+            </AvatarFallback>
+          </Avatar>
+          <span className="min-w-0">
+            {role && (
+              <span className="block truncate text-xs leading-tight text-muted-foreground">
+                {role}
+              </span>
+            )}
+            <span className="block truncate text-sm font-medium leading-tight">{name}</span>
           </span>
-        )}
-      </div>
-    </button>
+        </span>
+        <span className="block leading-none">
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{count}</span>
+          <span className="ml-1 text-xs text-muted-foreground">clients</span>
+        </span>
+        <span className="flex gap-1.5">
+          <StatusBadge tone="success">{running} running</StatusBadge>
+          {paused > 0 && <Badge variant="secondary">{paused} paused</Badge>}
+        </span>
+      </button>
+    </Card>
   );
 }

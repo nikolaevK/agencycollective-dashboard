@@ -6,6 +6,10 @@ import { formatCents } from "@/components/closers/types";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { PayoutRecord } from "@/lib/payouts";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { sheetPanelClass } from "@/components/ui/sheet";
 
 interface MrrDetailModalProps {
   open: boolean;
@@ -16,16 +20,9 @@ interface MrrDetailModalProps {
 
 function TogglePill({ value, label }: { value: boolean; label: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-        value
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-      )}
-    >
+    <StatusBadge tone={value ? "success" : "danger"}>
       {value ? "Yes" : "No"}
-    </span>
+    </StatusBadge>
   );
 }
 
@@ -36,14 +33,14 @@ function MobilePayoutCard({ record }: { record: PayoutRecord }) {
   return (
     <div
       className={cn(
-        "rounded-lg border p-4",
+        "rounded-2xl p-4 ring-1",
         underpaid
-          ? "border-red-200 dark:border-red-500/20 bg-red-50/60 dark:bg-red-500/[0.07]"
-          : "border-border/50 dark:border-white/[0.06] bg-background/50"
+          ? "bg-red-500/[0.05] ring-red-500/25 dark:bg-red-400/[0.07] dark:ring-red-400/20"
+          : "ring-foreground/5 dark:ring-foreground/10"
       )}
     >
       {/* Brand + vertical + date */}
-      <div className="min-w-0 mb-2">
+      <div className="min-w-0 mb-3">
         <p className="font-medium text-foreground text-sm truncate">
           {record.brandName}
         </p>
@@ -62,22 +59,22 @@ function MobilePayoutCard({ record }: { record: PayoutRecord }) {
       </div>
 
       {/* Amounts */}
-      <div className="flex items-center gap-4 mb-2">
+      <div className="flex items-center gap-4 mb-3">
         <div>
-          <span className="text-[10px] text-muted-foreground block">Due</span>
-          <span className="font-semibold text-foreground text-sm">
+          <span className="text-xs text-muted-foreground block">Due</span>
+          <span className="font-semibold tracking-tight tabular-nums text-foreground text-sm">
             {formatCents(record.amountDue)}
           </span>
         </div>
         <div>
-          <span className="text-[10px] text-muted-foreground block">Paid</span>
-          <span className="font-semibold text-foreground text-sm">
+          <span className="text-xs text-muted-foreground block">Paid</span>
+          <span className="font-semibold tracking-tight tabular-nums text-foreground text-sm">
             {formatCents(record.amountPaid)}
           </span>
         </div>
         {record.firstDayAdSpend && (
           <div>
-            <span className="text-[10px] text-muted-foreground block">1st Ad Spend</span>
+            <span className="text-xs text-muted-foreground block">1st Ad Spend</span>
             <span className="text-xs text-foreground">{formatDate(record.firstDayAdSpend)}</span>
           </div>
         )}
@@ -85,16 +82,16 @@ function MobilePayoutCard({ record }: { record: PayoutRecord }) {
 
       {/* Sales Rep */}
       {record.salesRep && (
-        <div className="flex items-center gap-1 mb-2 min-w-0">
-          <span className="text-[10px] text-muted-foreground shrink-0">Rep</span>
+        <div className="flex items-center gap-1.5 mb-2 min-w-0">
+          <span className="text-xs text-muted-foreground shrink-0">Rep</span>
           <span className="text-xs text-foreground truncate">{record.salesRep}</span>
         </div>
       )}
 
       {/* Referral */}
       {(record.referral || record.referralPct != null) && (
-        <div className="flex items-center gap-1 mb-2 min-w-0">
-          <span className="text-[10px] text-muted-foreground shrink-0">Ref</span>
+        <div className="flex items-center gap-1.5 mb-2 min-w-0">
+          <span className="text-xs text-muted-foreground shrink-0">Ref</span>
           <span className="text-xs text-foreground truncate">
             {record.referral || "\u2014"}
             {record.referralPct != null && ` (${record.referralPct}%)`}
@@ -104,52 +101,53 @@ function MobilePayoutCard({ record }: { record: PayoutRecord }) {
 
       {/* Status badges */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">Signed</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Signed</span>
           <TogglePill value={record.isSigned} label="Signed" />
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">Paid</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Paid</span>
           <TogglePill value={record.isPaid} label="Paid" />
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">Slack</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Slack</span>
           <TogglePill value={record.addedToSlack} label="Slack" />
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">Dist.</span>
-          <span className={cn(
-            "inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-            record.payDistributed === "Yes"
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-              : record.payDistributed === "Hold Til Full Pay"
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-          )}>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Dist.</span>
+          <StatusBadge
+            tone={
+              record.payDistributed === "Yes"
+                ? "success"
+                : record.payDistributed === "Hold Til Full Pay"
+                  ? "warning"
+                  : "danger"
+            }
+          >
             {record.payDistributed === "Hold Til Full Pay" ? "Hold" : record.payDistributed}
-          </span>
+          </StatusBadge>
         </div>
         {record.commissionSplit && record.splitDetails.length > 0 && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground">Split</span>
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">
-              <GitBranch className="h-3 w-3" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Split</span>
+            <Badge variant="outline" className="h-auto whitespace-normal">
+              <GitBranch />
               {record.splitDetails.map((s) => `${s.name}: ${s.pct}%`).join(", ")}
-            </span>
+            </Badge>
           </div>
         )}
         {record.payDistributedDate && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground">Dist. Date</span>
-            <span className="text-[11px] text-muted-foreground">{formatDate(record.payDistributedDate)}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Dist. Date</span>
+            <span className="text-xs text-muted-foreground">{formatDate(record.payDistributedDate)}</span>
           </div>
         )}
       </div>
 
       {/* Payment notes */}
       {record.paymentNotes && (
-        <div className="mt-3 pt-3 border-t border-border/50 dark:border-white/[0.06]">
-          <p className="text-[10px] text-muted-foreground mb-0.5">Notes</p>
+        <div className="mt-3 pt-3 border-t">
+          <p className="text-xs text-muted-foreground mb-0.5">Notes</p>
           <p className="text-xs text-foreground whitespace-pre-wrap">{record.paymentNotes}</p>
         </div>
       )}
@@ -162,14 +160,15 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="border-b border-border/50 last:border-0">
+    <div className="border-b last:border-0">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 px-6 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50"
       >
         <ChevronDown
           className={cn(
-            "h-4 w-4 text-muted-foreground shrink-0 transition-transform",
+            "size-4 text-muted-foreground shrink-0 transition-transform",
             expanded && "rotate-180"
           )}
         />
@@ -178,16 +177,9 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
             <p className="text-sm font-medium text-foreground truncate">
               {record.brandName}
             </p>
-            <span
-              className={cn(
-                "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-                record.isPaid
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              )}
-            >
+            <StatusBadge tone={record.isPaid ? "success" : "danger"} className="shrink-0">
               {record.isPaid ? "Paid" : "Unpaid"}
-            </span>
+            </StatusBadge>
           </div>
           <p className="text-xs text-muted-foreground truncate">
             {[record.vertical, record.service, record.salesRep]
@@ -196,7 +188,7 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-semibold tabular-nums text-foreground">
             {formatCents(record.amountDue)}
           </p>
           {record.amountPaid > 0 && (
@@ -208,8 +200,8 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4 pt-1 md:pl-11">
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-4">
+        <div className="px-6 pb-4 pt-1 md:pl-[3.25rem]">
+          <div className="rounded-2xl bg-muted/50 p-4 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Field label="Amount Due" value={formatCents(record.amountDue)} />
               <Field label="Amount Paid" value={formatCents(record.amountPaid)} />
@@ -225,13 +217,13 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
               <Field label="1st Day Ad Spend" value={formatDate(record.firstDayAdSpend)} />
             </div>
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">
+              <p className="text-xs text-muted-foreground mb-1.5">
                 Status
               </p>
               <div className="flex flex-wrap gap-1.5">
-                <StatusBadge value={record.isSigned} label="Signed" />
-                <StatusBadge value={record.isPaid} label="Paid" />
-                <StatusBadge value={record.addedToSlack} label="Slack" />
+                <YesNoBadge value={record.isSigned} label="Signed" />
+                <YesNoBadge value={record.isPaid} label="Paid" />
+                <YesNoBadge value={record.addedToSlack} label="Slack" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -249,24 +241,21 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
             )}
             {record.commissionSplit && record.splitDetails.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">
+                <p className="text-xs text-muted-foreground mb-1.5">
                   Commission Split
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {record.splitDetails.map((s) => (
-                    <span
-                      key={s.name}
-                      className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400"
-                    >
+                    <Badge key={s.name} variant="outline">
                       {s.name}: {s.pct}%
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </div>
             )}
             {record.paymentNotes && (
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">
+                <p className="text-xs text-muted-foreground mb-0.5">
                   Payment Notes
                 </p>
                 <p className="text-sm text-foreground whitespace-pre-wrap">
@@ -281,18 +270,11 @@ function DesktopPayoutRow({ record }: { record: PayoutRecord }) {
   );
 }
 
-function StatusBadge({ value, label }: { value: boolean; label: string }) {
+function YesNoBadge({ value, label }: { value: boolean; label: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-        value
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-      )}
-    >
+    <StatusBadge tone={value ? "success" : "danger"}>
       {label}: {value ? "Yes" : "No"}
-    </span>
+    </StatusBadge>
   );
 }
 
@@ -300,7 +282,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value || value === "\u2014") return null;
   return (
     <div>
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">
+      <p className="text-xs text-muted-foreground mb-0.5">
         {label}
       </p>
       <p className="text-sm text-foreground">{value}</p>
@@ -352,14 +334,14 @@ export function MrrDetailModal({
   if (!open) return null;
 
   const statusBar = (
-    <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-border/50">
-      <div className="flex items-center gap-2">
-        <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+    <div className="flex shrink-0 items-center justify-between gap-3 px-4 md:px-6 py-3 bg-muted/50 border-y">
+      <div className="flex min-w-0 items-center gap-2">
+        <DollarSign className="size-4 shrink-0 text-muted-foreground" />
         <span className="text-sm font-medium text-foreground">
           {records.length} payout record{records.length !== 1 ? "s" : ""}
         </span>
       </div>
-      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+      <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
         {formatCents(mrrCents)}
       </span>
     </div>
@@ -378,23 +360,25 @@ export function MrrDetailModal({
   return (
     <>
       {/* Mobile: full-screen */}
-      <div className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden">
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <button
+      <div className={cn(sheetPanelClass, "fixed inset-0 z-[60] md:hidden")}>
+        <div className="flex items-center gap-2 px-4 py-3">
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
+            className="-ml-2 shrink-0 text-muted-foreground"
           >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <h3 className="text-lg font-semibold text-foreground truncate">
+            <ChevronLeft className="size-5" />
+          </Button>
+          <h3 className="text-base font-medium text-foreground truncate">
             MRR &mdash; {clientName}
           </h3>
         </div>
 
         {statusBar}
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3">
           {emptyOrLoading || records.map((r) => (
             <MobilePayoutCard key={r.id} record={r} />
           ))}
@@ -404,26 +388,28 @@ export function MrrDetailModal({
       {/* Desktop: centered dialog */}
       <div className="hidden md:flex fixed inset-0 z-[60] items-center justify-center">
         <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          className={cn(dialogOverlayClass, "absolute z-0")}
           onClick={onClose}
         />
-        <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden mx-4">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <h3 className="text-lg font-semibold text-foreground truncate pr-4">
+        <div className={cn(dialogPanelClass, "relative z-10 mx-4 w-full max-w-2xl overflow-hidden")}>
+          <div className="flex items-center justify-between gap-4 px-6 py-5">
+            <h3 className="text-base font-medium leading-none text-foreground truncate">
               Monthly MRR &mdash; {clientName}
             </h3>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors shrink-0"
+              className="shrink-0 bg-secondary"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
 
           {statusBar}
 
-          <div className="max-h-[70vh] overflow-y-auto">
+          <div className="max-h-[70vh] overflow-y-auto overscroll-contain">
             {emptyOrLoading || records.map((r) => (
               <DesktopPayoutRow key={r.id} record={r} />
             ))}

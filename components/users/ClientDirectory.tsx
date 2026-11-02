@@ -2,28 +2,41 @@
 
 import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Megaphone, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { AvatarInitials } from "./AvatarInitials";
 import { StatusBadge } from "./StatusBadge";
 import { ClientActionsMenu } from "./ClientActionsMenu";
-import { ManageAccountsModal } from "./ManageAccountsModal";
-import { EditClientModal } from "./EditClientModal";
-import { MrrDetailModal } from "./MrrDetailModal";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { RebillStatusChip } from "./RebillStatusChip";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { TeamPicker } from "./TeamPicker";
 import { InlineTextCell } from "./InlineTextCell";
-import { NewTeamTaskDialog } from "@/components/team/NewTeamTaskDialog";
+import dynamic from "next/dynamic";
+// Click-to-open dialogs load on first use, not with the table.
+const ManageAccountsModal = dynamic(() => import("./ManageAccountsModal").then((m) => m.ManageAccountsModal), { ssr: false });
+const EditClientModal = dynamic(() => import("./EditClientModal").then((m) => m.EditClientModal), { ssr: false });
+const MrrDetailModal = dynamic(() => import("./MrrDetailModal").then((m) => m.MrrDetailModal), { ssr: false });
+const NewTeamTaskDialog = dynamic(() => import("@/components/team/NewTeamTaskDialog").then((m) => m.NewTeamTaskDialog), { ssr: false });
 import {
-  STAGE_CHIP_CLS,
-  HEALTH_CHIP_CLS,
-  PLATFORM_CHIP_CLS,
-  MANUAL_BILLING_CHIP_CLS,
-  SERVICE_CHIP_CLS,
-  PEPADS_BADGE_CLS,
+  STAGE_TONE,
+  HEALTH_TONE,
+  MANUAL_BILLING_TONE,
+  toneOf,
   effectiveMrrCents,
   effectiveLtvCents,
   parseMoneyToCents,
@@ -47,6 +60,10 @@ import type { UserStatus } from "@/lib/users";
 
 const PAGE_SIZE = 20;
 const COL_COUNT = 20;
+
+// Clickable numbers (MRR drill, ad-account count): quiet dotted underline.
+const LINK_CLS =
+  "text-sm font-semibold tabular-nums underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 transition-colors hover:decoration-foreground hover:decoration-solid";
 
 interface ClientDirectoryProps {
   clients: ClientPublic[];
@@ -76,6 +93,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
   const showWorkspaceBadges = workspaceOptions.length > 1;
   const [taskClientId, setTaskClientId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const { confirm, dialog } = useConfirm();
   const { patchProfile, putTeam } = useClientProfileMutations();
   const { options: platformOptions, addOption: addPlatformOption } =
     useAdPlatformOptions();
@@ -162,8 +180,16 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
     });
   }
 
-  function handleDelete(client: ClientPublic) {
-    if (!confirm(`Delete "${client.displayName}"? This cannot be undone.`)) return;
+  async function handleDelete(client: ClientPublic) {
+    if (
+      !(await confirm({
+        title: `Delete "${client.displayName}"?`,
+        description: "This cannot be undone.",
+        confirmText: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       const res = await deleteUserAction(client.id);
       if (res?.error) {
@@ -183,56 +209,60 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
     const perfDerived = profile.perfFee ? null : client.derivedPerfFee;
 
     return (
-      <tr
+      <TableRow
         key={client.id}
-        className={cn(
-          "border-b border-border/50 dark:border-white/[0.06] hover:bg-muted/20 transition-colors",
-          profile.isTop && "bg-amber-500/[0.05]",
-          !profile.adsRunning && "bg-muted/10"
-        )}
+        className={cn(!profile.adsRunning && "bg-muted/20")}
       >
         {/* Client (sticky) — star + avatar + name + website + book badge */}
-        <td className="px-3 py-3 sticky left-0 z-10 bg-card border-r border-border/40">
+        <Td className="sticky left-0 z-10 border-r bg-card px-3">
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={(e) => {
                 e.stopPropagation();
                 patch(client, { isTop: !profile.isTop });
               }}
-              className="shrink-0 p-0.5"
+              className="shrink-0"
               title={profile.isTop ? "Unpin from Top Clients" : "Mark as top client"}
               aria-label="Toggle top client"
             >
               <Star
                 className={cn(
-                  "h-4 w-4 transition-colors",
+                  "size-4 transition-colors",
                   profile.isTop
-                    ? "text-amber-500 fill-amber-500"
-                    : "text-muted-foreground/40 hover:text-amber-500"
+                    ? "fill-amber-400 text-amber-400"
+                    : "text-muted-foreground/40 hover:text-foreground"
                 )}
               />
-            </button>
+            </Button>
             <div
-              className="flex items-center gap-3 cursor-pointer min-w-0"
+              className="group/client flex cursor-pointer items-center gap-3 min-w-0"
               onClick={() => router.push(`/dashboard/users/${client.id}`)}
             >
               <AvatarInitials name={client.displayName} />
               <div className="min-w-0">
-                <p
-                  className={cn(
-                    "text-sm font-bold truncate hover:text-primary transition-colors",
-                    profile.adsRunning ? "text-foreground" : "text-muted-foreground"
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "truncate text-sm font-medium underline-offset-4 group-hover/client:underline",
+                      profile.adsRunning ? "text-foreground" : "text-muted-foreground"
+                    )}
+                  >
+                    {client.displayName}
+                  </span>
+                  {isPepads && (
+                    <Badge variant="outline" tone="warning" className="shrink-0">
+                      PepAds
+                    </Badge>
                   )}
-                >
-                  {client.displayName}
-                  {isPepads && <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>}
                   {showWorkspaceBadges && client.workspace !== "main" && (
-                    <span className="ml-1.5 inline-flex items-center rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                    <Badge variant="secondary" className="shrink-0">
                       {workspaceLabel(client.workspace)}
-                    </span>
+                    </Badge>
                   )}
-                </p>
+                </div>
                 <p className="text-xs text-muted-foreground truncate">
                   {client.category || client.email || "—"}
                 </p>
@@ -253,44 +283,44 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="shrink-0 text-primary hover:opacity-70 transition-opacity"
+                      className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                       title="Open website"
                     >
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="size-3" />
                     </a>
                   )}
                 </div>
               </div>
             </div>
           </div>
-        </td>
-        <td className="px-4 py-3">
+        </Td>
+        <Td>
           <StatusBadge status={client.status} />
-        </td>
+        </Td>
         {/* Stage */}
-        <td className="px-4 py-3 min-w-[170px]">
+        <Td className="min-w-[170px]">
           <ChipMultiSelect
             value={profile.stages}
             options={stageOptions}
-            colorOf={(v) => STAGE_CHIP_CLS[v]}
+            toneOf={(v) => toneOf(STAGE_TONE, v)}
             onChange={(stages) => patch(client, { stages })}
             onCreateOption={addStageOption}
             addLabel="Add stage"
           />
-        </td>
+        </Td>
         {/* Client Health */}
-        <td className="px-4 py-3 min-w-[170px]">
+        <Td className="min-w-[170px]">
           <ChipMultiSelect
             value={profile.health}
             options={healthOptions}
-            colorOf={(v) => HEALTH_CHIP_CLS[v]}
+            toneOf={(v) => toneOf(HEALTH_TONE, v)}
             onChange={(health) => patch(client, { health })}
             onCreateOption={addHealthOption}
             addLabel="Add health"
           />
-        </td>
+        </Td>
         {/* Ads: Meta + TikTok running switches + platforms */}
-        <td className="px-4 py-3 min-w-[180px]">
+        <Td className="min-w-[180px]">
           <div className="space-y-1.5">
             <RunningSwitch
               label="Meta"
@@ -307,50 +337,48 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             <ChipMultiSelect
               value={profile.adPlatforms}
               options={platformOptions}
-              colorOf={(v) => PLATFORM_CHIP_CLS[v]}
               onChange={(adPlatforms) => patch(client, { adPlatforms })}
               onCreateOption={addPlatformOption}
               addLabel="Add platform"
               compact
             />
           </div>
-        </td>
+        </Td>
         {/* Lead — Head of Ads */}
-        <td className="px-4 py-3 min-w-[140px]">
+        <Td className="min-w-[140px]">
           <TeamPicker
             role="lead"
             members={leads}
             onChange={(members) => saveTeam(client, "lead", members)}
           />
-        </td>
+        </Td>
         {/* Media Buyer */}
-        <td className="px-4 py-3 min-w-[140px]">
+        <Td className="min-w-[140px]">
           <TeamPicker
             role="media_buyer"
             members={buyers}
             onChange={(members) => saveTeam(client, "media_buyer", members)}
           />
-        </td>
+        </Td>
         {/* CSM — Client Success Manager (own role, never merged with MB) */}
-        <td className="px-4 py-3 min-w-[140px]">
+        <Td className="min-w-[140px]">
           <TeamPicker
             role="csm"
             members={csms}
             onChange={(members) => saveTeam(client, "csm", members)}
           />
-        </td>
+        </Td>
         {/* Services */}
-        <td className="px-4 py-3 min-w-[200px]">
+        <Td className="min-w-[200px]">
           <ChipMultiSelect
             value={profile.services}
             options={SERVICE_OPTIONS}
-            colorOf={(v) => SERVICE_CHIP_CLS[v]}
             onChange={(services) => patch(client, { services })}
             addLabel="Add service"
           />
-        </td>
+        </Td>
         {/* Perf Fee (manual wins; derived from ad_accounts shown as auto) */}
-        <td className="px-4 py-3 min-w-[90px]">
+        <Td className="min-w-[90px]">
           <InlineTextCell
             value={profile.perfFee}
             placeholder="—"
@@ -358,28 +386,28 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               perfDerived ? (
                 <span className="text-muted-foreground" title="Derived from linked ad accounts">
                   {perfDerived}
-                  <span className="ml-1 text-[9px] uppercase opacity-60">auto</span>
+                  <span className="ml-1 text-[10px] text-muted-foreground/70">auto</span>
                 </span>
               ) : undefined
             }
             onSave={(v) => patch(client, { perfFee: v })}
           />
-        </td>
+        </Td>
         {/* Rev / Threshold */}
-        <td className="px-4 py-3 min-w-[100px]">
+        <Td className="min-w-[100px]">
           <InlineTextCell
             value={profile.revThreshold}
             placeholder="—"
             onSave={(v) => patch(client, { revThreshold: v })}
           />
-        </td>
-        <td className="px-4 py-3">
+        </Td>
+        <Td>
           <span className="text-sm text-foreground whitespace-nowrap">
             {formatDate(client.joinedAt)}
           </span>
-        </td>
+        </Td>
         {/* Monthly MRR — computed for agency; inline-editable for PepAds */}
-        <td className="px-4 py-3 text-right">
+        <Td className="text-right">
           {isPepads ? (
             <InlineTextCell
               value={
@@ -394,7 +422,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 ) : undefined
               }
               onSave={(v) => patchMoney(client, "manualMrrCents", v)}
-              className="font-semibold"
+              className="font-semibold tabular-nums"
             />
           ) : client.payoutMrr > 0 && !isExternal ? (
             <button
@@ -402,18 +430,18 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 e.stopPropagation();
                 setMrrClientId(client.id);
               }}
-              className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 underline-offset-2 hover:decoration-emerald-600 transition-colors"
+              className={LINK_CLS}
             >
               {formatMoney(client.payoutMrr)}
             </button>
           ) : (
-            <span className="text-sm font-semibold text-foreground">
+            <span className="text-sm font-semibold tabular-nums text-foreground">
               {formatMoney(client.payoutMrr)}
             </span>
           )}
-        </td>
+        </Td>
         {/* LTV — all-time payout revenue; inline-editable for PepAds */}
-        <td className="px-4 py-3 text-right">
+        <Td className="text-right">
           {isPepads ? (
             <InlineTextCell
               value={
@@ -428,26 +456,27 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 ) : undefined
               }
               onSave={(v) => patchMoney(client, "manualLtvCents", v)}
+              className="tabular-nums"
             />
           ) : (
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-sm font-medium tabular-nums text-foreground">
               {formatMoney(client.totalRevenue)}
             </span>
           )}
-        </td>
-        <td className="px-4 py-3">
+        </Td>
+        <Td>
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {formatDate(client.schedule.lastRebilledAt)}
           </span>
-        </td>
+        </Td>
         {/* Next Re-bill: computed for agency, manual for pepads */}
-        <td className="px-4 py-3 min-w-[190px]">
+        <Td className="min-w-[190px]">
           {isPepads ? (
             <div className="space-y-1.5">
               <ChipMultiSelect
                 value={profile.manualBilling}
                 options={MANUAL_BILLING_OPTIONS}
-                colorOf={(v) => MANUAL_BILLING_CHIP_CLS[v]}
+                toneOf={(v) => toneOf(MANUAL_BILLING_TONE, v)}
                 onChange={(manualBilling) =>
                   patch(client, {
                     manualBilling: manualBilling as ClientProfilePatch["manualBilling"],
@@ -474,28 +503,29 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               )}
             </div>
           )}
-        </td>
-        <td className="px-4 py-3 text-center">
-          <span className="text-sm font-medium text-foreground">{client.accounts.length}</span>
-        </td>
+        </Td>
+        <Td className="text-center">
+          <span className="text-sm font-medium tabular-nums text-foreground">{client.accounts.length}</span>
+        </Td>
         {/* Ad Accounts (purchased ad_accounts) — opens the client's Ad Accounts tab */}
-        <td className="px-4 py-3 text-center">
+        <Td className="text-center">
           <button
             onClick={(e) => {
               e.stopPropagation();
               router.push(`/dashboard/users/${client.id}?tab=adAccounts`);
             }}
             className={cn(
-              "text-sm font-medium underline decoration-primary/30 underline-offset-2 hover:decoration-primary transition-colors",
+              LINK_CLS,
+              "font-medium",
               client.adAccountCount > 0 ? "text-foreground" : "text-muted-foreground"
             )}
             title="Open Ad Accounts tab"
           >
             {client.adAccountCount}
           </button>
-        </td>
+        </Td>
         {/* Quick notes */}
-        <td className="px-4 py-3 min-w-[200px] max-w-[260px]">
+        <Td className="min-w-[200px] max-w-[260px]">
           <InlineTextCell
             value={profile.rosterNotes}
             placeholder="Add notes…"
@@ -503,8 +533,8 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             onSave={(v) => patch(client, { rosterNotes: v })}
             className="text-muted-foreground"
           />
-        </td>
-        <td className="px-4 py-3 text-right">
+        </Td>
+        <Td className="text-right">
           <ClientActionsMenu
             client={client}
             onEdit={() => setEditingId(client.id)}
@@ -513,38 +543,30 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             onArchive={() => handleArchive(client)}
             onDelete={() => handleDelete(client)}
           />
-        </td>
-      </tr>
+        </Td>
+      </TableRow>
     );
   }
 
-  function renderGroupLabel(label: string, variant?: "top" | "pepads") {
+  // Section header row; `separate` marks the start of the PepAds book.
+  function renderGroupLabel(label: React.ReactNode, separate?: boolean) {
     return (
-      <tr className="border-b border-border/50">
-        <td
-          colSpan={COL_COUNT}
-          className={cn(
-            "px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider",
-            variant === "top" && "bg-amber-500/[0.08] text-amber-600 dark:text-amber-400",
-            variant === "pepads" &&
-              "bg-orange-500/[0.08] text-orange-600 dark:text-orange-400 border-t-2 border-t-orange-500/30",
-            !variant && "bg-muted/30 text-muted-foreground"
-          )}
-        >
-          {label}
-        </td>
-      </tr>
+      <TableRow className={cn("bg-muted/40 hover:bg-muted/40", separate && "border-t-2")}>
+        <TableCell colSpan={COL_COUNT} className="px-4 py-2">
+          <div className="sticky left-4 w-fit">{label}</div>
+        </TableCell>
+      </TableRow>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+    <Card>
       {/* Desktop Table */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-left min-w-[2250px]">
-          <thead>
-            <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
-              <Th className="pl-4 sticky left-0 z-20 bg-card border-r border-border/40 min-w-[260px]">
+      <div className="hidden md:block">
+        <Table className="min-w-[2250px] text-left">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <Th className="pl-4 sticky left-0 z-20 bg-card border-r min-w-[260px]">
                 Client
               </Th>
               <Th>Status</Th>
@@ -566,47 +588,62 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               <Th className="text-center">Ad Accounts</Th>
               <Th>Notes</Th>
               <Th className="text-right pr-4">Actions</Th>
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {clients.length === 0 ? (
-              <tr>
-                <td
+              <TableRow className="hover:bg-transparent">
+                <TableCell
                   colSpan={COL_COUNT}
                   className="px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   No clients match your filters.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               <>
                 {topAgency.length > 0 && (
                   <>
                     {renderGroupLabel(
-                      `★ Top Clients · Agency Collective (${topAgency.length})`,
-                      "top"
+                      <SectionLabel
+                        star
+                        label="Top Clients · Agency Collective"
+                        count={topAgency.length}
+                      />
                     )}
                     {topAgency.map(renderRow)}
                   </>
                 )}
                 {(topAgency.length > 0 || pepadsTotal > 0) &&
-                  renderGroupLabel(`Agency Collective (${agencyClients.length})`)}
+                  renderGroupLabel(
+                    <SectionLabel label="Agency Collective" count={agencyClients.length} />
+                  )}
                 {paginated.map(renderRow)}
                 {pepadsTotal > 0 && (
                   <>
                     {renderGroupLabel(
-                      `📣 PepAds (${pepadsTotal}) · Separate book — statuses managed manually`,
-                      "pepads"
+                      <SectionLabel
+                        megaphone
+                        label="PepAds"
+                        count={pepadsTotal}
+                        hint="Separate book — statuses managed manually"
+                      />,
+                      true
                     )}
                     {topPepads.length > 0 && (
                       <>
                         {renderGroupLabel(
-                          `★ Top Clients · PepAds (${topPepads.length})`,
-                          "top"
+                          <SectionLabel
+                            star
+                            label="Top Clients · PepAds"
+                            count={topPepads.length}
+                          />
                         )}
                         {topPepads.map(renderRow)}
                         {pepadsClients.length > 0 &&
-                          renderGroupLabel(`All PepAds (${pepadsClients.length})`)}
+                          renderGroupLabel(
+                            <SectionLabel label="All PepAds" count={pepadsClients.length} />
+                          )}
                       </>
                     )}
                     {pepadsClients.map(renderRow)}
@@ -614,8 +651,8 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                 )}
               </>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/* Mobile Cards */}
@@ -640,73 +677,88 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
             return (
               <div key={client.id}>
                 {firstOfSection && (
-                  <p
+                  <div
                     className={cn(
-                      "px-1 pb-2 text-[10px] font-bold uppercase tracking-wider",
-                      (section === "top" || section === "top-pepads") &&
-                        "text-amber-600 dark:text-amber-400",
-                      section === "agency" && "text-muted-foreground",
-                      section === "top-pepads" && "pt-2 border-t-2 border-orange-500/30",
-                      section === "pepads" &&
-                        (topPepads.length > 0
-                          ? "text-muted-foreground"
-                          : "text-orange-600 dark:text-orange-400 pt-2 border-t-2 border-orange-500/30")
+                      "px-1 pb-2",
+                      (section === "top-pepads" ||
+                        (section === "pepads" && topPepads.length === 0)) &&
+                        "mt-1 border-t-2 pt-3"
                     )}
                   >
-                    {section === "top" &&
-                      `★ Top Clients · Agency Collective (${topAgency.length})`}
-                    {section === "agency" && `Agency Collective (${agencyClients.length})`}
-                    {section === "top-pepads" &&
-                      `📣 ★ Top Clients · PepAds (${topPepads.length})`}
+                    {section === "top" && (
+                      <SectionLabel
+                        star
+                        label="Top Clients · Agency Collective"
+                        count={topAgency.length}
+                      />
+                    )}
+                    {section === "agency" && (
+                      <SectionLabel label="Agency Collective" count={agencyClients.length} />
+                    )}
+                    {section === "top-pepads" && (
+                      <SectionLabel
+                        megaphone
+                        star
+                        label="Top Clients · PepAds"
+                        count={topPepads.length}
+                      />
+                    )}
                     {section === "pepads" &&
-                      (topPepads.length > 0
-                        ? `All PepAds (${pepadsClients.length})`
-                        : `📣 PepAds (${pepadsClients.length}) · Separate book`)}
-                  </p>
+                      (topPepads.length > 0 ? (
+                        <SectionLabel label="All PepAds" count={pepadsClients.length} />
+                      ) : (
+                        <SectionLabel
+                          megaphone
+                          label="PepAds"
+                          count={pepadsClients.length}
+                          hint="Separate book"
+                        />
+                      ))}
+                  </div>
                 )}
-              <div
-                className={cn(
-                  "rounded-xl border border-border/50 dark:border-white/[0.06] p-4",
-                  profile.isTop && "bg-amber-500/[0.05] border-amber-500/20"
-                )}
-              >
+              <div className="rounded-2xl border p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div
                     className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer active:scale-[0.98] transition-all"
                     onClick={() => router.push(`/dashboard/users/${client.id}`)}
                   >
                     <AvatarInitials name={client.displayName} className="w-11 h-11" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-foreground truncate">
-                        {client.displayName}
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {client.displayName}
+                        </span>
                         {isPepads && (
-                          <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>
+                          <Badge variant="outline" tone="warning" className="shrink-0">
+                            PepAds
+                          </Badge>
                         )}
                         {showWorkspaceBadges && client.workspace !== "main" && (
-                          <span className="ml-1.5 inline-flex items-center rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                          <Badge variant="secondary" className="shrink-0">
                             {workspaceLabel(client.workspace)}
-                          </span>
+                          </Badge>
                         )}
-                      </p>
+                      </div>
                       <StatusBadge status={client.status} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
+                  <div className="flex items-center gap-1">
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => patch(client, { isTop: !profile.isTop })}
-                      className="flex h-10 w-10 items-center justify-center"
                       aria-label="Toggle top client"
                     >
                       <Star
                         className={cn(
-                          "h-4 w-4",
+                          "size-4",
                           profile.isTop
-                            ? "text-amber-500 fill-amber-500"
+                            ? "fill-amber-400 text-amber-400"
                             : "text-muted-foreground/40"
                         )}
                       />
-                    </button>
+                    </Button>
                     <ClientActionsMenu
                       client={client}
                       onEdit={() => setEditingId(client.id)}
@@ -723,7 +775,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                   <ChipMultiSelect
                     value={profile.stages}
                     options={stageOptions}
-                    colorOf={(v) => STAGE_CHIP_CLS[v]}
+                    toneOf={(v) => toneOf(STAGE_TONE, v)}
                     onChange={(stages) => patch(client, { stages })}
                     onCreateOption={addStageOption}
                     compact
@@ -731,7 +783,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                   <ChipMultiSelect
                     value={profile.health}
                     options={healthOptions}
-                    colorOf={(v) => HEALTH_CHIP_CLS[v]}
+                    toneOf={(v) => toneOf(HEALTH_TONE, v)}
                     onChange={(health) => patch(client, { health })}
                     onCreateOption={addHealthOption}
                     compact
@@ -763,7 +815,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     }
                   />
                   <div>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                    <p className="text-xs text-muted-foreground">
                       Head of Ads
                     </p>
                     <div className="mt-1">
@@ -776,7 +828,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     </div>
                   </div>
                   <div>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                    <p className="text-xs text-muted-foreground">
                       Media Buyer
                     </p>
                     <div className="mt-1">
@@ -789,7 +841,7 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     </div>
                   </div>
                   <div>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                    <p className="text-xs text-muted-foreground">
                       CSM
                     </p>
                     <div className="mt-1">
@@ -806,16 +858,16 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
                     value={formatDate(client.schedule.lastRebilledAt)}
                   />
                   <div>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase">
+                    <p className="text-xs text-muted-foreground">
                       Next re-bill
                     </p>
-                    <div className="mt-0.5 flex flex-col gap-1">
+                    <div className="mt-1 flex flex-col gap-1">
                       {isPepads ? (
                         <>
                           <ChipMultiSelect
                             value={profile.manualBilling}
                             options={MANUAL_BILLING_OPTIONS}
-                            colorOf={(v) => MANUAL_BILLING_CHIP_CLS[v]}
+                            toneOf={(v) => toneOf(MANUAL_BILLING_TONE, v)}
                             onChange={(manualBilling) =>
                               patch(client, {
                                 manualBilling:
@@ -850,21 +902,22 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border/50">
-          <p className="text-xs font-medium text-muted-foreground">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t">
+          <p className="text-xs text-muted-foreground">
             Showing {paginated.length} of {agencyClients.length} Agency Collective
             {topAgency.length > 0 && ` · ${topAgency.length} top pinned`}
             {pepadsTotal > 0 && ` · ${pepadsTotal} PepAds below`}
           </p>
-          <div className="flex gap-1.5">
-            <button
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
               onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               aria-label="Previous page"
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
             >
-              &lsaquo;
-            </button>
+              <ChevronLeft />
+            </Button>
             {(() => {
               const maxButtons = 5;
               const half = Math.floor(maxButtons / 2);
@@ -874,29 +927,28 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
               return Array.from({ length: end - start + 1 }, (_, i) => {
                 const pageNum = start + i;
                 return (
-                  <button
+                  <Button
                     key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "ghost"}
+                    size="icon-sm"
                     onClick={() => setPage(pageNum)}
-                    className={cn(
-                      "w-8 h-8 flex items-center justify-center rounded-lg text-sm font-semibold transition-colors",
-                      currentPage === pageNum
-                        ? "text-white shadow-lg shadow-primary/20 ac-gradient"
-                        : "border border-border/50 hover:bg-muted/50 text-foreground"
-                    )}
+                    aria-current={currentPage === pageNum ? "page" : undefined}
+                    className="tabular-nums"
                   >
                     {pageNum}
-                  </button>
+                  </Button>
                 );
               });
             })()}
-            <button
+            <Button
+              variant="outline"
+              size="icon-sm"
               onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               aria-label="Next page"
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
             >
-              &rsaquo;
-            </button>
+              <ChevronRight />
+            </Button>
           </div>
         </div>
       )}
@@ -927,7 +979,8 @@ export function ClientDirectory({ clients, onRefresh, resetKey }: ClientDirector
       {taskClient && (
         <NewTeamTaskDialog client={taskClient} onClose={() => setTaskClientId(null)} />
       )}
-    </div>
+      {dialog}
+    </Card>
   );
 }
 
@@ -941,57 +994,71 @@ function RunningSwitch({
   onToggle: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      className="inline-flex items-center gap-1.5"
+    <label
+      className="inline-flex cursor-pointer items-center gap-1.5"
+      onClick={(e) => e.stopPropagation()}
       title={
         running
           ? `${label} ads running — click to pause`
           : `${label} ads paused — click to resume`
       }
     >
-      <span className="w-10 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
+      <span className="w-11 text-left text-xs text-muted-foreground">{label}</span>
+      <Switch
+        size="sm"
+        checked={running}
+        onCheckedChange={() => onToggle()}
+        aria-label={`${label} ads`}
+      />
       <span
         className={cn(
-          "relative inline-flex h-[18px] w-8 shrink-0 rounded-full transition-colors",
-          running ? "bg-emerald-500" : "bg-muted-foreground/30"
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
-            running ? "translate-x-[16px]" : "translate-x-[2px]"
-          )}
-        />
-      </span>
-      <span
-        className={cn(
-          "text-[11px] font-semibold",
-          running ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+          "text-xs font-medium",
+          running ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"
         )}
       >
         {running ? "Running" : "Paused"}
       </span>
-    </button>
+    </label>
   );
 }
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <th
-      className={cn(
-        "px-4 py-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap",
-        className
-      )}
-    >
+    <TableHead className={cn("px-4 text-muted-foreground", className)}>
       {children}
-    </th>
+    </TableHead>
+  );
+}
+
+/** Body cell with the directory's padding; content may wrap (chips, notes). */
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <TableCell className={cn("px-4 py-3 whitespace-normal", className)}>{children}</TableCell>;
+}
+
+/** Section header text: optional star / megaphone, label, count badge, hint. */
+function SectionLabel({
+  label,
+  count,
+  hint,
+  star,
+  megaphone,
+}: {
+  label: string;
+  count: number;
+  hint?: string;
+  star?: boolean;
+  megaphone?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+      {megaphone && <Megaphone className="size-4 text-muted-foreground" />}
+      {star && <Star className="size-3.5 fill-amber-400 text-amber-400" />}
+      <span>{label}</span>
+      <Badge variant="secondary" className="tabular-nums">
+        {count}
+      </Badge>
+      {hint && <span className="text-xs font-normal text-muted-foreground">· {hint}</span>}
+    </div>
   );
 }
 
@@ -1006,16 +1073,13 @@ function Field({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-medium text-muted-foreground uppercase">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       {onClick ? (
-        <button
-          onClick={onClick}
-          className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-600/30 underline-offset-2"
-        >
+        <button onClick={onClick} className={cn(LINK_CLS, "mt-0.5")}>
           {value}
         </button>
       ) : (
-        <p className="text-sm font-medium text-foreground mt-0.5">{value}</p>
+        <p className="text-sm font-medium tabular-nums text-foreground mt-0.5">{value}</p>
       )}
     </div>
   );

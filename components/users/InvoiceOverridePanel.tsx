@@ -17,11 +17,17 @@ import { cycleOptionsAround } from "@/lib/clientBilling";
 import type { PayoutLinkOption } from "@/lib/payouts";
 import { formatCentsExact } from "@/lib/format";
 import { formatDate } from "./format";
+import { badgeTone, badgeToneHover, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block leading-tight";
+// Radix Select items can't carry an empty value — "no payout" maps to this.
+const NONE = "__none__";
 
 type InvoiceStatus = "sent" | "paid" | "unpaid" | "superseded";
 
@@ -58,7 +64,7 @@ export function InvoiceProvenance({ invoice }: { invoice: OverridableInvoice }) 
     if (invoice.paidSource === "payout") {
       bits.push(
         <span key="src" className="inline-flex items-center gap-1">
-          <Link2 className="h-3 w-3" />
+          <Link2 className="size-3" />
           linked to payout
           {invoice.paidPayoutMonth && invoice.paidPayoutYear
             ? ` (${monthLabel(invoice.paidPayoutYear, invoice.paidPayoutMonth)})`
@@ -78,7 +84,7 @@ export function InvoiceProvenance({ invoice }: { invoice: OverridableInvoice }) 
   if (invoice.reconcileLocked) {
     bits.push(
       <span key="lock" className="inline-flex items-center gap-1" title="Set by hand — auto-reconciliation is paused until Resync">
-        <Lock className="h-3 w-3" />
+        <Lock className="size-3" />
         manual
       </span>
     );
@@ -92,7 +98,7 @@ export function InvoiceProvenance({ invoice }: { invoice: OverridableInvoice }) 
   }
   if (bits.length === 0) return null;
   return (
-    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
       {bits}
     </p>
   );
@@ -126,6 +132,7 @@ export function InvoiceOverridePanel({
   schedulePaid,
   onChanged,
 }: Props) {
+  const { confirm, dialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>(null);
   // Which PATCH is in flight: "form" (a sub-form submit) or the immediate
@@ -201,31 +208,33 @@ export function InvoiceOverridePanel({
 
   return (
     <div className="w-full">
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="xs"
         aria-expanded={open}
         onClick={() => {
           setOpen((o) => !o);
           setMode(null);
           setError(null);
         }}
-        // Padding enlarges the hit area; the negative margin keeps the
-        // compact visual footprint.
-        className="-mx-2 -my-1.5 inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+        // The negative margin lines the label up with the row's text; a
+        // taller hit area on phones.
+        className="-mx-2.5 h-8 text-muted-foreground sm:h-6"
       >
         Manage
-        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-      </button>
+        <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+      </Button>
 
       {open && isSuperseded && (
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Superseded — a newer invoice replaced this one. It keeps its record but can no
           longer change status; manage the newer invoice instead.
         </p>
       )}
 
       {open && !isSuperseded && (
-        <div className="mt-2 rounded-lg border border-border/50 bg-muted/20 p-3 space-y-3">
+        <div className="mt-2 space-y-3 rounded-2xl bg-muted/50 p-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {invoice.status !== "paid" && (
               <ActionButton
@@ -259,8 +268,15 @@ export function InvoiceOverridePanel({
                 label="Reopen (awaiting)"
                 disabled={busy}
                 loading={busyAction === "reopen"}
-                onClick={() => {
-                  if (!confirm(`Reopen ${invoice.invoiceNumber} as awaiting payment?\n\nIt stays locked from auto-matching until you Resync.`)) return;
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: `Reopen ${invoice.invoiceNumber} as awaiting payment?`,
+                      description: "It stays locked from auto-matching until you Resync.",
+                      confirmText: "Reopen",
+                    }))
+                  )
+                    return;
                   patch({ status: "sent" }, "reopen");
                 }}
               />
@@ -277,8 +293,15 @@ export function InvoiceOverridePanel({
                 label="Unlink payout"
                 disabled={busy}
                 loading={busyAction === "unlink"}
-                onClick={() => {
-                  if (!confirm(`Unlink the payout from ${invoice.invoiceNumber}?\n\nThe invoice stays paid (by hand) — only the payout reference is removed.`)) return;
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: `Unlink the payout from ${invoice.invoiceNumber}?`,
+                      description: "The invoice stays paid (by hand) — only the payout reference is removed.",
+                      confirmText: "Unlink",
+                    }))
+                  )
+                    return;
                   patch({ paidPayoutId: null }, "unlink");
                 }}
               />
@@ -289,8 +312,17 @@ export function InvoiceOverridePanel({
                 label="Resync with payouts"
                 disabled={busy}
                 loading={busyAction === "resync"}
-                onClick={() => {
-                  if (!confirm(`Hand ${invoice.invoiceNumber} back to the automation?\n\nManual markers and the note are cleared, the invoice returns to awaiting, and the Payout DB decides again whether it's paid.`)) return;
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: `Hand ${invoice.invoiceNumber} back to the automation?`,
+                      description:
+                        "Manual markers and the note are cleared, the invoice returns to awaiting, and the Payout DB decides again whether it's paid.",
+                      confirmText: "Resync",
+                      destructive: true,
+                    }))
+                  )
+                    return;
                   patch({ resync: true }, "resync");
                 }}
               />
@@ -300,54 +332,61 @@ export function InvoiceOverridePanel({
           {(mode === "paid" || mode === "link") && (
             <div className="space-y-2">
               {payoutOptionsUrl && (
-                <div>
-                  <label className={LABEL}>
+                <div className="grid gap-2">
+                  <Label>
                     {mode === "link" ? "Payout to link" : "Link to a payout (optional)"}
-                  </label>
+                  </Label>
                   {payouts === null ? (
-                    <div className="h-9 w-full animate-pulse rounded-lg bg-muted/60" />
+                    <Skeleton className="h-9 w-full rounded-3xl" />
                   ) : (
-                    <select
-                      className={FIELD}
-                      value={payoutId}
-                      onChange={(e) => setPayoutId(e.target.value)}
+                    <Select
+                      value={payoutId || NONE}
+                      onValueChange={(v) => setPayoutId(v === NONE ? "" : v)}
                     >
-                      <option value="">
-                        {mode === "link" ? "Choose a payout…" : "No payout — mark paid by hand"}
-                      </option>
-                      {payouts.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {monthLabel(p.payoutYear, p.payoutMonth)} · {p.brandName} ·{" "}
-                          {formatCentsExact(p.amountPaid || p.amountDue)}
-                          {p.salesRep ? ` · ${p.salesRep}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      {/* Long payout labels wrap instead of running off a phone screen. */}
+                      <SelectContent className="max-w-[calc(100vw-2rem)] [&_[role=option]]:whitespace-normal">
+                        <SelectItem value={NONE}>
+                          {mode === "link" ? "Choose a payout…" : "No payout — mark paid by hand"}
+                        </SelectItem>
+                        {payouts.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {monthLabel(p.payoutYear, p.payoutMonth)} · {p.brandName} ·{" "}
+                            {formatCentsExact(p.amountPaid || p.amountDue)}
+                            {p.salesRep ? ` · ${p.salesRep}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
                   {payoutsError ? (
-                    <p className="mt-1 flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400">
+                    <p className="flex items-center gap-2 text-xs text-destructive">
                       Couldn&rsquo;t load payout rows.
-                      <button
+                      <Button
                         type="button"
+                        variant="link"
+                        size="xs"
                         onClick={() => {
                           // Back to null re-runs the lazy loader above.
                           setPayoutsError(false);
                           setPayouts(null);
                         }}
-                        className="font-semibold underline underline-offset-2 hover:text-foreground"
+                        className="h-auto px-0 text-destructive underline"
                       >
                         Retry
-                      </button>
+                      </Button>
                     </p>
                   ) : (
                     payouts !== null &&
                     payouts.length === 0 && (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         No payout rows found for this brand.
                       </p>
                     )
                   )}
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Linking records which payment settled this cycle. If the payment was booked
                     under the wrong month, edit its Payout Month on the Payouts page instead —
                     that moves it for the schedule too.
@@ -377,13 +416,13 @@ export function InvoiceOverridePanel({
 
           {mode === "unpaid" && (
             <div className="space-y-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {invoice.status === "paid"
                   ? "Records that this cycle went unpaid. A cycle settled by hand stops counting as paid, so the next bill date can move back and the row may show as due/overdue again."
                   : "Records that this cycle went unpaid. The next bill date does not move."}
               </p>
               {schedulePaid && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                <p className="text-xs text-amber-600 dark:text-amber-400">
                   A qualifying payout in the Payout DB still covers this cycle, so the row will
                   keep its Paid chip. Correct or move that payout if it doesn&rsquo;t belong here.
                 </p>
@@ -400,7 +439,7 @@ export function InvoiceOverridePanel({
 
           {mode === "cycle" && (
             <div className="space-y-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Which billing cycle this invoice covers.{" "}
                 {currentCycle ? (
                   isOnCurrentCycle ? (
@@ -410,29 +449,29 @@ export function InvoiceOverridePanel({
                   )
                 ) : null}
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {cycleChoices.length > 0 && (
-                  <select
-                    className={FIELD}
+                  <Select
                     value={cycleChoices.some((c) => c.date === cycle) ? cycle : ""}
-                    onChange={(e) => e.target.value && setCycle(e.target.value)}
+                    onValueChange={(v) => v && setCycle(v)}
                   >
-                    <option value="" disabled>
-                      Pick a cycle… (or type a date)
-                    </option>
-                    {cycleChoices.map((c) => (
-                      <option key={c.date} value={c.date}>
-                        {formatDate(c.date)}
-                        {c.offset === 0 ? " (current)" : c.offset < 0 ? " (previous)" : " (future)"}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pick a cycle… (or pick a date)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cycleChoices.map((c) => (
+                        <SelectItem key={c.date} value={c.date}>
+                          {formatDate(c.date)}
+                          {c.offset === 0 ? " (current)" : c.offset < 0 ? " (previous)" : " (future)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
-                <input
-                  type="date"
-                  className={FIELD}
+                <DatePicker
                   value={cycle}
-                  onChange={(e) => setCycle(e.target.value)}
+                  onValueChange={setCycle}
+                  aria-label="Billing cycle date"
                 />
               </div>
               <SubmitRow
@@ -446,12 +485,11 @@ export function InvoiceOverridePanel({
           )}
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {error}
-            </div>
+            <div className={cn("rounded-2xl border px-3 py-2 text-xs", badgeTone.danger)}>{error}</div>
           )}
         </div>
       )}
+      {dialog}
     </div>
   );
 }
@@ -474,23 +512,25 @@ function ActionButton({
   loading?: boolean;
   onClick: () => void;
 }) {
+  // green/red actions get a subtle status tint: on hover, and while their
+  // sub-form is open.
+  const badge: BadgeTone | null = tone === "green" ? "success" : tone === "red" ? "danger" : null;
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="xs"
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-50",
-        active
-          ? "border-primary/50 bg-primary/10 text-foreground"
-          : "border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50",
-        tone === "green" && !active && "hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-500/40",
-        tone === "red" && !active && "hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40"
+        "text-muted-foreground",
+        badge ? badgeToneHover[badge] : "hover:text-foreground",
+        active && (badge ? badgeTone[badge] : "bg-muted text-foreground dark:bg-muted")
       )}
     >
-      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
+      {loading ? <Loader2 className="animate-spin" /> : <Icon />}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -506,16 +546,16 @@ function NoteField({
   placeholder: string;
 }) {
   return (
-    <div>
-      <textarea
-        className={cn(FIELD, "resize-y")}
+    <div className="grid gap-1">
+      <Textarea
+        className="resize-y"
         rows={3}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         maxLength={NOTE_MAX}
       />
-      <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
+      <p className="text-right text-xs text-muted-foreground tabular-nums">
         {NOTE_MAX - value.length} characters left
       </p>
     </div>
@@ -537,23 +577,13 @@ function SubmitRow({
 }) {
   return (
     <div className="flex items-center justify-end gap-2">
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={busy}
-        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={busy}>
         Cancel
-      </button>
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={busy || disabled}
-        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-      >
-        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      </Button>
+      <Button type="button" size="sm" onClick={onSubmit} disabled={busy || disabled}>
+        {busy && <Loader2 className="animate-spin" />}
         {label}
-      </button>
+      </Button>
     </div>
   );
 }

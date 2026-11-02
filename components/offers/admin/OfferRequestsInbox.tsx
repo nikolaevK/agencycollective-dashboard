@@ -14,6 +14,13 @@ import {
   type OfferRequestStatus,
 } from "@/lib/portalOfferRules";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
+import { Badge, BadgeDot, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { OfferRequestListItem } from "@/lib/portalOffers";
 
 /** Prefix of every request query — invalidating it refreshes the list AND the badge count. */
@@ -55,11 +62,11 @@ function matches(f: Filter, status: OfferRequestStatus): boolean {
   return status === f;
 }
 
-const STATUS_STYLES: Record<OfferRequestStatus, string> = {
-  new: "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30",
-  contacted: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30",
-  won: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-  lost: "bg-muted text-muted-foreground border-border",
+const STATUS_TONE: Record<OfferRequestStatus, BadgeTone> = {
+  new: "info",
+  contacted: "warning",
+  won: "success",
+  lost: "neutral",
 };
 
 /** Leads clients filed from the portal's More from Agency Collective tab. */
@@ -77,42 +84,42 @@ export function OfferRequestsInbox() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={filter}
+        onValueChange={(v) => {
+          if (v) setFilter(v as Filter);
+        }}
+        aria-label="Filter requests"
+        className="flex-wrap justify-start"
+      >
         {FILTERS.map((f) => {
           const count = rows.filter((r) => matches(f.id, r.status)).length;
           return (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-sm font-semibold transition-colors",
-                filter === f.id
-                  ? "border-transparent bg-foreground text-background"
-                  : "border-border/60 text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {f.label} <span className="opacity-60">{count}</span>
-            </button>
+            <ToggleGroupItem key={f.id} value={f.id} className="px-3">
+              {f.label} <span className="tabular-nums text-muted-foreground">{count}</span>
+            </ToggleGroupItem>
           );
         })}
-      </div>
+      </ToggleGroup>
 
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl bg-muted/60" />
+            <Skeleton key={i} className="h-24" />
           ))}
         </div>
       ) : shown.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center">
-          <Inbox className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+        <Card className="px-6 py-10 text-center">
+          <Inbox className="mx-auto mb-2 size-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             {rows.length === 0
               ? "No requests yet. They appear here when a client hits Request info or Book a call."
               : "Nothing in this view."}
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {shown.map((r) => (
@@ -149,18 +156,18 @@ function RequestRow({ request: r }: { request: OfferRequestListItem }) {
   });
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card p-4 dark:border-white/[0.06]">
+    <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-bold text-foreground">{r.offerTitle}</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              {r.kind === "book_call" ? <CalendarClock className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+            <span className="font-medium text-foreground">{r.offerTitle}</span>
+            <Badge variant="secondary">
+              {r.kind === "book_call" ? <CalendarClock /> : <Send />}
               {r.kind === "book_call" ? "Book a call" : "Request info"}
-            </span>
+            </Badge>
           </div>
           <p className="text-sm text-foreground">
-            <Link href={`/dashboard/users/${r.userId}`} className="font-semibold text-primary hover:underline">
+            <Link href={`/dashboard/users/${r.userId}`} className="font-medium text-foreground underline-offset-4 hover:underline">
               {r.clientName || "Unknown client"}
             </Link>
             <span className="text-muted-foreground">
@@ -169,7 +176,7 @@ function RequestRow({ request: r }: { request: OfferRequestListItem }) {
               {r.viewCount > 0 && (
                 <>
                   {" "}
-                  · <Eye className="inline h-3.5 w-3.5 -translate-y-px" /> viewed {r.viewCount}×
+                  · <Eye className="inline size-3.5 -translate-y-px" /> viewed {r.viewCount}×
                 </>
               )}
             </span>
@@ -178,80 +185,74 @@ function RequestRow({ request: r }: { request: OfferRequestListItem }) {
             {r.contactEmail &&
               (isPlainEmail(r.contactEmail) ? (
                 <a href={`mailto:${r.contactEmail}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-                  <Mail className="h-3.5 w-3.5" />
+                  <Mail className="size-3.5" />
                   {r.contactEmail}
                 </a>
               ) : (
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <Mail className="h-3.5 w-3.5" />
+                  <Mail className="size-3.5" />
                   {r.contactEmail}
                 </span>
               ))}
             {r.contactPhone && (
               <a href={`tel:${r.contactPhone}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-                <Phone className="h-3.5 w-3.5" />
+                <Phone className="size-3.5" />
                 {r.contactPhone}
               </a>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={r.status}
             disabled={update.isPending}
-            onChange={(e) => update.mutate({ status: e.target.value as OfferRequestStatus })}
-            aria-label="Request status"
-            className={cn(
-              "rounded-lg border px-2.5 py-1.5 text-xs font-bold outline-none",
-              STATUS_STYLES[r.status]
-            )}
+            onValueChange={(v) => update.mutate({ status: v as OfferRequestStatus })}
           >
-            {OFFER_REQUEST_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {OFFER_REQUEST_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setNoteOpen((o) => !o)}
-            className="rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
-          >
+            <SelectTrigger
+              aria-label="Request status"
+              className={cn("h-8 w-auto gap-1.5 border text-xs font-medium", badgeTone[STATUS_TONE[r.status]])}
+            >
+              <BadgeDot tone={STATUS_TONE[r.status]} />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {OFFER_REQUEST_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {OFFER_REQUEST_STATUS_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="button" variant="outline" size="sm" onClick={() => setNoteOpen((o) => !o)}>
             {r.note ? "Edit note" : "Add note"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {r.message && (
-        <p className="mt-3 whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-sm text-foreground">{r.message}</p>
+        <p className="mt-3 whitespace-pre-wrap rounded-2xl bg-muted/50 px-3 py-2 text-sm text-foreground">{r.message}</p>
       )}
       {r.note && !noteOpen && (
         <p className="mt-2 text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground">Note:</span> {r.note}
+          <span className="font-medium text-foreground">Note:</span> {r.note}
           {r.updatedByName && <span className="opacity-70"> — {r.updatedByName}</span>}
         </p>
       )}
       {noteOpen && (
         <div className="mt-3 space-y-2">
-          <textarea
+          <Textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
             maxLength={2000}
             placeholder="Follow-up notes for the team…"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
           />
-          <button
-            type="button"
-            disabled={update.isPending}
-            onClick={() => update.mutate({ note: note.trim() || null })}
-            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-          >
+          <Button type="button" size="sm" disabled={update.isPending} onClick={() => update.mutate({ note: note.trim() || null })}>
             Save note
-          </button>
+          </Button>
         </div>
       )}
-      {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-    </div>
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+    </Card>
   );
 }

@@ -10,6 +10,11 @@ import type { InvoiceDraftKind, InvoiceDraftSummary } from "@/lib/invoiceDrafts"
 import type { AdAccountInvoiceTarget } from "./AdAccountInvoiceDrawer";
 import { toOpenInvoiceRefs, type OpenInvoiceRef } from "./openInvoices";
 import { cn } from "@/lib/utils";
+import { Badge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 // Drawers pull in @react-pdf — mount only when a draft is opened.
 const ClientInvoiceDrawer = dynamic(
@@ -96,6 +101,7 @@ export function InvoiceDraftsList({
   const [rejectNote, setRejectNote] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   function refreshAfterSend(d: InvoiceDraftRow) {
     for (const key of [
@@ -201,7 +207,15 @@ export function InvoiceDraftsList({
   }
 
   async function discard(d: InvoiceDraftRow) {
-    if (!window.confirm(`Discard draft ${d.invoiceNumber}? Nothing was sent; this just removes it.`)) return;
+    if (
+      !(await confirm({
+        title: `Discard draft ${d.invoiceNumber}?`,
+        description: "Nothing was sent; this just removes it.",
+        confirmText: "Discard",
+        destructive: true,
+      }))
+    )
+      return;
     setBusyId(d.id);
     setRowError(null);
     try {
@@ -223,35 +237,28 @@ export function InvoiceDraftsList({
   if (isLoading) {
     list = emptyText ? (
       <div className="flex justify-center py-6">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     ) : null;
   } else if (drafts.length === 0) {
-    list = emptyText && !isError ? <p className="py-6 text-center text-xs text-muted-foreground">{emptyText}</p> : null;
+    list = emptyText && !isError ? <p className="py-6 text-center text-sm text-muted-foreground">{emptyText}</p> : null;
   } else {
     list = (
-      <ul className="divide-y divide-border/50 overflow-hidden rounded-xl border border-violet-500/30 bg-violet-500/[0.03]">
+      <ul className="divide-y overflow-hidden rounded-2xl ring-1 ring-foreground/5 dark:ring-foreground/10">
         {drafts.map((d) => (
           <li key={d.id} className="px-4 py-3">
             {/* Actions wrap under the text on phones so the name/meta keep their width. */}
             <div className="flex flex-wrap items-start gap-3">
-              <Bot className="mt-0.5 h-4 w-4 shrink-0 text-violet-600 dark:text-violet-300" />
+              <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-foreground">
+                  <span className="truncate text-sm font-medium text-foreground">
                     {d.kind === "ad_account" ? d.accountName : d.clientName}
                   </span>
-                  <span className="text-sm font-medium tabular-nums text-foreground">{formatCentsExact(d.amountCents)}</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                      d.kind === "ad_account"
-                        ? "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"
-                        : "bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
-                    )}
-                  >
+                  <span className="text-sm tabular-nums text-foreground">{formatCentsExact(d.amountCents)}</span>
+                  <Badge variant="outline">
                     {d.kind === "ad_account" ? "Ad account" : "Re-bill"}
-                  </span>
+                  </Badge>
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
                   {d.kind === "ad_account" && d.clientName ? `${d.clientName} · ` : ""}
@@ -262,67 +269,76 @@ export function InvoiceDraftsList({
                 {rowError?.id === d.id && <p className="mt-1 text-xs text-destructive">{rowError.message}</p>}
                 {rejectingId === d.id && (
                   <div className="mt-2 space-y-2">
-                    <textarea
+                    <Textarea
                       rows={2}
                       maxLength={2000}
                       value={rejectNote}
                       onChange={(e) => setRejectNote(e.target.value)}
                       placeholder="Reason (shared with whoever prepared it)"
                       aria-label="Rejection reason"
-                      className="flex w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="min-h-0 resize-y"
                     />
                     <div className="flex gap-2">
-                      <button
+                      <Button
                         type="button"
+                        variant="destructive"
+                        size="sm"
                         onClick={() => reject(d)}
                         disabled={busyId === d.id}
-                        className="flex h-9 items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground disabled:opacity-60 sm:h-auto"
+                        className="h-9 sm:h-8"
                       >
-                        {busyId === d.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {busyId === d.id && <Loader2 className="animate-spin" />}
                         Reject draft
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setRejectingId(null)}
-                        className="h-9 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground sm:h-auto"
+                        className="h-9 text-muted-foreground sm:h-8"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
               </div>
               <div className="flex shrink-0 basis-full items-center justify-end gap-1 sm:basis-auto">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setRejectingId(rejectingId === d.id ? null : d.id);
                     setRejectNote("");
                   }}
-                  className="h-9 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto"
+                  className="h-9 text-muted-foreground sm:h-8"
                 >
                   Reject
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => discard(d)}
                   disabled={busyId === d.id}
-                  className="flex h-9 w-9 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 sm:h-auto sm:w-auto"
+                  className="size-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:size-8"
                   aria-label={`Discard draft ${d.invoiceNumber}`}
                   title="Discard"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-                <button
+                  <Trash2 className="size-3.5" />
+                </Button>
+                <Button
                   type="button"
+                  size="sm"
                   onClick={() => review(d)}
                   disabled={busyId === d.id}
-                  className="flex h-9 items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/15 disabled:opacity-60 sm:h-auto"
+                  className="h-9 sm:h-8"
                 >
-                  {busyId === d.id && rejectingId !== d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  {busyId === d.id && rejectingId !== d.id ? <Loader2 className="animate-spin" /> : null}
                   Review
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
+                  <ChevronRight data-icon="inline-end" />
+                </Button>
               </div>
             </div>
           </li>
@@ -334,19 +350,21 @@ export function InvoiceDraftsList({
   return (
     <>
       {isError && (
-        <p
+        <div
           className={cn(
-            "rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive",
+            "flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3 text-sm",
+            badgeTone.danger,
             drafts.length > 0 && "mb-2"
           )}
         >
           Couldn&apos;t load invoice drafts.{" "}
-          <button type="button" onClick={() => refetch()} className="font-semibold underline">
+          <Button type="button" variant="outline" size="xs" onClick={() => refetch()}>
             Retry
-          </button>
-        </p>
+          </Button>
+        </div>
       )}
       {list}
+      {dialog}
 
       {open?.kind === "client_rebill" && open.draft.userId && (
         <ClientInvoiceDrawer
@@ -375,31 +393,37 @@ export function InvoiceDraftsList({
 export function InvoiceDraftsPanel({ onClose }: { onClose: () => void }) {
   useEscapeKey(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
+      <div className={dialogOverlayClass} aria-hidden />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Invoice drafts"
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:rounded-2xl"
+        className={cn(
+          dialogPanelClass,
+          "relative z-50 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none sm:rounded-b-4xl"
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">Invoice drafts</h3>
-            <p className="text-xs text-muted-foreground">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b px-6 py-4">
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-base font-medium leading-snug">Invoice drafts</h3>
+            <p className="text-sm text-muted-foreground">
               Prepared by agents (API / MCP) or saved from a drawer. Nothing here has been sent — review, then send or reject.
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="shrink-0 bg-secondary"
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
           <InvoiceDraftsList emptyText="No invoice drafts waiting for review." />
         </div>
       </div>

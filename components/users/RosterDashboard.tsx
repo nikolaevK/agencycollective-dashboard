@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BadgeDot, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { ClientPublic } from "./types";
 import type { ClientFilterState } from "./ClientFilters";
 import { useAdPlatformOptions } from "@/hooks/useAdPlatformOptions";
@@ -10,6 +13,7 @@ import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { AdPlatformOptionsModal } from "./AdPlatformOptionsModal";
 import { RosterOptionsModal } from "./RosterOptionsModal";
 import { SERVICE_OPTIONS, type TeamRole } from "@/lib/clientProfile";
+import { HEALTH_TONE, STAGE_TONE, toneOf } from "./rosterPresentation";
 
 // ---------------------------------------------------------------------------
 // Roster dashboard — the prototype's count-group cards: Overview, Media Buyer,
@@ -22,8 +26,8 @@ import { SERVICE_OPTIONS, type TeamRole } from "@/lib/clientProfile";
 // ---------------------------------------------------------------------------
 
 // Pills are DERIVED from the option enums (a value added to lib/clientProfile
-// can't silently go missing here); only the compact display label and the
-// count color are local overrides.
+// can't silently go missing here); only the compact display label is a local
+// override. Stage / health pills carry their status tone as a dot.
 const SHORT_LABEL: Record<string, string> = {
   launched: "Launched",
   warmup: "Warm-up",
@@ -38,39 +42,14 @@ const SHORT_LABEL: Record<string, string> = {
   orange: "Orange",
 };
 
-const PILL_CLS: Record<string, string> = {
-  // stages
-  onboarding: "text-slate-600 dark:text-slate-400",
-  launched: "text-sky-600 dark:text-sky-400",
-  warmup: "text-amber-600 dark:text-amber-400",
-  phase3: "text-teal-600 dark:text-teal-400",
-  optimizing: "text-violet-600 dark:text-violet-400",
-  scaling: "text-emerald-600 dark:text-emerald-400",
-  // health
-  happy: "text-emerald-600 dark:text-emerald-400",
-  mad: "text-red-600 dark:text-red-400",
-  money: "text-blue-600 dark:text-blue-400",
-  struggling: "text-amber-600 dark:text-amber-400",
-  testing: "text-violet-600 dark:text-violet-400",
-  // services
-  meta: "text-blue-600 dark:text-blue-400",
-  tiktok: "text-pink-600 dark:text-pink-400",
-  google: "text-emerald-600 dark:text-emerald-400",
-  creatives: "text-violet-600 dark:text-violet-400",
-  email: "text-orange-600 dark:text-orange-400",
-  // platforms
-  orange: "text-orange-600 dark:text-orange-400",
-  concept: "text-indigo-600 dark:text-indigo-400",
-  personal: "text-teal-600 dark:text-teal-400",
-};
-
-const FALLBACK_PILL_CLS = "text-muted-foreground";
-
-function toPills(options: ReadonlyArray<{ value: string; label: string }>) {
+function toPills(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  tones?: Record<string, BadgeTone>
+) {
   return options.map((o) => ({
     value: o.value,
     label: SHORT_LABEL[o.value] ?? o.label,
-    cls: PILL_CLS[o.value] ?? FALLBACK_PILL_CLS,
+    tone: tones ? toneOf(tones, o.value) : undefined,
   }));
 }
 
@@ -91,10 +70,10 @@ export function RosterDashboard({
   const [manageOpen, setManageOpen] = useState<
     "platform" | "stage" | "health" | null
   >(null);
-  // Built-in + admin-managed custom options (custom get the fallback color).
+  // Built-in + admin-managed custom options (custom get the neutral tone).
   const platformPills = useMemo(() => toPills(platformOptions), [platformOptions]);
-  const stagePills = useMemo(() => toPills(stageOptions), [stageOptions]);
-  const healthPills = useMemo(() => toPills(healthOptions), [healthOptions]);
+  const stagePills = useMemo(() => toPills(stageOptions, STAGE_TONE), [stageOptions]);
+  const healthPills = useMemo(() => toPills(healthOptions, HEALTH_TONE), [healthOptions]);
 
   const stats = useMemo(() => {
     const count = (key: "stages" | "health" | "services" | "adPlatforms") => {
@@ -148,11 +127,10 @@ export function RosterDashboard({
 
   return (
     <div className="flex flex-wrap items-stretch gap-3">
-      <Group label="Overview" dot="bg-slate-400">
+      <Group label="Overview">
         <Pill
           label="Active"
           count={stats.active}
-          cls="text-foreground"
           active={filters.status === "active"}
           onClick={() =>
             onFiltersChange({
@@ -161,18 +139,17 @@ export function RosterDashboard({
             })
           }
         />
-        <Pill label="Top" count={stats.top} cls="text-amber-500" />
-        <Pill label="Ads on" count={stats.running} cls="text-emerald-600 dark:text-emerald-400" />
+        <Pill label="Top" count={stats.top} />
+        <Pill label="Ads on" count={stats.running} />
       </Group>
 
       {stats.buyers.length > 0 && (
-        <Group label="Media Buyer" dot="bg-blue-500">
+        <Group label="Media Buyer">
           {stats.buyers.map((p) => (
             <Pill
               key={p.adminId}
               label={p.name}
               count={p.count}
-              cls="text-blue-600 dark:text-blue-400"
               active={
                 filters.team?.adminId === p.adminId && filters.team?.role === "media_buyer"
               }
@@ -183,13 +160,12 @@ export function RosterDashboard({
       )}
 
       {stats.leads.length > 0 && (
-        <Group label="Head of Ads" dot="bg-purple-500">
+        <Group label="Head of Ads">
           {stats.leads.map((p) => (
             <Pill
               key={p.adminId}
               label={p.name}
               count={p.count}
-              cls="text-purple-600 dark:text-purple-400"
               active={filters.team?.adminId === p.adminId && filters.team?.role === "lead"}
               onClick={() => togglePerson(p.adminId, "lead")}
             />
@@ -198,13 +174,12 @@ export function RosterDashboard({
       )}
 
       {stats.csms.length > 0 && (
-        <Group label="Client Success Manager" dot="bg-violet-500">
+        <Group label="Client Success Manager">
           {stats.csms.map((p) => (
             <Pill
               key={p.adminId}
               label={p.name}
               count={p.count}
-              cls="text-violet-600 dark:text-violet-400"
               active={filters.team?.adminId === p.adminId && filters.team?.role === "csm"}
               onClick={() => togglePerson(p.adminId, "csm")}
             />
@@ -214,7 +189,6 @@ export function RosterDashboard({
 
       <Group
         label="Ad Accounts"
-        dot="bg-orange-500"
         action={
           <ManageButton
             title="Manage ad platform options"
@@ -227,20 +201,20 @@ export function RosterDashboard({
             key={p.value}
             label={p.label}
             count={stats.platforms.get(p.value) ?? 0}
-            cls={p.cls}
+            tone={p.tone}
             active={filters.platforms.includes(p.value)}
             onClick={() => toggleArrayFilter("platforms", p.value)}
           />
         ))}
       </Group>
 
-      <Group label="Services" dot="bg-teal-500">
+      <Group label="Services">
         {SERVICE_PILLS.map((p) => (
           <Pill
             key={p.value}
             label={p.label}
             count={stats.services.get(p.value) ?? 0}
-            cls={p.cls}
+            tone={p.tone}
             active={filters.services.includes(p.value)}
             onClick={() => toggleArrayFilter("services", p.value)}
           />
@@ -249,7 +223,6 @@ export function RosterDashboard({
 
       <Group
         label="Stage"
-        dot="bg-emerald-500"
         action={
           <ManageButton
             title="Manage stage options"
@@ -262,7 +235,7 @@ export function RosterDashboard({
             key={p.value}
             label={p.label}
             count={stats.stages.get(p.value) ?? 0}
-            cls={p.cls}
+            tone={p.tone}
             active={filters.stages.includes(p.value)}
             onClick={() => toggleArrayFilter("stages", p.value)}
           />
@@ -271,7 +244,6 @@ export function RosterDashboard({
 
       <Group
         label="Client Health"
-        dot="bg-red-500"
         action={
           <ManageButton
             title="Manage client health options"
@@ -284,7 +256,7 @@ export function RosterDashboard({
             key={p.value}
             label={p.label}
             count={stats.health.get(p.value) ?? 0}
-            cls={p.cls}
+            tone={p.tone}
             active={filters.health.includes(p.value)}
             onClick={() => toggleArrayFilter("health", p.value)}
           />
@@ -303,72 +275,77 @@ export function RosterDashboard({
 
 function ManageButton({ title, onClick }: { title: string; onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="xs"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+      className="-my-1 -mr-1.5 text-muted-foreground"
       title={title}
+      aria-label={title}
     >
-      <Settings2 className="h-3 w-3" />
+      <Settings2 />
       Manage
-    </button>
+    </Button>
   );
 }
 
 function Group({
   label,
-  dot,
   children,
   action,
 }: {
   label: string;
-  dot: string;
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card px-4 py-3">
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className={cn("h-2 w-2 rounded-full", dot)} />
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
+    <Card>
+      <CardHeader className="flex-row items-center gap-2 space-y-0 px-4 pb-1 pt-3 md:px-4 md:pb-1 md:pt-3">
+        <span className="text-xs text-muted-foreground">{label}</span>
         {action && <span className="ml-auto">{action}</span>}
-      </div>
-      <div className="flex items-end gap-4 flex-wrap">{children}</div>
-    </div>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-end gap-1 px-2 pb-2 pt-0 md:px-2 md:pb-2 md:pt-0">
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
 function Pill({
   label,
   count,
-  cls,
+  tone,
   active,
   onClick,
 }: {
   label: string;
   count: number;
-  cls: string;
+  /** Stage / health status tone, shown as a dot before the label. */
+  tone?: BadgeTone;
   active?: boolean;
   onClick?: () => void;
 }) {
   const body = (
     <>
-      <span className={cn("text-xl font-black leading-none", cls)}>{count}</span>
-      <span className="block text-[10px] font-semibold text-muted-foreground uppercase mt-0.5 whitespace-nowrap">
+      <span className="block text-xl font-semibold leading-none tracking-tight tabular-nums">
+        {count}
+      </span>
+      <span className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+        {tone && <BadgeDot tone={tone} />}
         {label}
       </span>
     </>
   );
-  if (!onClick) return <span className="text-left">{body}</span>;
+  if (!onClick) return <span className="px-2 py-1.5 text-left">{body}</span>;
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "text-left rounded-md px-1 py-0.5 -mx-1 transition-all hover:bg-muted/50",
-        active && "ring-2 ring-primary/40 bg-primary/[0.04]"
+        "rounded-xl px-2 py-1.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        active && "bg-muted ring-1 ring-foreground/10 hover:bg-muted"
       )}
       title={active ? "Click to clear this filter" : "Click to filter"}
     >

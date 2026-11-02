@@ -6,6 +6,19 @@ import { X, Search, Plus, Check, Database, PencilLine } from "lucide-react";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateUserForm } from "./CreateUserForm";
 import { DateRangeDropdown, type DateRangeValue } from "./DateRangeDropdown";
 import { CATEGORIES, type PayoutPoolEntry } from "./types";
@@ -115,37 +128,46 @@ export function AddClientModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+      className={cn(dialogOverlayClass, "z-[60] flex items-start justify-center overflow-y-auto p-4")}
       onClick={onClose}
     >
       <div
-        className="relative mt-10 w-full max-w-2xl rounded-2xl bg-card shadow-xl border border-border/50"
+        className={cn(dialogPanelClass, "relative mt-10 w-full max-w-2xl")}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <h2 className="text-lg font-bold text-foreground">Add Client</h2>
-          <button
+        <div className="flex items-center justify-between px-6 pt-6 pb-2">
+          <h2 className="text-base font-medium leading-none">Add Client</h2>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Close"
+            className="bg-secondary"
           >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-2 bg-muted/40 dark:bg-white/5 m-5 mb-0 rounded-xl">
-          {!admin.isExternal && (
-            <TabBtn active={tab === "payout"} onClick={() => setTab("payout")} icon={Database}>
-              From Payout DB
-            </TabBtn>
-          )}
-          <TabBtn active={tab === "manual"} onClick={() => setTab("manual")} icon={PencilLine}>
-            Manual entry
-          </TabBtn>
+        <div className="px-6 pt-2">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+            <TabsList className="w-full">
+              {!admin.isExternal && (
+                <TabsTrigger value="payout">
+                  <Database />
+                  From Payout DB
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="manual">
+                <PencilLine />
+                Manual entry
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <div className="p-5">
+        <div className="p-6">
           {tab === "payout" ? (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
@@ -157,39 +179,43 @@ export function AddClientModal({
               <div className="flex flex-wrap items-center gap-2">
                 <DateRangeDropdown label="Joined window" value={range} onChange={setRange} />
                 {workspaces.length > 1 && (
-                  <select
-                    value={importWorkspace}
-                    onChange={(e) => setImportWorkspace(e.target.value)}
-                    title="Workspace the imported client lands in"
-                    className="rounded-lg bg-muted/40 dark:bg-white/5 border border-border/50 px-2.5 py-2 text-xs font-semibold text-foreground focus:outline-none"
-                  >
-                    {workspaces.map((w) => (
-                      <option key={w.value} value={w.value}>{w.label}</option>
-                    ))}
-                  </select>
+                  <Select value={importWorkspace} onValueChange={setImportWorkspace}>
+                    <SelectTrigger
+                      title="Workspace the imported client lands in"
+                      aria-label="Workspace the imported client lands in"
+                      className="w-auto min-w-36"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workspaces.map((w) => (
+                        <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
                 <div className="relative flex-1 min-w-[180px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <input
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Filter brands…"
-                    className="w-full pl-9 pr-4 py-2 bg-background border rounded-md text-sm shadow-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                    className="pl-9"
                   />
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
                   {error}
                 </div>
               )}
 
-              <div className="max-h-[45vh] overflow-y-auto rounded-xl border border-border/50 divide-y divide-border/30">
+              <div className="max-h-[45vh] overflow-y-auto rounded-2xl ring-1 ring-foreground/5 divide-y">
                 {isLoading ? (
-                  <div className="p-6 space-y-3">
+                  <div className="p-4 space-y-3">
                     {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
+                      <Skeleton key={i} className="h-12 w-full" />
                     ))}
                   </div>
                 ) : filteredPool.length === 0 ? (
@@ -200,10 +226,10 @@ export function AddClientModal({
                   filteredPool.map((entry) => (
                     <div
                       key={entry.normalizedName}
-                      className="flex items-center justify-between gap-3 p-3 hover:bg-muted/20 transition-colors"
+                      className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
+                        <p className="truncate text-sm font-medium">
                           {entry.brandName}
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -214,24 +240,26 @@ export function AddClientModal({
                             : ""}
                         </p>
                       </div>
-                      <button
+                      <Button
+                        size="sm"
                         onClick={() => handleAdd(entry)}
                         disabled={addingBrands.has(entry.normalizedName)}
-                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus />
                         {addingBrands.has(entry.normalizedName) ? "Adding…" : "Add"}
-                      </button>
+                      </Button>
                     </div>
                   ))
                 )}
               </div>
 
               {addedBrands.size > 0 && (
-                <p className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
-                  <Check className="h-4 w-4" />
-                  Added {addedBrands.size} client{addedBrands.size !== 1 ? "s" : ""}.
-                  Add an email in each client&apos;s settings to enable portal login.
+                <p className={cn("flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm", badgeTone.success)}>
+                  <Check className="size-4 shrink-0" />
+                  <span>
+                    Added {addedBrands.size} client{addedBrands.size !== 1 ? "s" : ""}.
+                    Add an email in each client&apos;s settings to enable portal login.
+                  </span>
                 </p>
               )}
             </div>
@@ -247,32 +275,5 @@ export function AddClientModal({
         </div>
       </div>
     </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Database;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
-        active
-          ? "bg-card dark:bg-white/10 text-primary shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      <Icon className="h-4 w-4" />
-      {children}
-    </button>
   );
 }

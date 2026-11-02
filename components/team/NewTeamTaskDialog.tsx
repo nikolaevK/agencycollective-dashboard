@@ -2,15 +2,30 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { TASK_PRIORITY_META, TASK_PRIORITY_ORDER } from "./presentation";
 import { useTeamMemberOptions } from "./useTeamData";
 import type { TaskPriority } from "./types";
-
-const INPUT_CLS =
-  "h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 const ROLE_LABEL: Record<string, string> = {
   lead: "Head of Ads",
@@ -117,31 +132,20 @@ export function NewTeamTaskDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-foreground">New team task</h2>
-            <p className="text-xs text-muted-foreground truncate">for {client.displayName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button, Cancel or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="max-h-[90vh] overflow-y-auto overscroll-contain sm:max-w-md"
+      >
+        <DialogHeader className="min-w-0 pr-10">
+          <DialogTitle>New team task</DialogTitle>
+          <DialogDescription className="truncate">for {client.displayName}</DialogDescription>
+        </DialogHeader>
 
-        <div className="p-5 space-y-3">
-          <input
+        <div className="space-y-3">
+          <Input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -150,49 +154,49 @@ export function NewTeamTaskDialog({
             }}
             placeholder="What needs doing?"
             autoFocus
-            className={cn(INPUT_CLS, "w-full")}
+            aria-label="Task title"
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <select
+            <Select
               value={assignee}
-              onChange={(e) => setPicked(e.target.value)}
+              onValueChange={(v) => setPicked(v)}
               disabled={options.length === 0}
-              className={cn(INPUT_CLS, "sm:col-span-3 min-w-0 text-xs disabled:opacity-60")}
-              aria-label="Assignee"
             >
-              {options.length === 0 && (
-                <option value="">
-                  {rosterLoading ? "Loading team…" : "No one available on the Team roster"}
-                </option>
-              )}
-              {options.map((o) => (
-                <option key={o.adminId} value={o.adminId}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as TaskPriority)}
-              className={cn(INPUT_CLS, "min-w-0 text-xs")}
-              aria-label="Priority"
-            >
-              {TASK_PRIORITY_ORDER.map((p) => (
-                <option key={p} value={p}>
-                  {TASK_PRIORITY_META[p].label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
+              <SelectTrigger aria-label="Assignee" className="min-w-0 sm:col-span-3">
+                <SelectValue
+                  placeholder={rosterLoading ? "Loading team…" : "No one available on the Team roster"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((o) => (
+                  <SelectItem key={o.adminId} value={o.adminId}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+              <SelectTrigger aria-label="Priority" className="min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_PRIORITY_ORDER.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {TASK_PRIORITY_META[p].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DatePicker
               value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={cn(INPUT_CLS, "sm:col-span-2 min-w-0 text-xs")}
+              onValueChange={setDueDate}
+              placeholder="Due date"
               aria-label="Due date"
+              className="min-w-0 sm:col-span-2"
             />
           </div>
           {!rosterLoading && options.length === 0 ? (
-            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            <p className={cn("rounded-2xl border px-3 py-2 text-xs", badgeTone.warning)}>
               {rosterError
                 ? "Couldn't load the Team roster — close and try again."
                 : privileged
@@ -200,38 +204,34 @@ export function NewTeamTaskDialog({
                   : "You're not on the Team roster yet — ask an admin to add you before creating team tasks."}
             </p>
           ) : client.team.length === 0 ? (
-            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            <p className={cn("rounded-2xl border px-3 py-2 text-xs", badgeTone.warning)}>
               This client has no team assigned yet — the ticket will go to you.
             </p>
           ) : (
             unrosteredNames.length > 0 &&
             !rosterLoading && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {unrosteredNames.join(", ")} {unrosteredNames.length === 1 ? "isn't" : "aren't"} on
                 the Team roster, so they can&apos;t
                 receive tasks.
               </p>
             )
           )}
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-9 rounded-lg border border-border px-3.5 text-xs font-semibold hover:bg-accent"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={busy || !title.trim() || !assignee}
-              onClick={submit}
-              className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              Create task
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || !title.trim() || !assignee}
+            onClick={submit}
+          >
+            Create task
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -14,6 +14,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/format";
 import { formatBytes, type AssetCategory, type AssetUploaderRole } from "@/lib/clientAssetRules";
 import {
@@ -33,7 +38,7 @@ function uploaderLabel(asset: AssetDto, viewer: AssetUploaderRole): string {
   return asset.uploadedByRole === "client" ? "Client" : asset.uploadedByName ?? "Admin";
 }
 
-function Card({
+function AssetSection({
   icon: Icon,
   title,
   hint,
@@ -49,23 +54,23 @@ function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border/50 bg-card shadow-sm dark:border-white/[0.06]">
-      <div className="flex flex-col gap-3 border-b border-border/50 p-4 sm:flex-row sm:items-center sm:p-5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Icon className="h-4 w-4" />
+    <section>
+      <Card>
+        <CardHeader className="gap-3 space-y-0 border-b sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                {title}
+                <Badge variant="secondary" className="tabular-nums">{count}</Badge>
+              </CardTitle>
+              <CardDescription className="text-xs">{hint}</CardDescription>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-foreground">
-              {title}
-              <span className="ml-2 text-xs font-medium text-muted-foreground">{count}</span>
-            </h3>
-            <p className="text-xs text-muted-foreground">{hint}</p>
-          </div>
-        </div>
-        {action}
-      </div>
-      {children}
+          {action}
+        </CardHeader>
+        {children}
+      </Card>
     </section>
   );
 }
@@ -93,7 +98,7 @@ function useUploadSlot({
     ),
     progress:
       uploads.items.length > 0 ? (
-        <div className="border-b border-border/50 p-4 sm:px-5">
+        <div className="border-b p-4 md:px-6">
           <UploadProgressList items={uploads.items} onDismiss={uploads.dismiss} />
         </div>
       ) : null,
@@ -112,13 +117,13 @@ function FileRow({
   onOpen: () => void;
 }) {
   return (
-    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
+    <li className="flex items-center gap-3 px-4 py-3 md:px-6">
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
+        <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/50 text-muted-foreground ring-1 ring-foreground/5 dark:ring-foreground/10">
           {asset.hasThumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -129,27 +134,28 @@ function FileRow({
               className="h-full w-full object-cover"
             />
           ) : asset.mediaType === "pdf" ? (
-            <FileText className="h-5 w-5" />
+            <FileText className="size-5" />
           ) : (
-            <ImageIcon className="h-5 w-5" />
+            <ImageIcon className="size-5" />
           )}
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-foreground">{asset.title}</span>
+          <span className="block truncate text-sm font-medium text-foreground underline-offset-4 group-hover:underline">{asset.title}</span>
           <span className="block truncate text-xs text-muted-foreground">
             {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)} · {uploaderLabel(asset, viewer)}
           </span>
         </span>
       </button>
-      <a
-        href={assetFileUrl(apiBase, asset.id, "original", true)}
-        download={asset.fileName ?? undefined}
-        className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-        aria-label={`Download ${asset.title}`}
-        title="Download"
-      >
-        <Download className="h-4 w-4" />
-      </a>
+      <Button asChild variant="outline" size="icon-sm" className="shrink-0 text-muted-foreground">
+        <a
+          href={assetFileUrl(apiBase, asset.id, "original", true)}
+          download={asset.fileName ?? undefined}
+          aria-label={`Download ${asset.title}`}
+          title="Download"
+        >
+          <Download />
+        </a>
+      </Button>
     </li>
   );
 }
@@ -173,19 +179,19 @@ function LinkRow({
     }
   })();
   return (
-    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <FolderOpen className="h-5 w-5" />
+    <li className="flex items-center gap-3 px-4 py-3 md:px-6">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground ring-1 ring-foreground/5 dark:ring-foreground/10">
+        <FolderOpen className="size-5" />
       </span>
       <a
         href={asset.linkUrl ?? "#"}
         target="_blank"
         rel="noopener noreferrer"
-        className="group min-w-0 flex-1"
+        className="group min-w-0 flex-1 rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
       >
-        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground group-hover:text-primary">
-          <span className="truncate">{asset.title}</span>
-          <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <span className="truncate underline-offset-4 group-hover:underline">{asset.title}</span>
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {host} · {formatDate(asset.createdAt)} · {uploaderLabel(asset, viewer)}
@@ -195,42 +201,43 @@ function LinkRow({
         (confirming ? (
           <span className="flex shrink-0 items-center gap-1.5">
             {remove.error && (
-              <span className="text-xs text-red-600 dark:text-red-400">{remove.error.message}</span>
+              <span className="text-xs text-destructive">{remove.error.message}</span>
             )}
-            <button
+            <Button
               type="button"
+              variant="destructive"
+              size="sm"
               disabled={remove.isPending}
               onClick={() => remove.mutate(asset.id)}
-              className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
             >
-              {remove.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+              {remove.isPending && <Loader2 className="animate-spin" />}
               Remove
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setConfirming(false)}
-              className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/50"
             >
               Keep
-            </button>
+            </Button>
           </span>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => setConfirming(true)}
-            className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:border-red-500/40 hover:text-red-600"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
             aria-label={`Remove ${asset.title}`}
             title="Remove"
           >
-            <Trash2 className="h-4 w-4" />
-          </button>
+            <Trash2 />
+          </Button>
         ))}
     </li>
   );
 }
-
-const INPUT_CLS =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40 sm:text-sm";
 
 function AddLinkForm({ apiBase }: { apiBase: string }) {
   const add = useAddLink(apiBase);
@@ -238,7 +245,7 @@ function AddLinkForm({ apiBase }: { apiBase: string }) {
   const [title, setTitle] = useState("");
   return (
     <form
-      className="flex flex-col gap-2 border-t border-border/50 p-4 sm:flex-row sm:px-5"
+      className="flex flex-col gap-2 border-t p-4 sm:flex-row md:px-6"
       onSubmit={(e) => {
         e.preventDefault();
         if (!url.trim()) return;
@@ -248,34 +255,33 @@ function AddLinkForm({ apiBase }: { apiBase: string }) {
         );
       }}
     >
-      <input
+      <Input
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         placeholder="https://drive.google.com/…"
         inputMode="url"
         autoCapitalize="off"
         autoCorrect="off"
-        className={cn(INPUT_CLS, "sm:flex-[2]")}
+        className="sm:flex-[2]"
         aria-label="Link URL"
       />
-      <input
+      <Input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Label (optional)"
         maxLength={200}
-        className={cn(INPUT_CLS, "sm:flex-1")}
+        className="sm:flex-1"
         aria-label="Link label"
       />
-      <button
+      <Button
         type="submit"
         disabled={add.isPending || !url.trim()}
-        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
       >
-        {add.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+        {add.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
         Add link
-      </button>
+      </Button>
       {add.error && (
-        <p className="text-xs text-red-600 dark:text-red-400 sm:self-center">{add.error.message}</p>
+        <p className="text-xs text-destructive sm:self-center">{add.error.message}</p>
       )}
     </form>
   );
@@ -302,26 +308,26 @@ export function BrandAssetsPanel({ apiBase, viewer }: { apiBase: string; viewer:
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-32 animate-pulse rounded-xl bg-muted/60" />
+          <Skeleton key={i} className="h-32 rounded-3xl" />
         ))}
       </div>
     );
   }
   if (list.error) {
     return (
-      <p className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-600 dark:text-red-400">
+      <p className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
         {list.error.message}
       </p>
     );
   }
 
   const empty = (text: string) => (
-    <p className="px-4 py-6 text-center text-sm text-muted-foreground sm:px-5">{text}</p>
+    <p className="px-4 py-8 text-center text-sm text-muted-foreground md:px-6">{text}</p>
   );
 
   return (
     <div className="space-y-5">
-      <Card
+      <AssetSection
         icon={BookOpen}
         title="Brand book"
         hint="Guidelines, logos, fonts and colors — PDF or images, up to 25 MB each."
@@ -332,15 +338,15 @@ export function BrandAssetsPanel({ apiBase, viewer }: { apiBase: string; viewer:
         {byCategory.brand_book.length === 0 ? (
           empty(viewer === "client" ? "Upload your brand book so our designers stay on-brand." : "No brand book yet.")
         ) : (
-          <ul className="divide-y divide-border/40">
+          <ul className="divide-y">
             {byCategory.brand_book.map((a) => (
               <FileRow key={a.id} apiBase={apiBase} asset={a} viewer={viewer} onOpen={() => setOpen(a)} />
             ))}
           </ul>
         )}
-      </Card>
+      </AssetSection>
 
-      <Card
+      <AssetSection
         icon={ImageIcon}
         title="Product photos"
         hint="Vials, packaging and product shots — JPG, PNG, WebP or GIF, up to 25 MB each."
@@ -351,7 +357,7 @@ export function BrandAssetsPanel({ apiBase, viewer }: { apiBase: string; viewer:
         {byCategory.product_photo.length === 0 ? (
           empty(viewer === "client" ? "Add clean product shots — they're the backbone of your ads." : "No product photos yet.")
         ) : (
-          <div className="grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 sm:gap-3 sm:p-5 md:grid-cols-6">
+          <div className="grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 sm:gap-3 md:grid-cols-6 md:p-6">
             {byCategory.product_photo.map((a) => (
               <AssetTile
                 key={a.id}
@@ -364,9 +370,9 @@ export function BrandAssetsPanel({ apiBase, viewer }: { apiBase: string; viewer:
             ))}
           </div>
         )}
-      </Card>
+      </AssetSection>
 
-      <Card
+      <AssetSection
         icon={Link2}
         title="Google Drive & links"
         hint="Shared folders with logos, product photos, past ads or raw footage."
@@ -375,26 +381,27 @@ export function BrandAssetsPanel({ apiBase, viewer }: { apiBase: string; viewer:
         {byCategory.link.length === 0 ? (
           empty("No links yet. Paste a Google Drive or Dropbox folder link below.")
         ) : (
-          <ul className="divide-y divide-border/40">
+          <ul className="divide-y">
             {byCategory.link.map((a) => (
               <LinkRow key={a.id} apiBase={apiBase} asset={a} viewer={viewer} />
             ))}
           </ul>
         )}
         <AddLinkForm apiBase={apiBase} />
-      </Card>
+      </AssetSection>
 
       {list.hasNextPage && (
         <div className="flex justify-center">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => list.fetchNextPage()}
             disabled={list.isFetchingNextPage}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted/50 disabled:opacity-60"
           >
-            {list.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {list.isFetchingNextPage && <Loader2 className="animate-spin" />}
             Load more
-          </button>
+          </Button>
         </div>
       )}
 

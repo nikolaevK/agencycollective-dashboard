@@ -1,6 +1,8 @@
 "use client";
 
 import { AlertCircle, RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,27 +21,23 @@ export function QueryErrorState({
   className?: string;
 }) {
   return (
-    <div
+    <Card
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/50 bg-card px-6 py-16 text-center",
+        "flex flex-col items-center justify-center gap-3 px-6 py-16 text-center",
         className
       )}
     >
-      <AlertCircle className="h-8 w-8 text-red-500/70" />
+      <AlertCircle className="size-6 text-muted-foreground" />
       <div>
-        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-1 text-xs text-muted-foreground">{message}</p>
       </div>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-        >
-          <RotateCw className="h-3.5 w-3.5" />
+        <Button type="button" variant="outline" size="sm" onClick={onRetry} className="mt-1">
+          <RotateCw />
           Retry
-        </button>
+        </Button>
       )}
-    </div>
+    </Card>
   );
 }

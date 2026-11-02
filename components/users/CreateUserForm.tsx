@@ -1,11 +1,23 @@
 "use client";
 
 import { useState, useRef, useTransition } from "react";
-import { UserPlus, Upload, X } from "lucide-react";
+import { ChevronDown, UserPlus, Upload, X } from "lucide-react";
 import { createUserAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import { BOOK_OPTIONS, type ClientBook } from "@/lib/clientProfile";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface CreateUserFormProps {
   onCreated: () => void;
@@ -71,59 +83,50 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
   }
 
   return (
-    <div className="bg-card rounded-2xl p-6 lg:p-8 shadow-sm border border-border/50 dark:border-white/[0.06]">
-      <div className="flex items-center gap-2 mb-1">
-        <UserPlus className="h-5 w-5 text-primary" />
-        <h3 className="text-lg font-bold text-foreground">Create New Client</h3>
+    <div>
+      <div className="mb-1 flex items-center gap-2">
+        <UserPlus className="size-4 text-muted-foreground" />
+        <h3 className="text-base font-medium">Create New Client</h3>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
+      <p className="mb-5 text-sm text-muted-foreground">
         Add a new client to the directory.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Full Name */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Full Name
-          </label>
-          <input
+        <div className="grid gap-2">
+          <Label htmlFor="create-client-name">Full Name</Label>
+          <Input
+            id="create-client-name"
             name="displayName"
             type="text"
             required
             placeholder="e.g. Skyline Ventures"
-            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
           />
         </div>
 
         {/* Email */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Email Address
-          </label>
-          <input
+        <div className="grid gap-2">
+          <Label htmlFor="create-client-email">Email Address</Label>
+          <Input
+            id="create-client-email"
             name="email"
             type="email"
             required
             placeholder="client@company.com"
-            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
           />
         </div>
 
         {/* Workspace (book) — separate directory for outside teams */}
         {workspaces.length > 1 && (
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Workspace
-            </label>
-            <select
-              name="workspace"
-              className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
-            >
+          <div className="grid gap-2">
+            <Label htmlFor="create-client-workspace">Workspace</Label>
+            <NativeSelect id="create-client-workspace" name="workspace">
               {workspaces.map((w) => (
                 <option key={w.value} value={w.value}>{w.label}</option>
               ))}
-            </select>
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            </NativeSelect>
+            <p className="text-xs text-muted-foreground">
               The Client Directory book this client belongs to — only admins
               assigned to that workspace will see them.
             </p>
@@ -131,37 +134,31 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
         )}
 
         {/* Category */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Category
-          </label>
-          <select
-            name="category"
-            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
-          >
+        <div className="grid gap-2">
+          <Label htmlFor="create-client-category">Category</Label>
+          <NativeSelect id="create-client-category" name="category">
             <option value="">Select...</option>
             {CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         {/* Book */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Book
-          </label>
-          <select
-            value={book}
-            onChange={(e) => setBook(e.target.value as ClientBook)}
-            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors appearance-none cursor-pointer"
-          >
-            {BOOK_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+        <div className="grid gap-2">
+          <Label htmlFor="create-client-book">Book</Label>
+          <Select value={book} onValueChange={(v) => setBook(v as ClientBook)}>
+            <SelectTrigger id="create-client-book">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BOOK_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {book === "pepads" && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               PepAds clients are billed manually — billing status &amp; next re-bill are
               set by hand on the directory row; no automatic re-bill alerts.
             </p>
@@ -169,23 +166,19 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
         </div>
 
         {/* Website */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Website (optional)
-          </label>
-          <input
+        <div className="grid gap-2">
+          <Label htmlFor="create-client-website">Website (optional)</Label>
+          <Input
+            id="create-client-website"
             name="website"
             type="text"
             placeholder="clientsite.com"
-            className="w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors"
           />
         </div>
 
         {/* Logo */}
-        <div>
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-            Logo (optional)
-          </label>
+        <div className="grid gap-2">
+          <Label>Logo (optional)</Label>
           <input
             ref={fileInputRef}
             name="logo"
@@ -200,55 +193,72 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
             }}
           />
           {logoPreview ? (
-            <div className="flex items-center gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl">
-              <img src={logoPreview} alt="Preview" className="h-10 w-10 object-contain rounded-lg" />
-              <span className="text-xs text-muted-foreground flex-1 truncate">
+            <div className="flex items-center gap-3 rounded-2xl bg-muted/50 p-3">
+              <img src={logoPreview} alt="Preview" className="size-10 rounded-xl object-contain" />
+              <span className="flex-1 truncate text-xs text-muted-foreground">
                 {fileInputRef.current?.files?.[0]?.name}
               </span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Remove logo"
                 onClick={() => {
                   setLogoPreview(null);
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
-                className="p-1 hover:bg-muted rounded-lg transition-colors shrink-0"
               >
-                <X className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
+                <X />
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-muted/40 dark:bg-white/5 border-2 border-dashed border-border/50 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+              className="w-full border-dashed text-muted-foreground"
             >
-              <Upload className="h-4 w-4" />
+              <Upload />
               Upload logo
-            </button>
+            </Button>
           )}
         </div>
 
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
+            {error}
           </div>
         )}
 
         {success && (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
-            <p className="text-sm text-emerald-600 dark:text-emerald-400">Client created successfully</p>
+          <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.success)}>
+            Client created successfully
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 ac-gradient"
-        >
-          <UserPlus className="h-4 w-4" />
+        <Button type="submit" disabled={isPending} className="w-full">
+          <UserPlus />
           {isPending ? "Creating..." : "Create Client"}
-        </button>
+        </Button>
       </form>
+    </div>
+  );
+}
+
+/** Native <select> dressed as the kit SelectTrigger. Kept native on purpose:
+ *  this form is submitted as FormData, so `name=` + the browser's own value
+ *  (and form.reset()) must keep working exactly as before. */
+function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
+  return (
+    <div className="relative">
+      <select
+        {...props}
+        className={cn(
+          "flex h-9 w-full cursor-pointer appearance-none rounded-3xl border border-transparent bg-input/50 pl-3 pr-9 text-sm outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+      />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
     </div>
   );
 }

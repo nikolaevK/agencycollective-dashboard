@@ -12,6 +12,10 @@ import {
   RotateCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatCentsExact } from "@/lib/format";
 import type { FollowUpSummary } from "@/lib/invoiceFollowUpRules";
 import { formatDate } from "./format";
@@ -106,24 +110,27 @@ export function SentInvoicesPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [followUpInv, setFollowUpInv] = useState<SentInvoice | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   // A failed load must not read as "nothing sent" (the panel used to vanish).
   if (isError && !data) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] px-4 py-3">
-        <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-        <p className="flex-1 min-w-0 text-sm text-foreground">
+      <div className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
+        <AlertCircle className="size-4 shrink-0" />
+        <p className="flex-1 min-w-0">
           Couldn&rsquo;t load sent invoices.
         </p>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => refetch()}
           disabled={isFetching}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50 shrink-0"
+          className="shrink-0"
         >
-          {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+          {isFetching ? <Loader2 className="animate-spin" /> : <RotateCw />}
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -133,10 +140,10 @@ export function SentInvoicesPanel({
   if (isLoading) {
     if (!open) return null;
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-violet-500/30 bg-violet-500/[0.04] dark:bg-violet-500/[0.06] px-4 py-3 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+      <Card className="flex items-center gap-3 px-4 py-3 text-sm text-muted-foreground md:px-6">
+        <Loader2 className="size-4 animate-spin" />
         Loading sent invoices…
-      </div>
+      </Card>
     );
   }
 
@@ -157,9 +164,13 @@ export function SentInvoicesPanel({
 
   async function handleMarkUnpaid(inv: SentInvoice) {
     if (
-      !confirm(
-        `Mark ${inv.clientName}'s invoice ${inv.invoiceNumber} as unpaid for this period?\n\nThis is a historical marker — the client will return to overdue alerts until you Pause/Extend or a payout lands.`
-      )
+      !(await confirm({
+        title: `Mark ${inv.clientName}'s invoice ${inv.invoiceNumber} as unpaid for this period?`,
+        description:
+          "This is a historical marker — the client will return to overdue alerts until you Pause/Extend or a payout lands.",
+        confirmText: "Mark unpaid",
+        destructive: true,
+      }))
     )
       return;
 
@@ -202,17 +213,16 @@ export function SentInvoicesPanel({
   }
 
   return (
-    <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.04] dark:bg-violet-500/[0.06] overflow-hidden">
+    <Card>
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400">
-          <Send className="h-4 w-4" />
-        </span>
+        <Send className="size-4 shrink-0 text-muted-foreground" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-foreground">
+          <p className="text-sm font-medium text-foreground">
             {count} invoice{count !== 1 ? "s" : ""} sent
             <span className="ml-2 font-normal text-muted-foreground">
               · {monthHeader}
@@ -225,14 +235,14 @@ export function SentInvoicesPanel({
         </div>
         <ChevronDown
           className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform",
+            "size-4 shrink-0 text-muted-foreground transition-transform",
             open && "rotate-180"
           )}
         />
       </button>
 
       {open && (
-        <div className="border-t border-violet-500/20 p-3 space-y-3 max-h-[40vh] overflow-y-auto">
+        <div className="max-h-[40vh] space-y-4 overflow-y-auto border-t p-3 md:px-6">
           {thisMonth.length > 0 && (
             <Section title={monthHeader}>
               {thisMonth.map((inv) => (
@@ -280,7 +290,8 @@ export function SentInvoicesPanel({
           }}
         />
       )}
-    </div>
+      {dialog}
+    </Card>
   );
 }
 
@@ -292,11 +303,9 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">
-        {title}
-      </p>
-      {children}
+    <div className="space-y-1">
+      <p className="px-3 text-xs text-muted-foreground">{title}</p>
+      <div className="space-y-0.5">{children}</div>
     </div>
   );
 }
@@ -318,67 +327,61 @@ function InvoiceRow({
   onFollowUp: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-card px-3 py-2.5">
+    <div className="rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/50">
       {/* Phones: Mark unpaid wraps under the row so name/meta/email keep their width. */}
       <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
         <button
           type="button"
           onClick={onOpenClient}
-          className="flex flex-1 basis-full min-w-0 items-center gap-3 text-left sm:basis-0"
+          className="flex flex-1 basis-full min-w-0 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 sm:basis-0"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0">
-            <Send className="h-4 w-4" />
-          </span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">
+            <p className="truncate text-sm font-medium text-foreground">
               {inv.clientName}
             </p>
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="truncate text-xs text-muted-foreground">
               {inv.invoiceNumber} · sent {formatDate(inv.sentAt)} · cycle{" "}
               {formatDate(inv.cycleAnchor)}
               {!inv.isCurrentCycle && (
-                <span className="ml-1 font-semibold text-amber-600 dark:text-amber-400">
+                <span className="ml-1 font-medium text-amber-700 dark:text-amber-400">
                   (not current cycle)
                 </span>
               )}
             </p>
             {inv.recipientEmail && (
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="truncate text-xs text-muted-foreground">
                 to {inv.recipientEmail}
               </p>
             )}
             <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
           </div>
           {inv.amountCents > 0 && (
-            <span className="text-sm font-semibold text-foreground shrink-0">
+            <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
               {formatCentsExact(inv.amountCents)}
             </span>
           )}
         </button>
         <FollowUpButton onClick={onFollowUp} className="ml-auto" />
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={onMarkUnpaid}
           disabled={busy}
           title="Mark this period as unpaid (historical marker — schedule unaffected)"
           className={cn(
-            "flex h-9 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 sm:h-auto",
+            "h-9 shrink-0 text-xs sm:h-8",
             error
-              ? "border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
-              : "border-border/60 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10",
-            busy && "opacity-50"
+              ? badgeTone.danger
+              : "text-muted-foreground hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
           )}
         >
-          {busy ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <XCircle className="h-3 w-3" />
-          )}
+          {busy ? <Loader2 className="animate-spin" /> : <XCircle />}
           Mark unpaid
-        </button>
+        </Button>
       </div>
       {error && (
-        <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>
+        <p className="mt-1.5 text-xs text-destructive">{error}</p>
       )}
     </div>
   );

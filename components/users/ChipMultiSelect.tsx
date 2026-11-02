@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, BadgeDot, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ChipPopover } from "./ChipPopover";
-import { CHIP_BASE, FALLBACK_CHIP_CLS } from "./rosterPresentation";
 
 export interface ChipOption {
   value: string;
@@ -30,16 +32,17 @@ export function useMirroredSelection<T>(
 }
 
 /**
- * Roster chip editor: selected values render as colored chips with an ×, a
+ * Roster chip editor: selected values render as outline badges with an ×, a
  * `+` button opens a popover of all options to toggle. Stored values missing
- * from `options` (e.g. a legacy value) still render as gray chips so nothing
- * silently disappears.
+ * from `options` (e.g. a legacy value) still render as neutral chips so
+ * nothing silently disappears.
  */
 export function ChipMultiSelect({
   value,
   options,
   onChange,
   colorOf,
+  toneOf,
   disabled,
   addLabel = "Add",
   compact,
@@ -48,8 +51,16 @@ export function ChipMultiSelect({
   value: string[];
   options: ReadonlyArray<ChipOption>;
   onChange: (next: string[]) => void;
-  /** Chip color class per value; defaults to gray. */
+  /**
+   * Legacy: extra chip color classes per value (the old *_CHIP_CLS maps).
+   * Ignored when `toneOf` is given; prefer `toneOf`.
+   */
   colorOf?: (value: string) => string;
+  /**
+   * Status tone per value (stage / health / billing vocab) — renders a
+   * StatusBadge-style chip with a dot. Omit for neutral category chips.
+   */
+  toneOf?: (value: string) => BadgeTone;
   disabled?: boolean;
   addLabel?: string;
   /** Tighter spacing for mobile cards. */
@@ -68,7 +79,6 @@ export function ChipMultiSelect({
   const [creating, setCreating] = useState(false);
 
   const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
-  const clsOf = (v: string) => colorOf?.(v) ?? FALLBACK_CHIP_CLS;
 
   function emit(next: string[]) {
     setSelected(next);
@@ -101,37 +111,49 @@ export function ChipMultiSelect({
       className={cn("flex flex-wrap items-center", compact ? "gap-1" : "gap-1.5")}
       onClick={(e) => e.stopPropagation()}
     >
-      {selected.map((v) => (
-        <span key={v} className={cn(CHIP_BASE, clsOf(v))}>
-          {labelOf(v)}
-          {!disabled && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                emit(selected.filter((x) => x !== v));
-              }}
-              className="opacity-50 hover:opacity-100 transition-opacity"
-              aria-label={`Remove ${labelOf(v)}`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </span>
-      ))}
+      {selected.map((v) => {
+        const tone = toneOf?.(v);
+        return (
+          <Badge
+            key={v}
+            variant="outline"
+            tone={tone}
+            className={cn(tone ? "gap-1.5" : "gap-1", !toneOf && colorOf?.(v))}
+          >
+            {tone && <BadgeDot tone={tone} />}
+            {labelOf(v)}
+            {!disabled && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  emit(selected.filter((x) => x !== v));
+                }}
+                className="-mr-0.5 rounded-full opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={`Remove ${labelOf(v)}`}
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </Badge>
+        );
+      })}
       {!disabled && (
-        <button
+        <Button
           ref={addRef}
           type="button"
+          variant="outline"
+          size="icon-xs"
           onClick={(e) => {
             e.stopPropagation();
             setOpen((o) => !o);
           }}
-          className="inline-flex items-center justify-center h-5 w-5 rounded-full border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+          aria-expanded={open}
+          className="size-5 rounded-full border-dashed text-muted-foreground"
           aria-label={addLabel}
         >
-          <Plus className="h-3 w-3" />
-        </button>
+          <Plus />
+        </Button>
       )}
       {open && addRef.current && (
         <ChipPopover anchor={addRef.current} onClose={() => setOpen(false)}>
@@ -145,26 +167,25 @@ export function ChipMultiSelect({
                 key={o.value}
                 type="button"
                 onClick={() => toggle(o.value)}
-                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                aria-pressed={checked}
+                className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-sm font-medium outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
               >
                 <span
                   className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
-                    checked ? "bg-primary border-primary" : "border-input bg-background"
+                    "flex size-4 shrink-0 items-center justify-center rounded-[5px] transition-colors",
+                    checked ? "bg-primary text-primary-foreground" : "bg-input/90"
                   )}
                 >
-                  {checked && <Check className="h-3 w-3 text-primary-foreground" />}
+                  {checked && <Check className="size-3.5" />}
                 </span>
-                <span className={cn("text-left flex-1", checked && "font-semibold")}>
-                  {o.label}
-                </span>
+                <span className="flex-1 truncate">{o.label}</span>
               </button>
             );
           })}
           {onCreateOption && (
-            <div className="mt-1 border-t border-border px-2 pt-2 pb-1">
+            <div className="mt-1.5 border-t px-1 pb-0.5 pt-2">
               <div className="flex items-center gap-1.5">
-                <input
+                <Input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
@@ -176,16 +197,17 @@ export function ChipMultiSelect({
                   placeholder="New option…"
                   maxLength={40}
                   disabled={creating}
-                  className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-primary disabled:opacity-50"
+                  className="h-8 min-w-0 flex-1 px-2.5"
                 />
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   onClick={createOption}
                   disabled={creating || !draft.trim()}
-                  className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                  className="shrink-0"
                 >
                   Add
-                </button>
+                </Button>
               </div>
             </div>
           )}

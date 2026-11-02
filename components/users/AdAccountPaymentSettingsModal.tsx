@@ -1,14 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Loader2, Check, RotateCcw } from "lucide-react";
+import { Loader2, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PaymentInfo, PaymentType } from "@/types/invoice";
-
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block leading-tight";
+import { badgeTone, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 // Every editable field, with a friendly label and whether it's multi-line.
 const FIELDS: { key: keyof PaymentInfo; label: string; area?: boolean; hint?: string }[] = [
@@ -58,6 +68,7 @@ export function AdAccountPaymentSettingsModal({ onClose }: { onClose: () => void
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   function applyData(d: ApiData) {
     setForms({ local: d.local, international: d.international });
@@ -80,18 +91,6 @@ export function AdAccountPaymentSettingsModal({ onClose }: { onClose: () => void
       active = false;
     };
   }, []);
-
-  // Lock body scroll + close on Escape.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
 
   function setField(key: keyof PaymentInfo, value: string) {
     setSavedOk(false);
@@ -129,7 +128,14 @@ export function AdAccountPaymentSettingsModal({ onClose }: { onClose: () => void
   }
 
   async function handleReset() {
-    if (!confirm("Reset both Local and International ad-account payment details to the default? Custom values will be cleared.")) {
+    if (
+      !(await confirm({
+        title: "Reset both Local and International ad-account payment details to the default?",
+        description: "Custom values will be cleared.",
+        confirmText: "Reset",
+        destructive: true,
+      }))
+    ) {
       return;
     }
     setError(null);
@@ -150,142 +156,126 @@ export function AdAccountPaymentSettingsModal({ onClose }: { onClose: () => void
   const active = forms?.[activeType] ?? null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto" onClick={onClose}>
-      <div
-        className="relative mt-10 mb-10 w-full max-w-xl rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Ad-account payment settings</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Bank details printed on ad-account invoices only — not deal or client re-bill invoices.
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors" aria-label="Close">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>Ad-account payment settings</DialogTitle>
+          <DialogDescription>
+            Bank details printed on ad-account invoices only — not deal or client re-bill invoices.
+          </DialogDescription>
+        </DialogHeader>
 
         {loading ? (
-          <div className="p-6 space-y-3">
+          <div className="space-y-3 px-6 pb-6">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-10 w-full animate-pulse rounded-lg bg-muted/60" />
+              <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
         ) : !forms || !active ? (
-          <div className="p-8 text-center space-y-3">
+          <div className="space-y-3 px-6 pb-8 pt-4 text-center">
             <p className="text-sm text-destructive">{error ?? "Failed to load."}</p>
-            <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors">
+            <Button variant="outline" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </div>
         ) : (
           <>
             {/* Local / International switch */}
-            <div className="px-5 pt-4">
-              <div className="flex rounded-lg border bg-background p-0.5">
-                {(["local", "international"] as PaymentType[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setActiveType(t)}
-                    className={cn(
-                      "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors flex items-center justify-center gap-1.5",
-                      activeType === t
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {t}
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase",
-                        configured[t]
-                          ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
-                          : "bg-muted text-muted-foreground",
-                        activeType === t && "bg-white/20 text-white"
-                      )}
-                    >
-                      {configured[t] ? "Custom" : "Default"}
-                    </span>
-                  </button>
-                ))}
-              </div>
+            <div className="shrink-0 px-6">
+              <Tabs value={activeType} onValueChange={(v) => setActiveType(v as PaymentType)}>
+                <TabsList className="w-full">
+                  {(["local", "international"] as PaymentType[]).map((t) => (
+                    <TabsTrigger key={t} value={t} className="capitalize">
+                      {t}
+                      <span
+                        className={cn(
+                          badgeVariants({ variant: "outline", tone: configured[t] ? "info" : "neutral" }),
+                          "normal-case"
+                        )}
+                      >
+                        {configured[t] ? "Custom" : "Default"}
+                      </span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             </div>
 
             {/* Fields */}
-            <div className="p-5 space-y-4 max-h-[55vh] overflow-y-auto">
+            <div className="min-h-0 max-h-[55vh] flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
               {FIELDS.map(({ key, label, area, hint }) => (
-                <div key={String(key)}>
-                  <label className={LABEL}>
+                <div key={String(key)} className="grid gap-2">
+                  <Label htmlFor={`ad-payment-${String(key)}`}>
                     {label}
-                    {hint && <span className="ml-1.5 normal-case font-medium text-muted-foreground/70">· {hint}</span>}
-                  </label>
+                    {hint && <span className="font-normal text-muted-foreground">· {hint}</span>}
+                  </Label>
                   {area ? (
-                    <textarea
+                    <Textarea
+                      id={`ad-payment-${String(key)}`}
                       rows={2}
-                      className={cn(FIELD, "resize-y")}
+                      className="resize-y"
                       value={String(active[key] ?? "")}
                       onChange={(e) => setField(key, e.target.value)}
                     />
                   ) : (
-                    <input
-                      className={FIELD}
+                    <Input
+                      id={`ad-payment-${String(key)}`}
                       value={String(active[key] ?? "")}
                       onChange={(e) => setField(key, e.target.value)}
                     />
                   )}
                 </div>
               ))}
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Leave a field blank to omit it from the invoice. Changes apply to the{" "}
-                <span className="font-semibold capitalize">{activeType}</span> block; switch tabs to edit the other.
+                <span className="font-medium capitalize text-foreground">{activeType}</span> block; switch tabs to edit the other.
               </p>
 
               {error && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
                   {error}
                 </div>
               )}
               {savedOk && (
-                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
-                  <Check className="h-4 w-4" /> Saved. New ad-account invoices will use these details.
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm",
+                    badgeTone.success
+                  )}
+                >
+                  <Check className="size-4 shrink-0" /> Saved. New ad-account invoices will use these details.
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between gap-2 border-t border-border/50 px-5 py-3">
-              <button
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-6 py-4">
+              <Button
+                variant="outline"
                 onClick={handleReset}
                 disabled={saving || resetting}
-                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
               >
-                {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                {resetting ? <Loader2 className="animate-spin" /> : <RotateCcw />}
                 Reset to default
-              </button>
+              </Button>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={onClose}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-                >
+                <Button variant="outline" onClick={onClose}>
                   Close
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={handleSave}
                   disabled={saving || resetting || (!dirty.local && !dirty.international)}
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving && <Loader2 className="animate-spin" />}
                   Save changes
-                </button>
+                </Button>
               </div>
             </div>
           </>
         )}
-      </div>
-    </div>
+        {dialog}
+      </DialogContent>
+    </Dialog>
   );
 }

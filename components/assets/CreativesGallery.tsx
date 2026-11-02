@@ -3,6 +3,11 @@
 import { useMemo, useState } from "react";
 import { Clapperboard, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AssetMediaType } from "@/lib/clientAssetRules";
 import { useAssetList, useAssetUploads, type AssetDto } from "@/hooks/useClientAssets";
 import { AssetTile } from "./AssetTile";
@@ -17,6 +22,9 @@ const FILTERS: { value: AssetMediaType | null; label: string }[] = [
 ];
 
 const PAGE_SIZE = 24;
+
+/** ToggleGroup value for the "All" filter (Radix items need a string). */
+const ALL = "all";
 
 /**
  * Ad Creatives grid — portal (read-only) and admin (`canUpload`). Pages of
@@ -36,27 +44,26 @@ export function CreativesGallery({ apiBase, canUpload }: { apiBase: string; canU
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:pb-0">
-          {FILTERS.map((f) => {
-            const n = f.value ? counts[f.value] ?? 0 : total;
-            const active = filter === f.value;
-            return (
-              <button
-                key={f.label}
-                type="button"
-                onClick={() => setFilter(f.value)}
-                className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                  active
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {f.label}
-                <span className="ml-1.5 opacity-60">{n}</span>
-              </button>
-            );
-          })}
+        <div className="-mx-1 overflow-x-auto px-1 pb-1 sm:pb-0">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={filter ?? ALL}
+            onValueChange={(v) => {
+              if (v) setFilter(v === ALL ? null : (v as AssetMediaType));
+            }}
+          >
+            {FILTERS.map((f) => {
+              const n = f.value ? counts[f.value] ?? 0 : total;
+              return (
+                <ToggleGroupItem key={f.label} value={f.value ?? ALL} className="shrink-0 px-3">
+                  {f.label}
+                  <span className="ml-0.5 tabular-nums text-muted-foreground">{n}</span>
+                </ToggleGroupItem>
+              );
+            })}
+          </ToggleGroup>
         </div>
         {canUpload && (
           <UploadButton
@@ -74,17 +81,17 @@ export function CreativesGallery({ apiBase, canUpload }: { apiBase: string; canU
       {list.isLoading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-[4/5] animate-pulse rounded-xl bg-muted/60" />
+            <Skeleton key={i} className="aspect-[4/5]" />
           ))}
         </div>
       ) : list.error ? (
-        <p className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-600 dark:text-red-400">
+        <p className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
           {list.error.message}
         </p>
       ) : items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
-          <Clapperboard className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-semibold text-foreground">
+        <Card className="flex flex-col items-center px-6 py-12 text-center">
+          <Clapperboard className="mb-3 size-6 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">
             {filter ? "Nothing here with this filter" : "No creatives yet"}
           </p>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
@@ -92,7 +99,7 @@ export function CreativesGallery({ apiBase, canUpload }: { apiBase: string; canU
               ? "Upload images, videos (up to 100 MB) or PDFs. They appear in the client's portal right away."
               : "Every ad creative our team makes for you will show up here, ready to view and download."}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 lg:grid-cols-4">
@@ -102,15 +109,16 @@ export function CreativesGallery({ apiBase, canUpload }: { apiBase: string; canU
           </div>
           {list.hasNextPage && (
             <div className="flex justify-center">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => list.fetchNextPage()}
                 disabled={list.isFetchingNextPage}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted/50 disabled:opacity-60"
               >
-                {list.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {list.isFetchingNextPage && <Loader2 className="animate-spin" />}
                 Load more
-              </button>
+              </Button>
             </div>
           )}
         </>

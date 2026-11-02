@@ -16,6 +16,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, BadgeDot, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
 import type {
   ConversationRecord,
   InboxEntry,
@@ -38,14 +46,14 @@ export function UsersSupportTab() {
   const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(null);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 dark:border-white/[0.06] shadow-sm overflow-hidden">
-      <div className="border-b border-border/50 px-4 py-3 flex items-center gap-1">
-        <SubTabButton active={subTab === "conversations"} onClick={() => setSubTab("conversations")}>
-          Conversations
-        </SubTabButton>
-        <SubTabButton active={subTab === "feedback"} onClick={() => setSubTab("feedback")}>
-          Feedback
-        </SubTabButton>
+    <Card>
+      <div className="border-b px-4 py-3">
+        <Tabs value={subTab} onValueChange={(v) => setSubTab(v as SubTab)}>
+          <TabsList>
+            <TabsTrigger value="conversations">Conversations</TabsTrigger>
+            <TabsTrigger value="feedback">Feedback</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {subTab === "conversations" ? (
@@ -59,31 +67,24 @@ export function UsersSupportTab() {
           onSelect={setSelectedFeedbackId}
         />
       )}
-    </div>
+    </Card>
   );
 }
 
-function SubTabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/** Placeholder rows while a list loads (avatar + two lines). */
+function ListSkeleton({ avatar }: { avatar?: boolean }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
-        active
-          ? "bg-primary/10 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
+    <div className="divide-y">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex items-start gap-3 px-4 py-3">
+          {avatar && <Skeleton className="size-9 shrink-0 rounded-full" />}
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-2/3" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -116,17 +117,15 @@ function ConversationsView({
     <div className="grid grid-cols-1 md:grid-cols-12 min-h-[600px]">
       <div
         className={cn(
-          "md:col-span-4 lg:col-span-3 border-r border-border/50 max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
+          "md:col-span-4 lg:col-span-3 md:border-r max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
           selectedUserId && "hidden md:block"
         )}
       >
         {isLoading ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
+          <ListSkeleton avatar />
         ) : inbox.length === 0 ? (
           <div className="p-6 text-center">
-            <MessageSquare className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+            <MessageSquare className="size-6 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No conversations yet.</p>
             <p className="text-xs text-muted-foreground mt-1">
               Clients can reach out from their portal.
@@ -147,14 +146,15 @@ function ConversationsView({
       <div className={cn("md:col-span-8 lg:col-span-9", !selectedUserId && "hidden md:block")}>
         {selectedUserId ? (
           <>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => onSelect(null)}
-              className="md:hidden flex w-full items-center gap-1.5 border-b border-border/50 px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+              className="md:hidden h-10 w-full justify-start rounded-none border-b px-3 text-muted-foreground"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft />
               All conversations
-            </button>
+            </Button>
             {/* key forces a fresh mount on switch — without it, React reuses the
                 ConversationThread instance and the cursor ref / messages state
                 from the previous client briefly leak into the new view. */}
@@ -162,7 +162,7 @@ function ConversationsView({
           </>
         ) : (
           <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
-            <MessageSquare className="h-10 w-10 opacity-30" />
+            <MessageSquare className="size-6" />
             <p className="text-sm">Select a conversation to start replying.</p>
           </div>
         )}
@@ -197,22 +197,22 @@ function InboxRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full text-left flex items-start gap-3 px-4 py-3 border-b border-border/40 transition-colors",
-        active ? "bg-primary/5" : "hover:bg-muted/40"
+        "w-full text-left flex items-start gap-3 px-4 py-3 border-b transition-colors",
+        active ? "bg-muted" : "hover:bg-muted/50"
       )}
     >
-      <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+      <div className="size-9 rounded-full bg-muted text-muted-foreground ring-1 ring-border flex items-center justify-center text-xs font-medium shrink-0">
         {initials}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-foreground truncate">
+          <p className="text-sm font-medium text-foreground truncate">
             {entry.userDisplayName ?? "Unknown client"}
           </p>
           {entry.unreadCount > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold shrink-0">
+            <Badge variant="destructive" className="h-4 min-w-[18px] px-1 tabular-nums">
               {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
-            </span>
+            </Badge>
           )}
         </div>
         <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -220,7 +220,7 @@ function InboxRow({
           {entry.lastMessagePreview ?? "No messages yet"}
         </p>
         {lastDt && (
-          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+          <p className="text-[11px] text-muted-foreground mt-0.5">
             {formatDistanceToNow(lastDt, { addSuffix: true })}
           </p>
         )}
@@ -254,6 +254,7 @@ function ConversationThread({ userId }: { userId: string }) {
   // (no new messages for 2 min) drop to 60s polling. Halves request volume
   // when admins leave a thread open in the background.
   const lastActivityRef = useRef(Date.now());
+  const { confirm, dialog } = useConfirm();
 
   // Initial thread load — also seeds the cursor.
   const initialQuery = useQuery<ThreadPayload>({
@@ -399,13 +400,16 @@ function ConversationThread({ userId }: { userId: string }) {
     },
   });
 
-  function handleClear() {
+  async function handleClear() {
     if (clearMutation.isPending) return;
     const name = user?.displayName ?? "this client";
     if (
-      !window.confirm(
-        `Clear conversation with ${name}? All messages will be permanently deleted on both sides. This cannot be undone.`
-      )
+      !(await confirm({
+        title: `Clear conversation with ${name}?`,
+        description: "All messages will be permanently deleted on both sides. This cannot be undone.",
+        confirmText: "Clear",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -414,49 +418,52 @@ function ConversationThread({ userId }: { userId: string }) {
 
   if (initialQuery.isLoading) {
     return (
-      <div className="h-full min-h-[400px] flex items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <div className="h-full min-h-[400px] space-y-3 p-5">
+        <Skeleton className="h-12 w-2/3" />
+        <Skeleton className="ml-auto h-12 w-1/2" />
+        <Skeleton className="h-12 w-3/5" />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-[calc(100dvh-16rem)] md:h-[640px]">
-      <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+          <div className="size-9 rounded-full bg-muted text-muted-foreground ring-1 ring-border flex items-center justify-center text-xs font-medium shrink-0">
             {user?.displayName?.[0]?.toUpperCase() ?? "?"}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-foreground truncate">{user?.displayName ?? "Client"}</p>
+            <p className="text-sm font-medium text-foreground truncate">{user?.displayName ?? "Client"}</p>
             {user?.slug && (
-              <p className="text-[11px] text-muted-foreground truncate">/{user.slug}/portal</p>
+              <p className="text-xs text-muted-foreground truncate">/{user.slug}/portal</p>
             )}
           </div>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={handleClear}
           disabled={clearMutation.isPending || messages.length === 0}
-          className="inline-flex items-center justify-center gap-1.5 shrink-0 min-h-9 min-w-9 sm:min-w-0 text-xs font-semibold text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 sm:px-3 rounded-lg hover:bg-destructive/5 active:bg-destructive/10"
+          className="shrink-0 px-2.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:px-3"
           aria-label={messages.length === 0 ? "Nothing to clear" : "Clear conversation"}
           title={messages.length === 0 ? "Nothing to clear" : "Clear conversation"}
         >
           {clearMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <Trash2 className="h-4 w-4" />
+            <Trash2 />
           )}
           <span className="hidden sm:inline">Clear</span>
-        </button>
+        </Button>
       </div>
       {clearMutation.isError && (
-        <div className="px-5 py-2 bg-destructive/10 text-destructive text-xs sm:text-sm">
+        <div className="px-5 py-2 border-b bg-destructive/10 text-destructive text-xs sm:text-sm">
           {(clearMutation.error as Error)?.message ?? "Failed to clear conversation."}
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3 bg-muted/10">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
             No messages yet.
@@ -469,7 +476,7 @@ function ConversationThread({ userId }: { userId: string }) {
             if (m.deletedAt) {
               return (
                 <div key={m.id} className={cn("flex", isAdmin ? "justify-end" : "justify-start")}>
-                  <span className="text-[11px] italic text-muted-foreground">Message deleted</span>
+                  <span className="text-xs italic text-muted-foreground">Message deleted</span>
                 </div>
               );
             }
@@ -484,12 +491,12 @@ function ConversationThread({ userId }: { userId: string }) {
                       "p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words",
                       isAdmin
                         ? "bg-primary text-primary-foreground rounded-tr-none"
-                        : "bg-card border border-border/50 dark:border-white/[0.06] text-foreground rounded-tl-none"
+                        : "bg-muted text-foreground rounded-tl-none"
                     )}
                   >
                     {m.body}
                   </div>
-                  <span className="text-[10px] text-muted-foreground mt-1 px-1">
+                  <span className="text-[11px] text-muted-foreground mt-1 px-1">
                     {sender?.displayName ?? (isAdmin ? "Admin" : "Client")} · {format(dt, "MMM d, h:mm a")}
                     {m.editedAt ? " · edited" : ""}
                   </span>
@@ -500,9 +507,9 @@ function ConversationThread({ userId }: { userId: string }) {
         )}
       </div>
 
-      <form onSubmit={handleSend} className="p-4 border-t border-border/50 bg-card">
-        <div className="flex items-end gap-2 bg-muted/40 rounded-xl p-2">
-          <textarea
+      <form onSubmit={handleSend} className="p-4 border-t">
+        <div className="flex items-end gap-2">
+          <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -513,20 +520,20 @@ function ConversationThread({ userId }: { userId: string }) {
             }}
             rows={1}
             placeholder="Reply…"
-            className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm resize-none py-2 px-2 max-h-32"
+            className="min-h-9 max-h-32 flex-1 py-2"
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
             disabled={!draft.trim() || sendMutation.isPending}
-            className="bg-primary text-primary-foreground p-2.5 rounded-lg hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
             aria-label="Send"
           >
             {sendMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Send className="h-4 w-4" />
+              <Send />
             )}
-          </button>
+          </Button>
         </div>
         {sendMutation.isError && (
           <p className="text-xs text-destructive mt-2">
@@ -534,6 +541,7 @@ function ConversationThread({ userId }: { userId: string }) {
           </p>
         )}
       </form>
+      {dialog}
     </div>
   );
 }
@@ -549,6 +557,17 @@ const STATUS_OPTIONS: { value: FeedbackStatus; label: string; Icon: typeof Clock
   { value: "in_progress", label: "In Progress", Icon: Clock },
   { value: "resolved", label: "Resolved", Icon: CheckCircle2 },
 ];
+
+const STATUS_TONE: Record<FeedbackStatus, BadgeTone> = {
+  open: "warning",
+  in_progress: "info",
+  resolved: "success",
+};
+
+/** Happy = good, neutral = plain, anything else (unhappy) = needs a look. */
+function sentimentTone(sentiment: string): BadgeTone {
+  return sentiment === "happy" ? "success" : sentiment === "neutral" ? "neutral" : "warning";
+}
 
 function FeedbackView({
   selectedId,
@@ -581,29 +600,35 @@ function FeedbackView({
     <div className="grid grid-cols-1 md:grid-cols-12 min-h-[600px]">
       <div
         className={cn(
-          "md:col-span-5 border-r border-border/50 max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
+          "md:col-span-5 md:border-r max-h-[70dvh] md:max-h-[640px] overflow-y-auto",
           selected && "hidden md:block"
         )}
       >
-        <div className="px-4 py-3 border-b border-border/50 flex items-center gap-1 flex-wrap">
-          <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
-            All
-          </FilterPill>
-          {STATUS_OPTIONS.map(({ value, label }) => (
-            <FilterPill
-              key={value}
-              active={statusFilter === value}
-              onClick={() => setStatusFilter(value)}
-            >
-              {label}
-            </FilterPill>
-          ))}
+        <div className="px-4 py-3 border-b">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={statusFilter}
+            onValueChange={(v) => {
+              if (v) setStatusFilter(v as FeedbackStatus | "all");
+            }}
+            aria-label="Filter feedback by status"
+            className="flex-wrap justify-start"
+          >
+            <ToggleGroupItem value="all" className="px-3 text-xs">
+              All
+            </ToggleGroupItem>
+            {STATUS_OPTIONS.map(({ value, label }) => (
+              <ToggleGroupItem key={value} value={value} className="px-3 text-xs">
+                {label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </div>
 
         {isLoading ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
+          <ListSkeleton />
         ) : feedback.length === 0 ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
             No feedback in this view yet.
@@ -623,14 +648,15 @@ function FeedbackView({
       <div className={cn("md:col-span-7", !selected && "hidden md:block")}>
         {selected ? (
           <>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => onSelect("")}
-              className="md:hidden flex w-full items-center gap-1.5 border-b border-border/50 px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+              className="md:hidden h-10 w-full justify-start rounded-none border-b px-3 text-muted-foreground"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft />
               All feedback
-            </button>
+            </Button>
             {/* key forces fresh state per feedback item — otherwise replyBody
                 typed on item A would still be sitting in the textarea after
                 clicking item B. */}
@@ -650,34 +676,12 @@ function FeedbackView({
           </>
         ) : (
           <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
-            <Star className="h-10 w-10 opacity-30" />
+            <Star className="size-6" />
             <p className="text-sm">Select a feedback entry to reply.</p>
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function FilterPill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "px-3 py-1 rounded-full text-xs font-semibold transition-colors",
-        active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -691,32 +695,26 @@ function FeedbackRow({
   onSelect: () => void;
 }) {
   const dt = parseISO(item.createdAt.replace(" ", "T") + "Z");
-  const sentimentColor =
-    item.sentiment === "happy"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : item.sentiment === "neutral"
-        ? "text-muted-foreground"
-        : "text-amber-600 dark:text-amber-400";
 
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full text-left px-4 py-3 border-b border-border/40 transition-colors",
-        active ? "bg-primary/5" : "hover:bg-muted/40"
+        "w-full text-left px-4 py-3 border-b transition-colors",
+        active ? "bg-muted" : "hover:bg-muted/50"
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-foreground truncate">
+        <span className="text-sm font-medium text-foreground truncate">
           {item.userDisplayName ?? "Unknown"}
         </span>
-        <span className="text-[10px] text-muted-foreground">{format(dt, "MMM d")}</span>
+        <span className="text-[11px] text-muted-foreground">{format(dt, "MMM d")}</span>
       </div>
       <div className="flex items-center gap-2 mt-1">
-        <span className={cn("text-[10px] font-bold uppercase tracking-widest", sentimentColor)}>
+        <Badge variant="outline" tone={sentimentTone(item.sentiment)} className="capitalize">
           {item.sentiment}
-        </span>
+        </Badge>
         <span className="flex">
           {[1, 2, 3, 4, 5].map((n) => (
             <Star
@@ -729,8 +727,8 @@ function FeedbackRow({
           ))}
         </span>
         {item.replyCount > 0 && (
-          <span className="ml-auto text-[10px] text-muted-foreground inline-flex items-center gap-1">
-            <MessageSquare className="h-3 w-3" />
+          <span className="ml-auto text-[11px] text-muted-foreground inline-flex items-center gap-1">
+            <MessageSquare className="size-3" />
             {item.replyCount}
           </span>
         )}
@@ -738,10 +736,8 @@ function FeedbackRow({
       {item.body && (
         <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.body}</p>
       )}
-      <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-        <span className={cn("inline-block w-1.5 h-1.5 rounded-full",
-          item.status === "open" ? "bg-amber-500" :
-          item.status === "in_progress" ? "bg-blue-500" : "bg-emerald-500")}/>
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <BadgeDot tone={STATUS_TONE[item.status]} />
         <span className="capitalize">{item.status.replace("_", " ")}</span>
       </div>
     </button>
@@ -758,6 +754,7 @@ function FeedbackDetail({
   onDeleted: () => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   const replyMutation = useMutation({
     mutationFn: async () => {
@@ -805,73 +802,80 @@ function FeedbackDetail({
     onSuccess: () => onDeleted(),
   });
 
-  function handleDelete() {
+  async function handleDelete() {
     if (deleteMutation.isPending) return;
     const who = item.userDisplayName ?? "this client";
     const replyHint = item.replies.length > 0 ? ` and its ${item.replies.length} repl${item.replies.length === 1 ? "y" : "ies"}` : "";
-    if (!window.confirm(`Delete feedback from ${who}${replyHint}? This cannot be undone.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete feedback from ${who}${replyHint}?`,
+        description: "This cannot be undone.",
+        confirmText: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     deleteMutation.mutate();
   }
 
   const dt = parseISO(item.createdAt.replace(" ", "T") + "Z");
-  const sentimentColor =
-    item.sentiment === "happy"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : item.sentiment === "neutral"
-        ? "text-muted-foreground"
-        : "text-amber-600 dark:text-amber-400";
 
   return (
     <div className="flex flex-col h-[calc(100dvh-16rem)] md:h-[640px]">
-      <div className="px-5 py-4 border-b border-border/50">
+      <div className="px-5 py-4 border-b">
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-foreground truncate">{item.userDisplayName ?? "Unknown"}</p>
-            <p className="text-[10px] text-muted-foreground">{format(dt, "MMM d, yyyy · h:mm a")}</p>
+            <p className="text-sm font-medium text-foreground truncate">{item.userDisplayName ?? "Unknown"}</p>
+            <p className="text-[11px] text-muted-foreground">{format(dt, "MMM d, yyyy · h:mm a")}</p>
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             {STATUS_OPTIONS.map(({ value, label }) => (
-              <button
+              <Button
                 key={value}
+                variant="outline"
+                size="sm"
                 onClick={() => statusMutation.mutate(value)}
                 disabled={statusMutation.isPending || item.status === value}
                 className={cn(
-                  "min-h-8 px-2.5 py-1.5 sm:py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                  "px-2.5 text-xs",
                   item.status === value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/70 active:bg-muted"
+                    ? cn(badgeTone[STATUS_TONE[value]], "disabled:opacity-100")
+                    : "text-muted-foreground"
                 )}
               >
+                {item.status === value && <BadgeDot tone={STATUS_TONE[value]} />}
                 {label}
-              </button>
+              </Button>
             ))}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
-              className="ml-1 inline-flex items-center justify-center gap-1 min-h-9 min-w-9 sm:min-w-0 sm:min-h-8 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 sm:px-2.5 py-1 rounded-md hover:bg-destructive/5 active:bg-destructive/10"
+              className="ml-1 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               aria-label="Delete feedback"
               title="Delete feedback"
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 />
               )}
               <span className="hidden sm:inline">Delete</span>
-            </button>
+            </Button>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={cn("text-xs font-bold uppercase tracking-widest", sentimentColor)}>
+          <Badge variant="outline" tone={sentimentTone(item.sentiment)} className="capitalize">
             {item.sentiment}
-          </span>
+          </Badge>
           <span className="flex">
             {[1, 2, 3, 4, 5].map((n) => (
               <Star
                 key={n}
                 className={cn(
-                  "h-4 w-4",
+                  "size-4",
                   n <= item.rating ? "fill-primary text-primary" : "text-muted-foreground/30"
                 )}
               />
@@ -879,15 +883,15 @@ function FeedbackDetail({
           </span>
         </div>
         {deleteMutation.isError && (
-          <div className="mt-2 px-3 py-2 rounded-md bg-destructive/10 text-destructive text-xs sm:text-sm">
+          <div className={cn("mt-2 rounded-2xl border px-3 py-2 text-xs sm:text-sm", badgeTone.danger)}>
             {(deleteMutation.error as Error)?.message ?? "Failed to delete."}
           </div>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-muted/10">
+      <div className="flex-1 overflow-y-auto p-5 space-y-3">
         {item.body && (
-          <div className="bg-card border border-border/50 rounded-xl p-4">
+          <div className="rounded-2xl bg-muted/50 p-4">
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{item.body}</p>
           </div>
         )}
@@ -895,13 +899,13 @@ function FeedbackDetail({
         {item.replies.map((reply) => {
           const replyDt = parseISO(reply.createdAt.replace(" ", "T") + "Z");
           return (
-            <div key={reply.id} className="ml-6 bg-primary/5 rounded-xl p-3">
+            <div key={reply.id} className="ml-6 rounded-2xl p-3 ring-1 ring-foreground/5">
               <div className="flex items-center gap-2 mb-1">
-                <ChevronRight className="h-3 w-3 text-primary" />
-                <span className="text-xs font-bold text-primary">
+                <ChevronRight className="size-3 text-muted-foreground" />
+                <span className="text-xs font-medium text-foreground">
                   {reply.adminDisplayName ?? "Team"}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   {format(replyDt, "MMM d · h:mm a")}
                 </span>
               </div>
@@ -917,10 +921,10 @@ function FeedbackDetail({
           if (!replyBody.trim() || replyMutation.isPending) return;
           replyMutation.mutate();
         }}
-        className="p-4 border-t border-border/50 bg-card"
+        className="p-4 border-t"
       >
-        <div className="flex items-end gap-2 bg-muted/40 rounded-xl p-2">
-          <textarea
+        <div className="flex items-end gap-2">
+          <Textarea
             value={replyBody}
             onChange={(e) => setReplyBody(e.target.value)}
             onKeyDown={(e) => {
@@ -931,20 +935,20 @@ function FeedbackDetail({
             }}
             rows={2}
             placeholder="Reply to this feedback…"
-            className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm resize-none py-2 px-2 max-h-32"
+            className="min-h-9 max-h-32 flex-1 py-2"
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
             disabled={!replyBody.trim() || replyMutation.isPending}
-            className="bg-primary text-primary-foreground p-2.5 rounded-lg hover:opacity-90 active:scale-95 disabled:opacity-50"
             aria-label="Send reply"
           >
             {replyMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Send className="h-4 w-4" />
+              <Send />
             )}
-          </button>
+          </Button>
         </div>
         {replyMutation.isError && (
           <p className="text-xs text-destructive mt-2">
@@ -952,6 +956,7 @@ function FeedbackDetail({
           </p>
         )}
       </form>
+      {dialog}
     </div>
   );
 }

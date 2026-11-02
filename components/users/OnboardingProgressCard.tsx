@@ -3,6 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Circle, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ONBOARDING_SECTIONS,
   TOTAL_STEPS,
@@ -45,17 +49,16 @@ function SectionRow({
     <div className="space-y-3">
       {/* Section header */}
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+        <p className="text-sm font-medium text-foreground">
           {section.title}
         </p>
-        <span
-          className={cn(
-            "text-xs font-bold",
-            allDone ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
-          )}
+        <Badge
+          variant="outline"
+          tone={allDone ? "success" : "neutral"}
+          className={cn("tabular-nums", !allDone && "text-muted-foreground")}
         >
           {done}/{total}
-        </span>
+        </Badge>
       </div>
 
       {/* Steps list */}
@@ -65,9 +68,9 @@ function SectionRow({
           return (
             <div key={step.id} className="flex items-center gap-2.5">
               {isDone ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />
               ) : (
-                <Circle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                <Circle className="size-4 text-muted-foreground/40 shrink-0" />
               )}
               <span
                 className={cn(
@@ -109,36 +112,27 @@ export function OnboardingProgressCard({ userId }: OnboardingProgressCardProps) 
   const pct = TOTAL_STEPS === 0 ? 0 : Math.round((doneCount / TOTAL_STEPS) * 100);
 
   return (
-    <div className="bg-card rounded-xl border border-border/50 dark:border-white/[0.06] shadow-sm overflow-hidden">
+    <Card>
       {/* Header */}
-      <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <ClipboardCheck className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-foreground">
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+        <div className="flex min-w-0 items-center gap-3">
+          <ClipboardCheck className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 space-y-1">
+            <CardTitle>
               Onboarding Progress
-            </h3>
-            <p className="text-xs text-muted-foreground">
+            </CardTitle>
+            <CardDescription className="text-xs">
               {doneCount} of {TOTAL_STEPS} steps completed
-            </p>
+            </CardDescription>
           </div>
         </div>
-        <span
-          className={cn(
-            "text-2xl font-black",
-            pct === 100
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-primary"
-          )}
-        >
+        <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
           {isLoading ? "\u2014" : `${pct}%`}
         </span>
-      </div>
+      </CardHeader>
 
       {/* Segmented progress bar */}
-      <div className="px-6 pb-5">
+      <CardContent className="pb-5 md:pb-5">
         <div className="flex gap-1">
           {ONBOARDING_SECTIONS.flatMap((section) =>
             section.steps.map((step) => (
@@ -149,7 +143,7 @@ export function OnboardingProgressCard({ userId }: OnboardingProgressCardProps) 
                   isLoading
                     ? "bg-muted animate-pulse"
                     : completedSet.has(step.id)
-                      ? "bg-emerald-500"
+                      ? "bg-chart-1"
                       : "bg-muted"
                 )}
                 title={step.title}
@@ -170,31 +164,31 @@ export function OnboardingProgressCard({ userId }: OnboardingProgressCardProps) 
                   flex: `${sectionSteps} ${sectionSteps} 0%`,
                 }}
               >
-                <p className="text-[10px] text-muted-foreground font-medium truncate">
+                <p className="text-xs text-muted-foreground truncate">
                   {section.title}
                 </p>
               </div>
             );
           })}
         </div>
-      </div>
+      </CardContent>
 
       {/* Divider */}
-      <div className="border-t border-border/50" />
+      <Separator />
 
       {/* Step details */}
       {isLoading ? (
-        <div className="p-6 space-y-4">
+        <div className="p-4 md:p-6 space-y-4">
           {[1, 2].map((i) => (
             <div key={i} className="space-y-2">
-              <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-40 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-36 animate-pulse rounded bg-muted" />
+              <Skeleton className="h-3 w-24 rounded" />
+              <Skeleton className="h-3 w-40 rounded" />
+              <Skeleton className="h-3 w-36 rounded" />
             </div>
           ))}
         </div>
       ) : (
-        <div className="p-6 space-y-6">
+        <div className="p-4 md:p-6 space-y-6">
           {ONBOARDING_SECTIONS.map((section) => (
             <SectionRow
               key={section.id}
@@ -204,6 +198,6 @@ export function OnboardingProgressCard({ userId }: OnboardingProgressCardProps) 
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

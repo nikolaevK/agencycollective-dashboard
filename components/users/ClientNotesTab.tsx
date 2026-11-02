@@ -4,6 +4,14 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Bell, Check, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatDate } from "./format";
 import type { ClientNote } from "@/lib/clientNotes";
 
@@ -12,6 +20,24 @@ async function fetchNotes(userId: string): Promise<ClientNote[]> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   return json.data as ClientNote[];
+}
+
+/** "yyyy-mm-dd" in the viewer's local calendar, `addDays` from today. */
+function localYmd(addDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + addDays);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Reminder chip tone (display only): overdue = danger, due within 3 days =
+ *  warning, later = info, done = neutral. */
+function reminderTone(note: ClientNote): { tone: BadgeTone; hint: string } {
+  if (note.done || !note.remindAt) return { tone: "neutral", hint: "Reminder" };
+  const due = note.remindAt.slice(0, 10);
+  if (due < localYmd()) return { tone: "danger", hint: "Overdue" };
+  if (due <= localYmd(3)) return { tone: "warning", hint: "Due soon" };
+  return { tone: "info", hint: "Reminder" };
 }
 
 export function ClientNotesTab({ userId }: { userId: string }) {
@@ -25,6 +51,7 @@ export function ClientNotesTab({ userId }: { userId: string }) {
   const [body, setBody] = useState("");
   const [remindAt, setRemindAt] = useState("");
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["client-notes", userId] });
@@ -64,7 +91,14 @@ export function ClientNotesTab({ userId }: { userId: string }) {
   }
 
   async function remove(note: ClientNote) {
-    if (!confirm("Delete this note?")) return;
+    if (
+      !(await confirm({
+        title: "Delete this note?",
+        confirmText: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     const res = await fetch(
       `/api/admin/clients/${userId}/notes?id=${encodeURIComponent(note.id)}`,
       { method: "DELETE" }
@@ -79,110 +113,118 @@ export function ClientNotesTab({ userId }: { userId: string }) {
   return (
     <div className="space-y-6">
       {/* Composer */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
-        <textarea
+      <Card className="space-y-3 p-4 md:p-5">
+        <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={3}
           placeholder="Add an internal note or reminder…"
-          className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 resize-y"
+          className="resize-y"
         />
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bell className="h-4 w-4" />
+          <Label htmlFor="client-note-remind-at" className="font-normal text-muted-foreground">
+            <Bell className="size-4" />
             Remind on
-            <input
-              type="date"
-              value={remindAt}
-              onChange={(e) => setRemindAt(e.target.value)}
-              className="rounded-lg border bg-background px-2 py-1 text-sm"
-            />
-          </label>
-          <button
+          </Label>
+          <DatePicker
+            id="client-note-remind-at"
+            value={remindAt}
+            onValueChange={setRemindAt}
+            placeholder="No reminder"
+            className="w-44"
+          />
+          <Button
             onClick={handleAdd}
             disabled={busy || !body.trim()}
-            className="ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
+            className="ml-auto"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Add note
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* List */}
       {isLoading ? (
-        <div className="h-32 w-full animate-pulse rounded-xl bg-muted/50" />
+        <div className="space-y-3">
+          <Skeleton className="h-24 w-full rounded-3xl" />
+          <Skeleton className="h-24 w-full rounded-3xl" />
+        </div>
       ) : notes.length === 0 ? (
         <p className="text-center text-sm text-muted-foreground py-8">
           No notes yet for this client.
         </p>
       ) : (
         <div className="space-y-3">
-          {notes.map((note) => (
-            <div
-              key={note.id}
-              className={cn(
-                "rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4",
-                note.done && "opacity-60"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={cn(
-                      "text-sm text-foreground whitespace-pre-wrap break-words",
-                      note.done && "line-through"
-                    )}
-                  >
-                    {note.body}
-                  </p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                    <span>{note.authorName ?? "Admin"}</span>
-                    <span>·</span>
-                    <span>{formatDate(note.createdAt)}</span>
-                    {note.remindAt && (
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold",
-                          note.done
-                            ? "bg-muted text-muted-foreground"
-                            : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                        )}
-                      >
-                        <Clock className="h-3 w-3" />
-                        {formatDate(note.remindAt)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {note.remindAt && (
-                    <button
-                      onClick={() => toggleDone(note)}
-                      title={note.done ? "Mark as open" : "Mark as done"}
+          {notes.map((note) => {
+            const reminder = reminderTone(note);
+            return (
+              <Card
+                key={note.id}
+                className={cn("p-4", note.done && "opacity-60")}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p
                       className={cn(
-                        "p-1.5 rounded-lg transition-colors",
-                        note.done
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground hover:bg-muted"
+                        "text-sm text-foreground whitespace-pre-wrap break-words",
+                        note.done && "line-through"
                       )}
                     >
-                      <Check className="h-4 w-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => remove(note)}
-                    title="Delete"
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                      {note.body}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+                      <span>{note.authorName ?? "Admin"}</span>
+                      <span>·</span>
+                      <span>{formatDate(note.createdAt)}</span>
+                      {note.remindAt && (
+                        <Badge
+                          variant="outline"
+                          tone={reminder.tone}
+                          className="tabular-nums"
+                          title={reminder.hint}
+                        >
+                          <Clock />
+                          {formatDate(note.remindAt)}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {note.remindAt && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => toggleDone(note)}
+                        title={note.done ? "Mark as open" : "Mark as done"}
+                        aria-label={note.done ? "Mark as open" : "Mark as done"}
+                        className={cn(
+                          note.done
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        <Check />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => remove(note)}
+                      title="Delete"
+                      aria-label="Delete"
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
+      {dialog}
     </div>
   );
 }

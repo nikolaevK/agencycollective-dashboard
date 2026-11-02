@@ -1,7 +1,8 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type {
   WkBlock,
   WkCardItem,
@@ -46,6 +47,9 @@ const COLUMN_OPTIONS: { value: string; label: string }[] = [
   { value: "4", label: "4 columns" },
 ];
 
+/** Ghost icon button tinted red on hover — the remove control. */
+const removeBtnCls = "text-muted-foreground hover:bg-destructive/10 hover:text-destructive";
+
 function ItemShell({
   index,
   count,
@@ -62,36 +66,44 @@ function ItemShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+    <div className="space-y-2 rounded-2xl bg-card p-3 ring-1 ring-foreground/5 dark:ring-foreground/10">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-medium text-muted-foreground">
           Item {index + 1}
         </span>
         <div className="flex items-center gap-0.5">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onUp}
             disabled={index === 0}
-            className="px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+            className="text-muted-foreground"
+            aria-label="Move item up"
           >
-            ↑
-          </button>
-          <button
+            <ArrowUp />
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onDown}
             disabled={index === count - 1}
-            className="px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+            className="text-muted-foreground"
+            aria-label="Move item down"
           >
-            ↓
-          </button>
-          <button
+            <ArrowDown />
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onRemove}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
+            className={removeBtnCls}
             aria-label="Remove item"
           >
-            <Trash2 className="h-3 w-3" />
-          </button>
+            <Trash2 />
+          </Button>
         </div>
       </div>
       {children}
@@ -101,14 +113,16 @@ function ItemShell({
 
 function AddItemButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="xs"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+      className="text-muted-foreground"
     >
-      <Plus className="h-3.5 w-3.5" />
+      <Plus />
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -298,7 +312,7 @@ export function BlockEditor({
         onChange({ ...block, items: replaceAt(items, i, { ...items[i], ...patch }) });
       return (
         <div className="space-y-3">
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             1–3 columns render side by side. Each column is a card with an
             optional badge, intro, and bullet list.
           </p>
@@ -383,50 +397,53 @@ export function BlockEditor({
                   key={row.id}
                   className="flex flex-col sm:flex-row sm:items-center gap-1.5"
                 >
-                  <input
+                  <Input
                     type="text"
                     value={row.label}
                     onChange={(e) => setRow(i, { label: e.target.value })}
                     placeholder="Label"
-                    className="w-full sm:flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full sm:flex-1"
                   />
-                  <div className="flex items-center gap-1.5">
-                    <input
+                  <div className="flex items-center gap-0.5">
+                    <Input
                       type="text"
                       value={row.value ?? ""}
                       onChange={(e) => setRow(i, { value: e.target.value })}
                       placeholder="Tag"
-                      className="flex-1 sm:w-32 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="mr-1 flex-1 sm:w-32"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => onChange({ ...block, rows: move(rows, i, -1) })}
                       disabled={i === 0}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+                      className="text-muted-foreground"
                       aria-label="Move up"
                     >
-                      ↑
-                    </button>
-                    <button
+                      <ArrowUp />
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => onChange({ ...block, rows: move(rows, i, 1) })}
                       disabled={i === rows.length - 1}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+                      className="text-muted-foreground"
                       aria-label="Move down"
                     >
-                      ↓
-                    </button>
-                    <button
+                      <ArrowDown />
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => onChange({ ...block, rows: removeAt(rows, i) })}
-                      className={cn(
-                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-                        "text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
-                      )}
+                      className={removeBtnCls}
                       aria-label="Remove row"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                      <Trash2 />
+                    </Button>
                   </div>
                 </div>
               ))}

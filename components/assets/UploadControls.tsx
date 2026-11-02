@@ -3,6 +3,9 @@
 import { useRef } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { acceptFor, type AssetCategory } from "@/lib/clientAssetRules";
 import type { UploadItem } from "@/hooks/useClientAssets";
 
@@ -22,18 +25,17 @@ export function UploadButton({
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => inputRef.current?.click()}
         disabled={busy}
-        className={cn(
-          "inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60",
-          className
-        )}
+        className={className}
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+        {busy ? <Loader2 className="animate-spin" /> : <Upload />}
         {label}
-      </button>
+      </Button>
       <input
         ref={inputRef}
         type="file"
@@ -64,22 +66,22 @@ export function UploadProgressList({
         <li
           key={it.key}
           className={cn(
-            "rounded-lg border px-3 py-2 text-xs",
+            "rounded-2xl px-3 py-2 text-xs",
             it.phase === "error"
-              ? "border-red-500/30 bg-red-500/5"
-              : "border-border/60 bg-muted/30"
+              ? cn("border", badgeTone.danger)
+              : "bg-muted/50"
           )}
         >
           <div className="flex items-center gap-2">
             {it.phase === "done" ? (
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+              <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
             ) : it.phase === "error" ? (
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+              <AlertTriangle className="size-3.5 shrink-0" />
             ) : (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
             )}
             <span className="min-w-0 flex-1 truncate font-medium text-foreground">{it.name}</span>
-            <span className="shrink-0 text-muted-foreground">
+            <span className="shrink-0 tabular-nums text-muted-foreground">
               {it.phase === "uploading"
                 ? `${Math.round(it.progress * 100)}%`
                 : it.phase === "processing"
@@ -89,25 +91,25 @@ export function UploadProgressList({
                     : "Failed"}
             </span>
             {it.phase === "error" && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => onDismiss(it.key)}
-                className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                className="shrink-0 text-muted-foreground"
                 aria-label="Dismiss"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
+                <X />
+              </Button>
             )}
           </div>
           {it.phase === "uploading" && (
-            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-300"
-                style={{ width: `${Math.max(4, it.progress * 100)}%` }}
-              />
-            </div>
+            <Progress
+              value={Math.max(4, it.progress * 100)}
+              className="mt-1.5 h-1 [&>div]:bg-chart-1 [&>div]:duration-300"
+            />
           )}
-          {it.error && <p className="mt-1 text-red-600 dark:text-red-400">{it.error}</p>}
+          {it.error && <p className="mt-1 text-destructive">{it.error}</p>}
         </li>
       ))}
     </ul>

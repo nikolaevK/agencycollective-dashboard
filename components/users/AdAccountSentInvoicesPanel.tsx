@@ -5,6 +5,11 @@ import { useState } from "react";
 import { Send, X, XCircle, Loader2, FileText, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
+import { badgeTone, badgeToneHover, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatDate } from "./format";
 import type { AdInvoiceType } from "@/lib/adAccountLineItem";
 import type { FollowUpSummary } from "@/lib/invoiceFollowUpRules";
@@ -73,15 +78,20 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [followUpInv, setFollowUpInv] = useState<SentInvoice | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   const invoices = data?.invoices ?? [];
 
   async function handleMarkUnpaid(inv: SentInvoice) {
     const who = inv.accountName ?? inv.clientName ?? "this";
     if (
-      !confirm(
-        `Mark ${who} invoice ${inv.invoiceNumber} as unpaid?\n\nHistorical marker only — the account returns to its normal due/overdue flow until a payout lands.`
-      )
+      !(await confirm({
+        title: `Mark ${who} invoice ${inv.invoiceNumber} as unpaid?`,
+        description:
+          "Historical marker only — the account returns to its normal due/overdue flow until a payout lands.",
+        confirmText: "Mark unpaid",
+        destructive: true,
+      }))
     )
       return;
     setBusyId(inv.id);
@@ -119,67 +129,70 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
   }
 
   return (
-    <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.04] dark:bg-violet-500/[0.06] overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-violet-500/20">
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400">
-            <Send className="h-4 w-4" />
-          </span>
-          <p className="text-sm font-bold text-foreground">
+    <Card>
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Send className="size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">
             Sent ad-account invoices
             {data && (
-              <span className="ml-2 text-xs font-medium text-muted-foreground">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {invoices.length} awaiting payment
               </span>
             )}
           </p>
         </div>
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onClose}
-          className="p-1 rounded-lg hover:bg-violet-500/10 transition-colors"
+          className="text-muted-foreground"
           aria-label="Close"
         >
-          <X className="h-4 w-4 text-muted-foreground" />
-        </button>
+          <X />
+        </Button>
       </div>
 
       {isLoading ? (
-        <div className="p-3 space-y-2">
+        <div className="space-y-2 p-3">
           {[1, 2].map((i) => (
-            <div key={i} className="h-14 w-full animate-pulse rounded-lg bg-muted/60" />
+            <Skeleton key={i} className="h-14 w-full" />
           ))}
         </div>
       ) : isError && !data ? (
-        <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
+        <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
+          <p className="text-sm text-destructive">
             Couldn&rsquo;t load sent ad-account invoices.
           </p>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted/50 transition-colors disabled:opacity-50"
           >
-            {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+            {isFetching ? <Loader2 className="animate-spin" /> : <RotateCw />}
             Retry
-          </button>
+          </Button>
         </div>
       ) : invoices.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-muted-foreground">
           No ad-account invoices awaiting payment.
         </p>
       ) : (
-        <ul className="divide-y divide-violet-500/10 max-h-[45vh] overflow-y-auto">
+        <ul className="max-h-[45vh] divide-y overflow-y-auto">
           {invoices.map((inv) => (
             <li
               key={inv.id}
-              className="flex items-center gap-3 px-4 py-2.5 flex-wrap"
+              className="flex flex-wrap items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50"
             >
               {/* Phones: the text takes the full line and the actions wrap under it. */}
-              <div className="flex-1 basis-full min-w-0 sm:basis-0">
-                <p className="text-sm font-semibold text-foreground truncate">
+              <div className="min-w-0 flex-1 basis-full sm:basis-0">
+                <p className="truncate text-sm font-medium text-foreground">
                   {inv.accountName ?? "Free invoice"}
-                  <span className="ml-2 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground align-middle">
+                  {/* A span (Badge renders a div, invalid inside <p>). */}
+                  <span className={cn(badgeVariants({ variant: "outline" }), "ml-2 align-middle text-muted-foreground")}>
                     {typeLabel(inv.invoiceType)}
                   </span>
                 </p>
@@ -189,48 +202,46 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
                 </p>
                 <FollowUpSummaryText sentAt={inv.sentAt} summary={inv.followUps} />
               </div>
-              <div className="ml-auto flex items-center gap-2 shrink-0">
+              <div className="ml-auto flex shrink-0 items-center gap-2">
                 {inv.amountCents > 0 && (
-                  <span className="text-sm font-semibold text-foreground">
+                  <span className="text-sm font-semibold tracking-tight tabular-nums text-foreground">
                     {formatCentsExact(inv.amountCents)}
                   </span>
                 )}
                 {inv.payoutDocumentId && (
-                  <a
-                    href={`/api/admin/ad-accounts/invoices/${inv.id}/document`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="View stored invoice PDF"
-                    className="flex h-9 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors sm:h-auto"
-                  >
-                    <FileText className="h-3 w-3" />
-                    PDF
-                  </a>
+                  <Button asChild variant="outline" size="xs" className="h-9 sm:h-6">
+                    <a
+                      href={`/api/admin/ad-accounts/invoices/${inv.id}/document`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="View stored invoice PDF"
+                    >
+                      <FileText />
+                      PDF
+                    </a>
+                  </Button>
                 )}
                 <FollowUpButton onClick={() => setFollowUpInv(inv)} />
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="xs"
                   onClick={() => handleMarkUnpaid(inv)}
                   disabled={busyId === inv.id}
                   title="Mark unpaid (historical marker — schedule unaffected)"
                   className={cn(
-                    "flex h-9 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors sm:h-auto",
+                    "h-9 sm:h-6",
                     rowError?.id === inv.id
-                      ? "border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
-                      : "border-border/60 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10",
-                    busyId === inv.id && "opacity-50"
+                      ? cn(badgeTone.danger, badgeToneHover.danger)
+                      : "text-muted-foreground hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
                   )}
                 >
-                  {busyId === inv.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <XCircle className="h-3 w-3" />
-                  )}
+                  {busyId === inv.id ? <Loader2 className="animate-spin" /> : <XCircle />}
                   Mark unpaid
-                </button>
+                </Button>
               </div>
               {rowError?.id === inv.id && (
-                <p className="basis-full text-[11px] text-red-600 dark:text-red-400">
+                <p className="basis-full text-xs text-destructive">
                   {rowError.message}
                 </p>
               )}
@@ -254,6 +265,7 @@ export function AdAccountSentInvoicesPanel({ onClose }: { onClose: () => void })
           }}
         />
       )}
-    </div>
+      {dialog}
+    </Card>
   );
 }

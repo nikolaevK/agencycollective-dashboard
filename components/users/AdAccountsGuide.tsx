@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import {
   X,
   Megaphone,
@@ -12,6 +11,12 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { BadgeDot, StatusBadge, badgeTone, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import type { RebillStatus } from "@/lib/clientBilling";
+import { REBILL_STATUS_META } from "./RebillStatusChip";
 
 /**
  * In-app documentation for the Ad Accounts tab. A read-only slide-over drawer
@@ -21,40 +26,29 @@ import {
  * the AdAccountsDirectory toolbar. No data — purely explanatory.
  */
 export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
-  // Close on Escape, lock body scroll while open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
-
+  // Radix Sheet: closes on Escape / backdrop click and locks body scroll.
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={onClose}>
-      <div
-        className="relative h-full w-full max-w-2xl overflow-y-auto bg-card shadow-xl border-l border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Sheet open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="w-full gap-0 overflow-y-auto overscroll-contain sm:max-w-2xl"
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-card/95 backdrop-blur px-5 py-4">
-          <div className="flex items-center gap-2">
-            <Megaphone className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-bold text-foreground">Ad Accounts — how it works</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-            aria-label="Close guide"
-          >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <SheetHeader className="sticky top-0 z-10 flex-row items-center justify-between gap-2 space-y-0 border-b bg-popover/95 px-6 py-4 backdrop-blur">
+          <SheetTitle className="flex items-center gap-2">
+            <Megaphone className="size-4 text-muted-foreground" />
+            Ad Accounts — how it works
+          </SheetTitle>
+          <SheetClose asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Close guide" className="bg-secondary">
+              <X />
+            </Button>
+          </SheetClose>
+        </SheetHeader>
 
-        <div className="px-5 py-5 space-y-7 text-sm leading-relaxed text-foreground">
+        <div className="space-y-7 px-6 py-5 text-sm leading-relaxed text-foreground">
           {/* Intro */}
           <p className="text-muted-foreground">
             An <strong className="text-foreground">ad account</strong> is an agency-owned
@@ -92,7 +86,7 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
               <li>
                 An account can be <strong>attached to a client</strong> or left{" "}
                 <Pill>Unattached</Pill>. Assigning a client auto-names the account{" "}
-                <code className="px-1 rounded bg-muted text-xs">AC_&lt;client&gt;</code>.
+                <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">AC_&lt;client&gt;</code>.
               </li>
               <li>
                 Attaching a client is what links the account to a <strong>brand</strong> in
@@ -121,27 +115,27 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
               colored status chip plus the next bill date:
             </p>
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <StatusRow color="bg-sky-500/15 text-sky-600 dark:text-sky-400" label="Upcoming">
+              <StatusRow status="upcoming" label="Upcoming">
                 Bill is further out than the alert window.
               </StatusRow>
-              <StatusRow color="bg-amber-500/15 text-amber-600 dark:text-amber-400" label="Due soon">
+              <StatusRow status="due" label="Due soon">
                 Bill is within the alert window — time to invoice.
               </StatusRow>
-              <StatusRow color="bg-red-500/15 text-red-600 dark:text-red-400" label="Overdue">
+              <StatusRow status="overdue" label="Overdue">
                 Bill date has passed and nothing has been paid.
               </StatusRow>
-              <StatusRow color="bg-violet-500/15 text-violet-600 dark:text-violet-400" label="Invoice sent">
+              <StatusRow status="invoice_sent" label="Invoice sent">
                 You&rsquo;ve invoiced this cycle; waiting for payment.
               </StatusRow>
-              <StatusRow color="bg-slate-500/15 text-slate-600 dark:text-slate-400" label="Paused">
+              <StatusRow status="paused" label="Paused">
                 Billing is turned off for this account.
               </StatusRow>
-              <StatusRow color="bg-blue-500/15 text-blue-600 dark:text-blue-400" label="Extended">
+              <StatusRow status="extended" label="Extended">
                 Bill has been deferred to a later date.
               </StatusRow>
             </div>
             <p className="mt-3">
-              A separate green <Pill tone="green">Paid</Pill> chip can appear{" "}
+              A separate green <Pill tone="success">Paid</Pill> chip can appear{" "}
               <em>alongside</em> any status — it means the current cycle has been settled by a
               payment. So a row can read &ldquo;Paid&rdquo; <em>and</em> &ldquo;Upcoming&rdquo;
               at the same time: this month is covered, next month is on its way.
@@ -185,14 +179,14 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
           <Section icon={Send} title="Sending an invoice">
             <ul className="space-y-2">
               <li>
-                Use <strong>Send invoice</strong> on a row (or &ldquo;Send ad invoice&rdquo;
+                Use <strong>Send invoice</strong> in a row&rsquo;s &ldquo;&hellip;&rdquo; menu (or &ldquo;Send ad invoice&rdquo;
                 in the toolbar for a one-off / free invoice with no account).
               </li>
               <li>
                 When you send for an attached account, the account moves to{" "}
-                <Pill tone="violet">Invoice sent</Pill> and the invoice is stamped to the{" "}
+                <Pill tone="info">Invoice sent</Pill> and the invoice is stamped to the{" "}
                 <strong>current next-bill cycle</strong>. It clears automatically to{" "}
-                <Pill tone="green">Paid</Pill> once a matching payment lands (see below).
+                <Pill tone="success">Paid</Pill> once a matching payment lands (see below).
               </li>
               <li>
                 Sending a new invoice for the <strong>same cycle</strong> replaces that
@@ -219,8 +213,8 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
                 in its history. Rows quiet for a week turn amber.
               </li>
               <li>
-                The <ReceiptText className="inline h-3.5 w-3.5" /> Invoices button on each row
-                opens that account&rsquo;s full invoice history.
+                <ReceiptText className="inline size-3.5 align-text-bottom text-muted-foreground" /> <strong>Invoices</strong> in a
+                row&rsquo;s &ldquo;&hellip;&rdquo; menu opens that account&rsquo;s full invoice history.
               </li>
               <li>
                 The bank details printed on these invoices (Local and International) are editable
@@ -257,15 +251,15 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
               Two date fields do very different jobs:
             </p>
             <div className="mt-3 space-y-2">
-              <div className="rounded-lg border border-border/50 p-3">
-                <p className="font-semibold">Sent date</p>
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <p className="font-medium">Sent date</p>
                 <p className="text-muted-foreground">
                   When the invoice actually went out. Record-keeping only — it does{" "}
                   <strong>not</strong> affect the account&rsquo;s status.
                 </p>
               </div>
-              <div className="rounded-lg border border-border/50 p-3">
-                <p className="font-semibold">Cycle (billing date)</p>
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <p className="font-medium">Cycle (billing date)</p>
                 <p className="text-muted-foreground">
                   Which monthly cycle the invoice <em>covers</em>. This is the field that
                   decides whether the row shows as &ldquo;Invoice sent&rdquo; for the current
@@ -286,7 +280,7 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
               By default the dashboard reads the <strong>Payout DB</strong> rather than being told a payment landed.
               When a payout for the account&rsquo;s brand is flagged{" "}
               <strong>&ldquo;Ad Account&rdquo;</strong> in the Sales Rep column, the matching
-              sent invoice auto-promotes to <Pill tone="green">Paid</Pill> and the account
+              sent invoice auto-promotes to <Pill tone="success">Paid</Pill> and the account
               shows Paid until its next bill.
             </p>
             <ul className="mt-2 space-y-2">
@@ -312,7 +306,7 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
             <p>
               Payments arrive late, land under a different month, or get booked ahead —
               and the automatic matching above only ever moves an invoice from{" "}
-              <Pill tone="violet">Awaiting</Pill> to <Pill tone="green">Paid</Pill>. Every other
+              <Pill tone="info">Awaiting</Pill> to <Pill tone="success">Paid</Pill>. Every other
               transition is yours. Open an account&rsquo;s <strong>Invoices</strong> and use{" "}
               <strong>Manage</strong> on any row:
             </p>
@@ -415,13 +409,13 @@ export function AdAccountsGuide({ onClose }: { onClose: () => void }) {
             </ul>
           </Section>
 
-          <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+          <p className="border-t pt-2 text-xs text-muted-foreground">
             Tip: the same retainer + ad-spend logic and the same &ldquo;cycle vs sent
             date&rdquo; rules apply to client re-bills on the Directory tab.
           </p>
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -439,8 +433,13 @@ function Section({
   return (
     <section>
       <div className="flex items-center gap-2 mb-2">
-        <Icon className={danger ? "h-4 w-4 text-amber-500" : "h-4 w-4 text-primary"} />
-        <h3 className="font-bold text-foreground">{title}</h3>
+        <Icon
+          className={cn(
+            "size-4 shrink-0",
+            danger ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+          )}
+        />
+        <h3 className="font-medium text-foreground">{title}</h3>
       </div>
       <div className="space-y-1">{children}</div>
     </section>
@@ -452,37 +451,38 @@ function Pill({
   tone,
 }: {
   children: React.ReactNode;
-  tone?: "green" | "violet";
+  tone?: "success" | "info";
 }) {
-  const cls =
-    tone === "green"
-      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-      : tone === "violet"
-      ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
-      : "bg-muted text-foreground";
+  // Same chips the table renders: "Paid" = success, "Invoice sent" /
+  // "Awaiting" = info; untoned pills name a field or a value. Spans, not the
+  // kit's <div> Badge — these sit inside paragraphs.
+  if (tone) {
+    return (
+      <span className={cn(badgeVariants({ variant: "outline", tone }), "gap-1.5 align-middle")}>
+        <BadgeDot tone={tone} />
+        {children}
+      </span>
+    );
+  }
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold ${cls}`}>
-      {children}
-    </span>
+    <span className={cn(badgeVariants({ variant: "secondary" }), "align-middle")}>{children}</span>
   );
 }
 
 function StatusRow({
-  color,
+  status,
   label,
   children,
 }: {
-  color: string;
+  status: RebillStatus;
   label: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border/50 p-2">
-      <span
-        className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${color}`}
-      >
+    <div className="flex items-start gap-2 rounded-2xl p-3 ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <StatusBadge tone={REBILL_STATUS_META[status].tone} className="shrink-0">
         {label}
-      </span>
+      </StatusBadge>
       <span className="text-xs text-muted-foreground">{children}</span>
     </div>
   );
@@ -490,7 +490,7 @@ function StatusRow({
 
 function Callout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-amber-900 dark:text-amber-200">
+    <div className={cn("mt-3 rounded-2xl border px-4 py-3", badgeTone.warning)}>
       {children}
     </div>
   );

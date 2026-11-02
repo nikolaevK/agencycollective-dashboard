@@ -2,14 +2,21 @@
 
 import { useState } from "react";
 import { Eye, Loader2, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { OfferCard } from "../OfferCard";
 import { OfferDetail } from "../OfferDetail";
 import { OfferRequestPanel } from "../OfferRequestPanel";
@@ -27,9 +34,6 @@ import type { PortalOffer } from "@/lib/portalOffers";
 const MAX_HIGHLIGHTS = 6;
 const MAX_LINKS = 4;
 const BADGE_SUGGESTIONS = ["New", "Popular", "Limited time", "Exclusive"];
-
-const inputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 // The accent color is no longer used by the design (everything follows the dashboard theme).
 type Draft = Omit<OfferFields, "highlights" | "ctaLabel" | "ctaUrl" | "badge" | "accent"> & {
@@ -59,7 +63,7 @@ function toDraft(o: PortalOffer | null): Draft {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       {children}
       {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
     </label>
@@ -68,7 +72,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="border-b border-border/50 pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+    <p className="border-b pb-2 text-sm font-medium text-foreground">
       {children}
     </p>
   );
@@ -99,6 +103,7 @@ export function OfferEditorDialog({
   const cover = useImageDraft(offer?.coverUrl ?? null, OFFER_IMAGE_MAX_BYTES.cover);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
   const labels = page ?? DEFAULT_OFFER_PAGE;
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
@@ -145,9 +150,17 @@ export function OfferEditorDialog({
   }
 
   const dirty = JSON.stringify(draft) !== savedJson || logo.dirty || cover.dirty;
-  function requestClose() {
+  async function requestClose() {
     if (saving) return;
-    if (dirty && !confirm("Discard your unsaved changes to this service?")) return;
+    if (
+      dirty &&
+      !(await confirm({
+        title: "Discard your unsaved changes to this service?",
+        confirmText: "Discard",
+        destructive: true,
+      }))
+    )
+      return;
     onClose();
   }
 
@@ -165,7 +178,7 @@ export function OfferEditorDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && requestClose()}>
-      <DialogContent className="max-w-6xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>{offer ? `Edit ${offer.title}` : "New service"}</DialogTitle>
           <DialogDescription>Shown to clients in their portal under {labels.navLabel}.</DialogDescription>
@@ -176,15 +189,14 @@ export function OfferEditorDialog({
             <SectionTitle>Card</SectionTitle>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Title">
-                <input value={draft.title} onChange={(e) => set("title", e.target.value)} maxLength={80} className={inputClass} />
+                <Input value={draft.title} onChange={(e) => set("title", e.target.value)} maxLength={80} />
               </Field>
               <Field label="Category" hint="Clients can filter by it.">
-                <input
+                <Input
                   value={draft.category}
                   onChange={(e) => set("category", e.target.value)}
                   maxLength={40}
                   list="offer-categories"
-                  className={inputClass}
                 />
                 <datalist id="offer-categories">
                   {categories.map((c) => (
@@ -194,16 +206,15 @@ export function OfferEditorDialog({
               </Field>
             </div>
             <Field label="One-liner" hint="The pitch on the card.">
-              <input value={draft.tagline} onChange={(e) => set("tagline", e.target.value)} maxLength={160} className={inputClass} />
+              <Input value={draft.tagline} onChange={(e) => set("tagline", e.target.value)} maxLength={160} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Badge" hint='Optional pill on the card, e.g. "New".'>
-                <input
+                <Input
                   value={draft.badge}
                   onChange={(e) => set("badge", e.target.value)}
                   maxLength={24}
                   list="offer-badges"
-                  className={inputClass}
                 />
                 <datalist id="offer-badges">
                   {BADGE_SUGGESTIONS.map((b) => (
@@ -224,142 +235,145 @@ export function OfferEditorDialog({
 
             <SectionTitle>Service page</SectionTitle>
             <Field label="Full pitch" hint="Markdown: **bold**, - bullet lists, ## headings.">
-              <textarea value={draft.body} onChange={(e) => set("body", e.target.value)} rows={6} maxLength={8000} className={inputClass} />
+              <Textarea value={draft.body} onChange={(e) => set("body", e.target.value)} rows={6} maxLength={8000} className="resize-y" />
             </Field>
 
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-foreground">Proof points</p>
+              <p className="text-sm font-medium text-foreground">Proof points</p>
               <p className="text-xs text-muted-foreground">
                 A number (e.g. &quot;$40M+&quot;) makes it a stat tile; leave it blank for a check-mark line.
               </p>
               {draft.highlights.map((h, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
+                  <Input
                     value={h.stat}
                     onChange={(e) => setHighlight(i, { stat: e.target.value })}
                     placeholder="Stat"
                     maxLength={24}
-                    className={cn(inputClass, "w-28 shrink-0")}
+                    className="w-28 shrink-0"
                   />
-                  <input
+                  <Input
                     value={h.text}
                     onChange={(e) => setHighlight(i, { text: e.target.value })}
                     placeholder="What it means"
                     maxLength={140}
-                    className={inputClass}
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => set("highlights", draft.highlights.filter((_, j) => j !== i))}
-                    className="rounded-lg p-2 text-muted-foreground hover:text-red-600"
+                    className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Remove proof point"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               ))}
               {draft.highlights.length < MAX_HIGHLIGHTS && (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => set("highlights", [...draft.highlights, { stat: "", text: "" }])}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus />
                   Add proof point
-                </button>
+                </Button>
               )}
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-foreground">Links</p>
+              <p className="text-sm font-medium text-foreground">Links</p>
               <p className="text-xs text-muted-foreground">
                 Extra buttons under the main one — website, pricing, a deck (https). Clicks are tracked per client.
               </p>
               {draft.links.map((l, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
+                  <Input
                     value={l.label}
                     onChange={(e) => setLink(i, { label: e.target.value })}
                     placeholder="Label"
                     maxLength={40}
-                    className={cn(inputClass, "w-40 shrink-0")}
+                    className="w-40 shrink-0"
                   />
-                  <input
+                  <Input
                     value={l.url}
                     onChange={(e) => setLink(i, { url: e.target.value })}
                     placeholder="https://"
-                    className={inputClass}
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => set("links", draft.links.filter((_, j) => j !== i))}
-                    className="rounded-lg p-2 text-muted-foreground hover:text-red-600"
+                    className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Remove link"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               ))}
               {draft.links.length < MAX_LINKS && (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => set("links", [...draft.links, { label: "", url: "" }])}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus />
                   Add link
-                </button>
+                </Button>
               )}
             </div>
 
             <SectionTitle>Main button</SectionTitle>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Type">
-                <select
-                  value={draft.ctaType}
-                  onChange={(e) => set("ctaType", e.target.value as OfferCtaType)}
-                  className={inputClass}
-                >
-                  <option value="request_info">Request info (short form)</option>
-                  <option value="book_call">Book a call (opens a booking link)</option>
-                </select>
+                <Select value={draft.ctaType} onValueChange={(v) => set("ctaType", v as OfferCtaType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="request_info">Request info (short form)</SelectItem>
+                    <SelectItem value="book_call">Book a call (opens a booking link)</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label="Button text" hint="Optional.">
-                <input
+                <Input
                   value={draft.ctaLabel}
                   onChange={(e) => set("ctaLabel", e.target.value)}
                   placeholder={ctaLabelOf({ ctaType: draft.ctaType, ctaLabel: null })}
                   maxLength={40}
-                  className={inputClass}
                 />
               </Field>
             </div>
             {draft.ctaType === "book_call" && (
               <Field label="Booking link" hint="Your calendar page (https). The lead is recorded before it opens.">
-                <input
+                <Input
                   value={draft.ctaUrl}
                   onChange={(e) => set("ctaUrl", e.target.value)}
                   placeholder="https://"
-                  className={inputClass}
                 />
               </Field>
             )}
 
             <SectionTitle>Visibility</SectionTitle>
             <div className="flex flex-wrap gap-6">
-              <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <input type="checkbox" checked={draft.active} onChange={(e) => set("active", e.target.checked)} />
+              <Label className="cursor-pointer font-normal">
+                <Checkbox checked={draft.active} onCheckedChange={(v) => set("active", v === true)} />
                 Live in client portals
-              </label>
-              <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <input type="checkbox" checked={draft.featured} onChange={(e) => set("featured", e.target.checked)} />
+              </Label>
+              <Label className="cursor-pointer font-normal leading-snug">
+                <Checkbox checked={draft.featured} onCheckedChange={(v) => set("featured", v === true)} />
                 Featured (the one spotlight at the top — takes over from the current one once this is live)
-              </label>
+              </Label>
             </div>
           </div>
 
           <div className="space-y-4 self-start md:sticky md:top-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Client preview</p>
+            <p className="text-xs font-medium text-muted-foreground">Client preview</p>
             <OfferCard
               offer={{
                 title: draft.title,
@@ -373,46 +387,32 @@ export function OfferEditorDialog({
               learnMoreLabel={labels.learnMoreLabel}
             />
             <OfferRequestPanel preview offer={previewPanelOffer} copy={labels} requestedAt={null} defaultEmail={null} />
-            <button
-              type="button"
-              onClick={() => setPagePreview(true)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted/50"
-            >
-              <Eye className="h-4 w-4" />
+            <Button type="button" variant="outline" onClick={() => setPagePreview(true)} className="w-full">
+              <Eye />
               Preview the service page
-            </button>
+            </Button>
           </div>
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={requestClose}
-            disabled={saving}
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
-          >
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={requestClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || !draft.title.trim()}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+          </Button>
+          <Button type="button" onClick={save} disabled={saving || !draft.title.trim()}>
+            {saving && <Loader2 className="animate-spin" />}
             Save
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
       </DialogContent>
 
       {/* The full service page as clients will see it (unsaved edits included). */}
       <Dialog open={pagePreview} onOpenChange={setPagePreview}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-6xl">
           <DialogHeader>
             <DialogTitle>Service page preview</DialogTitle>
             <DialogDescription>What clients see when they open {draft.title || "this service"}.</DialogDescription>
@@ -438,6 +438,7 @@ export function OfferEditorDialog({
           </div>
         </DialogContent>
       </Dialog>
+      {dialog}
     </Dialog>
   );
 }

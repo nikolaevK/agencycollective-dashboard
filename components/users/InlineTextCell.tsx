@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Click-to-edit roster cell. Enter (or blur) saves, Escape cancels; with
@@ -57,10 +59,12 @@ export function InlineTextCell({
   }
 
   if (editing) {
-    const shared =
-      "w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
+    // Kit fields, compact for the table. The date editor stays a native
+    // <input type="date">: its Enter / blur-to-save / Escape-to-cancel cycle
+    // is the cell's contract (a popover DatePicker would save on pick).
+    const shared = "w-full px-2 py-1 text-xs text-foreground md:text-xs";
     return multiline ? (
-      <textarea
+      <Textarea
         ref={textareaRef}
         value={draft}
         rows={3}
@@ -75,10 +79,10 @@ export function InlineTextCell({
           }
         }}
         onClick={(e) => e.stopPropagation()}
-        className={cn(shared, "resize-none min-w-[160px]")}
+        className={cn(shared, "min-h-0 min-w-[160px] rounded-xl")}
       />
     ) : (
-      <input
+      <Input
         ref={inputRef}
         type={type}
         value={draft}
@@ -93,7 +97,7 @@ export function InlineTextCell({
           }
         }}
         onClick={(e) => e.stopPropagation()}
-        className={cn(shared, type === "date" ? "min-w-[130px]" : "min-w-[70px]")}
+        className={cn(shared, "h-7 rounded-xl", type === "date" ? "min-w-[130px]" : "min-w-[70px]")}
       />
     );
   }
@@ -107,8 +111,8 @@ export function InlineTextCell({
       }}
       disabled={disabled}
       className={cn(
-        "text-left text-xs rounded-md px-1 py-0.5 -mx-1 transition-colors max-w-full",
-        !disabled && "cursor-text hover:bg-muted/60",
+        "-mx-1 max-w-full rounded-lg px-1 py-0.5 text-left text-xs outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        !disabled && "cursor-text hover:bg-muted",
         className
       )}
       title={disabled ? undefined : "Click to edit"}

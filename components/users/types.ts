@@ -29,6 +29,8 @@ export interface ClientPublic {
   matchedBrand: string | null;
   isLinked: boolean;
   joinedAt: string | null;
+  /** Join date from users.joined_at / payouts only (null = unknown). */
+  knownJoinedAt?: string | null;
   billing: ClientBilling | null;
   schedule: RebillSchedule;
   /** Active sent re-bill invoice awaiting payment, if any. Drives the

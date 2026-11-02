@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Upload, X } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
@@ -78,18 +80,23 @@ export function ImageField({
 }) {
   return (
     <div className="space-y-1.5">
-      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       <div className="flex items-center gap-3">
         {draft.previewUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={draft.previewUrl}
             alt=""
-            className={wide ? "h-10 w-20 rounded-md object-cover ring-1 ring-border" : "h-10 w-10 rounded-md bg-white object-contain p-0.5 ring-1 ring-border"}
+            className={wide ? "h-10 w-20 rounded-xl object-cover ring-1 ring-border" : "h-10 w-10 rounded-xl bg-white object-contain p-0.5 ring-1 ring-border"}
           />
         )}
-        <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted/50">
-          <Upload className="h-4 w-4" />
+        <label
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "relative cursor-pointer focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+          )}
+        >
+          <Upload />
           {draft.previewUrl ? "Replace" : "Upload"}
           <input
             type="file"
@@ -103,17 +110,18 @@ export function ImageField({
           />
         </label>
         {draft.previewUrl && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               draft.remove();
               onChange?.();
             }}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground"
           >
-            <X className="h-4 w-4" />
+            <X />
             Remove
-          </button>
+          </Button>
         )}
       </div>
       <span className="block text-xs text-muted-foreground">{draft.error ?? hint}</span>

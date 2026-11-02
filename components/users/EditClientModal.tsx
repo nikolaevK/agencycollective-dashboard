@@ -2,6 +2,25 @@
 
 import { useState, useRef, useTransition } from "react";
 import { X, Upload, Trash2, Sparkles, Frame } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { updateUserAction, removeUserLogoAction } from "@/app/actions/users";
 import { CATEGORIES } from "./types";
 import type { ClientPublic } from "./types";
@@ -12,6 +31,9 @@ import {
   type ClientProfilePatch,
 } from "@/hooks/useClientProfileMutations";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+
+// Radix SelectItem can't hold "" — the "None" category maps to this.
+const NONE = "__none__";
 
 interface EditClientModalProps {
   client: ClientPublic;
@@ -108,305 +130,279 @@ export function EditClientModal({ client, onClose, onUpdated }: EditClientModalP
     });
   }
 
-  const INPUT_CLS =
-    "w-full bg-muted/40 dark:bg-white/5 border-2 border-transparent rounded-xl py-3 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-0 focus:outline-none transition-colors";
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md animate-in fade-in-0 zoom-in-95"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        aria-describedby={undefined}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h3 className="text-lg font-bold text-foreground">Edit Client</h3>
-          <button onClick={onClose} className="p-2 hover:bg-muted/50 rounded-lg transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>Edit Client</DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Display Name
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              required
-              className={INPUT_CLS}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={INPUT_CLS}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Category
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className={`${INPUT_CLS} appearance-none cursor-pointer`}
-            >
-              <option value="">None</option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-
-          {canManage && workspaces.length > 1 && (
-            <div>
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Workspace
-              </label>
-              <select
-                value={workspace}
-                onChange={(e) => setWorkspace(e.target.value)}
-                className={`${INPUT_CLS} appearance-none cursor-pointer`}
-              >
-                {workspaces.map((w) => (
-                  <option key={w.value} value={w.value}>{w.label}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Moving a client changes which team&apos;s Client Directory it appears in.
-              </p>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pb-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-name">Display Name</Label>
+              <Input
+                id="edit-client-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+              />
             </div>
-          )}
 
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as UserStatus)}
-              className={`${INPUT_CLS} appearance-none cursor-pointer`}
-            >
-              <option value="active">Active</option>
-              <option value="onboarding">Onboarding</option>
-              <option value="inactive">Inactive</option>
-              <option value="archived">Archived</option>
-            </select>
-          </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-email">Email</Label>
+              <Input
+                id="edit-client-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
 
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Book
-            </label>
-            <select
-              value={book}
-              onChange={(e) => setBook(e.target.value as ClientBook)}
-              className={`${INPUT_CLS} appearance-none cursor-pointer`}
-            >
-              {BOOK_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {book === "pepads" && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                PepAds clients are billed manually — the computed re-bill schedule and its
-                alerts don&apos;t apply; set billing status &amp; next re-bill on the row.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Website
-            </label>
-            <input
-              type="text"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              placeholder="clientsite.com"
-              className={INPUT_CLS}
-            />
-          </div>
-
-          {/* AI Analyst access toggle */}
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Portal Features
-            </label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={analystEnabled}
-              onClick={() => setAnalystEnabled((v) => !v)}
-              className="w-full flex items-center justify-between gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl border-2 border-transparent hover:border-primary/30 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${analystEnabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">AI Analyst access</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {analystEnabled
-                      ? "Client can chat with the AI Analyst in their portal."
-                      : "Disabled — client sees no Analyst nav item or page."}
-                  </p>
-                </div>
-              </div>
-              <span
-                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${analystEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-                aria-hidden="true"
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-category">Category</Label>
+              <Select
+                value={category || NONE}
+                onValueChange={(v) => setCategory(v === NONE ? "" : v)}
               >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${analystEnabled ? "translate-x-5" : "translate-x-0.5"}`}
-                />
-              </span>
-            </button>
-          </div>
+                <SelectTrigger id="edit-client-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {CATEGORIES.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                  {/* The API accepts any category text — show a stored one
+                      that isn't in the list instead of a blank field. */}
+                  {category && !(CATEGORIES as readonly string[]).includes(category) && (
+                    <SelectItem value={category}>{category}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Design Board access toggle + Figma link */}
-          <div className="space-y-2">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={designBoardEnabled}
-              onClick={() => setDesignBoardEnabled((v) => !v)}
-              className="w-full flex items-center justify-between gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl border-2 border-transparent hover:border-primary/30 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${designBoardEnabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
-                  <Frame className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">Design Board access</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {designBoardEnabled
-                      ? "Client sees an embedded Figma board — once a link is set below."
-                      : "Disabled — client sees no Design Board nav item or page."}
-                  </p>
-                </div>
-              </div>
-              <span
-                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${designBoardEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-                aria-hidden="true"
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${designBoardEnabled ? "translate-x-5" : "translate-x-0.5"}`}
-                />
-              </span>
-            </button>
-            {designBoardEnabled && (
-              <div>
-                <input
-                  type="url"
-                  value={designBoardUrl}
-                  onChange={(e) => setDesignBoardUrl(e.target.value)}
-                  placeholder="https://www.figma.com/design/…"
-                  className={INPUT_CLS}
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Paste a Figma share link (set the file to “Anyone with the link”). Leave empty to hide the board.
+            {canManage && workspaces.length > 1 && (
+              <div className="grid gap-2">
+                <Label htmlFor="edit-client-workspace">Workspace</Label>
+                <Select value={workspace} onValueChange={(v) => setWorkspace(v)}>
+                  <SelectTrigger id="edit-client-workspace">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((w) => (
+                      <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Moving a client changes which team&apos;s Client Directory it appears in.
                 </p>
               </div>
             )}
-          </div>
 
-          {/* Logo */}
-          <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-              Logo
-            </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setLogoPreview(URL.createObjectURL(file));
-                  setLogoRemoved(false);
-                }
-              }}
-            />
-            {logoPreview ? (
-              <div className="flex items-center gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl">
-                <img src={logoPreview} alt="New logo" className="h-10 w-10 object-contain rounded-lg" />
-                <span className="text-xs text-muted-foreground flex-1 truncate">New logo selected</span>
-                <button
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-status">Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as UserStatus)}>
+                <SelectTrigger id="edit-client-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="onboarding">Onboarding</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-book">Book</Label>
+              <Select value={book} onValueChange={(v) => setBook(v as ClientBook)}>
+                <SelectTrigger id="edit-client-book">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BOOK_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {book === "pepads" && (
+                <p className="text-xs text-muted-foreground">
+                  PepAds clients are billed manually — the computed re-bill schedule and its
+                  alerts don&apos;t apply; set billing status &amp; next re-bill on the row.
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-client-website">Website</Label>
+              <Input
+                id="edit-client-website"
+                type="text"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="clientsite.com"
+              />
+            </div>
+
+            {/* AI Analyst access toggle */}
+            <div className="grid gap-2">
+              <Label>Portal Features</Label>
+              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl bg-muted/50 p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Sparkles className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">AI Analyst access</p>
+                    <p className="text-xs text-muted-foreground">
+                      {analystEnabled
+                        ? "Client can chat with the AI Analyst in their portal."
+                        : "Disabled — client sees no Analyst nav item or page."}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={analystEnabled}
+                  onCheckedChange={(v) => setAnalystEnabled(v)}
+                  aria-label="AI Analyst access"
+                />
+              </label>
+            </div>
+
+            {/* Design Board access toggle + Figma link */}
+            <div className="space-y-2">
+              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl bg-muted/50 p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Frame className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Design Board access</p>
+                    <p className="text-xs text-muted-foreground">
+                      {designBoardEnabled
+                        ? "Client sees an embedded Figma board — once a link is set below."
+                        : "Disabled — client sees no Design Board nav item or page."}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={designBoardEnabled}
+                  onCheckedChange={(v) => setDesignBoardEnabled(v)}
+                  aria-label="Design Board access"
+                />
+              </label>
+              {designBoardEnabled && (
+                <div className="grid gap-2">
+                  <Input
+                    type="url"
+                    value={designBoardUrl}
+                    onChange={(e) => setDesignBoardUrl(e.target.value)}
+                    placeholder="https://www.figma.com/design/…"
+                    aria-label="Design Board Figma link"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Paste a Figma share link (set the file to “Anyone with the link”). Leave empty to hide the board.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Logo */}
+            <div className="grid gap-2">
+              <Label>Logo</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setLogoPreview(URL.createObjectURL(file));
+                    setLogoRemoved(false);
+                  }
+                }}
+              />
+              {logoPreview ? (
+                <div className="flex items-center gap-3 rounded-2xl bg-muted/50 p-3">
+                  <img src={logoPreview} alt="New logo" className="size-10 rounded-xl object-contain" />
+                  <span className="flex-1 truncate text-xs text-muted-foreground">New logo selected</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Discard new logo"
+                    onClick={() => {
+                      setLogoPreview(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              ) : client.logoPath && !logoRemoved ? (
+                <div className="flex items-center gap-3 rounded-2xl bg-muted/50 p-3">
+                  <img src={client.logoPath} alt="Current logo" className="size-10 rounded-xl object-contain" />
+                  <span className="flex-1 text-xs text-muted-foreground">Current logo</span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="xs"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setLogoRemoved(true)}
+                    title="Remove logo"
+                    aria-label="Remove logo"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ) : (
+                <Button
                   type="button"
-                  onClick={() => {
-                    setLogoPreview(null);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className="p-1 hover:bg-muted rounded-lg transition-colors shrink-0"
-                >
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              </div>
-            ) : client.logoPath && !logoRemoved ? (
-              <div className="flex items-center gap-3 p-3 bg-muted/40 dark:bg-white/5 rounded-xl">
-                <img src={client.logoPath} alt="Current logo" className="h-10 w-10 object-contain rounded-lg" />
-                <span className="text-xs text-muted-foreground flex-1">Current logo</span>
-                <button
-                  type="button"
+                  variant="outline"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-primary hover:underline shrink-0"
+                  className="w-full border-dashed text-muted-foreground"
                 >
-                  Replace
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLogoRemoved(true)}
-                  className="p-1 hover:bg-destructive/10 rounded-lg transition-colors shrink-0"
-                  title="Remove logo"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
+                  <Upload />
+                  {logoRemoved ? "Upload new logo" : "Upload logo"}
+                </Button>
+              )}
+            </div>
+
+            {!client.email && (
+              <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
+                This client has no email set. They cannot log in to the portal until an email is added.
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-muted/40 dark:bg-white/5 border-2 border-dashed border-border/50 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-              >
-                <Upload className="h-4 w-4" />
-                {logoRemoved ? "Upload new logo" : "Upload logo"}
-              </button>
+            )}
+
+            {error && (
+              <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
+                {error}
+              </div>
             )}
           </div>
 
-          {!client.email && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                This client has no email set. They cannot log in to the portal until an email is added.
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isPending}
-            className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 ac-gradient"
-          >
-            {isPending ? "Saving..." : "Save Changes"}
-          </button>
+          <div className="shrink-0 px-6 pb-6 pt-2">
+            <Button type="submit" disabled={isPending} className="w-full">
+              {isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

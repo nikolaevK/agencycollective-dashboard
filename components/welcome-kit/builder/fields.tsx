@@ -11,7 +11,25 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ICON_OPTIONS, resolveIcon } from "@/components/welcome-kit/icons";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select as KitSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { move, removeAt, replaceAt } from "./blocks";
+
+// Radix SelectItem can't hold "" — an empty option value maps to this.
+const NONE = "__none__";
+
+/** Ghost icon button tinted red on hover — the remove control. */
+const removeBtnCls = "text-muted-foreground hover:bg-destructive/10 hover:text-destructive";
 
 /* ------------------------------------------------------------------ */
 /*  Basic inputs                                                       */
@@ -29,7 +47,7 @@ export function Labeled({
   return (
     <label className={cn("block", className)}>
       {label && (
-        <span className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+        <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
           {label}
         </span>
       )}
@@ -37,9 +55,6 @@ export function Labeled({
     </label>
   );
 }
-
-const inputCls =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40";
 
 export function TextInput({
   label,
@@ -54,12 +69,11 @@ export function TextInput({
 }) {
   return (
     <Labeled label={label}>
-      <input
+      <Input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={inputCls}
       />
     </Labeled>
   );
@@ -80,12 +94,12 @@ export function TextArea({
 }) {
   return (
     <Labeled label={label}>
-      <textarea
+      <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className={cn(inputCls, "resize-y leading-relaxed")}
+        className="min-h-0 resize-y leading-relaxed"
       />
     </Labeled>
   );
@@ -104,17 +118,21 @@ export function Select<T extends string>({
 }) {
   return (
     <Labeled label={label}>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as T)}
-        className={cn(inputCls, "cursor-pointer")}
+      <KitSelect
+        value={value === "" ? NONE : value}
+        onValueChange={(v) => onChange((v === NONE ? "" : v) as T)}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value === "" ? NONE : o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </KitSelect>
     </Labeled>
   );
 }
@@ -129,26 +147,10 @@ export function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className="flex items-center gap-2 py-1.5 min-h-[2.25rem] text-sm font-medium text-foreground"
-    >
-      <span
-        className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-          checked ? "bg-primary" : "bg-muted-foreground/30"
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-            checked && "translate-x-4"
-          )}
-        />
-      </span>
+    <label className="flex min-h-9 w-fit cursor-pointer items-center gap-2 py-1.5 text-sm font-medium text-foreground">
+      <Switch checked={checked} onCheckedChange={(v) => onChange(v)} />
       {label}
-    </button>
+    </label>
   );
 }
 
@@ -176,31 +178,37 @@ export function IconPicker({
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className={cn(inputCls, "flex items-center gap-2 text-left")}
+          className="flex h-9 w-full min-w-0 items-center gap-2 rounded-3xl border border-transparent bg-input/50 px-3 text-left text-sm outline-none transition-[color,box-shadow,background-color] hover:bg-input/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
         >
-          <Active className="h-4 w-4 text-primary shrink-0" />
-          <span className="text-muted-foreground">{open ? "Done" : "Choose icon"}</span>
+          <Active className="size-4 shrink-0 text-foreground" />
+          <span className="truncate text-muted-foreground">{open ? "Done" : "Choose icon"}</span>
         </button>
         {open && (
-          <div className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1 p-2 rounded-lg border border-border bg-popover max-h-48 overflow-y-auto">
+          <div className="mt-1.5 grid max-h-48 grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1 overflow-y-auto rounded-2xl bg-popover p-2 shadow-sm ring-1 ring-foreground/5 dark:ring-foreground/10">
             {ICON_OPTIONS.map((opt) => {
               const I = resolveIcon(opt.key);
+              const selected = value === opt.key;
               return (
-                <button
+                <Button
                   key={opt.key}
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   title={opt.label}
+                  aria-label={opt.label}
+                  aria-pressed={selected}
                   onClick={() => {
                     onChange(opt.key);
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex items-center justify-center h-8 rounded hover:bg-accent transition-colors",
-                    value === opt.key && "bg-primary/15 text-primary"
+                    "w-full rounded-xl",
+                    selected &&
+                      "bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground dark:hover:bg-primary/80"
                   )}
                 >
-                  <I className="h-4 w-4" />
-                </button>
+                  <I />
+                </Button>
               );
             })}
           </div>
@@ -229,25 +237,41 @@ export function MoveControls({
   canDown: boolean;
   removeLabel?: string;
 }) {
-  const btn =
-    "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <div className="flex items-center gap-0.5">
-      <button type="button" onClick={onUp} disabled={!canUp} className={btn} aria-label="Move up">
-        <ArrowUp className="h-3.5 w-3.5" />
-      </button>
-      <button type="button" onClick={onDown} disabled={!canDown} className={btn} aria-label="Move down">
-        <ArrowDown className="h-3.5 w-3.5" />
-      </button>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={onUp}
+        disabled={!canUp}
+        className="text-muted-foreground"
+        aria-label="Move up"
+      >
+        <ArrowUp />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={onDown}
+        disabled={!canDown}
+        className="text-muted-foreground"
+        aria-label="Move down"
+      >
+        <ArrowDown />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={onRemove}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-600 transition-colors"
+        className={removeBtnCls}
         aria-label={removeLabel}
         title={removeLabel}
       >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+        <Trash2 />
+      </Button>
     </div>
   );
 }
@@ -274,35 +298,35 @@ export function CollapsibleCard({
   tone?: "default" | "muted";
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div
-      className={cn(
-        "rounded-xl border border-border/70",
-        tone === "muted" ? "bg-muted/30" : "bg-card"
-      )}
-    >
-      <div className="flex items-center gap-2 p-3">
+  const muted = tone === "muted";
+  const inner = (
+    <>
+      <div className={cn("flex items-center gap-2", muted ? "p-2 pl-3" : "p-3 pl-4")}>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex flex-1 items-center gap-2 min-w-0 text-left"
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
         >
-          <span className="text-muted-foreground shrink-0">
-            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          <span className="shrink-0 text-muted-foreground">
+            {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </span>
-          {icon && <span className="shrink-0 text-primary">{icon}</span>}
+          {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
           <span className="min-w-0">
-            <span className="block text-sm font-semibold text-foreground truncate">{title}</span>
+            <span className="block truncate text-sm font-medium text-foreground">{title}</span>
             {subtitle && (
-              <span className="block text-[11px] text-muted-foreground truncate">{subtitle}</span>
+              <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
             )}
           </span>
         </button>
         {controls && <div className="shrink-0">{controls}</div>}
       </div>
-      {open && <div className="border-t border-border/60 p-3 space-y-3">{children}</div>}
-    </div>
+      {open && (
+        <div className={cn("space-y-3 border-t", muted ? "p-3" : "p-4")}>{children}</div>
+      )}
+    </>
   );
+  return muted ? <div className="rounded-2xl bg-muted/50">{inner}</div> : <Card>{inner}</Card>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -326,50 +350,58 @@ export function StringListEditor({
     <Labeled label={label}>
       <div className="space-y-2">
         {items.map((item, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <input
+          <div key={i} className="flex items-center gap-0.5">
+            <Input
               type="text"
               value={item}
               onChange={(e) => onChange(replaceAt(items, i, e.target.value))}
               placeholder={placeholder}
-              className={inputCls}
+              className="mr-1"
             />
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onChange(move(items, i, -1))}
               disabled={i === 0}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+              className="text-muted-foreground"
               aria-label="Move up"
             >
-              <ArrowUp className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <ArrowUp />
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onChange(move(items, i, 1))}
               disabled={i === items.length - 1}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+              className="text-muted-foreground"
               aria-label="Move down"
             >
-              <ArrowDown className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <ArrowDown />
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onChange(removeAt(items, i))}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
+              className={removeBtnCls}
               aria-label="Remove"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+              <Trash2 />
+            </Button>
           </div>
         ))}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="xs"
           onClick={() => onChange([...items, ""])}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+          className="text-muted-foreground"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus />
           {addLabel}
-        </button>
+        </Button>
       </div>
     </Labeled>
   );

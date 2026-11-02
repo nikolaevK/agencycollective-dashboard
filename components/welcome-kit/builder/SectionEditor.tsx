@@ -1,48 +1,48 @@
 "use client";
 
-import { useState } from "react";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveIcon } from "@/components/welcome-kit/icons";
+import { badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { WkBlock, WkBlockType, WkSection } from "@/lib/welcomeKit";
 import { CollapsibleCard, IconPicker, MoveControls, TextInput } from "./fields";
 import { BLOCK_TYPES, move, newBlock, removeAt, replaceAt } from "./blocks";
 import { BLOCK_TYPE_LABEL, BlockEditor, blockSummary } from "./BlockEditor";
 
 function AddBlockMenu({ onAdd }: { onAdd: (type: WkBlockType) => void }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add block
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute z-20 mt-1 w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-border bg-popover p-1 shadow-xl">
-            {BLOCK_TYPES.map((b) => (
-              <button
-                key={b.type}
-                type="button"
-                onClick={() => {
-                  onAdd(b.type);
-                  setOpen(false);
-                }}
-                className="block w-full rounded-md px-3 py-2 text-left hover:bg-accent transition-colors"
-              >
-                <span className="block text-sm font-semibold text-foreground">{b.label}</span>
-                <span className="block text-[11px] text-muted-foreground">{b.hint}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-dashed text-muted-foreground"
+        >
+          <Plus />
+          Add block
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[min(16rem,calc(100vw-2rem))]">
+        {BLOCK_TYPES.map((b) => (
+          <DropdownMenuItem
+            key={b.type}
+            onSelect={() => onAdd(b.type)}
+            className="flex-col items-start gap-0.5"
+          >
+            <span className="block text-sm font-medium text-foreground">{b.label}</span>
+            <span className="block text-xs font-normal text-muted-foreground">{b.hint}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -71,7 +71,7 @@ export function SectionEditor({
 
   return (
     <CollapsibleCard
-      icon={<Icon className="h-4 w-4" />}
+      icon={<Icon className="size-4" />}
       title={section.title || "Untitled section"}
       subtitle={section.num || `${blocks.length} block${blocks.length === 1 ? "" : "s"}`}
       controls={
@@ -116,7 +116,7 @@ export function SectionEditor({
             tone="muted"
             title={
               <span className="flex items-center gap-2 min-w-0">
-                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                <span className={cn(badgeVariants({ variant: "outline" }), "shrink-0")}>
                   {BLOCK_TYPE_LABEL[block.type]}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground">

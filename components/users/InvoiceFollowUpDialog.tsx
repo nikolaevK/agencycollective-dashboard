@@ -19,6 +19,23 @@ import { cn } from "@/lib/utils";
 import { formatCentsExact } from "@/lib/format";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { CcChipsInput, useCcField } from "@/components/invoice/CcChipsInput";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { isValidEmail } from "@/lib/invoice/email";
 import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import {
@@ -31,10 +48,14 @@ import {
 } from "@/lib/invoiceFollowUpRules";
 import { formatDate } from "./format";
 
-const FIELD =
-  "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20";
-const LABEL =
-  "text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block";
+// Radix SelectItem can't hold "" — the default (no style) option maps to this.
+const DEFAULT_STYLE = "__default__";
+
+const LOG_CHANNELS: { value: Exclude<FollowUpChannel, "email">; label: string }[] = [
+  { value: "call", label: "Call" },
+  { value: "message", label: "Message (text, Slack, WhatsApp…)" },
+  { value: "note", label: "Other / note" },
+];
 
 /** The slice of a sent invoice (client re-bill OR ad-account) a follow-up needs. */
 export interface FollowUpInvoice {
@@ -93,8 +114,8 @@ export function FollowUpSummaryText({
   return (
     <p
       className={cn(
-        "text-[11px]",
-        quiet ? "font-medium text-amber-600 dark:text-amber-400" : "text-muted-foreground",
+        "text-xs",
+        quiet ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground",
         className
       )}
     >
@@ -122,18 +143,17 @@ export function FollowUpButton({
   className?: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       onClick={onClick}
       title="Send a reminder (re-attaches the original PDF) or log a call/message"
-      className={cn(
-        "flex h-9 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-violet-500/40 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400 shrink-0 sm:h-auto",
-        className
-      )}
+      className={cn("h-9 shrink-0 text-xs sm:h-8", className)}
     >
-      <BellRing className="h-3 w-3" />
+      <BellRing />
       Follow up
-    </button>
+    </Button>
   );
 }
 
@@ -298,109 +318,102 @@ export function InvoiceFollowUpDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
       onClick={(e) => {
         // Rendered inside other drawers — don't let the click close them too.
         e.stopPropagation();
         requestClose();
       }}
     >
+      <div className={dialogOverlayClass} aria-hidden />
       <div
-        className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border/50 bg-card shadow-xl"
+        className={cn(dialogPanelClass, "relative z-50 flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden")}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="follow-up-title"
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border/50 bg-card px-5 py-4">
-          <div className="min-w-0">
-            <h2 id="follow-up-title" className="text-base font-bold text-foreground truncate">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b px-6 py-4">
+          <div className="min-w-0 space-y-1">
+            <h2 id="follow-up-title" className="truncate text-base font-medium leading-snug">
               Follow up · {subjectName}
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-sm text-muted-foreground">
               {invoice.invoiceNumber}
               {invoice.amountCents > 0 && ` · ${formatCentsExact(invoice.amountCents)}`}
               {" · "}sent {formatDate(invoice.sentAt)} · cycle {formatDate(invoice.cycleAnchor)}
               {invoice.status === "unpaid" && " · marked unpaid"}
             </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground">
               The original invoice stays as sent — this doesn&rsquo;t create or replace an invoice.
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
             disabled={submitting}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
             aria-label="Close"
+            className="shrink-0 bg-secondary"
           >
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
+            <X />
+          </Button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-5">
           {readOnly && (
-            <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <p className="rounded-2xl bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
               This invoice is {invoice.status} — follow-ups are closed. Its history is kept below.
             </p>
           )}
           {!readOnly && (
             <>
               {/* Mode switch */}
-              <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-1" role="tablist">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={mode}
+                onValueChange={(v) => {
+                  // Re-clicking the active mode still clears the messages.
+                  setMode((v || mode) as "email" | "log");
+                  setError(null);
+                  setSuccess(null);
+                }}
+                className="grid w-full grid-cols-2"
+              >
                 {(
                   [
                     ["email", "Email reminder", Mail],
                     ["log", "Log a follow-up", StickyNote],
                   ] as const
                 ).map(([value, label, Icon]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === value}
-                    onClick={() => {
-                      setMode(value);
-                      setError(null);
-                      setSuccess(null);
-                    }}
-                    className={cn(
-                      "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                      mode === value
-                        ? "bg-card text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
+                  <ToggleGroupItem key={value} value={value} className="w-full">
+                    <Icon />
                     {label}
-                  </button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
 
               {mode === "email" ? (
                 <>
-                  <div>
-                    <label className={LABEL} htmlFor="follow-up-to">
-                      To
-                    </label>
-                    <input
+                  <div className="grid gap-2">
+                    <Label htmlFor="follow-up-to">To</Label>
+                    <Input
                       id="follow-up-to"
                       type="email"
-                      className={FIELD}
                       value={to}
                       onChange={(e) => setTo(e.target.value)}
                       placeholder="client@example.com"
                       disabled={submitting}
                     />
                   </div>
-                  <div>
-                    <label className={LABEL} htmlFor="follow-up-cc">
-                      CC
-                    </label>
+                  <div className="grid gap-2">
+                    <Label htmlFor="follow-up-cc">CC</Label>
                     <CcChipsInput field={cc} exclude={[to]} id="follow-up-cc" disabled={submitting} />
                     {(invoice.ccEmails?.length ?? 0) > 0 && (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         Pre-filled with the original invoice&rsquo;s CCs.
                       </p>
                     )}
@@ -408,47 +421,48 @@ export function InvoiceFollowUpDialog({
                   {/* Also shown when the original style was deleted — even if no
                       profiles remain — so the admin can pick the default. */}
                   {(profiles.length > 0 || originalStyleMissing) && (
-                    <div>
-                      <label className={LABEL} htmlFor="follow-up-style">
-                        Email style
-                      </label>
-                      <select
-                        id="follow-up-style"
-                        className={FIELD}
-                        value={styleId ?? ""}
+                    <div className="grid gap-2">
+                      <Label htmlFor="follow-up-style">Email style</Label>
+                      <Select
+                        value={styleId ?? DEFAULT_STYLE}
                         disabled={submitting}
-                        onChange={(e) => {
-                          setStyleId(e.target.value || null);
+                        onValueChange={(v) => {
+                          setStyleId(v === DEFAULT_STYLE ? null : v);
                           setStyleTouched(true);
                         }}
                       >
-                        {originalStyleMissing && styleId !== null && (
-                          <option value={styleId} disabled>
-                            Original style (deleted) — choose another
-                          </option>
-                        )}
-                        <option value="">Agency Collective (default)</option>
-                        {profiles.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger id="follow-up-style">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {originalStyleMissing && styleId !== null && (
+                            <SelectItem value={styleId} disabled>
+                              Original style (deleted) — choose another
+                            </SelectItem>
+                          )}
+                          <SelectItem value={DEFAULT_STYLE}>Agency Collective (default)</SelectItem>
+                          {profiles.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {originalStyleMissing && (
-                        <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
                           The style this invoice was sent with no longer exists — choose one.
                         </p>
                       )}
                     </div>
                   )}
-                  <div>
-                    <label className={LABEL} htmlFor="follow-up-message">
+                  <div className="grid gap-2">
+                    <Label htmlFor="follow-up-message">
                       Personal note{" "}
-                      <span className="font-normal lowercase text-muted-foreground/70">(optional)</span>
-                    </label>
-                    <textarea
+                      <span className="font-normal text-muted-foreground">(optional)</span>
+                    </Label>
+                    <Textarea
                       id="follow-up-message"
-                      className={cn(FIELD, "resize-y")}
+                      className="resize-y"
                       rows={4}
                       maxLength={FOLLOW_UP_MESSAGE_MAX}
                       value={message}
@@ -457,59 +471,58 @@ export function InvoiceFollowUpDialog({
                       disabled={submitting}
                     />
                   </div>
-                  <label
-                    className={cn(
-                      "flex items-start gap-2 text-sm",
-                      hasPdf ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
+                  <div className="flex items-start gap-2.5">
+                    <Checkbox
+                      id="follow-up-attach-pdf"
                       className="mt-0.5"
                       checked={hasPdf && attachPdf}
                       disabled={!hasPdf || submitting}
-                      onChange={(e) => setAttachPdf(e.target.checked)}
+                      onCheckedChange={(v) => setAttachPdf(v === true)}
                     />
-                    <span>
-                      <span className="inline-flex items-center gap-1 font-medium">
-                        <Paperclip className="h-3.5 w-3.5" />
+                    <div className="grid gap-1">
+                      <Label
+                        htmlFor="follow-up-attach-pdf"
+                        className={cn("gap-1.5 leading-snug", !hasPdf && "text-muted-foreground")}
+                      >
+                        <Paperclip className="size-3.5" />
                         Attach the original invoice PDF
-                      </span>
+                      </Label>
                       {!hasPdf && (
-                        <span className="block text-[11px]">
+                        <p className="text-xs text-muted-foreground">
                           No PDF is on file for this invoice — the reminder references its number and amount.
-                        </span>
+                        </p>
                       )}
-                    </span>
-                  </label>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <>
-                  <div>
-                    <label className={LABEL} htmlFor="follow-up-channel">
-                      How did you follow up?
-                    </label>
-                    <select
+                  <div className="grid gap-3">
+                    <Label id="follow-up-channel-label">How did you follow up?</Label>
+                    <RadioGroup
                       id="follow-up-channel"
-                      className={FIELD}
+                      aria-labelledby="follow-up-channel-label"
                       value={logChannel}
                       disabled={submitting}
-                      onChange={(e) =>
-                        setLogChannel(e.target.value as Exclude<FollowUpChannel, "email">)
+                      onValueChange={(v) =>
+                        setLogChannel(v as Exclude<FollowUpChannel, "email">)
                       }
                     >
-                      <option value="call">Call</option>
-                      <option value="message">Message (text, Slack, WhatsApp…)</option>
-                      <option value="note">Other / note</option>
-                    </select>
+                      {LOG_CHANNELS.map((c) => (
+                        <div key={c.value} className="flex items-center gap-2.5">
+                          <RadioGroupItem value={c.value} id={`follow-up-channel-${c.value}`} />
+                          <Label htmlFor={`follow-up-channel-${c.value}`} className="font-normal">
+                            {c.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
                   </div>
-                  <div>
-                    <label className={LABEL} htmlFor="follow-up-note">
-                      Note
-                    </label>
-                    <textarea
+                  <div className="grid gap-2">
+                    <Label htmlFor="follow-up-note">Note</Label>
+                    <Textarea
                       id="follow-up-note"
-                      className={cn(FIELD, "resize-y")}
+                      className="resize-y"
                       rows={4}
                       maxLength={FOLLOW_UP_MESSAGE_MAX}
                       value={note}
@@ -517,7 +530,7 @@ export function InvoiceFollowUpDialog({
                       placeholder="e.g. Spoke with Sam — payment goes out Friday via wire."
                       disabled={submitting}
                     />
-                    <p className="mt-1 text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Logged only — nothing is sent to the client.
                     </p>
                   </div>
@@ -525,13 +538,13 @@ export function InvoiceFollowUpDialog({
               )}
 
               {error && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
                   {error}
                 </div>
               )}
               {success && (
-                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                <div className={cn("flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm", badgeTone.success)}>
+                  <CheckCircle2 className="size-4 shrink-0" />
                   {success}
                 </div>
               )}
@@ -539,52 +552,57 @@ export function InvoiceFollowUpDialog({
           )}
 
           {/* History */}
-          <div className={cn(!readOnly && "border-t border-border/50 pt-4")}>
-            <p className={LABEL}>History</p>
+          <div className={cn("space-y-3", !readOnly && "border-t pt-4")}>
+            <p className="text-sm font-medium">History</p>
             {historyLoading ? (
               <div className="space-y-2">
                 {[1, 2].map((i) => (
-                  <div key={i} className="h-10 w-full animate-pulse rounded-lg bg-muted/60" />
+                  <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
             ) : historyError && !history ? (
-              <p className="flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
                 Couldn&rsquo;t load the follow-up history.
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="xs"
                   onClick={() => refetchHistory()}
                   disabled={historyFetching}
-                  className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-foreground disabled:opacity-50"
                 >
-                  <RotateCw className="h-3 w-3" />
+                  <RotateCw />
                   Retry
-                </button>
-              </p>
+                </Button>
+              </div>
             ) : (
-              <ol className="space-y-2">
+              <ol>
                 {(history ?? []).map((f) => {
                   const meta = CHANNEL_META[f.channel] ?? CHANNEL_META.note;
                   const Icon = meta.icon;
                   return (
-                    <li key={f.id} className="flex gap-2.5 rounded-lg border border-border/50 px-3 py-2">
-                      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-foreground">
+                    <li key={f.id} className="relative flex gap-3 pb-4">
+                      {/* Timeline connector down to the next entry. */}
+                      <span aria-hidden className="absolute bottom-0 left-3 top-7 w-px bg-border" />
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Icon className="size-3.5 text-muted-foreground" />
+                      </span>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="text-sm font-medium leading-5 text-foreground">
                           {meta.label}
-                          <span className="ml-1.5 font-normal text-muted-foreground">
+                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                             {formatDate(f.createdAt)}
                             {f.createdByName ? ` · ${f.createdByName}` : ""}
                           </span>
                         </p>
                         {f.channel === "email" && (
-                          <p className="text-[11px] text-muted-foreground break-words">
+                          <p className="break-words text-xs text-muted-foreground">
                             to {f.recipientEmail}
                             {f.ccEmails.length > 0 && ` · cc ${f.ccEmails.join(", ")}`}
                             {f.attachedPdf ? " · PDF attached" : " · no attachment"}
                           </p>
                         )}
                         {f.message && (
-                          <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-foreground/90">
+                          <p className="mt-1 whitespace-pre-wrap break-words rounded-2xl bg-muted/50 px-3 py-2 text-sm text-foreground/90">
                             {f.message}
                           </p>
                         )}
@@ -592,10 +610,12 @@ export function InvoiceFollowUpDialog({
                     </li>
                   );
                 })}
-                <li className="flex gap-2.5 rounded-lg border border-dashed border-border/60 px-3 py-2">
-                  <Send className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">Invoice sent</span>{" "}
+                <li className="flex gap-3">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed">
+                    <Send className="size-3.5 text-muted-foreground" />
+                  </span>
+                  <p className="pt-0.5 text-sm leading-5 text-muted-foreground">
+                    <span className="font-medium text-foreground">Invoice sent</span>{" "}
                     {formatDate(invoice.sentAt)}
                     {invoice.recipientEmail ? ` to ${invoice.recipientEmail}` : ""}
                   </p>
@@ -606,28 +626,27 @@ export function InvoiceFollowUpDialog({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border/50 bg-card px-5 py-3">
-          <button
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-4">
+          <Button
             type="button"
+            variant="outline"
             onClick={requestClose}
             disabled={submitting}
-            className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
           >
             Close
-          </button>
+          </Button>
           {!readOnly && (
-            <button
+            <Button
               type="button"
               onClick={submit}
               disabled={submitting}
-              className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
             >
               {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : mode === "email" ? (
-                <Mail className="h-4 w-4" />
+                <Mail />
               ) : (
-                <StickyNote className="h-4 w-4" />
+                <StickyNote />
               )}
               {mode === "email"
                 ? submitting
@@ -636,7 +655,7 @@ export function InvoiceFollowUpDialog({
                 : submitting
                 ? "Saving…"
                 : "Log follow-up"}
-            </button>
+            </Button>
           )}
         </div>
       </div>
