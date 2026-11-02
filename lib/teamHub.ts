@@ -1,6 +1,7 @@
 import {
   buildClientDirectory,
   filterRowsByWorkspace,
+  getClientRevenueTrends,
   type ClientDirectoryRow,
 } from "./clientDirectory";
 import { readAdmins, findAdmin } from "./admins";
@@ -30,6 +31,7 @@ import {
   getGoalsCentsByAdmin,
   getGoalCents,
   listGoalHistory,
+  listGoalRowsThrough,
   listUnrosteredAssignees,
   type TeamMemberRecord,
   type UnrosteredAssignee,
@@ -37,9 +39,19 @@ import {
 import {
   taskStatsByAdmin,
   emptyTaskStats,
+  listTaskTimestamps,
   type TaskStats,
 } from "./teamTasks";
-import { getMonthRebillRevenueCents } from "./payouts";
+import { getMonthRebillRevenueCents, getRebillRevenueByMonth } from "./payouts";
+import { trendMonths } from "./clientTrendSeries";
+import {
+  trendWeeks,
+  foldTaskWeeks,
+  carryForwardGoals,
+  sumAligned,
+  type MemberTrendSeries,
+  type TeamTrends,
+} from "./teamTrendSeries";
 import {
   unsolvedCountsByAdmin,
   runTeamSystemSweep,
@@ -578,6 +590,166 @@ export async function buildMemberHub(
     goalHistory,
     memberWorkspaces: memberAdmin ? workspaceMembershipOf(memberAdmin) : [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Trends — read-only history for the Team pages' trend lines and charts
+// (12 months of REBILL payouts + goals, 12 weeks of task throughput). Built
+// for exactly the members and clients the matching directory / hub payload
+// shows the viewer; nothing here feeds a rollup or a headline.
+// ---------------------------------------------------------------------------
+
+/** UTC "YYYY-MM-DD HH:MM:SS" → the business-timezone day it falls on. */
+function businessDayOfUtcStamp(stamp: string | null): string | null {
+  if (!stamp) return null;
+  const d = new Date(`${stamp.replace(" ", "T")}Z`);
+  return Number.isNaN(d.getTime()) ? null : businessTodayYmd(d);
+}
+
+async function trendSeriesOf(
+  members: TeamMemberRecord[],
+  rows: ClientDirectoryRow[],
+  viewerScope: WorkspaceScope,
+  /** The totals' re-billed headline is the whole-book Payout-DB aggregate. */
+  totalsWholeBook: boolean,
+  totalsClients: ClientDirectoryRow[]
+): Promise<TeamTrends> {
+  const today = businessTodayYmd();
+  const months = trendMonths(today.slice(0, 7));
+  const weeks = trendWeeks(today);
+  // Whole-book money is main-book only — never for an external scope (the
+  // headline follows the same rule in summarizeMember / buildTeamDirectory).
+  const external = isExternalScope(viewerScope);
+  const memberWholeBook = (m: TeamMemberRecord) => m.attribution === "book" && !external;
+  const adminIds = members.map((m) => m.adminId);
+  // created_at / completed_at are UTC; a day of slack covers the business-TZ
+  // offset at the window's first Monday (out-of-window days are dropped).
+  const sinceUtc = new Date(new Date(`${weeks[0]}T00:00:00Z`).getTime() - 86_400_000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+
+  const [clientSeries, wholeBook, goalRows, taskRows] = await Promise.all([
+    getClientRevenueTrends(viewerScope, months),
+    totalsWholeBook || members.some(memberWholeBook)
+      ? getRebillRevenueByMonth(months)
+      : Promise.resolve(null),
+    listGoalRowsThrough(adminIds, months[months.length - 1]),
+    listTaskTimestamps(adminIds, sinceUtc),
+  ]);
+
+  const seriesById = new Map(clientSeries.map((c) => [c.id, c] as const));
+  const sumOf = (key: "rebilled" | "billed", clients: ClientDirectoryRow[]) =>
+    sumAligned(
+      clients.map((r) => seriesById.get(r.id)?.[key] ?? []),
+      months.length
+    );
+  const rebilledOf = (clients: ClientDirectoryRow[]) => sumOf("rebilled", clients);
+
+  const series: MemberTrendSeries[] = members.map((m) => {
+    const clients = attributedClients(m, rows);
+    const tasks = foldTaskWeeks(
+      taskRows
+        .filter((t) => t.adminId === m.adminId)
+        .map((t) => ({
+          createdYmd: businessDayOfUtcStamp(t.createdAt),
+          completedYmd: businessDayOfUtcStamp(t.completedAt),
+        })),
+      weeks
+    );
+    return {
+      adminId: m.adminId,
+      rebilled: memberWholeBook(m) && wholeBook ? wholeBook : rebilledOf(clients),
+      billed: sumOf("billed", clients),
+      goals: carryForwardGoals(
+        goalRows.filter((g) => g.adminId === m.adminId),
+        months
+      ),
+      tasksCreated: tasks.created,
+      tasksCompleted: tasks.completed,
+    };
+  });
+
+  return {
+    months,
+    weeks,
+    members: series,
+    totals: {
+      rebilled: totalsWholeBook && wholeBook ? wholeBook : rebilledOf(totalsClients),
+      // Book MRR's population (active clients in view), never the whole DB.
+      billed: sumOf("billed", totalsClients),
+      goals: sumAligned(series.map((s) => s.goals), months.length),
+      tasksCreated: sumAligned(series.map((s) => s.tasksCreated), weeks.length),
+      tasksCompleted: sumAligned(series.map((s) => s.tasksCompleted), weeks.length),
+      wholeBook: totalsWholeBook && wholeBook !== null,
+    },
+  };
+}
+
+/**
+ * Trends for the Team overview — the same members and book rows that
+ * buildTeamDirectory(…, viewerScope, selfAdminId) shows this viewer.
+ */
+export async function buildTeamTrends(
+  viewerScope: WorkspaceScope = null,
+  selfAdminId: string | null = null
+): Promise<TeamTrends> {
+  const [allRows, allMembers] = await Promise.all([
+    getDirectoryRowsMemo(),
+    listTeamMembers(),
+  ]);
+  const rows = filterRowsByWorkspace(allRows, viewerScope);
+
+  // Mirrors buildTeamDirectory's member filter: self-only viewers get their
+  // own row; scoped viewers the members BELONGING to one of their books.
+  let members = allMembers;
+  if (selfAdminId !== null) {
+    members = allMembers.filter((m) => m.adminId === selfAdminId);
+  } else if (viewerScope !== null) {
+    const adminById = new Map((await readAdmins()).map((a) => [a.id, a] as const));
+    members = allMembers.filter((m) => {
+      const admin = adminById.get(m.adminId);
+      return admin ? scopesOverlap(viewerScope, workspaceMembershipOf(admin)) : false;
+    });
+  }
+
+  // Same totals population + whole-book rule as buildTeamDirectory's totals.
+  const totalsClients =
+    selfAdminId !== null
+      ? members.flatMap((m) => attributedClients(m, rows))
+      : rows.filter((r) => r.status === "active");
+  const totalsWholeBook =
+    !isExternalScope(viewerScope) &&
+    (selfAdminId === null || members.some((m) => m.attribution === "book"));
+
+  return trendSeriesOf(members, rows, viewerScope, totalsWholeBook, totalsClients);
+}
+
+/**
+ * Trends for one member hub (totals = that member). Null when the member
+ * isn't rostered or — for a scoped viewer — doesn't belong to one of their
+ * books (the same gate as buildMemberHub).
+ */
+export async function buildMemberTrends(
+  adminId: string,
+  viewerScope: WorkspaceScope = null
+): Promise<TeamTrends | null> {
+  const member = await getTeamMember(adminId);
+  if (!member) return null;
+  if (viewerScope !== null) {
+    const memberAdmin = await findAdmin(adminId);
+    if (!memberAdmin || !scopesOverlap(viewerScope, workspaceMembershipOf(memberAdmin))) {
+      return null;
+    }
+  }
+  const rows = filterRowsByWorkspace(await getDirectoryRowsMemo(), viewerScope);
+  return trendSeriesOf(
+    [member],
+    rows,
+    viewerScope,
+    member.attribution === "book" && !isExternalScope(viewerScope),
+    attributedClients(member, rows)
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,33 +1,119 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { X, UserPlus, Settings2, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CircleAlert,
+  DollarSign,
+  HeartPulse,
+  ListChecks,
+  ListTodo,
+  RefreshCcw,
+  Settings2,
+  UserPlus,
+  X,
+  Zap,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { classifyRebill, monthlyHeadline } from "@/lib/teamRebill";
 import { formatMoney, formatDate } from "@/components/users/format";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
+import { HEALTH_TONE, toneOf } from "@/components/users/rosterPresentation";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
-import { HEALTH_CHIP_CLS, FALLBACK_CHIP_CLS, CHIP_BASE } from "@/components/users/rosterPresentation";
-import { useTeamDirectory } from "./useTeamData";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useAdmin } from "@/components/providers/AdminProvider";
-import { RosterManageDialog } from "./RosterManageDialog";
+import { StatCard } from "@/components/overview/StatCard";
+import { SparklinePlaceholder } from "@/components/shared/SparklinePlaceholder";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
+import type { MetricSparkline as MetricSparklineType } from "@/components/shared/MetricSparkline";
+import { Badge, StatusBadge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useTeamDirectory, useTeamTrends } from "./useTeamData";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
+import { MemberAvatar } from "./TeamBits";
 import {
   TIMEFRAME_OPTIONS,
   TIMEFRAME_PHRASE,
   ATTRIBUTION_LABEL,
-  avatarTint,
   monthName,
+  shortMonthLabel,
+  weekOfLabel,
 } from "./presentation";
+import type { TeamTrends, MemberTrendSeries } from "@/lib/teamTrendSeries";
 import type {
   TeamDirectoryPayload,
   TeamMemberSummary,
   TeamClientSlice,
   TeamTimeframeValue,
 } from "./types";
+
+// Lazy: recharts only loads once a card draws a line / the Insights tab opens.
+const MetricSparkline = dynamic(
+  () => import("@/components/shared/MetricSparkline").then((m) => m.MetricSparkline),
+  { loading: () => <SparklinePlaceholder /> }
+);
+const TeamInsights = dynamic(() => import("./TeamInsights").then((m) => m.TeamInsights), {
+  loading: () => <Skeleton className="h-[380px] w-full rounded-3xl" />,
+});
+// Lazy: privileged-only, opened on click — its Selects and confirm dialog
+// stay out of the overview's first load.
+const RosterManageDialog = dynamic(
+  () => import("./RosterManageDialog").then((m) => m.RosterManageDialog),
+  { ssr: false }
+);
+// Lazy: only multi-book super / Admin Management viewers get the filter.
+const WorkspaceFilter = dynamic(() => import("./WorkspaceFilter").then((m) => m.WorkspaceFilter), {
+  ssr: false,
+  loading: () => <Skeleton className="h-9 w-40 rounded-3xl" />,
+});
+type CardTrend = Omit<React.ComponentProps<typeof MetricSparklineType>, "label">;
+
+// Same marks as the Payout Tracker / Client Directory: billed = chart-1,
+// re-bill = chart-4, done = chart-2.
+const BLUE = "hsl(var(--chart-1))";
+const MAGENTA = "hsl(var(--chart-4))";
+const GREEN = "hsl(var(--chart-2))";
+const asCount = (v: number) => String(v);
+
+/** Card trend lines from the trends payload (stable per payload — the
+ *  sparklines are memoized). */
+function rebilledTrend(t: TeamTrends, s: Pick<MemberTrendSeries, "rebilled">, goalCents: number): CardTrend {
+  return {
+    points: t.months.map((ym, i) => ({ label: shortMonthLabel(ym), value: s.rebilled[i] ?? 0 })),
+    color: MAGENTA,
+    format: formatMoney,
+    caption: "Last 12 months",
+    hint: "REBILL payouts",
+    reference: goalCents > 0 ? { value: goalCents, label: "Goal" } : undefined,
+  };
+}
+/** MRR has no history (it's the latest payout month, live) — like the Client
+ *  Directory's MRR card, the line is what was billed each month. */
+function billedTrend(t: TeamTrends, s: Pick<MemberTrendSeries, "billed">): CardTrend {
+  return {
+    points: t.months.map((ym, i) => ({ label: shortMonthLabel(ym), value: s.billed[i] ?? 0 })),
+    color: BLUE,
+    format: formatMoney,
+    caption: "Billed per month",
+    hint: "Payout DB",
+  };
+}
+function completedTrend(t: TeamTrends, s: Pick<MemberTrendSeries, "tasksCompleted">): CardTrend {
+  return {
+    points: t.weeks.map((w, i) => ({ label: weekOfLabel(w), value: s.tasksCompleted[i] ?? 0 })),
+    color: GREEN,
+    format: asCount,
+    caption: "Last 12 weeks",
+    hint: "Per week",
+  };
+}
 
 type DrillKind =
   | "mrr"
@@ -38,11 +124,14 @@ type DrillKind =
   | "overdue"
   | "actions";
 
+type HomeView = "members" | "insights";
+
 export function TeamHome() {
   const [timeframe, setTimeframe] = useState<TeamTimeframeValue>("week");
   const [drill, setDrill] = useState<DrillKind | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [managePreselect, setManagePreselect] = useState<string | null>(null);
+  const [view, setView] = useState<HomeView>("members");
   // Book filter — only rendered for admins who can see multiple workspaces
   // (super / Admin Management); "" = all books.
   const [workspace, setWorkspace] = useState("");
@@ -52,14 +141,27 @@ export function TeamHome() {
     timeframe,
     workspace
   );
+  // History for the trend lines + Insights — requested once the directory
+  // is in (it reuses that build's server-side memo of the Client Directory).
+  const trendsQuery = useTeamTrends(workspace, { enabled: !!data });
+  // A book switch keeps the previous book's trends as placeholder data —
+  // never draw those under the new book's numbers (placeholders instead).
+  const trends = trendsQuery.isPlaceholderData ? undefined : trendsQuery.data;
 
   if (isLoading) {
     // Non-privileged viewers usually get just their own card — skeleton
     // accordingly so the page doesn't collapse from three cards to one.
     const likelySelfOnly = !(admin.isSuper || admin.permissions.admin);
     return (
-      <div className="space-y-4">
-        {!likelySelfOnly && <div className="h-24 rounded-xl bg-muted/40 animate-pulse" />}
+      <div className="space-y-6">
+        <Skeleton className="h-9 w-72 rounded-3xl" />
+        {!likelySelfOnly && (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-32 rounded-3xl" />
+            ))}
+          </div>
+        )}
         <div
           className={cn(
             "grid grid-cols-1 gap-4",
@@ -67,7 +169,7 @@ export function TeamHome() {
           )}
         >
           {(likelySelfOnly ? [0] : [0, 1, 2]).map((i) => (
-            <div key={i} className="h-56 rounded-xl bg-muted/40 animate-pulse" />
+            <Skeleton key={i} className="h-80 rounded-3xl" />
           ))}
         </div>
       </div>
@@ -75,12 +177,10 @@ export function TeamHome() {
   }
   if (error || !data) {
     return (
-      <div className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">
-        Failed to load the Team directory.{" "}
-        <button className="text-primary font-semibold" onClick={() => refetch()}>
-          Retry
-        </button>
-      </div>
+      <QueryErrorState
+        title="Failed to load the Team directory."
+        onRetry={() => refetch()}
+      />
     );
   }
 
@@ -90,56 +190,73 @@ export function TeamHome() {
   const selfOnly = !!data.viewer.selfOnly;
   const notRostered = selfOnly && data.members.length === 0;
 
+  const memberGrid = (
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-4",
+        selfOnly ? "max-w-xl" : "lg:grid-cols-2 xl:grid-cols-3"
+      )}
+    >
+      {data.members.map((m) => (
+        <MemberCard
+          key={m.adminId}
+          member={m}
+          tfl={tfl}
+          timeframe={timeframe}
+          viewer={data.viewer}
+          trends={trends}
+          trendsLoading={trendsQuery.isLoading || (!trends && !trendsQuery.isError)}
+        />
+      ))}
+    </div>
+  );
+
   return (
     // The previous timeframe/book stays visible (dimmed) while the new one loads.
-    <div className={cn("space-y-5 transition-opacity", isPlaceholderData && "opacity-60")}>
-      {/* Header row: timeframe + roster manage */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+    <div className={cn("space-y-6 transition-opacity", isPlaceholderData && "opacity-60")}>
+      {/* Toolbar: timeframe + book filter + roster manage */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={timeframe}
+          // Radix reports "" when the active item is clicked again; a
+          // timeframe can't be deselected, so ignore that.
+          onValueChange={(v) => {
+            if (v) setTimeframe(v as TeamTimeframeValue);
+          }}
+          aria-label="Timeframe"
+        >
           {TIMEFRAME_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => setTimeframe(o.value)}
-              className={cn(
-                "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                timeframe === o.value
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
+            <ToggleGroupItem key={o.value} value={o.value} className="px-3">
               {o.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
+        </ToggleGroup>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {canManage && workspaces.length > 1 && (
-            <select
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
-              title="Filter the team overview to one workspace (book)"
-              className="h-9 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground focus:outline-none"
-            >
-              <option value="">All workspaces</option>
-              {workspaces.map((w) => (
-                <option key={w.value} value={w.value}>{w.label}</option>
-              ))}
-            </select>
+            <WorkspaceFilter value={workspace} onChange={setWorkspace} workspaces={workspaces} />
           )}
           {data.viewer.privileged && (
-            <button
-              type="button"
-              onClick={() => setManageOpen(true)}
-              className="inline-flex items-center gap-2 h-9 rounded-lg border border-border px-3.5 text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-            >
-              <Settings2 className="h-4 w-4" />
+            <Button type="button" variant="outline" onClick={() => setManageOpen(true)}>
+              <Settings2 />
               Manage roster
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      {!selfOnly && <KpiStrip data={data} tfl={tfl} drill={drill} onDrill={setDrill} />}
+      {!selfOnly && (
+        <KpiCards
+          data={data}
+          tfl={tfl}
+          drill={drill}
+          onDrill={setDrill}
+          trends={trends}
+          trendsLoading={!trends && !trendsQuery.isError}
+        />
+      )}
 
       {drill && !selfOnly && (
         <DrillPanel data={data} kind={drill} tfl={tfl} onClose={() => setDrill(null)} />
@@ -156,11 +273,11 @@ export function TeamHome() {
       )}
 
       {data.members.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center">
-          <p className="text-sm font-semibold text-foreground">
+        <Card className="flex flex-col items-center px-6 py-14 text-center">
+          <p className="text-sm font-medium">
             {notRostered ? "You're not on the Team roster yet" : "No team members yet"}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="mt-1 text-xs text-muted-foreground">
             {data.viewer.privileged
               ? "Add admins to the roster to build their hubs."
               : notRostered
@@ -168,33 +285,31 @@ export function TeamHome() {
                 : "An admin needs to set up the roster."}
           </p>
           {data.viewer.privileged && (
-            <button
-              type="button"
-              onClick={() => setManageOpen(true)}
-              className="mt-4 inline-flex items-center gap-2 h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <UserPlus className="h-4 w-4" />
+            <Button type="button" className="mt-4" onClick={() => setManageOpen(true)}>
+              <UserPlus />
               Add team member
-            </button>
+            </Button>
           )}
-        </div>
+        </Card>
+      ) : selfOnly ? (
+        memberGrid
       ) : (
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-4",
-            selfOnly ? "max-w-xl" : "lg:grid-cols-2 xl:grid-cols-3"
-          )}
-        >
-          {data.members.map((m) => (
-            <MemberCard
-              key={m.adminId}
-              member={m}
-              tfl={tfl}
-              timeframe={timeframe}
-              viewer={data.viewer}
-            />
-          ))}
-        </div>
+        <Tabs value={view} onValueChange={(v) => setView(v as HomeView)} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="members">
+              Members
+              <span className="text-xs tabular-nums text-muted-foreground">{data.members.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="insights">Insights</TabsTrigger>
+          </TabsList>
+          {/* Panels inherit the page's type (TabsContent defaults to text-sm). */}
+          <TabsContent value="members" className="text-[length:inherit] leading-[inherit]">
+            {memberGrid}
+          </TabsContent>
+          <TabsContent value="insights" className="text-[length:inherit] leading-[inherit]">
+            <TeamInsights data={data} trends={trends} trendsError={trendsQuery.isError} />
+          </TabsContent>
+        </Tabs>
       )}
 
       {manageOpen && (
@@ -211,126 +326,162 @@ export function TeamHome() {
   );
 }
 
-/* ── KPI strip ─────────────────────────────────────────────────────────── */
+/* ── KPI cards ─────────────────────────────────────────────────────────── */
 
-function KpiStrip({
+function KpiCards({
   data,
   tfl,
   drill,
   onDrill,
+  trends,
+  trendsLoading,
 }: {
   data: TeamDirectoryPayload;
   tfl: string;
   drill: DrillKind | null;
   onDrill: (k: DrillKind | null) => void;
+  trends?: TeamTrends;
+  trendsLoading: boolean;
 }) {
   const t = data.totals;
-  // Count CLIENTS with any health chip (not chip instances) so the tile
+  const { labels: healthLabels } = useRosterOptions("health");
+  // Count CLIENTS with any health chip (not chip instances) so the card
   // matches the drill list length exactly.
   const healthFlagged = data.clients.filter((c) => c.health.length > 0).length;
+  const topHealth = Object.entries(t.healthCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
   // Team-level collected = the whole-book Payout-DB aggregate (all re-billed
   // revenue this month), falling back to the bucket sum if absent.
   const collected = monthlyHeadline(t.monthly);
-  const tiles: {
-    kind: DrillKind;
-    label: string;
-    value: string;
-    sub: string;
-    tone?: "green" | "amber" | "red";
-  }[] = [
-    {
-      kind: "mrr",
-      label: "Book MRR",
-      value: formatMoney(t.bookMrrCents),
-      sub: `across ${t.activeClients} active clients`,
-      tone: "green",
-    },
-    {
-      kind: "health",
-      label: "Client Health",
-      value: String(healthFlagged),
-      sub: "clients with health chips",
-    },
-    {
-      kind: "rebills",
-      label: `Rebills · ${tfl}`,
-      value: `${t.rebills.inWindow}`,
-      sub:
-        t.rebills.overdue > 0
-          ? `${t.rebills.overdue} overdue · ${formatMoney(t.rebills.overdueMrrCents)} ⚠`
-          : formatMoney(t.rebills.inWindowMrrCents),
-      tone: t.rebills.overdue > 0 ? "red" : undefined,
-    },
-    {
-      kind: "collected",
-      label: `Re-billed · ${monthName(t.monthly.month)}`,
-      value: formatMoney(collected.cents),
-      // "all rebills" qualifies the mixed populations: the aggregate spans
-      // the whole Payout DB while book MRR is active-directory only. Only
-      // shown when the headline actually IS that aggregate.
-      sub:
-        t.bookMrrCents > 0
-          ? `${Math.round((collected.cents / t.bookMrrCents) * 100)}% of book MRR${
-              collected.wholeBook ? " · all rebills" : ""
-            }`
-          : collected.wholeBook
-            ? "all rebills this month"
-            : "collected this month",
-      tone: "green",
-    },
-    {
-      kind: "tasksdue",
-      label: `Tasks Due · ${tfl}`,
-      value: String(t.tasksDueInWindow),
-      sub: `${t.tasksOverdue} overdue included`,
-      tone: t.tasksDueInWindow > 0 ? "amber" : undefined,
-    },
-    {
-      kind: "overdue",
-      label: "Overdue Tasks",
-      value: String(t.tasksOverdue),
-      sub: "needs attention",
-      tone: t.tasksOverdue > 0 ? "red" : undefined,
-    },
-    {
-      kind: "actions",
-      label: "Action Items",
-      value: String(t.unsolvedActionItems),
-      sub: "unsolved",
-      tone: t.unsolvedActionItems > 0 ? "red" : undefined,
-    },
-  ];
+
+  const lines = useMemo(
+    () =>
+      trends
+        ? {
+            // No goal line: members' goals overlap (an Entire-book member's
+            // goal covers everyone's clients), so they don't sum to a team goal.
+            rebilled: rebilledTrend(trends, trends.totals, 0),
+            billed: billedTrend(trends, trends.totals),
+            completed: completedTrend(trends, trends.totals),
+          }
+        : null,
+    [trends]
+  );
+  const doneNow = trends ? trends.totals.tasksCompleted[trends.totals.tasksCompleted.length - 1] ?? 0 : null;
+  const doneLast = trends ? trends.totals.tasksCompleted[trends.totals.tasksCompleted.length - 2] ?? 0 : null;
+  const createdNow = trends ? trends.totals.tasksCreated[trends.totals.tasksCreated.length - 1] ?? 0 : null;
+  const spark = (trend: CardTrend | undefined, label: string) =>
+    trend ? <MetricSparkline label={label} {...trend} /> : trendsLoading ? <SparklinePlaceholder /> : null;
+
+  const toggle = (kind: DrillKind) => onDrill(drill === kind ? null : kind);
+  const active = (kind: DrillKind) =>
+    drill === kind ? "ring-2 ring-ring/40" : undefined;
+  const danger = "text-red-700 dark:text-red-400";
+  const warning = "text-amber-700 dark:text-amber-400";
 
   return (
-    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
-      {tiles.map((tile) => (
-        <button
-          key={tile.kind}
-          type="button"
-          onClick={() => onDrill(drill === tile.kind ? null : tile.kind)}
-          className={cn(
-            "rounded-xl border p-3.5 text-left transition-colors",
-            drill === tile.kind
-              ? "border-primary ring-2 ring-primary/20 bg-primary/[0.03]"
-              : "border-border/60 bg-card hover:border-primary/50"
-          )}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            {tile.label}
-          </p>
-          <p
-            className={cn(
-              "text-xl font-black mt-1 leading-none",
-              tile.tone === "green" && "text-emerald-600 dark:text-emerald-400",
-              tile.tone === "amber" && "text-amber-600 dark:text-amber-400",
-              tile.tone === "red" && "text-red-600 dark:text-red-400"
-            )}
-          >
-            {tile.value}
-          </p>
-          <p className="text-[11px] text-muted-foreground mt-1 truncate">{tile.sub}</p>
-        </button>
-      ))}
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <StatCard
+        label="Book MRR"
+        icon={DollarSign}
+        value={formatMoney(t.bookMrrCents)}
+        sub={`across ${t.activeClients} active clients`}
+        onClick={() => toggle("mrr")}
+        className={active("mrr")}
+      >
+        {spark(lines?.billed, "Billed per month")}
+      </StatCard>
+      <StatCard
+        label={`Re-billed · ${monthName(t.monthly.month)}`}
+        icon={RefreshCcw}
+        value={formatMoney(collected.cents)}
+        // "all rebills" qualifies the mixed populations: the aggregate spans
+        // the whole Payout DB while book MRR is active-directory only. Only
+        // shown when the headline actually IS that aggregate.
+        sub={
+          t.bookMrrCents > 0
+            ? `${Math.round((collected.cents / t.bookMrrCents) * 100)}% of book MRR${
+                collected.wholeBook ? " · all rebills" : ""
+              }`
+            : collected.wholeBook
+              ? "all rebills this month"
+              : "collected this month"
+        }
+        onClick={() => toggle("collected")}
+        className={active("collected")}
+      >
+        {spark(lines?.rebilled, "Re-billed per month")}
+      </StatCard>
+      <StatCard
+        label={`Rebills · ${tfl}`}
+        icon={CalendarClock}
+        value={String(t.rebills.inWindow)}
+        delta={
+          t.rebills.overdue > 0 ? (
+            <StatusBadge tone="danger">{t.rebills.overdue} overdue</StatusBadge>
+          ) : undefined
+        }
+        sub={
+          t.rebills.overdue > 0
+            ? `${formatMoney(t.rebills.inWindowMrrCents)} · ${formatMoney(t.rebills.overdueMrrCents)} overdue`
+            : formatMoney(t.rebills.inWindowMrrCents)
+        }
+        onClick={() => toggle("rebills")}
+        className={active("rebills")}
+      />
+      <StatCard
+        label="Tasks Completed"
+        icon={ListChecks}
+        value={doneNow == null ? "—" : String(doneNow)}
+        sub={
+          doneNow == null
+            ? trendsLoading
+              ? "This week"
+              : "Couldn't load the task history"
+            : `this week · ${createdNow} created · ${doneLast} done last week`
+        }
+        isLoading={trendsLoading && doneNow == null}
+      >
+        {spark(lines?.completed, "Tasks completed per week")}
+      </StatCard>
+
+      <StatCard
+        label={`Tasks Due · ${tfl}`}
+        icon={ListTodo}
+        value={String(t.tasksDueInWindow)}
+        sub={`${t.tasksOverdue} overdue included`}
+        onClick={() => toggle("tasksdue")}
+        className={active("tasksdue")}
+      />
+      <StatCard
+        label="Overdue Tasks"
+        icon={CircleAlert}
+        value={String(t.tasksOverdue)}
+        sub={t.tasksOverdue > 0 ? <span className={danger}>needs attention</span> : "Nothing overdue"}
+        onClick={() => toggle("overdue")}
+        className={active("overdue")}
+      />
+      <StatCard
+        label="Action Items"
+        icon={Zap}
+        value={String(t.unsolvedActionItems)}
+        sub={t.unsolvedActionItems > 0 ? <span className={warning}>unsolved</span> : "Inbox zero"}
+        onClick={() => toggle("actions")}
+        className={active("actions")}
+      />
+      <StatCard
+        label="Client Health"
+        icon={HeartPulse}
+        value={String(healthFlagged)}
+        sub={
+          topHealth.length > 0
+            ? topHealth.map(([slug, n]) => `${n} ${(healthLabels[slug] ?? slug).toLowerCase()}`).join(" · ")
+            : "clients with health chips"
+        }
+        onClick={() => toggle("health")}
+        className={active("health")}
+      />
     </div>
   );
 }
@@ -365,36 +516,36 @@ function DrillPanel({
       key={m.adminId}
       type="button"
       onClick={() => router.push(`/dashboard/team/${m.adminId}`)}
-      className="flex w-full items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/40 text-left"
+      className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition-colors hover:bg-muted/60"
     >
       <MemberAvatar name={m.name} avatarPath={m.avatarPath} size="sm" />
-      <span className="text-sm font-semibold text-foreground flex-1 min-w-[6rem] truncate">
-        {m.name}
-      </span>
+      <span className="min-w-[6rem] flex-1 truncate text-sm font-medium">{m.name}</span>
       <span className="min-w-0 text-right">{right}</span>
     </button>
   );
 
   const clientRow = (c: TeamClientSlice, right: React.ReactNode) => (
-    <div key={c.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/40">
-      <AvatarInitials name={c.displayName} className="w-7 h-7" />
-      <span className="text-sm font-semibold text-foreground flex-1 min-w-[6rem] truncate">
-        {c.displayName}
-      </span>
+    <div key={c.id} className="flex items-center gap-3 rounded-2xl px-2 py-2">
+      <AvatarInitials name={c.displayName} className="size-7 text-[10px]" />
+      <span className="min-w-[6rem] flex-1 truncate text-sm font-medium">{c.displayName}</span>
       <span className="min-w-0 text-right">{right}</span>
     </div>
   );
+
+  const groupLabel = (text: string, className?: string) => (
+    <p className={cn("px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground", className)}>{text}</p>
+  );
+  const value = "text-sm font-medium tabular-nums";
+  const detail = "ml-2 text-xs text-muted-foreground";
 
   let body: React.ReactNode = null;
   if (kind === "mrr") {
     body = data.members.map((m) =>
       memberRow(
         m,
-        <span className="text-sm font-bold">
+        <span className={value}>
           {formatMoney(m.mrrManagedCents)}
-          <span className="ml-2 text-[11px] font-semibold text-muted-foreground">
-            {m.clientCount} clients
-          </span>
+          <span className={detail}>{m.clientCount} clients</span>
         </span>
       )
     );
@@ -415,9 +566,9 @@ function DrillPanel({
               : null;
           return memberRow(
             m,
-            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+            <span className={value}>
               {formatMoney(h.cents)}
-              <span className="ml-2 text-[11px] font-semibold text-muted-foreground">
+              <span className={detail}>
                 {h.wholeBook && "all book · "}
                 {pct !== null ? `${pct}% of MRR` : "no MRR"}
                 {m.goalCents > 0 &&
@@ -427,7 +578,7 @@ function DrillPanel({
           );
         })}
         {anyWholeBook && (
-          <p className="px-2 pt-2 text-[10px] text-muted-foreground">
+          <p className="px-2 pt-2 text-xs text-muted-foreground">
             &ldquo;All book&rdquo; rows show the same whole-book total — the
             column is not additive.
           </p>
@@ -442,18 +593,18 @@ function DrillPanel({
       ? flagged.map((c) =>
           clientRow(
             c,
-            <span className="flex items-center gap-1 flex-wrap justify-end">
+            <span className="flex flex-wrap items-center justify-end gap-1">
               {c.health.map((h) => (
-                <span key={h} className={cn(CHIP_BASE, HEALTH_CHIP_CLS[h] ?? FALLBACK_CHIP_CLS)}>
+                <StatusBadge key={h} tone={toneOf(HEALTH_TONE, h)}>
                   {healthLabels[h] ?? h}
-                </span>
+                </StatusBadge>
               ))}
             </span>
           )
         )
       : <Empty text="No health chips set on the book yet" />;
   } else if (kind === "rebills") {
-    // Same classifier the server rollup uses — the list always matches the tile.
+    // Same classifier the server rollup uses — the list always matches the card.
     const buckets = data.clients.map(
       (c) => [c, classifyRebill(c.rebill, data.window)] as const
     );
@@ -463,30 +614,23 @@ function DrillPanel({
     const overdue = buckets.filter(([, b]) => b.overdue).map(([c]) => c);
     body = (
       <>
-        {overdue.length > 0 && (
-          <p className="px-2 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-            Overdue · {overdue.length}
-          </p>
-        )}
+        {overdue.length > 0 &&
+          groupLabel(`Overdue · ${overdue.length}`, "pt-1 text-red-700 dark:text-red-400")}
         {overdue.map((c) =>
           clientRow(
             c,
-            <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <span className="text-xs font-medium tabular-nums text-red-700 dark:text-red-400">
               {formatMoney(c.mrrCents)} · {formatDate(c.rebill?.nextRebillAt)}
             </span>
           )
         )}
-        {inWindow.length > 0 && (
-          <p className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Due {tfl} · {inWindow.length}
-          </p>
-        )}
+        {inWindow.length > 0 && groupLabel(`Due ${tfl} · ${inWindow.length}`)}
         {inWindow.map(([c, b]) =>
           clientRow(
             c,
             <span
               className={cn(
-                "text-xs font-semibold text-muted-foreground",
+                "text-xs tabular-nums text-muted-foreground",
                 b.sent && "opacity-60"
               )}
             >
@@ -496,21 +640,21 @@ function DrillPanel({
           )
         )}
         {overdue.length === 0 && inWindow.length === 0 && (
-          <Empty text={`No rebills ${tfl} 🎉`} />
+          <Empty text={`No rebills ${tfl}`} />
         )}
       </>
     );
   } else if (kind === "tasksdue") {
-    // Same buckets the tile sums (overdue + dueToday + dueInWindow) — the
-    // panel members always add up to the tile count for this timeframe.
+    // Same buckets the card sums (overdue + dueToday + dueInWindow) — the
+    // panel members always add up to the card count for this timeframe.
     body = data.members
       .filter((m) => m.tasks.overdue + m.tasks.dueToday + m.tasks.dueInWindow > 0)
       .map((m) =>
         memberRow(
           m,
-          <span className="text-xs font-semibold text-muted-foreground">
+          <span className="text-xs tabular-nums text-muted-foreground">
             {m.tasks.overdue > 0 && (
-              <span className="text-red-600 dark:text-red-400 font-bold mr-2">
+              <span className="mr-2 font-medium text-red-700 dark:text-red-400">
                 {m.tasks.overdue} overdue
               </span>
             )}
@@ -519,48 +663,51 @@ function DrillPanel({
           </span>
         )
       );
-    if (!Array.isArray(body) || body.length === 0) body = <Empty text={`Nothing due ${tfl} 🎉`} />;
+    if (!Array.isArray(body) || body.length === 0) body = <Empty text={`Nothing due ${tfl}`} />;
   } else if (kind === "overdue") {
     const rows = data.members.filter((m) => m.tasks.overdue > 0);
     body = rows.length
       ? rows.map((m) =>
           memberRow(
             m,
-            <span className="text-sm font-bold text-red-600 dark:text-red-400">
+            <span className={cn(value, "text-red-700 dark:text-red-400")}>
               {m.tasks.overdue}
             </span>
           )
         )
-      : <Empty text="Nothing overdue 🎉" />;
+      : <Empty text="Nothing overdue" />;
   } else {
     const rows = data.members.filter((m) => m.unsolvedActionItems > 0);
     body = rows.length
       ? rows.map((m) =>
           memberRow(
             m,
-            <span className="text-sm font-bold text-amber-600 dark:text-amber-400">
+            <span className={cn(value, "text-amber-700 dark:text-amber-400")}>
               {m.unsolvedActionItems}
             </span>
           )
         )
-      : <Empty text="Inbox zero 🎉" />;
+      : <Empty text="Inbox zero" />;
   }
 
   return (
-    <div className="rounded-xl border border-primary/50 bg-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-foreground">{titles[kind]}</h3>
-        <button
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2 md:pb-2">
+        <CardTitle>{titles[kind]}</CardTitle>
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onClose}
-          className="p-1 text-muted-foreground hover:text-foreground"
           aria-label="Close panel"
         >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="max-h-80 overflow-y-auto">{body}</div>
-    </div>
+          <X />
+        </Button>
+      </CardHeader>
+      <CardContent className="pt-0 md:pt-0">
+        <div className="-mx-2 max-h-80 overflow-y-auto">{body}</div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -570,42 +717,11 @@ function Empty({ text }: { text: string }) {
 
 /* ── Member card ───────────────────────────────────────────────────────── */
 
-export function MemberAvatar({
-  name,
-  avatarPath,
-  size = "md",
-}: {
-  name: string;
-  avatarPath: string | null;
-  size?: "sm" | "md" | "lg";
-}) {
-  const px = size === "sm" ? 28 : size === "md" ? 44 : 56;
-  const cls =
-    size === "sm" ? "w-7 h-7 text-[10px]" : size === "md" ? "w-11 h-11 text-sm" : "w-14 h-14 text-lg";
-  if (avatarPath) {
-    return (
-      <span className={cn("relative rounded-xl overflow-hidden shrink-0", cls)}>
-        <Image src={avatarPath} alt="" width={px} height={px} className="h-full w-full object-cover" />
-      </span>
-    );
-  }
-  return (
-    <span
-      className={cn(
-        "flex items-center justify-center rounded-xl font-bold text-white shrink-0",
-        avatarTint(name),
-        cls
-      )}
-    >
-      {name.slice(0, 2).toUpperCase()}
-    </span>
-  );
-}
-
+// Short on purpose: a tile is ~50px wide in the three-column layout.
 const WINDOW_STAT_LABEL: Record<TeamTimeframeValue, string> = {
-  today: "In Window",
-  week: "This Wk",
-  month: "This Mo",
+  today: "In window",
+  week: "This wk",
+  month: "This mo",
 };
 
 function MemberCard({
@@ -613,11 +729,15 @@ function MemberCard({
   tfl,
   timeframe,
   viewer,
+  trends,
+  trendsLoading,
 }: {
   member: TeamMemberSummary;
   tfl: string;
   timeframe: TeamTimeframeValue;
   viewer: { adminId: string; privileged: boolean; managedAdminIds?: string[] };
+  trends?: TeamTrends;
+  trendsLoading: boolean;
 }) {
   const router = useRouter();
   const { labels: healthLabels } = useRosterOptions("health");
@@ -634,6 +754,10 @@ function MemberCard({
         .slice(0, 3),
     [m.healthCounts]
   );
+  const trend = useMemo(() => {
+    const s = trends?.members.find((x) => x.adminId === m.adminId);
+    return trends && s ? rebilledTrend(trends, s, m.goalCents) : undefined;
+  }, [trends, m.adminId, m.goalCents]);
 
   return (
     // Not `disabled` — a disabled button swallows hover, so the title tooltip
@@ -644,86 +768,94 @@ function MemberCard({
       onClick={() => canOpen && router.push(`/dashboard/team/${m.adminId}`)}
       title={canOpen ? undefined : "Only Admin Management (or your book's Head of Ads) can open other members' hubs"}
       className={cn(
-        "rounded-xl border border-border/60 bg-card p-4 text-left transition-all",
-        canOpen
-          ? "hover:border-primary hover:-translate-y-0.5 cursor-pointer"
-          : "opacity-80 cursor-default"
+        "group block min-w-0 rounded-[min(calc(var(--radius)*2.6),24px)] text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        canOpen ? "cursor-pointer" : "cursor-default"
       )}
     >
-      <div className="flex items-center gap-3">
-        <MemberAvatar name={m.name} avatarPath={m.avatarPath} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-foreground truncate">{m.name}</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {m.position || ATTRIBUTION_LABEL[m.attribution]} · {m.clientCount} clients
-          </p>
-        </div>
-        {topHealth.length > 0 && (
-          <span className="flex items-center gap-1 shrink-0">
-            {topHealth.map(([slug, count]) => (
-              <span
-                key={slug}
-                className={cn(CHIP_BASE, HEALTH_CHIP_CLS[slug] ?? FALLBACK_CHIP_CLS)}
-                title={healthLabels[slug] ?? slug}
-              >
-                {count}
+      <Card className={cn("flex h-full flex-col", canOpen && "transition-colors group-hover:bg-muted/40")}>
+        <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-3 md:pb-4">
+          <MemberAvatar name={m.name} avatarPath={m.avatarPath} />
+          <div className="min-w-0 flex-1">
+            <CardTitle className="truncate" title={m.name}>{m.name}</CardTitle>
+            <CardDescription className="truncate text-xs">
+              {m.position || ATTRIBUTION_LABEL[m.attribution]} · {m.clientCount} clients
+            </CardDescription>
+          </div>
+          {topHealth.length > 0 && (
+            <span className="flex shrink-0 items-center gap-1">
+              {topHealth.map(([slug, count]) => (
+                <StatusBadge
+                  key={slug}
+                  tone={toneOf(HEALTH_TONE, slug)}
+                  title={healthLabels[slug] ?? slug}
+                  className="tabular-nums"
+                >
+                  {count}
+                </StatusBadge>
+              ))}
+            </span>
+          )}
+        </CardHeader>
+        <CardContent className="flex flex-1 flex-col gap-3">
+          {/* The monthly goal is a re-bill COLLECTION target — it's compared
+              against collected in the tracker below, never against MRR managed. */}
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-2xl font-semibold tracking-tight tabular-nums">
+              {formatMoney(m.mrrManagedCents)}
+            </span>
+            <span className="text-xs text-muted-foreground">MRR managed</span>
+            {m.goalCents > 0 && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                Goal <span className="font-medium tabular-nums text-foreground">{formatMoney(m.goalCents)}</span>
               </span>
-            ))}
-          </span>
-        )}
-      </div>
+            )}
+          </div>
 
-      {/* The monthly goal is a re-bill COLLECTION target — it's compared
-          against collected in the tracker below, never against MRR managed. */}
-      <div className="mt-3 flex items-baseline gap-2 flex-wrap">
-        <span className="text-lg font-black text-foreground">
-          {formatMoney(m.mrrManagedCents)}
-        </span>
-        <span className="text-[11px] text-muted-foreground">MRR managed</span>
-      </div>
+          <MonthlyRebillTracker
+            monthly={m.monthly}
+            mrrManagedCents={m.mrrManagedCents}
+            goalCents={m.goalCents}
+            retention={m.retention}
+            className="rounded-2xl bg-muted/40 px-3 py-2.5"
+          />
 
-      <MonthlyRebillTracker
-        monthly={m.monthly}
-        mrrManagedCents={m.mrrManagedCents}
-        goalCents={m.goalCents}
-        retention={m.retention}
-        className="mt-2.5 rounded-lg bg-muted/40 px-3 py-2.5"
-      />
+          {/* Timeframe-scoped window strip — the month tracker above doesn't
+              answer "what lands {tfl}?", so this keeps the toggle meaningful. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {m.rebills.inWindow} rebill{m.rebills.inWindow === 1 ? "" : "s"}
+            </span>
+            <span className="tabular-nums">· {formatMoney(m.rebills.inWindowMrrCents)} · {tfl}</span>
+            {m.rebills.sentInWindow > 0 && <span>· {m.rebills.sentInWindow} sent</span>}
+            {m.rebills.overdue > 0 && (
+              <StatusBadge tone="danger" className="ml-auto">
+                {m.rebills.overdue} overdue
+              </StatusBadge>
+            )}
+          </div>
 
-      {/* Timeframe-scoped window strip — the month tracker above doesn't
-          answer "what lands {tfl}?", so this keeps the toggle meaningful. */}
-      <div className="mt-2 flex items-center gap-2 flex-wrap rounded-lg bg-muted/40 px-3 py-2 text-xs">
-        <span className="font-bold text-foreground">
-          {m.rebills.inWindow} rebill{m.rebills.inWindow === 1 ? "" : "s"}
-        </span>
-        <span className="text-muted-foreground">
-          · {formatMoney(m.rebills.inWindowMrrCents)} · {tfl}
-        </span>
-        {m.rebills.sentInWindow > 0 && (
-          <span className="text-muted-foreground font-semibold">
-            {m.rebills.sentInWindow} sent
-          </span>
-        )}
-        {m.rebills.overdue > 0 && (
-          <span className="ml-auto rounded-md bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">
-            {m.rebills.overdue} overdue
-          </span>
-        )}
-      </div>
+          {/* 2×2 below 400px (inner cross of dividers), one row of 4 above. */}
+          <div className="grid grid-cols-2 rounded-2xl ring-1 ring-foreground/5 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(odd)]:border-r min-[400px]:grid-cols-4 min-[400px]:[&>*:nth-child(-n+2)]:border-b-0 min-[400px]:[&>*:nth-child(-n+3)]:border-r">
+            <StatTile label="Overdue" value={m.tasks.overdue} tone={m.tasks.overdue > 0 ? "danger" : undefined} />
+            <StatTile label="Today" value={m.tasks.dueToday} tone={m.tasks.dueToday > 0 ? "warning" : undefined} />
+            <StatTile label={WINDOW_STAT_LABEL[timeframe]} value={m.tasks.dueInWindow} />
+            <StatTile label="Done" value={m.tasks.done} />
+          </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 min-[400px]:grid-cols-4">
-        <StatTile label="Overdue" value={m.tasks.overdue} tone={m.tasks.overdue > 0 ? "red" : undefined} />
-        <StatTile label="Today" value={m.tasks.dueToday} tone={m.tasks.dueToday > 0 ? "amber" : undefined} />
-        <StatTile label={WINDOW_STAT_LABEL[timeframe]} value={m.tasks.dueInWindow} tone="blue" />
-        <StatTile label="Done" value={m.tasks.done} tone="green" />
-      </div>
+          {m.unsolvedActionItems > 0 && (
+            <p className={cn("flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs", badgeTone.warning)}>
+              <AlertTriangle className="size-3" />
+              {m.unsolvedActionItems} unsolved action item{m.unsolvedActionItems === 1 ? "" : "s"}
+            </p>
+          )}
 
-      {m.unsolvedActionItems > 0 && (
-        <p className="mt-2.5 flex items-center gap-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-          <AlertTriangle className="h-3 w-3" />
-          {m.unsolvedActionItems} unsolved action item{m.unsolvedActionItems === 1 ? "" : "s"}
-        </p>
-      )}
+          {trend ? (
+            <MetricSparkline label={`${m.name} re-billed per month`} {...trend} />
+          ) : trendsLoading ? (
+            <SparklinePlaceholder />
+          ) : null}
+        </CardContent>
+      </Card>
     </button>
   );
 }
@@ -735,25 +867,20 @@ function StatTile({
 }: {
   label: string;
   value: number;
-  tone?: "red" | "amber" | "blue" | "green";
+  tone?: "danger" | "warning";
 }) {
   return (
-    <div className="rounded-lg bg-muted/40 px-1.5 py-2 text-center">
+    <div className="px-2 py-2.5 text-center">
       <p
         className={cn(
-          "text-sm font-black leading-none",
-          tone === "red" && "text-red-600 dark:text-red-400",
-          tone === "amber" && "text-amber-600 dark:text-amber-400",
-          tone === "blue" && "text-blue-600 dark:text-blue-400",
-          tone === "green" && "text-emerald-600 dark:text-emerald-400",
-          !tone && "text-foreground"
+          "text-base font-semibold leading-none tabular-nums",
+          tone === "danger" && "text-red-700 dark:text-red-400",
+          tone === "warning" && "text-amber-700 dark:text-amber-400"
         )}
       >
         {value}
       </p>
-      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
+      <p className="mt-1.5 text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -768,31 +895,32 @@ function UnrosteredNotice({
   onAdd: (adminId: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 flex-wrap">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-      <p className="text-xs text-foreground">
-        <span className="font-bold">
+    <div className={cn("flex flex-wrap items-center gap-3 rounded-3xl border px-4 py-3", badgeTone.warning)}>
+      <AlertTriangle className="size-4 shrink-0" />
+      <p className="text-xs">
+        <span className="font-medium">
           {data.unrostered.length} assignee{data.unrostered.length === 1 ? "" : "s"}
         </span>{" "}
         hold client assignments but aren&apos;t on the Team roster:
       </p>
-      <span className="flex items-center gap-1.5 flex-wrap flex-1">
+      <span className="flex flex-1 flex-wrap items-center gap-1.5">
         {data.unrostered.map((u) =>
           data.viewer.privileged ? (
-            <button
+            <Button
               key={u.adminId}
               type="button"
+              variant="outline"
+              size="xs"
               onClick={() => onAdd(u.adminId)}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 px-2 py-0.5 text-[11px] font-bold text-foreground hover:bg-amber-500/10"
               title={`Add ${u.name} to the roster`}
             >
-              <UserPlus className="h-3 w-3" />
+              <UserPlus />
               {u.name} ({u.clientCount})
-            </button>
+            </Button>
           ) : (
-            <span key={u.adminId} className="text-[11px] font-semibold text-foreground">
+            <Badge key={u.adminId} variant="outline" className="font-normal">
               {u.name} ({u.clientCount})
-            </span>
+            </Badge>
           )
         )}
       </span>

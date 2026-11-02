@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { BadgeDot } from "@/components/ui/badge";
 import { formatMoney } from "@/components/users/format";
 import { MONTHLY_REBILL_BUCKETS, monthlyHeadline } from "@/lib/teamRebill";
 import { MONTHLY_REBILL_META, monthName } from "./presentation";
@@ -60,13 +61,13 @@ export function MonthlyRebillTracker({
 
   return (
     <div className={className}>
-      <div className="flex items-baseline justify-between gap-2 flex-wrap">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+        <span className="text-xs font-medium text-muted-foreground">
           Re-bills · {monthName(monthly.month)}
         </span>
-        <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+        <span className="text-sm font-semibold tabular-nums">
           {formatMoney(headline.cents)}
-          <span className="ml-1.5 text-[11px] font-semibold text-muted-foreground">
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
             {headline.wholeBook ? "re-billed · all book" : "collected"}
             {pctOfMrr !== null && ` · ${pctOfMrr}% of MRR`}
             {pctOfGoal !== null && ` · ${pctOfGoal}% of goal`}
@@ -75,7 +76,7 @@ export function MonthlyRebillTracker({
       </div>
 
       <div
-        className="mt-1.5 flex h-2 gap-0.5 rounded-full bg-muted overflow-hidden"
+        className="mt-2 flex h-2 gap-0.5 overflow-hidden rounded-full bg-muted"
         title={barTitle || undefined}
         role="img"
         aria-label={`Re-bills ${monthName(monthly.month)}: ${formatMoney(headline.cents)} ${headline.wholeBook ? "re-billed" : "collected"}${pctOfMrr !== null ? `, ${pctOfMrr}% of MRR managed` : ""}`}
@@ -94,29 +95,35 @@ export function MonthlyRebillTracker({
           })}
       </div>
 
-      <div className="mt-1.5 flex items-baseline justify-between gap-2 flex-wrap text-[11px] leading-4">
-        <p>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
           {nonEmpty.length > 0 ? (
-            nonEmpty.map((b, i) => (
-              <span key={b} className={cn("font-semibold", MONTHLY_REBILL_META[b].text)}>
-                {i > 0 && <span className="text-muted-foreground/50 font-normal"> · </span>}
-                {monthly.buckets[b].count} {MONTHLY_REBILL_META[b].label.toLowerCase()}
+            nonEmpty.map((b) => (
+              <span key={b} className="inline-flex items-center gap-1.5">
+                <BadgeDot
+                  tone={MONTHLY_REBILL_META[b].tone}
+                  className={cn(b === "untracked" && "opacity-50")}
+                />
+                <span className="font-medium tabular-nums text-foreground">{monthly.buckets[b].count}</span>
+                {MONTHLY_REBILL_META[b].label.toLowerCase()}
               </span>
             ))
           ) : (
-            <span className="text-muted-foreground">No re-bills tracked yet</span>
+            <span>No re-bills tracked yet</span>
           )}
         </p>
         {retention && retention.base > 0 && (
           <span
-            className="font-semibold text-muted-foreground"
+            className="text-muted-foreground"
             title={`${retention.retained} of ${retention.base} managed client${retention.base === 1 ? "" : "s"} re-billed this month`}
           >
             Retention{" "}
-            <span className="font-bold text-foreground">
+            <span className="font-medium tabular-nums text-foreground">
               {Math.round((retention.retained / retention.base) * 100)}%
             </span>{" "}
-            ({retention.retained}/{retention.base})
+            <span className="tabular-nums">
+              ({retention.retained}/{retention.base})
+            </span>
           </span>
         )}
       </div>

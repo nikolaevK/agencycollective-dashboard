@@ -59,7 +59,7 @@ export const SERVICE_CHIP_CLS: Record<string, string> = {
 // Kit tones (components/ui/badge StatusBadge / badgeVariants) for the shadcn
 // Client Directory. Status-like vocab maps to a meaning; categories (services,
 // ad platforms) and admin-added custom options stay neutral. The *_CHIP_CLS
-// maps above remain for the not-yet-migrated Team hub / Meta Accounts pages.
+// maps above remain for the not-yet-migrated Meta Accounts page.
 // ---------------------------------------------------------------------------
 
 export const STAGE_TONE: Record<string, BadgeTone> = {

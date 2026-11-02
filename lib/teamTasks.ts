@@ -337,6 +337,36 @@ export async function taskStatsByAdmin(
   return map;
 }
 
+/**
+ * created_at / completed_at (UTC "YYYY-MM-DD HH:MM:SS") of these admins'
+ * tasks created or completed since `sinceUtc` — the Team trends' weekly
+ * throughput. Read-only; tasks count for their CURRENT owner.
+ */
+export async function listTaskTimestamps(
+  adminIds: string[],
+  sinceUtc: string
+): Promise<Array<{ adminId: string; createdAt: string; completedAt: string | null }>> {
+  if (adminIds.length === 0) return [];
+  await ensureMigrated();
+  const db = getDb();
+  try {
+    const result = await db.execute({
+      sql: `SELECT admin_id, created_at, completed_at FROM team_tasks
+            WHERE admin_id IN (${adminIds.map(() => "?").join(", ")})
+              AND (created_at >= ? OR completed_at >= ?)`,
+      args: [...adminIds, sinceUtc, sinceUtc],
+    });
+    return result.rows.map((row) => ({
+      adminId: String(row.admin_id),
+      createdAt: String(row.created_at),
+      completedAt: row.completed_at != null ? String(row.completed_at) : null,
+    }));
+  } catch (err) {
+    if (isNoSuchTable(err)) return [];
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------

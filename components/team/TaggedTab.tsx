@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AtSign, ChevronDown, ChevronRight, Flag, X } from "lucide-react";
+import { AtSign, ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
-import { DueLabel } from "./MemberHub";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/use-confirm";
+import { DueLabel, PriorityFlag, TaskStatusDot } from "./TeamBits";
 import { TASK_STATUS_META, TASK_PRIORITY_META } from "./presentation";
 import type { MemberHubPayload, TaggedTaskRecord } from "./types";
 
@@ -26,9 +30,17 @@ export function TaggedTab({
 }) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   async function dismiss(task: TaggedTaskRecord) {
-    if (!confirm(`Remove this tag? "${task.title}" leaves the Tagged section.`)) return;
+    if (
+      !(await confirm({
+        title: "Remove this tag?",
+        description: `"${task.title}" leaves the Tagged section.`,
+        confirmText: "Remove tag",
+      }))
+    )
+      return;
     let res: Response;
     try {
       res = await fetch(
@@ -52,13 +64,16 @@ export function TaggedTab({
 
   if (tasks.length === 0) {
     return (
-      <div className="rounded-xl border border-border p-10 text-center">
-        <AtSign className="mx-auto h-6 w-6 text-muted-foreground" />
-        <p className="mt-2 text-sm font-semibold text-foreground">No tagged tasks</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          When a teammate tags {hub.member.name} on one of their tasks, it shows up here.
-        </p>
-      </div>
+      <>
+        <Card className="p-10 text-center">
+          <AtSign className="mx-auto size-6 text-muted-foreground" />
+          <p className="mt-2 text-sm font-medium text-foreground">No tagged tasks</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            When a teammate tags {hub.member.name} on one of their tasks, it shows up here.
+          </p>
+        </Card>
+        {confirmDialog}
+      </>
     );
   }
 
@@ -68,24 +83,24 @@ export function TaggedTab({
   const row = (t: TaggedTaskRecord) => {
     const expanded = expandedId === t.id;
     return (
-      <div key={t.id} className="rounded-lg border border-border/60 bg-card">
-        <div className="flex w-full items-center gap-2.5 px-2.5 py-2">
+      <div key={t.id}>
+        <div className="flex w-full items-center gap-2 px-3 py-1.5">
           <button
             type="button"
             onClick={() => setExpandedId(expanded ? null : t.id)}
             // flex-wrap + the title's min-w floor: on phones the owner chip /
             // due / flag wrap below instead of crushing the title.
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 text-left"
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 py-1 text-left"
           >
             {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
             )}
-            <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
+            <TaskStatusDot status={t.status} />
             <span
               className={cn(
-                "flex-1 min-w-[55%] truncate text-sm font-semibold",
+                "min-w-[55%] flex-1 truncate text-sm font-medium",
                 t.status === "complete"
                   ? "text-muted-foreground line-through"
                   : "text-foreground"
@@ -93,24 +108,29 @@ export function TaggedTab({
             >
               {t.title}
             </span>
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground truncate max-w-[140px]">
+            <Badge
+              variant="outline"
+              className="block max-w-[140px] truncate font-normal text-muted-foreground"
+            >
               {t.ownerName ? `${t.ownerName}'s hub` : "Unknown hub"}
-            </span>
+            </Badge>
             <DueLabel task={t} today={today} />
-            <Flag className={cn("h-3.5 w-3.5 shrink-0", TASK_PRIORITY_META[t.priority].flag)} />
+            <PriorityFlag priority={t.priority} />
           </button>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => dismiss(t)}
-            className="shrink-0 p-2 -m-1 text-muted-foreground hover:text-red-500"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             title="Remove tag (leaves this section)"
             aria-label="Remove tag"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            <X />
+          </Button>
         </div>
         {expanded && (
-          <div className="border-t border-border/60 px-9 py-2.5 text-xs space-y-1.5">
+          <div className="space-y-1.5 border-t px-9 py-2.5 text-xs">
             {t.description ? (
               <p className="whitespace-pre-wrap break-words text-foreground">{t.description}</p>
             ) : (
@@ -134,15 +154,16 @@ export function TaggedTab({
         task&apos;s owner (or a privileged admin) for changes — tags are a heads-up, not
         ownership.
       </p>
-      <div className="space-y-1.5">{open.map(row)}</div>
+      {open.length > 0 && <Card className="divide-y">{open.map(row)}</Card>}
       {done.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">
             Completed · {done.length}
           </p>
-          {done.map(row)}
+          <Card className="divide-y">{done.map(row)}</Card>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

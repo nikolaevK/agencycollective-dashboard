@@ -2,10 +2,38 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Flag, Pin, PinOff, Trash2, Plus, Check, Paperclip, AtSign } from "lucide-react";
+import {
+  ArrowRight,
+  AtSign,
+  FileText,
+  Paperclip,
+  Pin,
+  PinOff,
+  Plus,
+  Send,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, BadgeDot, StatusBadge, badgeTone, badgeToneHover } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatDate } from "@/components/users/format";
 import { ReassignTaskDialog } from "./ReassignTaskDialog";
+import { PriorityFlag } from "./TeamBits";
 import { useTeamMemberOptions, type TaskMutations } from "./useTeamData";
 import {
   TASK_STATUS_META,
@@ -23,19 +51,18 @@ import type {
   TaskChecklistItem,
 } from "./types";
 
-const INPUT_CLS =
-  "rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
 /**
- * A due date worth saving. Chrome fires `change` per typed year digit
- * (0002 → 0020 → 0202 → 2026), so anything outside 20xx is a partial entry,
- * not a date (the server accepts 2000–2099 only — isValidTeamDueYmd).
+ * A due date worth saving: the server accepts 2000–2099 only
+ * (isValidTeamDueYmd), so anything outside 20xx is not a date to send.
  */
 const SAVABLE_DUE_RE = /^20\d\d-\d\d-\d\d$/;
 
+/** Radix Select values can't be "" — the "No client" option's stand-in. */
+const NO_CLIENT = "__none__";
+
 /** Hover-revealed row actions: always visible on touch (no hover there). */
 const ROW_ACTION_CLS =
-  "opacity-60 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-2.5 -m-1.5 text-muted-foreground hover:text-red-500";
+  "shrink-0 rounded-full opacity-60 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-2.5 -m-1.5 text-muted-foreground hover:text-destructive";
 
 /** Slide-over task detail: status/priority/due/client/lineup, checklist, comments. */
 export function TaskDetailSheet({
@@ -52,6 +79,7 @@ export function TaskDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const { data: memberOptions = [] } = useTeamMemberOptions();
   const [title, setTitle] = useState(t.title);
   const [description, setDescription] = useState(t.description);
@@ -115,13 +143,22 @@ export function TaskDetailSheet({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A Radix popup (select, date picker, confirm) consumed this Escape to
+      // close itself — it must not also tear down the sheet.
+      if (e.defaultPrevented) return;
       if (e.key !== "Escape") return;
       // Escape inside an editor cancels the field (blur fires the pending
       // save) instead of tearing down the sheet mid-edit.
+      // Kit pickers (Select = role combobox, DatePicker = a popup trigger)
+      // count as fields too, like the native selects/date inputs did.
       const el = document.activeElement;
       if (
         el instanceof HTMLElement &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.getAttribute("role") === "combobox" ||
+          el.hasAttribute("aria-haspopup"))
       ) {
         el.blur();
         return;
@@ -159,6 +196,10 @@ export function TaskDetailSheet({
     },
     staleTime: 15_000,
   });
+  // Roster members who can still be tagged (never the assignee).
+  const taggable = memberOptions.filter(
+    (m) => m.adminId !== hub.member.adminId && !tags.some((tag) => tag.adminId === m.adminId)
+  );
 
   const { data: documents = [] } = useQuery<TeamTaskDocument[]>({
     queryKey: ["team-task-documents", t.id],
@@ -258,7 +299,14 @@ export function TaskDetailSheet({
   }
 
   async function removeDocument(doc: TeamTaskDocument) {
-    if (!confirm(`Remove attachment "${doc.fileName}"?`)) return;
+    if (
+      !(await confirm({
+        title: `Remove attachment "${doc.fileName}"?`,
+        confirmText: "Remove",
+        destructive: true,
+      }))
+    )
+      return;
     let res: Response;
     try {
       res = await fetch(`/api/admin/team/tasks/${t.id}/documents/${doc.id}`, {
@@ -295,11 +343,17 @@ export function TaskDetailSheet({
   const overdue = t.status !== "complete" && !!t.dueDate && t.dueDate < today;
   const statusIdx = TASK_STATUS_ORDER.indexOf(t.status);
   const nextStatus = TASK_STATUS_ORDER[(statusIdx + 1) % TASK_STATUS_ORDER.length];
+  const statusTone = TASK_STATUS_META[t.status].tone;
   const ckDone = t.checklist.filter((c) => c.done).length;
+  const SourceIcon =
+    t.source === "manual" ? null : t.source === "system" ? SOURCE_META.system.icon : Zap;
 
   function setChecklist(next: TaskChecklistItem[]) {
     patch({ checklist: next });
   }
+
+  const toggleItem = (id: string) =>
+    setChecklist(t.checklist.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
 
   async function submitComment() {
     const body = comment.trim();
@@ -337,103 +391,112 @@ export function TaskDetailSheet({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className={dialogOverlayClass} onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-xl max-h-[92dvh] sm:max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl focus:outline-none"
+        className={cn(
+          dialogPanelClass,
+          "relative z-50 w-full max-w-xl max-h-[92dvh] sm:max-h-[88vh] overflow-y-auto overscroll-contain rounded-b-none sm:rounded-4xl focus:outline-none"
+        )}
       >
         {/* Top bar */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-3 rounded-t-2xl">
-          <p className="text-xs text-muted-foreground">
-            Team / <span className="font-bold text-foreground">{hub.member.name}</span> / Tasks
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-4xl border-b bg-popover px-5 py-3">
+          <p className="min-w-0 truncate text-xs text-muted-foreground">
+            Team / <span className="font-medium text-foreground">{hub.member.name}</span> / Tasks
           </p>
-          <div className="flex items-center gap-1">
-            <button
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => patch({ lineup: !t.lineup })}
-              className={cn(
-                "p-2 rounded-lg transition-colors",
-                t.lineup
-                  ? "text-primary hover:bg-primary/10"
-                  : "text-muted-foreground hover:bg-accent"
-              )}
+              className={cn(t.lineup ? "bg-muted text-foreground" : "text-muted-foreground")}
               title={t.lineup ? "Unpin from Lineup" : "Pin to Lineup"}
             >
-              {t.lineup ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-            </button>
-            <button
+              {t.lineup ? <Pin /> : <PinOff />}
+            </Button>
+            <Button
               type="button"
-              onClick={() => {
-                if (confirm("Delete this task?")) {
+              variant="ghost"
+              size="icon-sm"
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete this task?",
+                    confirmText: "Delete",
+                    destructive: true,
+                  })
+                ) {
                   mutations
                     .removeTask(t.id)
                     .then(onClose)
                     .catch((err) => alert(err instanceof Error ? err.message : String(err)));
                 }
               }}
-              className="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-accent transition-colors"
+              className="text-muted-foreground hover:text-destructive"
               aria-label="Delete task"
             >
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button
+              <Trash2 />
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={onClose}
-              className="p-2 rounded-lg text-muted-foreground hover:bg-accent"
+              className="text-muted-foreground"
               aria-label="Close"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
         </div>
 
-        <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4">
+        <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-5">
           {/* Status + priority controls */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => patch({ status: nextStatus })}
-                className={cn(
-                  "rounded-l-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wide",
-                  TASK_STATUS_META[t.status].chip
-                )}
+                className={cn("gap-1.5 rounded-r-none", badgeTone[statusTone], badgeToneHover[statusTone])}
                 title={`Advance to ${TASK_STATUS_META[nextStatus].label}`}
               >
+                <BadgeDot tone={statusTone} />
                 {TASK_STATUS_META[t.status].label}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => patch({ status: nextStatus })}
-                className={cn(
-                  "rounded-r-lg px-2 py-1.5 text-xs font-black border-l border-background/40",
-                  TASK_STATUS_META[t.status].chip
-                )}
+                className={cn("-ml-px rounded-l-none", badgeTone[statusTone], badgeToneHover[statusTone])}
                 aria-label="Advance status"
               >
-                →
-              </button>
+                <ArrowRight />
+              </Button>
             </span>
-            <select
-              value={t.priority}
-              onChange={(e) => patch({ priority: e.target.value })}
-              className={cn(INPUT_CLS, "h-8 py-0 text-xs font-semibold")}
-              aria-label="Priority"
-            >
-              {TASK_PRIORITY_ORDER.map((p) => (
-                <option key={p} value={p}>
-                  {TASK_PRIORITY_META[p].label}
-                </option>
-              ))}
-            </select>
-            <Flag className={cn("h-4 w-4", TASK_PRIORITY_META[t.priority].flag)} />
-            {overdue && (
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">Overdue</span>
-            )}
+            <Select value={t.priority} onValueChange={(v) => patch({ priority: v })}>
+              <SelectTrigger className="h-8 w-auto min-w-32" aria-label="Priority">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_PRIORITY_ORDER.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    <span className="inline-flex items-center gap-2">
+                      <PriorityFlag priority={p} />
+                      {TASK_PRIORITY_META[p].label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {overdue && <StatusBadge tone="danger">Overdue</StatusBadge>}
           </div>
 
           {/* Title — auto-growing textarea so long titles wrap on phones
@@ -468,146 +531,158 @@ export function TaskDetailSheet({
               if (trimmed && trimmed !== t.title) patch({ title: trimmed });
               else setTitle(t.title); // cleared or unchanged — revert, never save blank
             }}
-            className="w-full resize-none overflow-hidden bg-transparent text-lg font-black leading-snug text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1"
+            className="w-full resize-none overflow-hidden bg-transparent text-lg font-semibold leading-snug tracking-tight text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1"
             aria-label="Task title"
           />
 
           {/* Fields */}
-          <div className="grid grid-cols-[84px_1fr] sm:grid-cols-[100px_1fr] gap-y-2.5 items-center text-sm">
-            <span className="text-muted-foreground text-xs font-semibold">Assignee</span>
+          <div className="grid grid-cols-[84px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)] gap-x-3 gap-y-3 items-center text-sm">
+            <span className="text-xs text-muted-foreground">Assignee</span>
             {/* Controlled by the hub owner — a declined confirm or failed
                 reassign simply re-renders back to the current assignee.
                 Only true SWEEP tasks (created_by='system') are locked —
                 agent-created tasks with a 'system' source label reassign fine. */}
-            <select
+            <Select
               value={hub.member.adminId}
-              onChange={(e) => {
-                const v = e.target.value;
+              onValueChange={(v) => {
                 if (v && v !== hub.member.adminId) setReassignTargetId(v);
               }}
               disabled={t.source === "system" && t.createdBy === "system"}
-              className={cn(INPUT_CLS, "h-8 py-0 w-56 max-w-full text-xs disabled:opacity-60")}
-              aria-label="Assignee"
-              title={
-                t.source === "system" && t.createdBy === "system"
-                  ? "Sweep-generated tasks can't be reassigned — the sweep routes them per member"
-                  : "Reassigning moves this task (and its linked action item) to the selected member's hub"
-              }
             >
-              {!memberOptions.some((m) => m.adminId === hub.member.adminId) && (
-                <option value={hub.member.adminId}>{hub.member.name}</option>
-              )}
-              {memberOptions.map((m) => (
-                <option key={m.adminId} value={m.adminId}>
-                  {m.name}
-                  {m.position ? ` — ${m.position}` : ""}
-                </option>
-              ))}
-            </select>
-            <span className="text-muted-foreground text-xs font-semibold">Due date</span>
-            {/* Picker selections save at once; typed partials (and a mid-edit
-                empty value) settle on blur — never one PATCH per keystroke. */}
-            <input
-              type="date"
+              <SelectTrigger
+                className="h-8 w-56 max-w-full"
+                aria-label="Assignee"
+                title={
+                  t.source === "system" && t.createdBy === "system"
+                    ? "Sweep-generated tasks can't be reassigned — the sweep routes them per member"
+                    : "Reassigning moves this task (and its linked action item) to the selected member's hub"
+                }
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {!memberOptions.some((m) => m.adminId === hub.member.adminId) && (
+                  <SelectItem value={hub.member.adminId}>{hub.member.name}</SelectItem>
+                )}
+                {memberOptions.map((m) => (
+                  <SelectItem key={m.adminId} value={m.adminId}>
+                    {m.name}
+                    {m.position ? ` — ${m.position}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground">Due date</span>
+            {/* The picker hands over a whole date (or "" from Clear) in one
+                go — no typed partials, no blur step — so the native input's
+                change + blur rules run together: a 20xx date saves at once,
+                clearing saves null, anything else snaps back to the server
+                value. Never one PATCH per keystroke. */}
+            <DatePicker
               value={dueDraft}
-              onChange={(e) => {
-                const v = e.target.value;
+              onValueChange={(v) => {
                 setDueDraft(v);
-                if (SAVABLE_DUE_RE.test(v) && v !== t.dueDate) patchDue(v);
-              }}
-              onBlur={() => {
-                if (dueDraft === "") {
+                if (v === "") {
                   if (t.dueDate) patchDue(null);
-                } else if (!SAVABLE_DUE_RE.test(dueDraft)) {
+                } else if (!SAVABLE_DUE_RE.test(v)) {
                   setDueDraft(t.dueDate ?? "");
+                } else if (v !== t.dueDate) {
+                  patchDue(v);
                 }
               }}
-              className={cn(INPUT_CLS, "h-8 py-0 w-44 text-xs", overdue && "text-red-500 font-bold")}
+              placeholder="No due date"
+              className={cn("h-8 w-44", overdue && "font-medium text-red-700 dark:text-red-400")}
               aria-label="Due date"
             />
-            <span className="text-muted-foreground text-xs font-semibold">Client</span>
-            <select
-              value={t.clientId ?? ""}
-              onChange={(e) => patch({ clientId: e.target.value || null })}
-              className={cn(INPUT_CLS, "h-8 py-0 w-56 max-w-full text-xs")}
-              aria-label="Client"
+            <span className="text-xs text-muted-foreground">Client</span>
+            <Select
+              value={t.clientId || NO_CLIENT}
+              onValueChange={(v) => patch({ clientId: v === NO_CLIENT ? null : v })}
             >
-              <option value="">No client</option>
-              {/* A task forwarded from another book can carry a client this
-                  hub doesn't manage — keep it selected rather than "No client". */}
-              {t.clientId && !hub.clients.some((c) => c.id === t.clientId) && (
-                <option value={t.clientId}>Client outside this hub</option>
-              )}
-              {hub.clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.displayName}
-                </option>
-              ))}
-            </select>
-            <span className="text-muted-foreground text-xs font-semibold">Tagged</span>
+              <SelectTrigger className="h-8 w-56 max-w-full" aria-label="Client">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CLIENT}>No client</SelectItem>
+                {/* A task forwarded from another book can carry a client this
+                    hub doesn't manage — keep it selected rather than "No client". */}
+                {t.clientId && !hub.clients.some((c) => c.id === t.clientId) && (
+                  <SelectItem value={t.clientId}>Client outside this hub</SelectItem>
+                )}
+                {hub.clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground">Tagged</span>
             {/* Tagged teammates see this task in their hub's Tagged section. */}
-            <span className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {tags.map((tag) => (
-                <span
+                // overflow-visible: the untag button's hit area reaches past
+                // the badge's edge.
+                <Badge
                   key={tag.adminId}
-                  className="inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[11px] font-bold text-violet-600 dark:text-violet-400"
+                  variant="outline"
+                  className="max-w-full overflow-visible pr-1 font-normal"
                   title={tag.taggedByName ? `Tagged by ${tag.taggedByName}` : undefined}
                 >
-                  <AtSign className="h-3 w-3" />
-                  {tag.name}
+                  <AtSign className="text-muted-foreground" />
+                  <span className="min-w-0 truncate">{tag.name}</span>
                   <button
                     type="button"
                     onClick={() => untagMember(tag.adminId)}
-                    className="-m-2 p-2.5 rounded hover:text-red-500"
+                    className="-m-2 rounded-full p-2.5 text-muted-foreground hover:text-destructive"
                     aria-label={`Untag ${tag.name}`}
                   >
-                    <X className="h-3 w-3" />
+                    <X className="size-3" />
                   </button>
-                </span>
+                </Badge>
               ))}
-              <select
-                value=""
-                onChange={(e) => e.target.value && tagMember(e.target.value)}
-                className={cn(INPUT_CLS, "h-7 py-0 w-40 max-w-full text-xs")}
-                aria-label="Tag a teammate"
-                title="The tagged member sees this task in their hub's Tagged section"
-              >
-                <option value="">Tag teammate…</option>
-                {memberOptions
-                  .filter(
-                    (m) =>
-                      m.adminId !== hub.member.adminId &&
-                      !tags.some((tag) => tag.adminId === m.adminId)
-                  )
-                  .map((m) => (
-                    <option key={m.adminId} value={m.adminId}>
+              {/* Always empty: picking a member tags them and the picker
+                  resets to its placeholder. Disabled when nobody is left to
+                  tag (a Radix Select would open an empty menu). */}
+              <Select value="" onValueChange={(v) => v && tagMember(v)} disabled={taggable.length === 0}>
+                <SelectTrigger
+                  className="h-7 w-40 max-w-full px-2.5 text-xs"
+                  aria-label="Tag a teammate"
+                  title="The tagged member sees this task in their hub's Tagged section"
+                >
+                  <SelectValue placeholder="Tag teammate…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {taggable.map((m) => (
+                    <SelectItem key={m.adminId} value={m.adminId}>
                       {m.name}
                       {m.position ? ` — ${m.position}` : ""}
-                    </option>
+                    </SelectItem>
                   ))}
-              </select>
-            </span>
-            <span className="text-muted-foreground text-xs font-semibold">Source</span>
-            <span className="text-xs font-semibold text-foreground">
-              {t.source === "manual"
-                ? "Manual"
-                : t.source === "system"
-                  ? `${SOURCE_META.system.symbol} System`
-                  : "⚡ Action item"}
+                </SelectContent>
+              </Select>
+            </div>
+            <span className="text-xs text-muted-foreground">Source</span>
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+              <Badge variant="outline" className="font-normal">
+                {SourceIcon && <SourceIcon className="text-muted-foreground" />}
+                {t.source === "manual"
+                  ? "Manual"
+                  : t.source === "system"
+                    ? SOURCE_META.system.label
+                    : "Action item"}
+              </Badge>
               {t.createdByName && (
-                <span className="text-muted-foreground font-normal"> · by {t.createdByName}</span>
+                <span className="text-muted-foreground">· by {t.createdByName}</span>
               )}
             </span>
-            <span className="text-muted-foreground text-xs font-semibold">Created</span>
+            <span className="text-xs text-muted-foreground">Created</span>
             <span className="text-xs text-muted-foreground">{formatDate(t.createdAt)}</span>
           </div>
 
           {/* Description */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              Description
-            </p>
-            <textarea
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Description</p>
+            <Textarea
               value={description}
               onChange={(e) => {
                 descriptionDirty.current = true;
@@ -620,45 +695,35 @@ export function TaskDetailSheet({
               }}
               placeholder="Add description…"
               rows={3}
-              className={cn(INPUT_CLS, "w-full resize-y text-xs leading-relaxed")}
+              className="resize-y leading-relaxed"
             />
           </div>
 
           {/* Checklist */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
               Checklist{" "}
               {t.checklist.length > 0 && (
-                <span className="normal-case tracking-normal font-semibold">
+                <span className="tabular-nums">
                   {ckDone}/{t.checklist.length}
                 </span>
               )}
             </p>
             <div className="space-y-1">
               {t.checklist.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 group">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setChecklist(
-                        t.checklist.map((c) =>
-                          c.id === item.id ? { ...c, done: !c.done } : c
-                        )
-                      )
-                    }
-                    className={cn(
-                      "flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors",
-                      item.done
-                        ? "bg-primary border-primary text-primary-foreground"
-                        : "border-input"
-                    )}
+                <div key={item.id} className="flex items-center gap-2.5 py-1 group">
+                  <Checkbox
+                    checked={item.done}
+                    onCheckedChange={() => toggleItem(item.id)}
+                    // Radix toggles on Space only; the old button took Enter too.
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") toggleItem(item.id);
+                    }}
                     aria-label={item.done ? "Uncheck" : "Check"}
-                  >
-                    {item.done && <Check className="h-3 w-3" />}
-                  </button>
+                  />
                   <span
                     className={cn(
-                      "flex-1 min-w-0 break-words text-xs",
+                      "flex-1 min-w-0 break-words text-sm",
                       item.done ? "text-muted-foreground line-through" : "text-foreground"
                     )}
                   >
@@ -672,13 +737,13 @@ export function TaskDetailSheet({
                     className={ROW_ACTION_CLS}
                     aria-label="Remove item"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="size-3.5" />
                   </button>
                 </div>
               ))}
-              <div className="flex items-center gap-2">
-                <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                <input
+              <div className="flex items-center gap-2.5 pt-1">
+                <Plus className="size-4 shrink-0 text-muted-foreground" />
+                <Input
                   type="text"
                   value={newItem}
                   onChange={(e) => setNewItem(e.target.value)}
@@ -692,7 +757,7 @@ export function TaskDetailSheet({
                     }
                   }}
                   placeholder="Add checklist item…"
-                  className="flex-1 bg-transparent py-1 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                  className="h-8"
                 />
               </div>
             </div>
@@ -700,18 +765,17 @@ export function TaskDetailSheet({
 
           {/* Attachments — PDF BLOBs ≤10 MB, served by the documents route */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
               Attachments{" "}
-              {documents.length > 0 && (
-                <span className="normal-case tracking-normal font-semibold">
-                  {documents.length}
-                </span>
-              )}
+              {documents.length > 0 && <span className="tabular-nums">{documents.length}</span>}
             </p>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {documents.map((doc) => (
-                <div key={doc.id} className="flex items-center gap-2 group text-xs">
-                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <div
+                  key={doc.id}
+                  className="flex items-center gap-2.5 rounded-2xl bg-muted/40 px-3 py-2 group text-xs"
+                >
+                  <FileText className="size-4 shrink-0 text-muted-foreground" />
                   {/* Phones: uploader/date stack under the filename instead of
                       crushing it; side by side from sm. */}
                   <span className="flex-1 min-w-0 sm:flex sm:items-center sm:gap-2">
@@ -719,7 +783,7 @@ export function TaskDetailSheet({
                       href={`/api/admin/team/tasks/${t.id}/documents/${doc.id}?view=1`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block min-w-0 truncate font-semibold text-foreground hover:text-primary hover:underline sm:flex-1"
+                      className="block min-w-0 truncate text-sm font-medium text-foreground hover:underline sm:flex-1"
                       title={`${doc.fileName} · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB`}
                     >
                       {doc.fileName}
@@ -735,7 +799,7 @@ export function TaskDetailSheet({
                     className={ROW_ACTION_CLS}
                     aria-label={`Remove ${doc.fileName}`}
                   >
-                    <X className="h-3 w-3" />
+                    <X className="size-3.5" />
                   </button>
                 </div>
               ))}
@@ -750,28 +814,27 @@ export function TaskDetailSheet({
                   if (file) uploadDocument(file);
                 }}
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-60"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Paperclip />
                 {uploading ? "Uploading…" : "Attach PDF (max 10 MB)"}
-              </button>
+              </Button>
             </div>
           </div>
 
           {/* Activity & comments — one chronological trail */}
-          <div className="border-t border-border pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-              Activity
-            </p>
+          <div className="border-t pt-4">
+            <p className="mb-3 text-xs font-medium text-muted-foreground">Activity</p>
             <div className="space-y-2">
               {comments.map((c) =>
                 c.kind === "activity" ? (
-                  <p key={c.id} className="flex items-start gap-2 text-[11px] text-muted-foreground">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-border" />
+                  <p key={c.id} className="flex items-start gap-2 px-1 text-xs text-muted-foreground">
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
                     <span className="min-w-0 break-words">
                       {c.body}
                       <span className="opacity-70">
@@ -781,17 +844,21 @@ export function TaskDetailSheet({
                     </span>
                   </p>
                 ) : (
-                  <div key={c.id} className="text-xs">
-                    <span className="font-bold text-foreground">{c.authorName || "Unknown"}</span>{" "}
-                    <span className="text-muted-foreground">· {formatDate(c.createdAt)}</span>
-                    <p className="mt-0.5 text-foreground whitespace-pre-wrap break-words">{c.body}</p>
+                  <div key={c.id} className="rounded-2xl bg-muted/40 px-3 py-2">
+                    <p className="text-xs">
+                      <span className="font-medium text-foreground">{c.authorName || "Unknown"}</span>{" "}
+                      <span className="text-muted-foreground">· {formatDate(c.createdAt)}</span>
+                    </p>
+                    <p className="mt-0.5 text-sm text-foreground whitespace-pre-wrap break-words">
+                      {c.body}
+                    </p>
                   </div>
                 )
               )}
               {/* Pinned to the sheet's bottom so a long trail never pushes
                   the composer out of reach. */}
-              <div className="sticky bottom-0 -mx-5 bg-card px-5 py-2">
-                <input
+              <div className="sticky bottom-0 -mx-5 flex items-center gap-2 bg-popover px-5 py-2">
+                <Input
                   type="text"
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
@@ -799,8 +866,16 @@ export function TaskDetailSheet({
                     if (e.key === "Enter") submitComment();
                   }}
                   placeholder="Write a comment… Enter to send"
-                  className={cn(INPUT_CLS, "w-full text-xs")}
+                  aria-label="Write a comment"
                 />
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={() => submitComment()}
+                  aria-label="Send comment"
+                >
+                  <Send />
+                </Button>
               </div>
             </div>
           </div>
@@ -818,6 +893,7 @@ export function TaskDetailSheet({
           onCancel={() => setReassignTargetId(null)}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

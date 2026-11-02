@@ -312,6 +312,35 @@ export async function getGoalsCentsByAdmin(month: string): Promise<Map<string, n
   return map;
 }
 
+/**
+ * Every explicit goal row at or before `month` for these admins (one query) —
+ * the Team trends carry them forward per month (teamTrendSeries
+ * carryForwardGoals). Read-only.
+ */
+export async function listGoalRowsThrough(
+  adminIds: string[],
+  month: string
+): Promise<Array<{ adminId: string; month: string; goalCents: number }>> {
+  if (adminIds.length === 0) return [];
+  await ensureMigrated();
+  const db = getDb();
+  try {
+    const result = await db.execute({
+      sql: `SELECT admin_id, month, goal_cents FROM team_member_goals
+            WHERE month <= ? AND admin_id IN (${adminIds.map(() => "?").join(", ")})`,
+      args: [month, ...adminIds],
+    });
+    return result.rows.map((row) => ({
+      adminId: String(row.admin_id),
+      month: String(row.month),
+      goalCents: Number(row.goal_cents ?? 0),
+    }));
+  } catch (err) {
+    if (isNoSuchTable(err)) return [];
+    throw err;
+  }
+}
+
 /** Explicit goal rows for one member, newest first (goal history UI). */
 export async function listGoalHistory(
   adminId: string

@@ -10,6 +10,7 @@ import type {
   TaskStatus,
   TeamTimeframeValue,
 } from "./types";
+import type { TeamTrends } from "@/lib/teamTrendSeries";
 
 // ---------------------------------------------------------------------------
 // Team hub data layer — React Query wrappers over /api/admin/team/*.
@@ -69,6 +70,37 @@ export function useTeamDirectory(
     // new key loads, instead of unmounting the page (and the toggle) into a
     // skeleton.
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Read-only history for the Team overview's trend lines + Insights (12 months
+ * of re-bill payouts + goals, 12 weeks of task throughput). Same `workspace`
+ * pin as useTeamDirectory. Slow-moving — fresh for 5 minutes, no focus
+ * refetch; task writes invalidate it (useTaskMutations).
+ */
+export function useTeamTrends(workspace?: string, { enabled = true }: { enabled?: boolean } = {}) {
+  const ws = workspace || "";
+  return useQuery<TeamTrends>({
+    queryKey: ["team-trends", ws || "all"],
+    queryFn: () =>
+      fetchJson(`/api/admin/team/trends${ws ? `?workspace=${encodeURIComponent(ws)}` : ""}`),
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+/** The same history for one member hub. */
+export function useMemberTrends(adminId: string, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery<TeamTrends>({
+    queryKey: ["team-member-trends", adminId],
+    queryFn: () => fetchJson(`/api/admin/team/members/${adminId}/trends`),
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    enabled,
   });
 }
 
@@ -185,10 +217,15 @@ export function useTaskMutations(adminId: string): TaskMutations {
 
   // A task status flip may solve/reopen its linked action item server-side —
   // refresh the inbox + rollups lazily rather than tracking the link here.
-  const invalidateLinked = () => {
+  const invalidateLinked = (trends = true) => {
     queryClient.invalidateQueries({ queryKey: ["team-action-items", adminId] });
     queryClient.invalidateQueries({ queryKey: ["team-member", adminId] });
     queryClient.invalidateQueries({ queryKey: ["team-directory"] });
+    // Weekly created / completed lines (a costly build — skipped for edits
+    // that can't move them, e.g. a due date).
+    if (!trends) return;
+    queryClient.invalidateQueries({ queryKey: ["team-member-trends", adminId] });
+    queryClient.invalidateQueries({ queryKey: ["team-trends"] });
   };
   const rollback = () => {
     queryClient.invalidateQueries({ queryKey: key });
@@ -222,7 +259,7 @@ export function useTaskMutations(adminId: string): TaskMutations {
         // Status AND due-date changes move the server-side rollups (done /
         // overdue / due counts); a status move also records an activity row.
         if (changes.status !== undefined || changes.dueDate !== undefined) {
-          invalidateLinked();
+          invalidateLinked(changes.status !== undefined);
         }
         if (changes.status !== undefined) {
           queryClient.invalidateQueries({ queryKey: ["team-task-comments", id] });
@@ -271,6 +308,7 @@ export function useTaskMutations(adminId: string): TaskMutations {
       queryClient.invalidateQueries({ queryKey: ["team-tasks", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-action-items", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-member", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-member-trends", toAdminId] });
       for (const taggedId of alsoTag ?? []) {
         queryClient.invalidateQueries({ queryKey: ["team-tagged-tasks", taggedId] });
       }
@@ -323,6 +361,9 @@ export function useActionItemMutations(adminId: string) {
         queryClient.invalidateQueries({ queryKey: tasksKey });
         queryClient.invalidateQueries({ queryKey: ["team-member", adminId] });
         queryClient.invalidateQueries({ queryKey: ["team-directory"] });
+        // Solving completes the linked task — the weekly completed lines move.
+        queryClient.invalidateQueries({ queryKey: ["team-member-trends", adminId] });
+        queryClient.invalidateQueries({ queryKey: ["team-trends"] });
       } catch (err) {
         queryClient.invalidateQueries({ queryKey: itemsKey });
         queryClient.invalidateQueries({ queryKey: tasksKey });
@@ -354,6 +395,10 @@ export function useActionItemMutations(adminId: string) {
       queryClient.invalidateQueries({ queryKey: ["team-action-items", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-member", toAdminId] });
       queryClient.invalidateQueries({ queryKey: ["team-directory"] });
+      // The linked task's created / completed weeks move with it.
+      queryClient.invalidateQueries({ queryKey: ["team-member-trends", adminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-member-trends", toAdminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-trends"] });
     },
   };
 }

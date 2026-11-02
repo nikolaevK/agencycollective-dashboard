@@ -1,3 +1,5 @@
+import { Bot, LayoutDashboard, Slack, type LucideIcon } from "lucide-react";
+import type { BadgeTone } from "@/components/ui/badge";
 import type {
   TaskStatus,
   TaskPriority,
@@ -7,34 +9,31 @@ import type {
 } from "./types";
 
 // ---------------------------------------------------------------------------
-// Team hub presentation maps — pure label/color constants, mirroring the
-// rosterPresentation idiom (bg-{color}-500/10 + text-{color}-600/dark-400).
-// Status/priority vocabularies are FIXED (lib/teamTasks.ts).
+// Team hub presentation maps — pure label/tone constants for the shadcn kit
+// (StatusBadge / BadgeDot tones, components/ui/badge). Status-like vocab maps
+// to a meaning; categories (sources, clients) stay neutral. Status/priority
+// vocabularies are FIXED (lib/teamTasks.ts).
 // ---------------------------------------------------------------------------
 
 export const TASK_STATUS_META: Record<
   TaskStatus,
-  { label: string; chip: string; dot: string }
+  { label: string; tone: BadgeTone }
 > = {
   todo: {
     label: "To Do",
-    chip: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
-    dot: "bg-slate-400",
+    tone: "neutral",
   },
   in_progress: {
     label: "In Progress",
-    chip: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    dot: "bg-blue-500",
+    tone: "info",
   },
   review: {
     label: "Review",
-    chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    dot: "bg-amber-500",
+    tone: "warning",
   },
   complete: {
     label: "Complete",
-    chip: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    dot: "bg-emerald-500",
+    tone: "success",
   },
 };
 
@@ -47,27 +46,28 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
 
 export const TASK_PRIORITY_META: Record<
   TaskPriority,
-  { label: string; chip: string; flag: string }
+  { label: string; tone: BadgeTone; flag: string }
 > = {
   urgent: {
     label: "Urgent",
-    chip: "bg-red-500/10 text-red-600 dark:text-red-400",
-    flag: "text-red-500",
+    tone: "danger",
+    flag: "text-red-600 dark:text-red-400",
   },
   high: {
     label: "High",
-    chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    flag: "text-amber-500",
+    tone: "warning",
+    flag: "text-amber-600 dark:text-amber-400",
   },
+  // The default priority stays quiet — color only where it matters.
   normal: {
     label: "Normal",
-    chip: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    flag: "text-sky-500",
+    tone: "neutral",
+    flag: "text-muted-foreground/70",
   },
   low: {
     label: "Low",
-    chip: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
-    flag: "text-slate-400",
+    tone: "neutral",
+    flag: "text-muted-foreground/40",
   },
 };
 
@@ -75,66 +75,38 @@ export const TASK_PRIORITY_ORDER: TaskPriority[] = ["urgent", "high", "normal", 
 
 export const SOURCE_META: Record<
   ActionSourceType,
-  { label: string; chip: string; symbol: string }
+  { label: string; icon: LucideIcon }
 > = {
   slack: {
     label: "Slack",
-    chip: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
-    symbol: "◆",
+    icon: Slack,
   },
   dashboard: {
     label: "Dashboard",
-    chip: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-    symbol: "▣",
+    icon: LayoutDashboard,
   },
   system: {
     label: "System",
-    chip: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
-    symbol: "⚙",
+    icon: Bot,
   },
 };
 
 /**
- * Monthly re-bill tracker buckets — labels + colors matching the Client
- * Directory's RebillStatusChip semantics (Paid = emerald, Invoice sent =
- * violet, Due = amber, Overdue = red). Bar segment fills are validated for
- * both surfaces (dark shifts emerald/amber one step down for the lightness
- * band); `bar: null` buckets render as the muted track, never a fill.
+ * Monthly re-bill tracker buckets — the same colors as the Overview's re-bill
+ * bar and the Client Directory's RebillStatusChip (collected = success, sent
+ * = info, due = warning, overdue = danger). `bar: null` buckets render as the
+ * muted track, never a fill.
  */
 export const MONTHLY_REBILL_META: Record<
   MonthlyRebillBucket,
-  { label: string; bar: string | null; text: string }
+  { label: string; tone: BadgeTone; bar: string | null }
 > = {
-  collected: {
-    label: "Collected",
-    bar: "bg-emerald-500 dark:bg-emerald-600",
-    text: "text-emerald-600 dark:text-emerald-400",
-  },
-  sent: {
-    label: "Sent",
-    bar: "bg-violet-500",
-    text: "text-violet-600 dark:text-violet-400",
-  },
-  due: {
-    label: "Due",
-    bar: "bg-amber-500 dark:bg-amber-600",
-    text: "text-amber-600 dark:text-amber-400",
-  },
-  overdue: {
-    label: "Overdue",
-    bar: "bg-red-500",
-    text: "text-red-600 dark:text-red-400",
-  },
-  scheduled: {
-    label: "Upcoming",
-    bar: null,
-    text: "text-muted-foreground",
-  },
-  untracked: {
-    label: "Untracked",
-    bar: null,
-    text: "text-muted-foreground/70",
-  },
+  collected: { label: "Collected", tone: "success", bar: "bg-emerald-500" },
+  sent: { label: "Sent", tone: "info", bar: "bg-sky-500" },
+  due: { label: "Due", tone: "warning", bar: "bg-amber-500" },
+  overdue: { label: "Overdue", tone: "danger", bar: "bg-red-500" },
+  scheduled: { label: "Upcoming", tone: "neutral", bar: null },
+  untracked: { label: "Untracked", tone: "neutral", bar: null },
 };
 
 const MONTH_NAMES = [
@@ -166,20 +138,22 @@ export const TIMEFRAME_PHRASE: Record<"today" | "week" | "month", string> = {
   month: "this month",
 };
 
-/** Deterministic avatar tint per member (mockup-style colored tiles). */
-const AVATAR_TINTS = [
-  "bg-violet-500",
-  "bg-cyan-500",
-  "bg-emerald-500",
-  "bg-blue-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-fuchsia-500",
-  "bg-teal-500",
-];
+/** "2026-07" → "Jul 2026" (Intl, so chart readouts don't pull in date-fns). */
+export function shortMonthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!Number.isFinite(y) || !(m >= 1 && m <= 12)) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
-export function avatarTint(seed: string): string {
-  let x = 0;
-  for (const ch of seed) x = (x * 31 + ch.charCodeAt(0)) % 997;
-  return AVATAR_TINTS[x % AVATAR_TINTS.length];
+/** "2026-10-26" (a week's Monday) → "Week of Oct 26". */
+export function weekOfLabel(ymd: string): string {
+  return `Week of ${new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  })}`;
 }

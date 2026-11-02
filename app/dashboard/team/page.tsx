@@ -4,12 +4,13 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { TeamHome } from "@/components/team/TeamHome";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ~40KB of static docs — only fetched when the Documentation tab is opened.
 const TeamGuide = dynamic(
   () => import("@/components/team/TeamGuide").then((m) => m.TeamGuide),
-  { loading: () => <div className="h-72 rounded-xl bg-muted/40 animate-pulse" /> }
+  { loading: () => <Skeleton className="h-72 w-full rounded-3xl" /> }
 );
 
 type TabId = "overview" | "docs";
@@ -20,49 +21,20 @@ export default function TeamPage() {
   return (
     <DashboardShell wide>
       <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-foreground">Team</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Client ownership, tasks &amp; MRR-managed goals — one hub per team member.
-            </p>
-          </div>
-          <div className="flex bg-muted rounded-lg p-1 self-start">
-            <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
-              Overview
-            </TabButton>
-            <TabButton active={tab === "docs"} onClick={() => setTab("docs")}>
-              Documentation
-            </TabButton>
-          </div>
+        <div>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Team</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Client ownership, tasks &amp; MRR-managed goals — one hub per team member.
+          </p>
         </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="docs">Documentation</TabsTrigger>
+          </TabsList>
+        </Tabs>
         {tab === "overview" ? <TeamHome /> : <TeamGuide />}
       </div>
     </DashboardShell>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-4 py-1.5 rounded-md text-sm font-semibold transition-colors",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
   );
 }

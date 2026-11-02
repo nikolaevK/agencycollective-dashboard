@@ -897,6 +897,33 @@ export async function getMonthRebillRevenueCents(
 }
 
 /**
+ * getMonthRebillRevenueCents for each month of a window ("yyyy-mm", oldest
+ * first) — one range query; the Team hub's 12-month re-billed trend line, so
+ * its last point is exactly the whole-book headline. Read-only.
+ */
+export async function getRebillRevenueByMonth(months: string[]): Promise<number[]> {
+  if (months.length === 0) return [];
+  await ensureMigrated();
+  const db = getDb();
+  const [fy, fm] = months[0].split("-").map(Number);
+  const [ly, lm] = months[months.length - 1].split("-").map(Number);
+  const result = await db.execute({
+    sql: `SELECT payout_year, payout_month, amount_due, sales_rep FROM payouts
+          WHERE (payout_year, payout_month) >= (?, ?) AND (payout_year, payout_month) <= (?, ?)`,
+    args: [fy, fm, ly, lm],
+  });
+  const index = new Map(months.map((ym, i) => [ym, i] as const));
+  const totals = months.map(() => 0);
+  for (const row of result.rows) {
+    const salesRep = row.sales_rep != null ? String(row.sales_rep) : null;
+    if (!isRebillSalesRep(salesRep)) continue;
+    const i = index.get(`${Number(row.payout_year)}-${String(Number(row.payout_month)).padStart(2, "0")}`);
+    if (i !== undefined) totals[i] += Number(row.amount_due ?? 0);
+  }
+  return totals;
+}
+
+/**
  * (year, month) pairs of every payout flagged as an "Ad Account" in the Sales
  * Rep column, grouped by normalized brand. The Ad Accounts directory uses this
  * to confirm payment of a sent ad-account invoice: a brand's ad-account payout

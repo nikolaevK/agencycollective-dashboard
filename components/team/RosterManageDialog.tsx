@@ -2,11 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Trash2, Shuffle } from "lucide-react";
+import { X, Trash2, Shuffle, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { formatMoney } from "@/components/users/format";
 import { adminRoleLabel } from "@/components/admins/types";
-import { MemberAvatar } from "./TeamHome";
+import { MemberAvatar } from "./TeamBits";
 import { ATTRIBUTION_LABEL } from "./presentation";
 import { useTeamMemberOptions } from "./useTeamData";
 import type {
@@ -26,8 +37,8 @@ interface AdminOption {
 
 const ATTRIBUTIONS: TeamAttribution[] = ["book", "lead", "media_buyer", "csm"];
 
-const INPUT_CLS =
-  "h-8 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** Radix Select can't hold "" — stands in for the Add row's "no admin picked". */
+const NO_ADMIN = "__none__";
 
 /** Goal input text for stored cents — exact (no rounding), "" when unset. */
 function goalInputOf(goalCents: number): string {
@@ -45,6 +56,12 @@ function defaultsForRole(role: string): { attribution: TeamAttribution; position
 /**
  * Privileged roster management: add/edit/remove members, set the current
  * month's goal, and run the CSM auto-split (dry-run preview → confirm).
+ *
+ * Deliberately a hand-built modal (kit overlay/panel classes), not a Radix
+ * Dialog: the row fields save on blur, and Radix dismisses an outside click
+ * on pointer-down — before the focused field blurs — so the dialog would
+ * unmount and drop the pending edit. Close paths are unchanged: backdrop
+ * click and the X button (no Escape).
  */
 export function RosterManageDialog({
   directory,
@@ -88,11 +105,16 @@ export function RosterManageDialog({
   const addable = admins.filter((a) => !rosteredIds.has(a.id));
   const shownIds = new Set(directory.members.map((m) => m.adminId));
   const hiddenMemberCount = rosterOptions.filter((o) => !shownIds.has(o.adminId)).length;
+  // Display only: each member row's admin role label (blank until the admins list loads).
+  const roleById = useMemo(() => new Map(admins.map((a) => [a.id, a.role])), [admins]);
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["team-directory"] });
     queryClient.invalidateQueries({ queryKey: ["team-member"] });
     queryClient.invalidateQueries({ queryKey: ["team-member-options"] });
+    // Goals, attribution and membership all shape the trend series.
+    queryClient.invalidateQueries({ queryKey: ["team-trends"] });
+    queryClient.invalidateQueries({ queryKey: ["team-member-trends"] });
   };
 
   async function call(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -150,114 +172,144 @@ export function RosterManageDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-4xl max-h-[88vh] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card shadow-xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4 rounded-t-2xl">
-          <h2 className="text-base font-bold">Team roster</h2>
-          <button
+      <div className={dialogOverlayClass} onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-roster-title"
+        className={cn(
+          dialogPanelClass,
+          "relative z-50 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden"
+        )}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-6 py-4">
+          <h2 id="team-roster-title" className="text-base font-semibold tracking-tight">
+            Team roster
+          </h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent"
             aria-label="Close"
+            className="shrink-0 bg-secondary"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-5">
           {/* Current members */}
-          <div className="space-y-2">
-            {directory.members.map((m) => (
-              <MemberRosterRow
-                key={m.adminId}
-                adminId={m.adminId}
-                name={m.name}
-                avatarPath={m.avatarPath}
-                position={m.position}
-                attribution={m.attribution}
-                goalCents={m.goalCents}
-                splitSharePercent={m.splitSharePercent}
-                currentMonth={currentMonth}
-                onCall={call}
-              />
-            ))}
+          <section className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Members</p>
+            <div className="divide-y">
+              {directory.members.map((m) => {
+                const role = roleById.get(m.adminId);
+                return (
+                  <MemberRosterRow
+                    key={m.adminId}
+                    adminId={m.adminId}
+                    name={m.name}
+                    avatarPath={m.avatarPath}
+                    roleLabel={role ? adminRoleLabel(role) : null}
+                    position={m.position}
+                    attribution={m.attribution}
+                    goalCents={m.goalCents}
+                    splitSharePercent={m.splitSharePercent}
+                    currentMonth={currentMonth}
+                    onCall={call}
+                  />
+                );
+              })}
+            </div>
             {directory.members.length === 0 && (
-              <p className="text-xs text-muted-foreground py-2">No members yet.</p>
+              <p className="py-2 text-sm text-muted-foreground">No members yet.</p>
             )}
             {hiddenMemberCount > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {hiddenMemberCount} member{hiddenMemberCount === 1 ? "" : "s"} in other
                 workspaces {hiddenMemberCount === 1 ? "isn't" : "aren't"} listed — clear the
                 workspace filter to edit them.
               </p>
             )}
-          </div>
+          </section>
 
           {/* Add member */}
           <AddMemberRow addable={addable} initialAdminId={initialAdminId} onCall={call} />
 
           {/* CSM auto-split */}
-          <div className="rounded-xl border border-border p-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <p className="text-sm font-bold text-foreground">CSM auto-split</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+          <section className="space-y-3 rounded-2xl bg-muted/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-[16rem] flex-1 space-y-0.5">
+                <p className="text-sm font-medium text-foreground">CSM auto-split</p>
+                <p className="text-xs text-muted-foreground">
                   Balance-assign active clients without a CSM across the CSM members,
                   proportionally to each member&apos;s Split % (blank = equal share, 0 = opted
                   out). Assignments become normal Client Directory rows — adjustable afterwards.
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={busy || !hasCsmMembers}
-                onClick={() => runSplit(false)}
-                className="inline-flex items-center gap-2 h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+              {/* The hint lives on a wrapper: the kit Button ignores pointer
+                  events while disabled, so its own title would never show. */}
+              <span
+                className="inline-flex shrink-0"
                 title={hasCsmMembers ? undefined : "Add a member with CSM attribution first"}
               >
-                <Shuffle className="h-3.5 w-3.5" />
-                Preview split
-              </button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !hasCsmMembers}
+                  onClick={() => runSplit(false)}
+                >
+                  <Shuffle />
+                  Preview split
+                </Button>
+              </span>
             </div>
-            {splitPreview && (
-              <div className="mt-3">
-                {splitPreview.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Every active client already has a CSM. Nothing to assign.
-                  </p>
-                ) : (
-                  <>
-                    <div className="max-h-48 overflow-y-auto overscroll-contain rounded-lg border border-border/60 divide-y divide-border/60">
-                      {splitPreview.map((a) => (
-                        <div key={a.clientId} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                          <span className="font-semibold text-foreground flex-1 truncate">
-                            {a.clientName}
-                          </span>
-                          <span className="text-muted-foreground">{formatMoney(a.mrrCents)}</span>
-                          <span className="font-bold text-primary">→ {a.adminName}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-2 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSplitPreview(null)}
-                        className="h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => runSplit(true)}
-                        className="h-8 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        Apply {splitPreview.length} assignment{splitPreview.length === 1 ? "" : "s"}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+            {splitPreview &&
+              (splitPreview.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Every active client already has a CSM. Nothing to assign.
+                </p>
+              ) : (
+                <>
+                  <div className="max-h-48 divide-y overflow-y-auto overscroll-contain rounded-xl bg-background ring-1 ring-foreground/5">
+                    {splitPreview.map((a) => (
+                      <div key={a.clientId} className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <span className="min-w-0 flex-1 truncate text-foreground">
+                          {a.clientName}
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                          {formatMoney(a.mrrCents)}
+                        </span>
+                        <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0 max-w-[40%] truncate font-medium text-foreground">
+                          {a.adminName}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSplitPreview(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => runSplit(true)}
+                    >
+                      Apply {splitPreview.length} assignment{splitPreview.length === 1 ? "" : "s"}
+                    </Button>
+                  </div>
+                </>
+              ))}
+          </section>
         </div>
       </div>
     </div>
@@ -268,6 +320,7 @@ function MemberRosterRow({
   adminId,
   name,
   avatarPath,
+  roleLabel,
   position,
   attribution,
   goalCents,
@@ -278,6 +331,7 @@ function MemberRosterRow({
   adminId: string;
   name: string;
   avatarPath: string | null;
+  roleLabel: string | null;
   position: string;
   attribution: TeamAttribution;
   goalCents: number;
@@ -285,6 +339,7 @@ function MemberRosterRow({
   currentMonth: string;
   onCall: (url: string, method: string, body?: unknown) => Promise<boolean>;
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [pos, setPos] = useState(position);
   const [goal, setGoal] = useState(goalInputOf(goalCents));
   const [share, setShare] = useState(splitSharePercent != null ? String(splitSharePercent) : "");
@@ -301,10 +356,13 @@ function MemberRosterRow({
   };
 
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 flex-wrap">
+    <div className="flex flex-wrap items-center gap-2.5 py-2.5">
       <MemberAvatar name={name} avatarPath={avatarPath} size="sm" />
-      <span className="text-sm font-semibold text-foreground w-28 truncate">{name}</span>
-      <input
+      <div className="w-32 min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{name}</p>
+        {roleLabel && <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>}
+      </div>
+      <Input
         type="text"
         value={pos}
         placeholder="Position"
@@ -314,26 +372,30 @@ function MemberRosterRow({
           const ok = await save(`/api/admin/team/members/${adminId}`, "PATCH", { position: pos });
           if (!ok) setPos(position);
         }}
-        className={cn(INPUT_CLS, "w-36 flex-1 min-w-[110px]")}
+        className="h-8 w-36 min-w-[110px] flex-1"
         aria-label={`Position for ${name}`}
       />
-      <select
+      {/* Saves on change (no blur step), like the old native select. */}
+      <Select
         value={attribution}
-        onChange={(e) =>
-          save(`/api/admin/team/members/${adminId}`, "PATCH", { attribution: e.target.value })
+        onValueChange={(value) =>
+          save(`/api/admin/team/members/${adminId}`, "PATCH", { attribution: value })
         }
-        className={cn(INPUT_CLS, "w-44")}
-        aria-label="Attribution rule"
       >
-        {ATTRIBUTIONS.map((a) => (
-          <option key={a} value={a}>
-            {ATTRIBUTION_LABEL[a]}
-          </option>
-        ))}
-      </select>
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] font-bold text-muted-foreground uppercase">Goal $</span>
-        <input
+        <SelectTrigger className="h-8 w-52" aria-label="Attribution rule">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ATTRIBUTIONS.map((a) => (
+            <SelectItem key={a} value={a}>
+              {ATTRIBUTION_LABEL[a]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Goal $</span>
+        <Input
           type="number"
           min={0}
           value={goal}
@@ -354,14 +416,14 @@ function MemberRosterRow({
             });
             if (!ok) setGoal(goalInputOf(goalCents));
           }}
-          className={cn(INPUT_CLS, "w-24")}
+          className="h-8 w-24 px-2 tabular-nums"
           aria-label={`Monthly goal for ${name}`}
         />
       </div>
       {attribution === "csm" && (
-        <div className="flex items-center gap-1" title="Auto-split share of the client book (blank = equal share, 0 = opted out)">
-          <span className="text-[10px] font-bold text-muted-foreground uppercase">Split %</span>
-          <input
+        <div className="flex items-center gap-1.5" title="Auto-split share of the client book (blank = equal share, 0 = opted out)">
+          <span className="text-xs font-medium text-muted-foreground">Split %</span>
+          <Input
             type="number"
             min={0}
             max={100}
@@ -382,28 +444,35 @@ function MemberRosterRow({
                 });
               }
             }}
-            className={cn(INPUT_CLS, "w-16")}
+            className="h-8 w-16 px-2 tabular-nums"
             aria-label={`CSM split share for ${name}`}
           />
         </div>
       )}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         disabled={pending > 0}
-        onClick={() => {
+        onClick={async () => {
           if (
-            confirm(
-              `Remove ${name} from the roster? Their tasks, action items, and goals are deleted. Client assignments are kept.`
-            )
-          ) {
-            save(`/api/admin/team/members/${adminId}`, "DELETE");
-          }
+            !(await confirm({
+              title: `Remove ${name} from the roster?`,
+              description:
+                "Their tasks, action items, and goals are deleted. Client assignments are kept.",
+              confirmText: "Remove",
+              destructive: true,
+            }))
+          )
+            return;
+          save(`/api/admin/team/members/${adminId}`, "DELETE");
         }}
-        className="ml-auto p-1.5 text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-50"
+        className="ml-auto text-muted-foreground hover:text-destructive"
         aria-label={`Remove ${name} from roster`}
       >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        <Trash2 />
+      </Button>
+      {confirmDialog}
     </div>
   );
 }
@@ -436,15 +505,13 @@ function AddMemberRow({
   }, [preselect?.id]);
 
   return (
-    <div className="rounded-xl border border-dashed border-border p-3.5">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-        Add team member
-      </p>
-      <div className="flex items-center gap-2 flex-wrap">
-        <select
-          value={adminId}
-          onChange={(e) => {
-            const id = e.target.value;
+    <section className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">Add team member</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={adminId || NO_ADMIN}
+          onValueChange={(value) => {
+            const id = value === NO_ADMIN ? "" : value;
             setAdminId(id);
             const admin = addable.find((a) => a.id === id);
             if (admin) {
@@ -453,51 +520,61 @@ function AddMemberRow({
               if (!position) setPosition(d.position);
             }
           }}
-          className={cn(INPUT_CLS, "w-44")}
           disabled={busy}
-          aria-label="Pick an admin"
         >
-          <option value="">Pick an admin…</option>
-          {addable.map((a) => (
-            <option key={a.id} value={a.id}>
-              {(a.displayName?.trim() || a.username) +
-                (a.role !== "admin" ? ` — ${adminRoleLabel(a.role)}` : "")}
-            </option>
-          ))}
-        </select>
-        <input
+          <SelectTrigger
+            className={cn("h-8 w-52", !adminId && "text-muted-foreground")}
+            aria-label="Pick an admin"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_ADMIN}>Pick an admin…</SelectItem>
+            {addable.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                {(a.displayName?.trim() || a.username) +
+                  (a.role !== "admin" ? ` — ${adminRoleLabel(a.role)}` : "")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
           type="text"
           value={position}
           placeholder="Position (e.g. COO)"
           onChange={(e) => setPosition(e.target.value)}
-          className={cn(INPUT_CLS, "w-40 flex-1 min-w-[120px]")}
+          className="h-8 w-40 min-w-[120px] flex-1"
           disabled={busy}
         />
-        <select
+        <Select
           value={attribution}
-          onChange={(e) => setAttribution(e.target.value as TeamAttribution)}
-          className={cn(INPUT_CLS, "w-44")}
+          onValueChange={(value) => setAttribution(value as TeamAttribution)}
           disabled={busy}
-          aria-label="Attribution rule"
         >
-          {ATTRIBUTIONS.map((a) => (
-            <option key={a} value={a}>
-              {ATTRIBUTION_LABEL[a]}
-            </option>
-          ))}
-        </select>
-        <input
+          <SelectTrigger className="h-8 w-52" aria-label="Attribution rule">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ATTRIBUTIONS.map((a) => (
+              <SelectItem key={a} value={a}>
+                {ATTRIBUTION_LABEL[a]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
           type="number"
           min={0}
           value={goal}
           placeholder="Goal $"
           onChange={(e) => setGoal(e.target.value)}
-          className={cn(INPUT_CLS, "w-24")}
+          className="h-8 w-24 tabular-nums"
           disabled={busy}
           aria-label="Monthly goal in dollars"
         />
-        <button
+        <Button
           type="button"
+          size="sm"
           disabled={busy || !adminId}
           onClick={async () => {
             setBusy(true);
@@ -514,11 +591,10 @@ function AddMemberRow({
               setGoal("");
             }
           }}
-          className="h-8 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Add
-        </button>
+        </Button>
       </div>
-    </div>
+    </section>
   );
 }

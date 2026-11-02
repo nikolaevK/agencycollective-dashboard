@@ -1,15 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
   closestCorners,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -19,19 +23,53 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Flag, GripVertical } from "lucide-react";
+import { GripVertical, ListChecks, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ClientChip, DueLabel } from "./MemberHub";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ClientChip, DueLabel, PriorityFlag } from "./TeamBits";
 import { QuickAddRow } from "./TasksTab";
 import { sortTasks, type TaskMutations } from "./useTeamData";
-import {
-  TASK_STATUS_META,
-  TASK_STATUS_ORDER,
-  TASK_PRIORITY_META,
-} from "./presentation";
+import { TASK_STATUS_META, TASK_STATUS_ORDER } from "./presentation";
 import type { MemberHubPayload, TeamTaskRecord, TaskStatus } from "./types";
 
 const LANE_SPACING = 1024;
+
+/**
+ * Pointer-first targeting: the card under the pointer; in a lane's gaps or
+ * empty space, that lane's nearest card — or the lane itself (= append) once
+ * the pointer is below its last card. closestCorners stays as the keyboard
+ * fallback: measuring the dragged card's corners made a drop under a lane's
+ * last card land BEFORE that card.
+ */
+const boardCollision: CollisionDetection = (args) => {
+  const pointer = args.pointerCoordinates;
+  if (!pointer) return closestCorners(args);
+  const within = pointerWithin(args);
+  const card = within.find((c) => !String(c.id).startsWith("col:"));
+  if (card) return [card];
+  const lane = within.find((c) => String(c.id).startsWith("col:"));
+  if (!lane) return closestCorners(args);
+  const status = String(lane.id).slice(4);
+  let nearest: { id: UniqueIdentifier; dist: number } | null = null;
+  let lastBottom = -Infinity;
+  for (const d of args.droppableContainers) {
+    if (String(d.id).startsWith("col:") || d.id === args.active.id) continue;
+    if (d.data.current?.status !== status) continue;
+    const r = args.droppableRects.get(d.id);
+    if (!r) continue;
+    lastBottom = Math.max(lastBottom, r.bottom);
+    const dist = Math.abs(pointer.y - (r.top + r.height / 2));
+    if (!nearest || dist < nearest.dist) nearest = { id: d.id, dist };
+  }
+  return nearest && pointer.y <= lastBottom ? [{ id: nearest.id }] : [lane];
+};
 
 /**
  * Kanban board — @dnd-kit (the SopBuilder pattern), one droppable column per
@@ -39,6 +77,15 @@ const LANE_SPACING = 1024;
  * re-lanes the card in the cache, then PATCHes { move: { status, afterTaskId } }
  * — the SERVER computes the authoritative position; errors invalidate.
  */
+// Below Tailwind's md — where DnD gives way to the per-card status picker.
+const PHONE_QUERY = "(max-width: 767px)";
+function subscribePhone(onChange: () => void) {
+  const mq = window.matchMedia(PHONE_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+const isPhone = () => window.matchMedia(PHONE_QUERY).matches;
+
 export function TaskBoardView({
   hub,
   tasks,
@@ -56,12 +103,22 @@ export function TaskBoardView({
   mutations: TaskMutations;
   onOpenTask: (id: string) => void;
 }) {
+  // One subscription for the board: a closed Radix Select still renders its
+  // items (for SelectValue), so the picker is only mounted where it shows.
+  const phone = useSyncExternalStore(subscribePhone, isPhone, () => false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     // Without a coordinateGetter the keyboard sensor activates but can't
     // compute drop positions (same wiring as SopBuilder).
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  // The card being dragged — drawn as a floating copy (DragOverlay) so it
+  // follows the pointer into other columns. Without the overlay, dnd-kit only
+  // moves a card while it's over its OWN column's list, so a cross-column
+  // drag looked like nothing was happening until the drop.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const draggingTask = draggingId ? allTasks.find((t) => t.id === draggingId) ?? null : null;
 
   const columns = useMemo(() => {
     const map = new Map<TaskStatus, TeamTaskRecord[]>();
@@ -130,7 +187,16 @@ export function TaskBoardView({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={boardCollision}
+      onDragStart={(e) => setDraggingId(String(e.active.id))}
+      onDragCancel={() => setDraggingId(null)}
+      onDragEnd={(e) => {
+        setDraggingId(null);
+        handleDragEnd(e);
+      }}
+    >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 items-start">
         {TASK_STATUS_ORDER.map((status) => (
           <BoardColumn
@@ -141,9 +207,15 @@ export function TaskBoardView({
             today={today}
             mutations={mutations}
             onOpenTask={onOpenTask}
+            statusPicker={phone}
           />
         ))}
       </div>
+      {/* No drop animation: the card is already re-laned optimistically, so
+          animating the copy back to the old slot would look like a bounce. */}
+      <DragOverlay dropAnimation={null}>
+        {draggingTask ? <BoardCardOverlay task={draggingTask} hub={hub} today={today} /> : null}
+      </DragOverlay>
     </DndContext>
   );
 }
@@ -155,6 +227,7 @@ function BoardColumn({
   today,
   mutations,
   onOpenTask,
+  statusPicker,
 }: {
   status: TaskStatus;
   tasks: TeamTaskRecord[];
@@ -162,8 +235,15 @@ function BoardColumn({
   today: string;
   mutations: TaskMutations;
   onOpenTask: (id: string) => void;
+  statusPicker: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
+  // A card from ANOTHER column is over this one (its empty space or one of
+  // its cards) — highlight the lane it will land in. active/over come from
+  // useDroppable (internal context): useDndContext would re-render every
+  // column on each pointer move (its collisions change every frame).
+  const { setNodeRef, active, over } = useDroppable({ id: `col:${status}`, data: { status } });
+  const isTarget =
+    !!active && active.data.current?.status !== status && over?.data.current?.status === status;
   const meta = TASK_STATUS_META[status];
 
   return (
@@ -172,20 +252,13 @@ function BoardColumn({
       className={cn(
         // min-w-0 lets the column shrink inside the grid — its content
         // (cards, quick-add) must never widen the track past its share.
-        "min-w-0 rounded-xl border bg-muted/20 p-2.5 transition-colors",
-        isOver ? "border-primary/60 bg-primary/[0.04]" : "border-border/60"
+        "min-w-0 rounded-3xl bg-muted/40 p-2.5 transition-[background-color,box-shadow]",
+        isTarget && "bg-muted/70 ring-2 ring-foreground/15"
       )}
     >
-      <div className="flex items-center gap-2 px-1 pb-2">
-        <span
-          className={cn(
-            "rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide",
-            meta.chip
-          )}
-        >
-          {meta.label}
-        </span>
-        <span className="text-xs font-semibold text-muted-foreground">{tasks.length}</span>
+      <div className="flex items-center gap-2 px-1.5 pb-2.5 pt-1">
+        <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+        <span className="text-xs text-muted-foreground tabular-nums">{tasks.length}</span>
       </div>
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className={cn("space-y-2", tasks.length === 0 && "min-h-[48px]")}>
@@ -196,16 +269,19 @@ function BoardColumn({
               hub={hub}
               today={today}
               onOpen={() => onOpenTask(t.id)}
-              onStatusChange={(next) =>
-                mutations
-                  .patchTask(t.id, { status: next })
-                  .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+              onStatusChange={
+                statusPicker
+                  ? (next) =>
+                      mutations
+                        .patchTask(t.id, { status: next })
+                        .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+                  : undefined
               }
             />
           ))}
         </div>
       </SortableContext>
-      <div className="mt-1 rounded-lg border border-dashed border-border/60">
+      <div className="mt-2 rounded-2xl border border-dashed border-foreground/10">
         <QuickAddRow hub={hub} defaults={{ status }} mutations={mutations} compact />
       </div>
     </div>
@@ -223,21 +299,25 @@ function BoardCard({
   hub: MemberHubPayload;
   today: string;
   onOpen: () => void;
-  onStatusChange: (status: TaskStatus) => void;
+  /** Set only on phones (the picker isn't mounted elsewhere). */
+  onStatusChange?: (status: TaskStatus) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: t.id,
-  });
-  const ckDone = t.checklist.filter((c) => c.done).length;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, active } =
+    useSortable({ id: t.id, data: { status: t.status } });
+  // A card from another column hovering this one drops right before it
+  // (handleDragEnd inserts at the hovered card's index) — mark that spot.
+  const dropBefore =
+    isOver && !!active && active.id !== t.id && active.data.current?.status !== t.status;
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "rounded-lg border border-border/60 bg-card p-2.5 cursor-pointer hover:border-primary/50 transition-colors",
-        isDragging && "opacity-60 ring-2 ring-primary/40 z-10 relative",
-        "focus-visible:outline-none focus-visible:border-primary"
+        "relative rounded-2xl bg-card p-3 shadow-sm ring-1 ring-foreground/5 cursor-pointer transition-[box-shadow,opacity] hover:ring-foreground/15 dark:ring-foreground/10 dark:hover:ring-foreground/20",
+        // The floating copy follows the pointer; this one marks where it came from.
+        isDragging && "opacity-40 shadow-none",
+        "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
       )}
       onClick={onOpen}
       role="button"
@@ -249,20 +329,105 @@ function BoardCard({
         }
       }}
     >
+      {dropBefore && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-2 -top-[5px] h-0.5 rounded-full bg-foreground/40"
+        />
+      )}
+      <CardFace
+        task={t}
+        hub={hub}
+        today={today}
+        handle={
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing p-2.5 -m-2 text-muted-foreground/50 hover:text-muted-foreground touch-none"
+            aria-label="Drag to move"
+          >
+            <GripVertical className="size-3.5" />
+          </button>
+        }
+      >
+        {/* Touch users can't drag across vertically-stacked columns — give
+            them a direct status control (not mounted on md+ where DnD works). */}
+        {onStatusChange && (
+          <Select value={t.status} onValueChange={(v) => onStatusChange(v as TaskStatus)}>
+            <SelectTrigger
+              onClick={(e) => e.stopPropagation()}
+              className="md:hidden ml-auto h-7 w-auto px-2.5 text-xs text-muted-foreground"
+              aria-label="Change status"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            {/* The menu is portaled, but React still bubbles its clicks through
+                this card — stop them so picking a status doesn't open the task
+                (the native <select> never let them reach the card). */}
+            <SelectContent onClick={(e) => e.stopPropagation()}>
+              {TASK_STATUS_ORDER.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {TASK_STATUS_META[s].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </CardFace>
+    </div>
+  );
+}
+
+/** The floating copy that follows the pointer while a card is dragged. */
+function BoardCardOverlay({
+  task,
+  hub,
+  today,
+}: {
+  task: TeamTaskRecord;
+  hub: MemberHubPayload;
+  today: string;
+}) {
+  return (
+    <div className="cursor-grabbing rounded-2xl bg-card p-3 shadow-lg ring-1 ring-foreground/15 dark:ring-foreground/20">
+      <CardFace
+        task={task}
+        hub={hub}
+        today={today}
+        handle={
+          <span className="mt-0.5 shrink-0 p-2.5 -m-2 text-muted-foreground">
+            <GripVertical className="size-3.5" />
+          </span>
+        }
+      />
+    </div>
+  );
+}
+
+/** Title + chips row — shared by the card and its drag copy. */
+function CardFace({
+  task: t,
+  hub,
+  today,
+  handle,
+  children,
+}: {
+  task: TeamTaskRecord;
+  hub: MemberHubPayload;
+  today: string;
+  handle: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const ckDone = t.checklist.filter((c) => c.done).length;
+  return (
+    <>
       <div className="flex items-start gap-1.5">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing p-2.5 -m-2 text-muted-foreground/50 hover:text-muted-foreground touch-none"
-          aria-label="Drag to move"
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
+        {handle}
         <p
           className={cn(
-            "flex-1 min-w-0 break-words text-xs font-semibold leading-snug",
+            "flex-1 min-w-0 break-words text-sm font-medium leading-snug",
             t.status === "complete" ? "text-muted-foreground line-through" : "text-foreground"
           )}
         >
@@ -272,33 +437,21 @@ function BoardCard({
       <div className="mt-2 flex items-center gap-2 flex-wrap pl-5">
         {t.clientId && <ClientChip hub={hub} clientId={t.clientId} />}
         <DueLabel task={t} today={today} />
-        <Flag className={cn("h-3 w-3", TASK_PRIORITY_META[t.priority].flag)} />
+        <PriorityFlag priority={t.priority} className="size-3" />
         {t.checklist.length > 0 && (
-          <span className="text-[10px] font-semibold text-muted-foreground">
-            ☑ {ckDone}/{t.checklist.length}
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+            <ListChecks className="size-3.5" />
+            {ckDone}/{t.checklist.length}
           </span>
         )}
         {t.source !== "manual" && (
-          <span className="text-[10px] font-bold uppercase text-cyan-600 dark:text-cyan-400">
-            ⚡ auto
-          </span>
+          <Badge variant="outline" className="font-normal text-muted-foreground">
+            <Zap />
+            Auto
+          </Badge>
         )}
-        {/* Touch users can't drag across vertically-stacked columns — give
-            them a direct status control (hidden on md+ where DnD works). */}
-        <select
-          value={t.status}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
-          className="md:hidden ml-auto rounded-md border border-border bg-background px-1.5 py-1 text-[10px] font-semibold text-muted-foreground"
-          aria-label="Change status"
-        >
-          {TASK_STATUS_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {TASK_STATUS_META[s].label}
-            </option>
-          ))}
-        </select>
+        {children}
       </div>
-    </div>
+    </>
   );
 }

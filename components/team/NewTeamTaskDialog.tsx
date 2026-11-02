@@ -123,6 +123,8 @@ export function NewTeamTaskDialog({
       queryClient.invalidateQueries({ queryKey: ["team-tasks", assignee] });
       queryClient.invalidateQueries({ queryKey: ["team-member", assignee] });
       queryClient.invalidateQueries({ queryKey: ["team-directory"] });
+      queryClient.invalidateQueries({ queryKey: ["team-trends"] });
+      queryClient.invalidateQueries({ queryKey: ["team-member-trends", assignee] });
       onClose();
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));

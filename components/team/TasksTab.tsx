@@ -2,9 +2,22 @@
 
 import { useDeferredValue, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { Check, ChevronDown, ChevronRight, Flag, List, Columns3 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, List, ListChecks, Columns3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ClientChip, DueLabel } from "./MemberHub";
+import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ClientChip, DueLabel, PriorityFlag, TaskStatusDot } from "./TeamBits";
 import { sortTasks, type TaskMutations } from "./useTeamData";
 import {
   TASK_STATUS_META,
@@ -22,7 +35,7 @@ import type {
 // The board (and its @dnd-kit dependency) only loads once someone opens it.
 const TaskBoardView = dynamic(
   () => import("./TaskBoardView").then((m) => m.TaskBoardView),
-  { loading: () => <div className="h-72 rounded-xl bg-muted/40 animate-pulse" /> }
+  { loading: () => <Skeleton className="h-72 rounded-3xl" /> }
 );
 
 type FilterChip = "all" | "todo" | "in_progress" | "review" | "complete" | "overdue";
@@ -96,68 +109,76 @@ export function TasksTab({
       {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex gap-1.5 flex-wrap flex-1">
-          {chips.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setFilter(c.id)}
-              className={cn(
-                "rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors",
-                filter === c.id
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground",
-                c.id === "overdue" && counts.overdue > 0 && filter !== "overdue"
-                  ? "text-red-600 dark:text-red-400 border-red-500/40"
-                  : undefined
-              )}
-            >
-              {c.label}
-              <span className="ml-1.5 opacity-70">{counts[c.id]}</span>
-            </button>
-          ))}
+          {chips.map((c) => {
+            const active = filter === c.id;
+            // "Has overdue tasks" emphasis — subtle danger text while the
+            // Overdue chip isn't the active filter.
+            const flagged = c.id === "overdue" && counts.overdue > 0 && filter !== "overdue";
+            return (
+              <Button
+                key={c.id}
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-pressed={active}
+                onClick={() => setFilter(c.id)}
+                className={cn(
+                  "gap-1.5",
+                  active && "bg-muted text-foreground",
+                  flagged &&
+                    "text-red-700 hover:text-red-700 dark:text-red-400 dark:hover:text-red-400"
+                )}
+              >
+                {c.label}
+                <span className={cn("tabular-nums", flagged ? "opacity-80" : "text-muted-foreground")}>
+                  {counts[c.id]}
+                </span>
+              </Button>
+            );
+          })}
         </div>
-        <input
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search tasks…"
-          className="h-8 flex-1 min-w-[130px] sm:flex-none sm:w-44 rounded-lg border border-input bg-background px-3 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-8 flex-1 min-w-[130px] sm:flex-none sm:w-44"
         />
         {view === "list" && (
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-            className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-semibold text-foreground"
-            aria-label="Group by"
-          >
-            <option value="status">Group: Status</option>
-            <option value="client">Group: Client</option>
-            <option value="priority">Group: Priority</option>
-          </select>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+            <SelectTrigger className="h-8 w-auto" aria-label="Group by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="status">Group: Status</SelectItem>
+              <SelectItem value="client">Group: Client</SelectItem>
+              <SelectItem value="priority">Group: Priority</SelectItem>
+            </SelectContent>
+          </Select>
         )}
-        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view}
+          onValueChange={(v) => {
+            // Radix sends "" when the active item is re-clicked — keep the view.
+            if (v) setView(v as View);
+          }}
+          aria-label="View"
+        >
           {(
             [
               { id: "list", icon: List, label: "List" },
               { id: "board", icon: Columns3, label: "Board" },
             ] as const
           ).map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setView(v.id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
-                view === v.id
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <v.icon className="h-3.5 w-3.5" />
+            <ToggleGroupItem key={v.id} value={v.id} className="gap-1.5">
+              <v.icon />
               {v.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
 
       {view === "board" ? (
@@ -190,7 +211,7 @@ export function TasksTab({
 interface TaskGroup {
   id: string;
   label: string;
-  chip: string;
+  tone: BadgeTone;
   tasks: TeamTaskRecord[];
   quickAddDefaults: { status?: TaskStatus; priority?: TaskPriority; clientId?: string | null };
 }
@@ -219,7 +240,7 @@ function ListView({
       return TASK_STATUS_ORDER.map((s) => ({
         id: `st:${s}`,
         label: TASK_STATUS_META[s].label,
-        chip: TASK_STATUS_META[s].chip,
+        tone: TASK_STATUS_META[s].tone,
         tasks: tasks.filter((t) => t.status === s),
         quickAddDefaults: { status: s },
       }));
@@ -228,7 +249,7 @@ function ListView({
       return TASK_PRIORITY_ORDER.map((p) => ({
         id: `pr:${p}`,
         label: TASK_PRIORITY_META[p].label,
-        chip: TASK_PRIORITY_META[p].chip,
+        tone: TASK_PRIORITY_META[p].tone,
         tasks: tasks.filter((t) => t.priority === p),
         quickAddDefaults: { priority: p },
       })).filter((g) => g.tasks.length > 0);
@@ -240,7 +261,7 @@ function ListView({
         return {
           id: `cl:${id}`,
           label: id ? (client?.displayName ?? "Unknown client") : "No client",
-          chip: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+          tone: "neutral" as const,
           tasks: tasks.filter((t) => (t.clientId ?? "") === id),
           quickAddDefaults: { clientId: id || null },
         };
@@ -257,25 +278,19 @@ function ListView({
             <button
               type="button"
               onClick={() => onToggleGroup(g.id)}
-              className="flex items-center gap-2 mb-1 px-1"
+              aria-expanded={!isCollapsed}
+              className="mb-2 flex items-center gap-2 rounded-xl px-1 py-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
             >
               {isCollapsed ? (
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                <ChevronRight className="size-3.5 text-muted-foreground" />
               ) : (
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <ChevronDown className="size-3.5 text-muted-foreground" />
               )}
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide",
-                  g.chip
-                )}
-              >
-                {g.label}
-              </span>
-              <span className="text-xs font-semibold text-muted-foreground">{g.tasks.length}</span>
+              <StatusBadge tone={g.tone}>{g.label}</StatusBadge>
+              <span className="text-xs text-muted-foreground tabular-nums">{g.tasks.length}</span>
             </button>
             {!isCollapsed && (
-              <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/50">
+              <Card className="divide-y">
                 {g.tasks.map((t) => (
                   <TaskRow
                     key={t.id}
@@ -287,13 +302,13 @@ function ListView({
                   />
                 ))}
                 <QuickAddRow hub={hub} defaults={g.quickAddDefaults} mutations={mutations} />
-              </div>
+              </Card>
             )}
           </div>
         );
       })}
       {groups.every((g) => g.tasks.length === 0) && (
-        <p className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+        <p className="rounded-3xl border border-dashed py-10 text-center text-sm text-muted-foreground">
           No tasks match.
         </p>
       )}
@@ -322,7 +337,7 @@ function TaskRow({
     <div
       role="button"
       tabIndex={0}
-      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-muted/40"
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2.5 hover:bg-muted/40 cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-muted/60"
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
@@ -348,30 +363,33 @@ function TaskRow({
         )}
         aria-label={done ? "Reopen task" : "Complete task"}
       >
-        <Check className="h-3 w-3" />
+        <Check className="size-3" />
       </button>
-      <span className={cn("h-2 w-2 shrink-0 rounded-sm", TASK_STATUS_META[t.status].dot)} />
+      <TaskStatusDot status={t.status} />
       <span
         className={cn(
-          "flex-1 min-w-[55%] truncate text-sm font-semibold",
+          "flex-1 min-w-[55%] truncate text-sm font-medium",
           done ? "text-muted-foreground line-through" : "text-foreground"
         )}
       >
         {t.title}
       </span>
       {t.checklist.length > 0 && (
-        <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">
-          ☑ {ckDone}/{t.checklist.length}
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums">
+          <ListChecks className="size-3.5" />
+          {ckDone}/{t.checklist.length}
         </span>
       )}
       {t.clientId && <ClientChip hub={hub} clientId={t.clientId} />}
       <DueLabel task={t} today={today} />
-      <Flag className={cn("h-3.5 w-3.5 shrink-0", TASK_PRIORITY_META[t.priority].flag)} />
+      <PriorityFlag priority={t.priority} />
     </div>
   );
 }
 
 /* ── Quick add ─────────────────────────────────────────────────────────── */
+
+const NO_CLIENT = "__none__";
 
 export function QuickAddRow({
   hub,
@@ -414,40 +432,51 @@ export function QuickAddRow({
     }
   }
 
+  // Radix Select can't hold "" — "No client" rides on a sentinel and maps
+  // back to "" so `clientId || null` below behaves exactly as before.
   const clientSelect = !fixedClient && (
-    <select
-      value={clientId}
-      onChange={(e) => setClientId(e.target.value)}
-      className={cn(
-        "h-7 rounded-md border border-input bg-background px-1.5 text-[11px] text-muted-foreground",
-        compact ? "min-w-0 flex-1" : "min-w-0 max-w-[150px]"
-      )}
-      aria-label="Client"
+    <Select
+      value={clientId || NO_CLIENT}
+      onValueChange={(v) => setClientId(v === NO_CLIENT ? "" : v)}
     >
-      <option value="">No client</option>
-      {hub.clients.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.displayName}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger
+        className={cn(
+          "h-7 px-2.5 text-xs text-muted-foreground",
+          compact ? "min-w-0 flex-1" : "w-auto min-w-0 max-w-[150px]"
+        )}
+        aria-label="Client"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_CLIENT}>No client</SelectItem>
+        {hub.clients.map((c) => (
+          <SelectItem key={c.id} value={c.id}>
+            {c.displayName}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
   const prioritySelect = defaults.priority === undefined && (
-    <select
-      value={priority}
-      onChange={(e) => setPriority(e.target.value as TaskPriority)}
-      className={cn(
-        "h-7 rounded-md border border-input bg-background px-1.5 text-[11px] text-muted-foreground",
-        compact && "min-w-0 shrink-0"
-      )}
-      aria-label="Priority"
-    >
-      {TASK_PRIORITY_ORDER.map((p) => (
-        <option key={p} value={p}>
-          {TASK_PRIORITY_META[p].label}
-        </option>
-      ))}
-    </select>
+    <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+      <SelectTrigger
+        className={cn(
+          "h-7 w-auto px-2.5 text-xs text-muted-foreground",
+          compact && "min-w-0 shrink-0"
+        )}
+        aria-label="Priority"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {TASK_PRIORITY_ORDER.map((p) => (
+          <SelectItem key={p} value={p}>
+            {TASK_PRIORITY_META[p].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 
   if (compact) {
@@ -475,7 +504,7 @@ export function QuickAddRow({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+    <div className="flex flex-wrap items-center gap-2 px-4 py-1.5">
       <input
         type="text"
         value={title}

@@ -1,10 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Zap, Plus } from "lucide-react";
+import { Check, ChevronDown, Link2, Plus, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
+import { Badge, StatusBadge, badgeToneHover } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import {
   useActionItemMutations,
   useTeamMemberOptions,
@@ -12,6 +33,9 @@ import {
 } from "./useTeamData";
 import { SOURCE_META, TASK_STATUS_META } from "./presentation";
 import type { MemberHubPayload, TeamActionItemRecord, TaskStatus } from "./types";
+
+// Radix SelectItem can't hold "" — "No client" maps to this and back.
+const NO_CLIENT = "__none__";
 
 export function ActionItemsTab({
   hub,
@@ -28,14 +52,18 @@ export function ActionItemsTab({
     (m) => m.adminId !== hub.member.adminId
   );
   const [addOpen, setAddOpen] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
-  function forward(item: TeamActionItemRecord, toAdminId: string) {
+  async function forward(item: TeamActionItemRecord, toAdminId: string) {
     const target = forwardTargets.find((m) => m.adminId === toAdminId);
     if (!target) return;
     if (
-      !confirm(
-        `Forward this action item to ${target.name}? It moves to their inbox with full ownership (linked task included).`
-      )
+      !(await confirm({
+        title: `Forward this action item to ${target.name}?`,
+        description:
+          "It moves to their inbox with full ownership (linked task included).",
+        confirmText: "Forward",
+      }))
     )
       return;
     reassignItem(item.id, toAdminId).catch((err) =>
@@ -48,22 +76,24 @@ export function ActionItemsTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.05] px-4 py-3 flex-wrap">
-        <Zap className="h-4 w-4 shrink-0 text-primary mt-0.5" />
-        <p className="text-xs text-muted-foreground flex-1 min-w-[14rem]">
+      <div className="flex flex-wrap items-start gap-3 rounded-3xl bg-muted/40 px-4 py-3">
+        <Zap className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
           Action items flagged in client Slack channels or dashboard threads are{" "}
-          <span className="font-bold text-primary">relayed here by the reporting agent</span> and
-          automatically added to {hub.member.name}&apos;s task board. Solving one completes the
-          linked task — and completing the task solves it.
+          <span className="font-medium text-foreground">relayed here by the reporting agent</span>{" "}
+          and automatically added to {hub.member.name}&apos;s task board. Solving one completes
+          the linked task — and completing the task solves it.
         </p>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => setAddOpen((o) => !o)}
-          className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
+          className="ml-auto"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus />
           Add item
-        </button>
+        </Button>
       </div>
 
       {addOpen && <AddItemForm hub={hub} onDone={() => setAddOpen(false)} />}
@@ -88,10 +118,11 @@ export function ActionItemsTab({
         />
       ))}
       {items.length === 0 && (
-        <p className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-          No action items — inbox zero 🎉
+        <p className="rounded-3xl border border-dashed py-10 text-center text-sm text-muted-foreground">
+          No action items — inbox zero
         </p>
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -112,32 +143,33 @@ function ActionItemCard({
   onForward: (toAdminId: string) => void;
 }) {
   const src = SOURCE_META[item.sourceType];
+  const SourceIcon = src.icon;
   const solved = item.status === "solved";
   const taskStatus = (item.linkedTask?.status ?? "todo") as TaskStatus;
+  // A forward pick opens the confirm dialog — don't send focus back to the
+  // menu trigger underneath it (same pattern as ClientActionsMenu).
+  const pickedRef = useRef(false);
 
   return (
-    <div
-      className={cn(
-        "rounded-xl border bg-card p-4",
-        solved ? "border-border/50 opacity-60" : "border-border/60 border-l-4 border-l-primary"
-      )}
-    >
-      <div className="flex items-center gap-2 flex-wrap">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold",
-            src.chip
-          )}
-        >
-          {src.symbol} {src.label}
-          {item.sourceChannel && ` · ${item.sourceChannel}`}
-        </span>
-        {clientName && (
-          <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
-            {clientName}
+    <Card className={cn("p-4", solved && "opacity-60")}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="max-w-full font-normal text-muted-foreground">
+          <SourceIcon />
+          <span className="truncate">
+            {src.label}
+            {item.sourceChannel && ` · ${item.sourceChannel}`}
           </span>
+        </Badge>
+        {clientName && (
+          <Badge
+            variant="outline"
+            className="block max-w-full truncate font-normal text-muted-foreground"
+            title={clientName}
+          >
+            {clientName}
+          </Badge>
         )}
-        <span className="ml-auto text-[11px] text-muted-foreground">
+        <span className="ml-auto text-xs text-muted-foreground">
           {item.authorLabel && `${item.authorLabel} · `}
           {/* Agents may relay a non-ISO stamp (e.g. a Slack ts) — fall back. */}
           {formatDate(
@@ -148,73 +180,107 @@ function ActionItemCard({
         </span>
       </div>
 
-      <p className="mt-2 text-sm text-foreground leading-relaxed break-words">
+      <p className="mt-2 break-words text-sm leading-relaxed text-foreground">
         {item.body}
       </p>
 
-      <div className="mt-3 flex items-center gap-2.5 flex-wrap">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {item.linkedTask && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onOpenTask(item.linkedTask!.id)}
-            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-cyan-500/10 px-2 py-1 text-left text-[11px] font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-colors break-words"
+            // Long titles wrap instead of overflowing the pill.
+            className="h-auto min-h-8 max-w-full justify-start whitespace-normal rounded-2xl py-1.5 text-left"
           >
-            ⚡ Linked task: “{item.linkedTask.title}”
-            <span
-              className={cn(
-                "rounded px-1.5 py-0 text-[9px] font-black uppercase",
-                TASK_STATUS_META[taskStatus]?.chip
-              )}
-            >
-              {TASK_STATUS_META[taskStatus]?.label}
+            <Link2 className="text-muted-foreground" />
+            <span className="min-w-0 break-words">
+              <span className="text-muted-foreground">Linked task: </span>
+              {item.linkedTask.title}
             </span>
-          </button>
+            <StatusBadge tone={TASK_STATUS_META[taskStatus]?.tone ?? "neutral"}>
+              {TASK_STATUS_META[taskStatus]?.label}
+            </StatusBadge>
+          </Button>
         )}
         {/* Sweep items (dedup-keyed) are per-member; the API rejects
             forwarding them. Agent-created 'system'-labeled items forward fine. */}
         {forwardTargets.length > 0 && item.dedupKey == null && (
-          <select
-            value=""
-            onChange={(e) => e.target.value && onForward(e.target.value)}
-            className="h-7 rounded-lg border border-input bg-background px-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-            aria-label="Forward to another member"
-            title="Moves this item (and its linked task) to the selected member's hub"
-          >
-            <option value="">Forward to…</option>
-            {forwardTargets.map((m) => (
-              <option key={m.adminId} value={m.adminId}>
-                {m.name}
-                {m.position ? ` — ${m.position}` : ""}
-              </option>
-            ))}
-          </select>
+          // modal={false}: a pick opens the confirm dialog; a modal menu
+          // closing underneath it can leave <body> pointer-events stuck.
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground"
+                aria-label="Forward to another member"
+                title="Moves this item (and its linked task) to the selected member's hub"
+              >
+                Forward to…
+                <ChevronDown className="text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="max-w-72"
+              onCloseAutoFocus={(e) => {
+                if (pickedRef.current) {
+                  pickedRef.current = false;
+                  e.preventDefault();
+                }
+              }}
+            >
+              <DropdownMenuLabel>
+                Moves this item (and its linked task) to the selected member&apos;s hub
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {forwardTargets.map((m) => (
+                <DropdownMenuItem
+                  key={m.adminId}
+                  onSelect={() => {
+                    pickedRef.current = true;
+                    onForward(m.adminId);
+                  }}
+                >
+                  <span className="min-w-0 truncate">
+                    {m.name}
+                    {m.position && (
+                      <span className="text-muted-foreground"> — {m.position}</span>
+                    )}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {solved ? (
-          <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-            <Check className="h-3.5 w-3.5" />
-            Solved
-            {item.solvedBy === "task" && " (via task)"}
-            {item.solvedBy === "system" && " (auto)"}
-            <button
-              type="button"
-              onClick={() => onFlip("unsolved")}
-              className="ml-2 text-muted-foreground hover:text-foreground font-semibold"
-            >
+          <span className="ml-auto inline-flex items-center gap-1.5">
+            <StatusBadge tone="success">
+              Solved
+              {item.solvedBy === "task" && " (via task)"}
+              {item.solvedBy === "system" && " (auto)"}
+            </StatusBadge>
+            <Button type="button" variant="ghost" size="xs" onClick={() => onFlip("unsolved")}>
               Reopen
-            </button>
+            </Button>
           </span>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onFlip("solved")}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[11px] font-bold text-foreground hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+            className={cn("ml-auto", badgeToneHover.success)}
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check />
             Mark Solved
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -252,6 +318,9 @@ function AddItemForm({ hub, onDone }: { hub: MemberHubPayload; onDone: () => voi
       queryClient.invalidateQueries({ queryKey: ["team-action-items", hub.member.adminId] });
       queryClient.invalidateQueries({ queryKey: ["team-tasks", hub.member.adminId] });
       queryClient.invalidateQueries({ queryKey: ["team-member", hub.member.adminId] });
+      // The item's linked task counts in the weekly "created" lines.
+      queryClient.invalidateQueries({ queryKey: ["team-member-trends", hub.member.adminId] });
+      queryClient.invalidateQueries({ queryKey: ["team-trends"] });
       onDone();
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
@@ -261,51 +330,45 @@ function AddItemForm({ hub, onDone }: { hub: MemberHubPayload; onDone: () => voi
   }
 
   return (
-    <div className="rounded-xl border border-dashed border-border p-4 space-y-2.5">
-      <textarea
+    <Card className="space-y-3 p-4">
+      <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={2}
         placeholder="What needs attention? A linked task is created automatically."
-        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+        className="resize-y"
       />
-      <div className="flex items-center gap-2 flex-wrap">
-        <select
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          className="h-8 min-w-0 max-w-[180px] rounded-lg border border-input bg-background px-2 text-xs text-muted-foreground"
-          aria-label="Client"
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={clientId || NO_CLIENT}
+          onValueChange={(v) => setClientId(v === NO_CLIENT ? "" : v)}
         >
-          <option value="">No client</option>
-          {hub.clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.displayName}
-            </option>
-          ))}
-        </select>
-        <input
+          <SelectTrigger className="h-8 w-auto min-w-0 max-w-[180px]" aria-label="Client">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_CLIENT}>No client</SelectItem>
+            {hub.clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
           type="text"
           value={channel}
           onChange={(e) => setChannel(e.target.value)}
           placeholder="Source label (optional)"
-          className="h-8 flex-1 min-w-[140px] rounded-lg border border-input bg-background px-2.5 text-xs text-foreground"
+          className="h-8 min-w-[140px] flex-1"
         />
-        <button
-          type="button"
-          onClick={onDone}
-          className="h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          type="button"
-          disabled={busy || !body.trim()}
-          onClick={submit}
-          className="h-8 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
+        </Button>
+        <Button type="button" size="sm" disabled={busy || !body.trim()} onClick={submit}>
           Add item
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

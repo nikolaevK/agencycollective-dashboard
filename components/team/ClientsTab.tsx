@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, UserPlus } from "lucide-react";
+import { AlertTriangle, Star, UserPlus } from "lucide-react";
 import { CsmClientAssignDialog } from "./CsmClientAssignDialog";
 import { cn } from "@/lib/utils";
 import { monthlyHeadline } from "@/lib/teamRebill";
@@ -11,13 +11,23 @@ import { AvatarInitials } from "@/components/users/AvatarInitials";
 import { RebillStatusChip } from "@/components/users/RebillStatusChip";
 import { useRosterOptions } from "@/hooks/useRosterOptions";
 import { useAdmin } from "@/components/providers/AdminProvider";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
-  CHIP_BASE,
-  FALLBACK_CHIP_CLS,
-  HEALTH_CHIP_CLS,
-  STAGE_CHIP_CLS,
-  MANUAL_BILLING_CHIP_CLS,
-  PEPADS_BADGE_CLS,
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  HEALTH_TONE,
+  MANUAL_BILLING_TONE,
+  STAGE_TONE,
+  toneOf,
 } from "@/components/users/rosterPresentation";
 import type { MemberHubPayload, TeamClientSlice } from "./types";
 
@@ -49,45 +59,40 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
     <div className="space-y-3">
       {canAssign && (
         <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => setAssignOpen(true)}
-            className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent"
-          >
-            <UserPlus className="h-3.5 w-3.5" />
+          <Button type="button" variant="outline" size="sm" onClick={() => setAssignOpen(true)}>
+            <UserPlus />
             Assign clients
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <SummaryTile label="Clients" value={String(clients.length)} />
-        <SummaryTile label="Total MRR managed" value={formatMoney(totalMrr)} tone="green" />
+        <SummaryTile label="Total MRR managed" value={formatMoney(totalMrr)} />
         <SummaryTile
           label="Rebilled this month"
           value={formatMoney(monthlyHeadline(hub.summary.monthly).cents)}
-          tone="green"
         />
         <SummaryTile
           label="$0-MRR actives"
           value={String(zeroMrr)}
-          tone={zeroMrr > 0 ? "amber" : undefined}
+          tone={zeroMrr > 0 ? "warning" : undefined}
         />
         <SummaryTile
           label="Rebills overdue"
           value={String(hub.summary.rebills.overdue)}
-          tone={hub.summary.rebills.overdue > 0 ? "red" : undefined}
+          tone={hub.summary.rebills.overdue > 0 ? "danger" : undefined}
         />
       </div>
 
       {/* Card list below lg — the 860px table needs 2+ screen-widths of
           panning on phones, and the sidebar leaves only ~464px at md. */}
-      <div className="lg:hidden space-y-2.5">
+      <div className="space-y-2.5 lg:hidden">
         {clients.length === 0 ? (
-          <div className="rounded-xl border border-border/60 px-3 py-10 text-center text-sm text-muted-foreground">
+          <Card className="px-3 py-10 text-center text-muted-foreground">
             No clients attributed to this member yet.
-          </div>
+          </Card>
         ) : (
           <>
             {clients.map((c) => (
@@ -96,48 +101,36 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
                 onClick={canOpenClient ? () => openClient(c.id) : undefined}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
                     {c.isTop && (
-                      <Star className="h-3.5 w-3.5 shrink-0 text-amber-500 fill-amber-500" />
+                      <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" />
                     )}
-                    <AvatarInitials name={c.displayName} className="w-7 h-7" />
-                    <span className="font-bold text-foreground truncate text-sm">
-                      {c.displayName}
-                      {c.book === "pepads" && (
-                        <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>
-                      )}
-                    </span>
+                    <AvatarInitials name={c.displayName} className="h-7 w-7 text-xs" />
+                    <ClientName c={c} />
                   </div>
-                  <span
-                    className={cn(
-                      "shrink-0 text-sm font-bold",
-                      c.mrrCents === 0
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-foreground"
-                    )}
-                  >
-                    {c.mrrCents === 0 ? "$0 ⚠" : formatMoney(c.mrrCents)}
-                  </span>
+                  <MrrValue cents={c.mrrCents} className="shrink-0 text-sm" />
                 </div>
                 <div className="mt-2">
                   <RebillCell c={c} />
                 </div>
               </ClientCardShell>
             ))}
-            <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
-              <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+            <div className="flex items-center justify-between rounded-2xl bg-muted/40 px-3 py-2.5">
+              <span className="text-xs font-medium text-muted-foreground">
                 Total · {clients.length} clients
               </span>
-              <span className="font-black text-foreground">{formatMoney(totalMrr)}</span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatMoney(totalMrr)}
+              </span>
             </div>
           </>
         )}
       </div>
 
-      <div className="hidden lg:block rounded-xl border border-border/60 overflow-x-auto">
-        <table className="w-full text-sm min-w-[860px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-left">
+      <Card className="hidden lg:block">
+        <Table className="min-w-[860px] text-left">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
               <Th>Client</Th>
               <Th>Stage</Th>
               <Th>Health</Th>
@@ -146,94 +139,68 @@ export function ClientsTab({ hub }: { hub: MemberHubPayload }) {
               <Th>CSM</Th>
               <Th className="text-right">MRR</Th>
               <Th>Re-bill</Th>
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {clients.map((c) => (
-              <tr
+              <TableRow
                 key={c.id}
-                className={cn(
-                  "border-b border-border/50 last:border-0 transition-colors",
-                  canOpenClient && "hover:bg-muted/20 cursor-pointer"
-                )}
+                className={cn(canOpenClient ? "cursor-pointer" : "hover:bg-transparent")}
                 onClick={canOpenClient ? () => openClient(c.id) : undefined}
               >
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <Td>
+                  <div className="flex min-w-0 items-center gap-2.5">
                     {c.isTop && (
-                      <Star className="h-3.5 w-3.5 shrink-0 text-amber-500 fill-amber-500" />
+                      <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" />
                     )}
-                    <AvatarInitials name={c.displayName} className="w-7 h-7" />
-                    <span className="font-bold text-foreground truncate">
-                      {c.displayName}
-                      {c.book === "pepads" && (
-                        <span className={cn(PEPADS_BADGE_CLS, "ml-1.5")}>PepAds</span>
-                      )}
-                    </span>
+                    <AvatarInitials name={c.displayName} className="h-7 w-7 text-xs" />
+                    <ClientName c={c} />
                   </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <ChipList
-                    values={c.stages}
-                    clsMap={STAGE_CHIP_CLS}
-                    labels={stageLabels}
-                  />
-                </td>
-                <td className="px-3 py-2.5">
-                  <ChipList
-                    values={c.health}
-                    clsMap={HEALTH_CHIP_CLS}
-                    labels={healthLabels}
-                  />
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {roleNames(c, "lead")}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {roleNames(c, "media_buyer")}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {roleNames(c, "csm")}
-                </td>
-                <td
-                  className={cn(
-                    "px-3 py-2.5 text-right font-bold",
-                    c.mrrCents === 0
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-foreground"
-                  )}
-                >
-                  {c.mrrCents === 0 ? "$0 ⚠" : formatMoney(c.mrrCents)}
-                </td>
-                <td className="px-3 py-2.5">
+                </Td>
+                <Td>
+                  <ChipList values={c.stages} toneMap={STAGE_TONE} labels={stageLabels} />
+                </Td>
+                <Td>
+                  <ChipList values={c.health} toneMap={HEALTH_TONE} labels={healthLabels} />
+                </Td>
+                <Td className="text-xs text-muted-foreground">{roleNames(c, "lead")}</Td>
+                <Td className="text-xs text-muted-foreground">{roleNames(c, "media_buyer")}</Td>
+                <Td className="text-xs text-muted-foreground">{roleNames(c, "csm")}</Td>
+                <Td className="text-right">
+                  <MrrValue cents={c.mrrCents} />
+                </Td>
+                <Td>
                   <RebillCell c={c} />
-                </td>
-              </tr>
+                </Td>
+              </TableRow>
             ))}
             {clients.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  colSpan={8}
+                  className="px-4 py-10 text-center text-sm text-muted-foreground"
+                >
                   No clients attributed to this member yet.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
+          </TableBody>
           {clients.length > 0 && (
-            <tfoot>
-              <tr className="border-t-2 border-border bg-muted/30">
-                <td className="px-3 py-2.5 text-xs font-black uppercase tracking-wide text-muted-foreground">
+            <TableFooter>
+              <TableRow className="hover:bg-transparent">
+                <Td className="text-xs font-medium text-muted-foreground">
                   Total · {clients.length} clients
-                </td>
+                </Td>
                 <td colSpan={5} />
-                <td className="px-3 py-2.5 text-right font-black text-foreground">
+                <Td className="text-right font-semibold tabular-nums text-foreground">
                   {formatMoney(totalMrr)}
-                </td>
+                </Td>
                 <td />
-              </tr>
-            </tfoot>
+              </TableRow>
+            </TableFooter>
           )}
-        </table>
-      </div>
+        </Table>
+      </Card>
 
       {assignOpen && (
         <CsmClientAssignDialog
@@ -257,12 +224,13 @@ function ClientCardShell({
   onClick?: () => void;
   children: React.ReactNode;
 }) {
-  const cls = "block w-full rounded-xl border border-border/60 bg-card p-3 text-left";
+  const cls =
+    "block w-full rounded-3xl bg-card p-3 text-left text-sm shadow-sm ring-1 ring-foreground/5 dark:ring-foreground/10";
   return onClick ? (
     <button
       type="button"
       onClick={onClick}
-      className={cn(cls, "hover:border-primary/40 transition-colors")}
+      className={cn(cls, "transition-colors hover:bg-muted/40")}
     >
       {children}
     </button>
@@ -271,33 +239,66 @@ function ClientCardShell({
   );
 }
 
+/** Client name + the PepAds book badge (Client Directory rendering). */
+function ClientName({ c }: { c: TeamClientSlice }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="truncate text-sm font-medium text-foreground">{c.displayName}</span>
+      {c.book === "pepads" && (
+        <Badge variant="outline" tone="warning" className="shrink-0">
+          PepAds
+        </Badge>
+      )}
+    </span>
+  );
+}
+
+/** MRR figure — a $0 MRR is the one value that needs attention (warning). */
+function MrrValue({ cents, className }: { cents: number; className?: string }) {
+  return cents === 0 ? (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 font-medium tabular-nums text-amber-700 dark:text-amber-400",
+        className
+      )}
+    >
+      <AlertTriangle className="size-3.5" />
+      $0
+    </span>
+  ) : (
+    <span className={cn("font-medium tabular-nums text-foreground", className)}>
+      {formatMoney(cents)}
+    </span>
+  );
+}
+
 /** Re-bill chip(s) + next-bill date — shared by the table cell and mobile card. */
 function RebillCell({ c }: { c: TeamClientSlice }) {
   return c.rebill ? (
-    <span className="inline-flex items-center gap-2">
+    // Wraps the date under the chips when the column is tight (laptop widths).
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       <RebillStatusChip status={c.rebill.status} paid={c.rebill.paid} />
       {c.rebill.nextRebillAt && (
-        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
           {formatDate(c.rebill.nextRebillAt)}
         </span>
       )}
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1.5 flex-wrap">
+    <span className="inline-flex flex-wrap items-center gap-1.5">
       {c.manualBilling.length > 0 ? (
         c.manualBilling.map((m) => (
-          <span
-            key={m}
-            className={cn(CHIP_BASE, MANUAL_BILLING_CHIP_CLS[m] ?? FALLBACK_CHIP_CLS)}
-          >
+          <StatusBadge key={m} tone={toneOf(MANUAL_BILLING_TONE, m)}>
             {m}
-          </span>
+          </StatusBadge>
         ))
       ) : (
-        <span className={cn(CHIP_BASE, FALLBACK_CHIP_CLS)}>manual</span>
+        <Badge variant="outline" className="font-normal text-muted-foreground">
+          manual
+        </Badge>
       )}
       {c.manualNextRebill && (
-        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
           {formatDate(c.manualNextRebill)}
         </span>
       )}
@@ -307,15 +308,13 @@ function RebillCell({ c }: { c: TeamClientSlice }) {
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th
-      className={cn(
-        "px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground",
-        className
-      )}
-    >
-      {children}
-    </th>
+    <TableHead className={cn("px-4 text-muted-foreground", className)}>{children}</TableHead>
   );
+}
+
+/** Body cell with the directory's padding; content may wrap (chips). */
+function Td({ children, className }: { children?: React.ReactNode; className?: string }) {
+  return <TableCell className={cn("whitespace-normal px-4 py-3", className)}>{children}</TableCell>;
 }
 
 function SummaryTile({
@@ -325,23 +324,21 @@ function SummaryTile({
 }: {
   label: string;
   value: string;
-  tone?: "green" | "amber" | "red";
+  /** Only for counts that need attention when non-zero. */
+  tone?: Extract<BadgeTone, "warning" | "danger">;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card px-3.5 py-2.5">
+    <div className="rounded-3xl bg-card px-4 py-3 shadow-sm ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "text-lg font-black leading-none",
-          tone === "green" && "text-emerald-600 dark:text-emerald-400",
-          tone === "amber" && "text-amber-600 dark:text-amber-400",
-          tone === "red" && "text-red-600 dark:text-red-400",
+          "mt-1 text-xl font-semibold tabular-nums",
+          tone === "warning" && "text-amber-700 dark:text-amber-400",
+          tone === "danger" && "text-red-700 dark:text-red-400",
           !tone && "text-foreground"
         )}
       >
         {value}
-      </p>
-      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        {label}
       </p>
     </div>
   );
@@ -349,20 +346,20 @@ function SummaryTile({
 
 function ChipList({
   values,
-  clsMap,
+  toneMap,
   labels,
 }: {
   values: string[];
-  clsMap: Record<string, string>;
+  toneMap: Record<string, BadgeTone>;
   labels: Record<string, string>;
 }) {
   if (values.length === 0) return <span className="text-xs text-muted-foreground/50">—</span>;
   return (
     <span className="flex flex-wrap gap-1">
       {values.map((v) => (
-        <span key={v} className={cn(CHIP_BASE, clsMap[v] ?? FALLBACK_CHIP_CLS)}>
+        <StatusBadge key={v} tone={toneOf(toneMap, v)}>
           {labels[v] ?? v}
-        </span>
+        </StatusBadge>
       ))}
     </span>
   );

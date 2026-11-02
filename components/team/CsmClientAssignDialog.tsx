@@ -2,10 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { formatMoney } from "@/components/users/format";
 import { AvatarInitials } from "@/components/users/AvatarInitials";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTeamDirectory } from "./useTeamData";
 
 /**
@@ -110,86 +118,85 @@ export function CsmClientAssignDialog({
     // One refetch on exit picks up every toggle across Team + directory views.
     queryClient.invalidateQueries({ queryKey: ["team-directory"] });
     queryClient.invalidateQueries({ queryKey: ["team-member"] });
+    // The member's re-billed / billed lines follow their client set.
+    queryClient.invalidateQueries({ queryKey: ["team-trends"] });
+    queryClient.invalidateQueries({ queryKey: ["team-member-trends", member.adminId] });
     onClose();
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={close} />
-      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <div>
-            <h2 className="text-sm font-bold text-foreground">
-              {member.name} — assigned clients
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {assigned.length} assigned · {formatMoney(assignedMrr)} MRR
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={close}
-            className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    // Every close path (X, outside click) runs close() so its refetch fires.
+    <Dialog open onOpenChange={(o) => !o && close()}>
+      <DialogContent
+        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg"
+        // The dialog never closed on Escape — keep it that way.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        // Nor did it move focus into the search box (on phones that pops
+        // the keyboard over the list).
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="px-6 pb-3 pr-14 pt-6">
+          <DialogTitle>{member.name} — assigned clients</DialogTitle>
+          <DialogDescription>
+            {assigned.length} assigned · {formatMoney(assignedMrr)} MRR
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="px-5 pt-3">
-          <input
+        <div className="px-6">
+          <Input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search active clients…"
-            className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8"
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-0.5">
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-3 py-3">
           {isLoading && (
-            <p className="py-8 text-center text-sm text-muted-foreground">Loading clients…</p>
+            <div className="space-y-1.5 px-3 py-1">
+              <span className="sr-only">Loading clients…</span>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-full" />
+              ))}
+            </div>
           )}
           {!isLoading &&
             clients.map((c) => (
-              <button
+              <label
                 key={c.id}
-                type="button"
-                disabled={busyIds.has(c.id)}
-                onClick={() => toggle(c.id, !c.assigned)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-muted/40 disabled:opacity-50"
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-2xl px-3 py-2 transition-colors hover:bg-muted/50 has-[:disabled]:cursor-default has-[:disabled]:opacity-50"
               >
-                <span
-                  className={cn(
-                    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border-2 transition-colors",
-                    c.assigned
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-muted-foreground/40 text-transparent"
-                  )}
-                >
-                  <Check className="h-3 w-3" />
-                </span>
-                <AvatarInitials name={c.displayName} className="w-6 h-6" />
+                <Checkbox
+                  checked={c.assigned}
+                  disabled={busyIds.has(c.id)}
+                  onCheckedChange={() => toggle(c.id, !c.assigned)}
+                  // Radix toggles on Space only; the old row button took Enter too.
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") toggle(c.id, !c.assigned);
+                  }}
+                />
+                <AvatarInitials name={c.displayName} className="h-6 w-6 text-[10px]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-foreground">
+                  <span className="block truncate text-sm font-medium text-foreground">
                     {c.displayName}
                   </span>
                   {c.otherCsms.length > 0 && (
-                    <span className="block truncate text-[10px] text-muted-foreground">
+                    <span className="block truncate text-xs text-muted-foreground">
                       also CSM: {c.otherCsms.join(", ")}
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 text-xs font-semibold text-muted-foreground">
+                <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
                   {formatMoney(c.mrrCents)}
                 </span>
-              </button>
+              </label>
             ))}
           {!isLoading && clients.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">No clients match.</p>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
