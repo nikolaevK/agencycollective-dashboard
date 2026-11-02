@@ -3,10 +3,14 @@
 import { Suspense } from "react";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useHydrated } from "@/hooks/useHydrated";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import AlertsLoading from "./loading";
 import { AlertFeed } from "@/components/alerts/AlertFeed";
+import { StatCard } from "@/components/overview/StatCard";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw, Bell } from "lucide-react";
+import { RefreshCw, Bell, AlertTriangle, AlertCircle, Layers } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -20,7 +24,8 @@ const SEVERITY_OPTIONS: { value: SeverityFilter; label: string }[] = [
 ];
 
 function AlertsContent() {
-  const { dateRange } = useDateRange();
+  const { dateRange, dateQuery } = useDateRange();
+  const hydrated = useHydrated();
   const { data: alerts, isLoading, error, dataUpdatedAt } = useAlerts(dateRange);
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -35,16 +40,16 @@ function AlertsContent() {
   const criticalCount = alerts?.filter((a) => a.severity === "critical").length ?? 0;
   const warningCount = alerts?.filter((a) => a.severity === "warning").length ?? 0;
 
+  // The shell may already hold this page's data at hydration (see useHydrated).
+  if (!hydrated) return <AlertsLoading />;
+
   return (
     <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Bell className="h-6 w-6" />
-              Alerts
-            </h1>
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Alerts</h2>
             <p className="text-sm text-muted-foreground mt-1">
               {alerts
                 ? `${alerts.length} active alert${alerts.length !== 1 ? "s" : ""}`
@@ -56,47 +61,31 @@ function AlertsContent() {
               )}
             </p>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className={cn(
-              "flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium hover:bg-accent transition-colors",
-              refreshing && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+          <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={cn(refreshing && "animate-spin")} />
             Refresh
-          </button>
+          </Button>
         </div>
 
-        {/* Summary cards */}
-        {!isLoading && alerts && alerts.length > 0 && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-red-500">Critical</p>
-              <p className="text-3xl font-bold text-red-500">{criticalCount}</p>
-            </div>
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-500">Warning</p>
-              <p className="text-3xl font-bold text-amber-500">{warningCount}</p>
-            </div>
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</p>
-              <p className="text-3xl font-bold">{alerts.length}</p>
-            </div>
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Entities</p>
-              <p className="text-3xl font-bold">
-                {new Set(alerts.map((a) => a.entityId)).size}
-              </p>
-            </div>
+        {/* Summary cards — skeletons while loading, so the feed doesn't jump */}
+        {!error && (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard label="Critical" icon={AlertTriangle} isLoading={isLoading} value={String(criticalCount)} />
+            <StatCard label="Warning" icon={AlertCircle} isLoading={isLoading} value={String(warningCount)} />
+            <StatCard label="Total" icon={Bell} isLoading={isLoading} value={String(alerts?.length ?? 0)} />
+            <StatCard
+              label="Entities"
+              icon={Layers}
+              isLoading={isLoading}
+              value={String(new Set(alerts?.map((a) => a.entityId)).size)}
+            />
           </div>
         )}
 
         {/* Alert feed */}
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0">
-            <CardTitle className="text-base">
+            <CardTitle>
               All Alerts
               {alerts && severityFilter !== "all" && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
@@ -104,30 +93,26 @@ function AlertsContent() {
                 </span>
               )}
             </CardTitle>
-            <div className="flex items-center rounded-lg border border-input bg-background p-0.5 gap-0.5">
+            {/* Plain pressed buttons: a ToggleGroup's roving-focus runtime
+                would be most of this page's JS. */}
+            <div role="group" aria-label="Severity" className="flex items-center gap-1">
               {SEVERITY_OPTIONS.map((opt) => (
-                <button
+                <Button
                   key={opt.value}
+                  size="sm"
+                  variant="outline"
+                  aria-pressed={severityFilter === opt.value}
                   onClick={() => setSeverityFilter(opt.value)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                    severityFilter === opt.value
-                      ? opt.value === "critical"
-                        ? "bg-red-500 text-white shadow-sm"
-                        : opt.value === "warning"
-                        ? "bg-amber-500 text-white shadow-sm"
-                        : "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
+                  className="aria-pressed:bg-muted aria-pressed:text-foreground"
                 >
                   {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
           </CardHeader>
           <CardContent>
             {error ? (
-              <div className="text-destructive text-sm">
+              <div className="text-sm text-red-700 dark:text-red-400">
                 Failed to load alerts: {(error as Error).message}
               </div>
             ) : (
@@ -136,6 +121,7 @@ function AlertsContent() {
                 isLoading={isLoading}
                 groupBySeverity={severityFilter === "all"}
                 compact={false}
+                dateQuery={dateQuery}
               />
             )}
           </CardContent>

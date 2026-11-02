@@ -8,6 +8,11 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { BadgeDot, StatusBadge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import type { PixelHealth, PixelStatsPeriod } from "@/types/dashboard";
 
 interface PixelHealthCardProps {
@@ -85,16 +90,13 @@ function PixelSection({ pixel, defaultExpanded }: { pixel: PixelHealth; defaultE
     <div className="space-y-3">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full text-left"
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between rounded-lg text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className={`h-2 w-2 rounded-full shrink-0 ${
-              pixel.isActive ? "bg-emerald-500" : "bg-red-500"
-            }`}
-          />
+          <BadgeDot tone={pixel.isActive ? "success" : "danger"} className="size-2" />
           <span className="text-sm font-medium truncate">{pixel.name}</span>
-          <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+          <span className="text-xs font-mono text-muted-foreground shrink-0">
             {pixel.id}
           </span>
         </div>
@@ -110,7 +112,7 @@ function PixelSection({ pixel, defaultExpanded }: { pixel: PixelHealth; defaultE
       {expanded && (
         <div className="space-y-3">
           {pixel.lastFiredTime && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Last fired: {formatRelativeTime(pixel.lastFiredTime)}
             </p>
           )}
@@ -123,14 +125,13 @@ function PixelSection({ pixel, defaultExpanded }: { pixel: PixelHealth; defaultE
                 return (
                   <div
                     key={stat.event}
-                    className={`flex items-center justify-between gap-1 rounded-lg px-2.5 py-1.5 text-xs ${
-                      isKey
-                        ? "bg-primary/8 dark:bg-primary/15"
-                        : "bg-muted/50 dark:bg-muted/20"
-                    }`}
+                    className={cn(
+                      "flex items-center justify-between gap-1 rounded-xl px-2.5 py-1.5 text-xs",
+                      isKey ? "bg-muted" : "bg-muted/40 text-muted-foreground"
+                    )}
                   >
-                    <span className="truncate text-foreground/80">{name}</span>
-                    <span className="font-semibold tabular-nums shrink-0">
+                    <span className="truncate">{name}</span>
+                    <span className="font-medium tabular-nums shrink-0 text-foreground">
                       {formatCount(stat.count)}
                     </span>
                   </div>
@@ -149,16 +150,16 @@ function PixelSection({ pixel, defaultExpanded }: { pixel: PixelHealth; defaultE
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-4 animate-pulse">
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <div className="h-2 w-2 rounded-full bg-muted" />
-        <div className="h-4 w-32 rounded bg-muted" />
-        <div className="h-3 w-20 rounded bg-muted" />
+        <Skeleton className="size-2 rounded-full" />
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-20" />
       </div>
-      <div className="h-3 w-24 rounded bg-muted" />
+      <Skeleton className="h-3 w-24" />
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-8 rounded-lg bg-muted/60" />
+          <Skeleton key={i} className="h-8 rounded-xl" />
         ))}
       </div>
     </div>
@@ -174,80 +175,69 @@ export function PixelHealthCard({
   onPeriodChange,
 }: PixelHealthCardProps) {
   return (
-    <div className="bg-card rounded-2xl p-5 lg:p-8 shadow-sm border border-border/50 dark:border-white/[0.06]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15">
-            <Zap className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-base lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
-              Pixel Health
-            </h4>
-            {periodLabel && (
-              <p className="text-[10px] text-muted-foreground">{periodLabel}</p>
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <Zap className="size-4 text-muted-foreground" />
+            <CardTitle>Pixel Health</CardTitle>
+            {pixels && pixels.length > 0 && (
+              <StatusBadge tone={pixels[0].isActive ? "success" : "danger"}>
+                {pixels[0].isActive ? "Active" : "Inactive"}
+              </StatusBadge>
             )}
           </div>
+          {periodLabel && <CardDescription className="text-xs">{periodLabel}</CardDescription>}
         </div>
-        <div className="flex items-center gap-2">
-          {onPeriodChange && (
-            <div className="flex rounded-lg border border-border/60 overflow-hidden text-[11px]">
-              {PERIOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => onPeriodChange(opt.value)}
-                  className={`px-2 py-1 transition-colors ${
-                    period === opt.value
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {pixels && pixels.length > 0 && (
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                pixels[0].isActive
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  : "bg-red-500/10 text-red-600 dark:text-red-400"
-              }`}
-            >
-              {pixels[0].isActive ? "Active" : "Inactive"}
-            </span>
-          )}
-        </div>
-      </div>
+        {onPeriodChange && (
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={period}
+            onValueChange={(v) => {
+              if (v) onPeriodChange(v as PixelStatsPeriod);
+            }}
+            aria-label="Pixel stats period"
+            className="shrink-0"
+          >
+            {PERIOD_OPTIONS.map((opt) => (
+              <ToggleGroupItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        )}
+      </CardHeader>
 
-      {/* Content */}
-      {isLoading && <LoadingSkeleton />}
+      <CardContent>
+        {/* Content */}
+        {isLoading && <LoadingSkeleton />}
 
-      {error && (
-        <div className="flex items-center gap-2 text-destructive text-sm">
-          <AlertTriangle className="h-4 w-4" />
-          Failed to load pixel data
-        </div>
-      )}
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+            <AlertTriangle className="size-4" />
+            Failed to load pixel data
+          </div>
+        )}
 
-      {!isLoading && !error && pixels && pixels.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-          <Unplug className="h-8 w-8 mb-2 opacity-40" />
-          <p className="text-xs">No pixels found for this account</p>
-        </div>
-      )}
+        {!isLoading && !error && pixels && pixels.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <Unplug className="size-6 mb-2 opacity-60" />
+            <p className="text-sm">No pixels found for this account</p>
+          </div>
+        )}
 
-      {!isLoading && !error && pixels && pixels.length > 0 && (
-        <div className="space-y-4 divide-y divide-border">
-          {pixels.map((pixel, i) => (
-            <div key={pixel.id} className={i > 0 ? "pt-4" : ""}>
-              <PixelSection pixel={pixel} defaultExpanded={i === 0} />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+        {!isLoading && !error && pixels && pixels.length > 0 && (
+          <div className="space-y-4 divide-y divide-border">
+            {pixels.map((pixel, i) => (
+              <div key={pixel.id} className={i > 0 ? "pt-4" : ""}>
+                <PixelSection pixel={pixel} defaultExpanded={i === 0} />
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

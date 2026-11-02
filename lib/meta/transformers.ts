@@ -202,6 +202,9 @@ export function transformAccount(
     status: mapAccountStatus(account.account_status),
     insights: currentInsight,
     delta,
+    // Every builder of the shared `allInsights` cache entry (accounts route,
+    // chat, reports) goes through here, so the totals are always present.
+    previous: previousInsight,
   };
 }
 

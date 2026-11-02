@@ -1,36 +1,21 @@
+import Link from "next/link";
 import {
-  AlertTriangle,
   AlertCircle,
-  Info,
-  TrendingDown,
-  TrendingUp,
+  ArrowUpRight,
   DollarSign,
   Percent,
-  Sparkles,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { Alert } from "@/types/alerts";
 
-const SEVERITY_STYLES = {
-  critical: {
-    circleBg: "bg-red-100 dark:bg-red-500/20",
-    icon: AlertTriangle,
-    iconColor: "text-red-600 dark:text-red-400",
-    borderColor: "border-l-red-500",
-  },
-  warning: {
-    circleBg: "bg-amber-100 dark:bg-amber-500/20",
-    icon: AlertCircle,
-    iconColor: "text-amber-600 dark:text-amber-400",
-    borderColor: "border-l-amber-500",
-  },
-  info: {
-    circleBg: "bg-violet-100 dark:bg-violet-500/20",
-    icon: Sparkles,
-    iconColor: "text-primary",
-    borderColor: "border-l-violet-500",
-  },
+const SEVERITY: Record<Alert["severity"], { tone: BadgeTone; label: string; iconClass: string }> = {
+  critical: { tone: "danger", label: "Critical", iconClass: "text-red-600 dark:text-red-400" },
+  warning: { tone: "warning", label: "Warning", iconClass: "text-amber-600 dark:text-amber-400" },
+  info: { tone: "info", label: "Info", iconClass: "text-sky-600 dark:text-sky-400" },
 };
 
 const TYPE_ICONS = {
@@ -41,75 +26,59 @@ const TYPE_ICONS = {
   spend_anomaly: AlertCircle,
 };
 
+/** The page the alert is about: its campaign, else its account (an ad set
+ *  alert doesn't carry its campaign id, so it opens the account). */
+function alertTarget(alert: Alert, dateQuery?: string): { href: string; label: string } {
+  const base =
+    alert.entityType === "campaign"
+      ? `/dashboard/accounts/${alert.accountId}/campaigns/${alert.entityId}`
+      : `/dashboard/accounts/${alert.accountId}`;
+  return {
+    href: dateQuery ? `${base}?${dateQuery}` : base,
+    label: alert.entityType === "campaign" ? "Open campaign" : "Open account",
+  };
+}
+
 interface AlertCardProps {
   alert: Alert;
   compact?: boolean;
+  /** Carried into the link ("preset=last_7d"). */
+  dateQuery?: string;
 }
 
-export function AlertCard({ alert, compact = false }: AlertCardProps) {
-  const styles = SEVERITY_STYLES[alert.severity];
-  const SeverityIcon = styles.icon;
-
-  const actionLabel =
-    alert.severity === "critical"
-      ? "Fix Now"
-      : alert.severity === "warning"
-      ? "Investigate"
-      : "Apply Recommendation";
+export function AlertCard({ alert, compact = false, dateQuery }: AlertCardProps) {
+  const severity = SEVERITY[alert.severity];
+  const Icon = TYPE_ICONS[alert.type] ?? AlertCircle;
+  const target = alertTarget(alert, dateQuery);
+  const where =
+    alert.entityType === "account" ? alert.accountName : `${alert.accountName} · ${alert.entityName}`;
 
   return (
-    <div
-      className={cn(
-        "flex gap-4 p-4 rounded-xl bg-muted/40 dark:bg-muted/20 border border-border/30 dark:border-white/[0.04] group hover:shadow-md transition-all",
-        "border-l-4 md:border-l-0",
-        styles.borderColor,
-        compact && "p-3"
-      )}
-    >
-      {/* Icon circle */}
-      <div className="shrink-0 mt-0.5">
-        <div
-          className={cn(
-            "w-8 h-8 rounded-lg md:rounded-full flex items-center justify-center",
-            styles.circleBg
-          )}
-        >
-          <SeverityIcon className={cn("h-4 w-4", styles.iconColor)} />
+    <div className={cn("flex gap-3 rounded-2xl border p-4", compact && "p-3")}>
+      <Icon className={cn("mt-0.5 size-4 shrink-0", severity.iconClass)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <h4 className="text-sm font-medium">{alert.title}</h4>
+          <StatusBadge tone={severity.tone} className="shrink-0">
+            {severity.label}
+          </StatusBadge>
         </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <h5 className="text-sm font-bold text-foreground">{alert.title}</h5>
-
-        {!compact && (
-          <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-            {alert.description}
+        <p className={cn("mt-1 text-xs leading-relaxed text-muted-foreground", compact && "line-clamp-2")}>
+          {alert.description}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <p className="min-w-0 truncate text-xs text-muted-foreground" title={where}>
+            {where} · {formatDistanceToNow(new Date(alert.detectedAt), { addSuffix: true })}
           </p>
-        )}
-
-        {compact && (
-          <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
-            {alert.description}
-          </p>
-        )}
-
-        {/* Action buttons — desktop only */}
-        <div className="mt-2 hidden md:flex gap-3">
-          <button className="text-[10px] font-black text-primary uppercase tracking-tight hover:underline">
-            {actionLabel}
-          </button>
-          {alert.severity === "critical" && (
-            <button className="text-[10px] font-black text-muted-foreground uppercase tracking-tight hover:underline">
-              Dismiss
-            </button>
-          )}
+          <Link
+            href={target.href}
+            prefetch={false}
+            className="-my-2 inline-flex shrink-0 items-center gap-0.5 rounded-full py-2 text-xs font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/30"
+          >
+            {target.label}
+            <ArrowUpRight className="size-3.5" />
+          </Link>
         </div>
-
-        {/* Time-ago stamp — mobile only */}
-        <span className="mt-1.5 block text-[10px] text-muted-foreground md:hidden">
-          {formatDistanceToNow(new Date(alert.detectedAt), { addSuffix: true })}
-        </span>
       </div>
     </div>
   );

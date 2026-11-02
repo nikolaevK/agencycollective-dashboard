@@ -5,11 +5,16 @@ import { useAds } from "@/hooks/useAds";
 import { useAdSets } from "@/hooks/useAdSets";
 import { useCampaigns } from "@/hooks/useCampaigns";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useAccounts } from "@/hooks/useAccounts";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import AdSetLoading from "./loading";
 import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb";
 import { AdTable } from "@/components/drilldown/AdTable";
-import { KpiGrid } from "@/components/overview/KpiGrid";
+import { MetaKpiCards } from "@/components/overview/MetaKpiCards";
+import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 
 interface AdSetPageProps {
@@ -26,9 +31,10 @@ function AdSetContent({
   adsetId: string;
 }) {
   const { dateRange } = useDateRange();
+  const hydrated = useHydrated();
   const { data: accounts } = useAccounts(dateRange);
   const { data: campaigns } = useCampaigns(accountId, dateRange);
-  const { data: adsets } = useAdSets(campaignId, dateRange);
+  const { data: adsets, isLoading: adsetsLoading } = useAdSets(campaignId, dateRange);
   const { data: ads, isLoading: adsLoading, error: adsError } = useAds(adsetId, dateRange);
 
   const account = accounts?.find((a) => a.id === accountId);
@@ -39,9 +45,12 @@ function AdSetContent({
   const campaignName = campaign?.name ?? campaignId;
   const adsetName = adset?.name ?? adsetId;
 
+  // The shell may already hold this page's data at hydration (see useHydrated).
+  if (!hydrated) return <AdSetLoading />;
+
   return (
-    <DashboardShell>
-      <div className="space-y-8">
+    <DashboardShell wide>
+      <div className="space-y-6">
         <DrilldownBreadcrumb
           items={[
             { label: accountName, href: `/dashboard/accounts/${accountId}` },
@@ -54,60 +63,46 @@ function AdSetContent({
         />
 
         {/* Header */}
-        <div>
-          {/* Mobile */}
-          <div className="lg:hidden">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Ad Set</p>
-            <h1 className="text-xl font-bold text-foreground truncate">{adsetName}</h1>
-            {adset && (
-              <p className="text-[11px] text-muted-foreground mt-1">
-                {adset.optimizationGoal} · {adset.status}
-              </p>
-            )}
-          </div>
-          {/* Desktop */}
-          <div className="hidden lg:block">
-            <h2 className="text-3xl font-light text-foreground">
-              Ad Set <span className="font-bold text-primary line-clamp-1">{adsetName}</span>
-            </h2>
-            {adset && (
-              <p className="text-sm text-muted-foreground mt-1">
-                {adset.optimizationGoal} · {adset.billingEvent} · {adset.status}
-              </p>
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 text-2xl lg:text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">{adsetName}</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            {adset ? (
+              <>
+                <span>{adset.optimizationGoal}</span>
+                <span aria-hidden>·</span>
+                <span>{adset.billingEvent}</span>
+                <StatusBadge tone={metaStatusTone(adset.status)}>{metaStatusLabel(adset.status)}</StatusBadge>
+              </>
+            ) : (
+              <span>Ad set</span>
             )}
           </div>
         </div>
 
-        {/* Ad set KPIs */}
-        {adset && (
-          <KpiGrid
-            metrics={adset.insights}
-            isLoading={false}
-            currency={account?.currency}
-          />
-        )}
+        {/* Ad set KPIs (skeleton while the ad set list loads) */}
+        <MetaKpiCards
+          metrics={adset?.insights}
+          isLoading={adsetsLoading}
+          currency={account?.currency}
+        />
 
         {/* Ads table */}
-        <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden px-4 py-5 lg:px-8 lg:py-6">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-xl lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
-              Ads
-            </h4>
-            {ads && (
-              <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-bold">
-                {ads.length}
-              </span>
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+            <CardTitle>Ads</CardTitle>
+            {ads && <Badge variant="secondary">{ads.length}</Badge>}
+          </CardHeader>
+          <CardContent>
+            {adsError ? (
+              <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+                <AlertTriangle className="size-4 shrink-0" />
+                Failed to load ads: {(adsError as Error).message}
+              </div>
+            ) : (
+              <AdTable ads={ads} isLoading={adsLoading} currency={account?.currency} />
             )}
-          </div>
-          {adsError ? (
-            <div className="flex items-center gap-2 text-destructive text-sm">
-              <AlertTriangle className="h-4 w-4" />
-              Failed to load ads: {(adsError as Error).message}
-            </div>
-          ) : (
-            <AdTable ads={ads} isLoading={adsLoading} />
-          )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </DashboardShell>
   );
@@ -117,7 +112,7 @@ export default function AdSetPage({ params }: AdSetPageProps) {
   return (
     <Suspense
       fallback={
-        <DashboardShell>
+        <DashboardShell wide>
           <div className="animate-pulse text-muted-foreground">Loading ad set...</div>
         </DashboardShell>
       }

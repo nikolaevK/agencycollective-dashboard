@@ -4,11 +4,16 @@ import { Suspense } from "react";
 import { useAdSets } from "@/hooks/useAdSets";
 import { useCampaigns } from "@/hooks/useCampaigns";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useAccounts } from "@/hooks/useAccounts";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import CampaignLoading from "./loading";
 import { DrilldownBreadcrumb } from "@/components/drilldown/DrilldownBreadcrumb";
 import { AdSetTable } from "@/components/drilldown/AdSetTable";
-import { KpiGrid } from "@/components/overview/KpiGrid";
+import { MetaKpiCards } from "@/components/overview/MetaKpiCards";
+import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 
 interface CampaignPageProps {
@@ -17,8 +22,9 @@ interface CampaignPageProps {
 
 function CampaignContent({ accountId, campaignId }: { accountId: string; campaignId: string }) {
   const { dateRange } = useDateRange();
+  const hydrated = useHydrated();
   const { data: accounts } = useAccounts(dateRange);
-  const { data: campaigns } = useCampaigns(accountId, dateRange);
+  const { data: campaigns, isLoading: campaignsLoading } = useCampaigns(accountId, dateRange);
   const { data: adsets, isLoading: adsetsLoading, error: adsetsError } = useAdSets(campaignId, dateRange);
 
   const account = accounts?.find((a) => a.id === accountId);
@@ -26,9 +32,12 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
   const accountName = account?.name ?? accountId;
   const campaignName = campaign?.name ?? campaignId;
 
+  // The shell may already hold this page's data at hydration (see useHydrated).
+  if (!hydrated) return <CampaignLoading />;
+
   return (
-    <DashboardShell>
-      <div className="space-y-8">
+    <DashboardShell wide>
+      <div className="space-y-6">
         <DrilldownBreadcrumb
           items={[
             { label: accountName, href: `/dashboard/accounts/${accountId}` },
@@ -37,66 +46,56 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
         />
 
         {/* Header */}
-        <div>
-          {/* Mobile */}
-          <div className="lg:hidden">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Campaign</p>
-            <h1 className="text-xl font-bold text-foreground truncate">{campaignName}</h1>
-            {campaign && (
-              <p className="text-[11px] text-muted-foreground mt-1">
-                {campaign.objective} · {campaign.status}
-              </p>
-            )}
-          </div>
-          {/* Desktop */}
-          <div className="hidden lg:block">
-            <h2 className="text-3xl font-light text-foreground">
-              Campaign <span className="font-bold text-primary line-clamp-1">{campaignName}</span>
-            </h2>
-            {campaign && (
-              <p className="text-sm text-muted-foreground mt-1">
-                {campaign.objective} · {campaign.status}
-                {campaign.budget > 0 && ` · ${campaign.budgetType === "daily" ? "Daily" : "Lifetime"} budget`}
-              </p>
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 text-2xl lg:text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">{campaignName}</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            {campaign ? (
+              <>
+                <span>{campaign.objective}</span>
+                {campaign.budget > 0 && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>{campaign.budgetType === "daily" ? "Daily" : "Lifetime"} budget</span>
+                  </>
+                )}
+                <StatusBadge tone={metaStatusTone(campaign.status)}>{metaStatusLabel(campaign.status)}</StatusBadge>
+              </>
+            ) : (
+              <span>Campaign</span>
             )}
           </div>
         </div>
 
-        {/* Campaign KPIs */}
-        {campaign && (
-          <KpiGrid
-            metrics={campaign.insights}
-            isLoading={false}
-            currency={account?.currency}
-          />
-        )}
+        {/* Campaign KPIs (skeleton while the campaign list loads) */}
+        <MetaKpiCards
+          metrics={campaign?.insights}
+          isLoading={campaignsLoading}
+          currency={account?.currency}
+        />
 
         {/* Ad sets table */}
-        <div className="bg-card rounded-2xl shadow-sm border border-border/50 dark:border-white/[0.06] overflow-hidden px-4 py-5 lg:px-8 lg:py-6">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-xl lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
-              Ad Sets
-            </h4>
-            {adsets && (
-              <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-bold">
-                {adsets.length}
-              </span>
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+            <CardTitle>Ad Sets</CardTitle>
+            {adsets && <Badge variant="secondary">{adsets.length}</Badge>}
+          </CardHeader>
+          <CardContent>
+            {adsetsError ? (
+              <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+                <AlertTriangle className="size-4 shrink-0" />
+                Failed to load ad sets: {(adsetsError as Error).message}
+              </div>
+            ) : (
+              <AdSetTable
+                adsets={adsets}
+                isLoading={adsetsLoading}
+                accountId={accountId}
+                campaignId={campaignId}
+                currency={account?.currency}
+              />
             )}
-          </div>
-          {adsetsError ? (
-            <div className="flex items-center gap-2 text-destructive text-sm">
-              <AlertTriangle className="h-4 w-4" />
-              Failed to load ad sets: {(adsetsError as Error).message}
-            </div>
-          ) : (
-            <AdSetTable
-              adsets={adsets}
-              isLoading={adsetsLoading}
-              accountId={accountId}
-              campaignId={campaignId}
-            />
-          )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </DashboardShell>
   );
@@ -104,7 +103,7 @@ function CampaignContent({ accountId, campaignId }: { accountId: string; campaig
 
 export default function CampaignPage({ params }: CampaignPageProps) {
   return (
-    <Suspense fallback={<DashboardShell><div className="animate-pulse text-muted-foreground">Loading campaign...</div></DashboardShell>}>
+    <Suspense fallback={<DashboardShell wide><div className="animate-pulse text-muted-foreground">Loading campaign...</div></DashboardShell>}>
       <CampaignContent accountId={params.accountId} campaignId={params.campaignId} />
     </Suspense>
   );

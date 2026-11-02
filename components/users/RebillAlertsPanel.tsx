@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -14,58 +13,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatDate } from "./format";
+import { useRebillAlerts } from "./useRebillAlerts";
 
-interface RebillAlert {
-  id: string;
-  slug: string;
-  displayName: string;
-  logoPath: string | null;
-  status: "due" | "overdue";
-  nextRebillAt: string | null;
-  lastRebilledAt: string | null;
-  daysUntilDue: number | null;
-  payoutMrr: number;
-}
-
-interface ReminderAlert {
-  id: string;
-  userId: string;
-  clientName: string;
-  clientSlug: string;
-  body: string;
-  remindAt: string | null;
-}
-
-export interface RebillAlertsData {
-  rebills: RebillAlert[];
-  reminders: ReminderAlert[];
-  count: number;
-  overdueCount: number;
-}
-
-async function fetchAlerts(): Promise<RebillAlertsData> {
-  const res = await fetch("/api/admin/clients/rebill-alerts");
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  return json.data as RebillAlertsData;
-}
-
-/**
- * Shared hook — same query key dedupes the page badge + the panel fetch.
- * 10-minute cadence: the endpoint rebuilds the full client directory per
- * call and the schedule engine is day-granular, so minute-level polling
- * buys nothing. Every billing mutation invalidates this key explicitly,
- * so admin actions still refresh the badge immediately.
- */
-export function useRebillAlerts() {
-  return useQuery({
-    queryKey: ["admin-rebill-alerts"],
-    queryFn: fetchAlerts,
-    staleTime: 600_000,
-    refetchInterval: 600_000,
-    refetchIntervalInBackground: false,
-  });
-}
+// The hook lives in its own module so a page can read the alerts without
+// bundling this panel; re-exported for existing importers.
+export { useRebillAlerts, type RebillAlertsData } from "./useRebillAlerts";
 
 export function RebillAlertsPanel({
   open,

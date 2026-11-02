@@ -38,6 +38,9 @@ export interface AccountSummary {
   status: AccountStatus;
   insights: InsightMetrics;
   delta: InsightDelta;
+  /** Previous same-length period totals (undefined: no previous insights) —
+   *  lets the Overview compute agency-wide Δ from totals, not averaged %s. */
+  previous?: InsightMetrics;
 }
 
 export type AccountStatus = "ACTIVE" | "PAUSED" | "DISABLED" | "UNSETTLED" | "PENDING_RISK_REVIEW" | "IN_GRACE_PERIOD";

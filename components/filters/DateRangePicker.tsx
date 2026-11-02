@@ -20,7 +20,7 @@ function presetLabel(preset: DatePreset): string {
   return PRESETS.find((p) => p.value === preset)?.label ?? preset;
 }
 
-function rangeLabel(range: DateRangeInput): string {
+export function rangeLabel(range: DateRangeInput): string {
   if (range.preset) return presetLabel(range.preset);
   if (range.since && range.until) {
     return `${range.since} – ${range.until}`;

@@ -47,7 +47,13 @@ async function mutateJson<T>(
   return json.data as T;
 }
 
-export function useTeamDirectory(timeframe: TeamTimeframeValue, workspace?: string) {
+export function useTeamDirectory(
+  timeframe: TeamTimeframeValue,
+  workspace?: string,
+  // `live: false` (the admin Overview's summary) reads once: no refetch on
+  // window focus, fresh for 5 minutes — the build covers the whole book.
+  { live = true }: { live?: boolean } = {}
+) {
   // `workspace` pins the overview to one book — honored server-side only for
   // unscoped (super / Admin Management) viewers; "" / undefined = all books.
   const ws = workspace || "";
@@ -57,7 +63,8 @@ export function useTeamDirectory(timeframe: TeamTimeframeValue, workspace?: stri
       fetchJson(
         `/api/admin/team?timeframe=${timeframe}${ws ? `&workspace=${encodeURIComponent(ws)}` : ""}`
       ),
-    staleTime: 60_000,
+    staleTime: live ? 60_000 : 300_000,
+    refetchOnWindowFocus: live,
     // A timeframe/workspace switch keeps the current view on screen while the
     // new key loads, instead of unmounting the page (and the toggle) into a
     // skeleton.

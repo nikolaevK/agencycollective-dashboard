@@ -11,6 +11,10 @@ import {
   TrendingDown,
   AlertTriangle,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { ActivityFeedItem } from "@/types/dashboard";
 
 interface ActivityFeedCardProps {
@@ -34,35 +38,13 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
-const EVENT_TYPE_CONFIG: Record<
-  string,
-  { icon: typeof Activity; color: string; bgColor: string }
-> = {
-  campaign: {
-    icon: Megaphone,
-    color: "text-blue-600 dark:text-blue-400",
-    bgColor: "bg-blue-500/10 dark:bg-blue-500/15",
-  },
-  ad: {
-    icon: Image,
-    color: "text-violet-600 dark:text-violet-400",
-    bgColor: "bg-violet-500/10 dark:bg-violet-500/15",
-  },
-  billing: {
-    icon: CreditCard,
-    color: "text-amber-600 dark:text-amber-400",
-    bgColor: "bg-amber-500/10 dark:bg-amber-500/15",
-  },
-  user: {
-    icon: UserCog,
-    color: "text-green-600 dark:text-green-400",
-    bgColor: "bg-green-500/10 dark:bg-green-500/15",
-  },
-  default: {
-    icon: Settings,
-    color: "text-muted-foreground",
-    bgColor: "bg-muted/50 dark:bg-muted/20",
-  },
+// Event kind → icon (neutral, like every icon on the admin pages).
+const EVENT_TYPE_CONFIG: Record<string, { icon: typeof Activity }> = {
+  campaign: { icon: Megaphone },
+  ad: { icon: Image },
+  billing: { icon: CreditCard },
+  user: { icon: UserCog },
+  default: { icon: Settings },
 };
 
 function getEventConfig(eventType?: string) {
@@ -81,18 +63,18 @@ function MetaActivityItem({ item }: { item: ActivityFeedItem }) {
   const Icon = config.icon;
 
   return (
-    <div className="flex items-start gap-3 px-1 py-3">
-      <div className={`p-1.5 rounded-lg ${config.bgColor} shrink-0 mt-0.5`}>
-        <Icon className={`h-3.5 w-3.5 ${config.color}`} />
+    <div className="flex items-start gap-3 py-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border">
+        <Icon className="size-3.5 text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium truncate">{item.title}</p>
+        <p className="text-sm font-medium truncate">{item.title}</p>
         {item.description && (
-          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {item.description}
           </p>
         )}
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {formatRelativeTime(item.timestamp)}
         </p>
       </div>
@@ -115,28 +97,23 @@ function PerformanceShiftItem({ item }: { item: ActivityFeedItem }) {
   const colorClass = isGood
     ? "text-emerald-600 dark:text-emerald-400"
     : "text-red-600 dark:text-red-400";
-  const bgClass = isGood
-    ? "bg-emerald-500/10 dark:bg-emerald-500/15"
-    : "bg-red-500/10 dark:bg-red-500/15";
 
   return (
-    <div className="flex items-start gap-3 px-1 py-3">
-      <div className={`p-1.5 rounded-lg ${bgClass} shrink-0 mt-0.5`}>
-        <Icon className={`h-3.5 w-3.5 ${colorClass}`} />
+    <div className="flex items-start gap-3 py-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border">
+        <Icon className={cn("size-3.5", colorClass)} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium">{item.title}</p>
-        <p className="text-[10px] text-muted-foreground mt-0.5">
+        <p className="text-sm font-medium">{item.title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
           {item.description}
         </p>
       </div>
       {item.percentChange !== undefined && (
-        <span
-          className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums shrink-0 ${bgClass} ${colorClass}`}
-        >
+        <Badge variant="outline" tone={isGood ? "success" : "danger"} className="shrink-0 tabular-nums">
           {item.percentChange > 0 ? "+" : ""}
           {item.percentChange}%
-        </span>
+        </Badge>
       )}
     </div>
   );
@@ -144,13 +121,13 @@ function PerformanceShiftItem({ item }: { item: ActivityFeedItem }) {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-0 divide-y divide-border animate-pulse">
+    <div className="space-y-0 divide-y divide-border">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-start gap-3 px-1 py-3">
-          <div className="h-7 w-7 rounded-lg bg-muted shrink-0" />
+        <div key={i} className="flex items-start gap-3 py-3">
+          <Skeleton className="size-7 rounded-full shrink-0" />
           <div className="flex-1 space-y-1.5">
-            <div className="h-3 w-3/4 rounded bg-muted" />
-            <div className="h-2.5 w-1/2 rounded bg-muted/60" />
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-2.5 w-1/2" />
           </div>
         </div>
       ))}
@@ -160,52 +137,44 @@ function LoadingSkeleton() {
 
 export function ActivityFeedCard({ items, isLoading, error }: ActivityFeedCardProps) {
   return (
-    <div className="bg-card rounded-2xl p-5 lg:p-8 shadow-sm border border-border/50 dark:border-white/[0.06]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-primary/10 dark:bg-primary/15">
-            <Activity className="h-4 w-4 text-primary" />
+          <Activity className="size-4 text-muted-foreground" />
+          <CardTitle>Activity Feed</CardTitle>
+        </div>
+        {items && items.length > 0 && <Badge variant="secondary">{items.length}</Badge>}
+      </CardHeader>
+
+      <CardContent>
+        {isLoading && <LoadingSkeleton />}
+
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+            <AlertTriangle className="size-4" />
+            Failed to load activity data
           </div>
-          <h4 className="text-sm font-semibold uppercase tracking-wider lg:text-base lg:font-bold lg:normal-case lg:tracking-normal text-foreground">
-            Activity Feed
-          </h4>
-        </div>
-        {items && items.length > 0 && (
-          <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-bold">
-            {items.length}
-          </span>
         )}
-      </div>
 
-      {/* Content */}
-      {isLoading && <LoadingSkeleton />}
+        {!isLoading && !error && items && items.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <Activity className="size-6 mb-2 opacity-60" />
+            <p className="text-sm">No recent activity</p>
+          </div>
+        )}
 
-      {error && (
-        <div className="flex items-center gap-2 text-destructive text-sm">
-          <AlertTriangle className="h-4 w-4" />
-          Failed to load activity data
-        </div>
-      )}
-
-      {!isLoading && !error && items && items.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-          <Activity className="h-8 w-8 mb-2 opacity-40" />
-          <p className="text-xs">No recent activity</p>
-        </div>
-      )}
-
-      {!isLoading && !error && items && items.length > 0 && (
-        <div className="max-h-[400px] overflow-y-auto divide-y divide-border">
-          {items.map((item) =>
-            item.type === "performance_shift" ? (
-              <PerformanceShiftItem key={item.id} item={item} />
-            ) : (
-              <MetaActivityItem key={item.id} item={item} />
-            )
-          )}
-        </div>
-      )}
-    </div>
+        {!isLoading && !error && items && items.length > 0 && (
+          <div className="max-h-[400px] overflow-y-auto divide-y divide-border">
+            {items.map((item) =>
+              item.type === "performance_shift" ? (
+                <PerformanceShiftItem key={item.id} item={item} />
+              ) : (
+                <MetaActivityItem key={item.id} item={item} />
+              )
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

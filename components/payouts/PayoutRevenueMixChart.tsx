@@ -28,6 +28,8 @@ type SeriesKey = keyof typeof chartConfig;
 
 interface Props {
   months: PayoutMonthPoint[];
+  /** Next to the "Last 12 months" note (e.g. a link to the Payout Tracker). */
+  action?: React.ReactNode;
 }
 
 /**
@@ -35,7 +37,7 @@ interface Props {
  * how much of it was collected. The selected month is the last bar, drawn at
  * full strength.
  */
-export function PayoutRevenueMixChart({ months }: Props) {
+export function PayoutRevenueMixChart({ months, action }: Props) {
   const data = months.map((m) => {
     const date = new Date(m.year, m.month - 1, 1);
     return {
@@ -76,7 +78,10 @@ export function PayoutRevenueMixChart({ months }: Props) {
           <BarChart3 className="size-4 text-muted-foreground" />
           <CardTitle>Revenue Mix</CardTitle>
         </div>
-        <CardDescription className="text-xs">Last 12 months</CardDescription>
+        <div className="flex items-center gap-3">
+          <CardDescription className="text-xs">Last 12 months</CardDescription>
+          {action}
+        </div>
       </CardHeader>
       <CardContent>
         {!hasData ? (

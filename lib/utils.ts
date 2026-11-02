@@ -167,6 +167,13 @@ export function percentChange(current: number, previous: number): number | null 
   return ((current - previous) / previous) * 100;
 }
 
+/** False for a one-day range (today / yesterday / since = until) — nothing
+ *  to draw a daily trend from. */
+export function spansMultipleDays(input: DateRangeInput): boolean {
+  if (input.preset) return input.preset !== "today" && input.preset !== "yesterday";
+  return Boolean(input.since && input.until && input.since !== input.until);
+}
+
 /**
  * Build a cache key string from a date range input
  */

@@ -17,6 +17,8 @@ import {
 
 interface Props {
   data: TeamMonthlyTrendPoint[];
+  /** Next to the "Last 12 months" note (e.g. a link to the Sales Overview). */
+  action?: React.ReactNode;
 }
 
 const chartConfig = {
@@ -37,17 +39,20 @@ function monthLabel(month: string): string {
  * Last-12-months closed vs paid revenue, team-wide. Fixed window on purpose:
  * the trend gives context while the metric cards track the selected frame.
  */
-export function TeamTrendChart({ data }: Props) {
+export function TeamTrendChart({ data, action }: Props) {
   const hasData = data.some((p) => p.closedRevenue > 0 || p.paidRevenue > 0);
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
           <CardTitle>Revenue Trend</CardTitle>
         </div>
-        <CardDescription className="text-xs">Last 12 months</CardDescription>
+        <div className="flex items-center gap-3">
+          <CardDescription className="text-xs">Last 12 months</CardDescription>
+          {action}
+        </div>
       </CardHeader>
 
       <CardContent>

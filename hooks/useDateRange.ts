@@ -47,8 +47,17 @@ export function useDateRange() {
     [setDateRange]
   );
 
+  // The range as a query string ("preset=last_7d" / "since=…&until=…") —
+  // carried into drill-down links so the next page shows the same period.
+  const dateQuery = dateRange.preset
+    ? `preset=${dateRange.preset}`
+    : dateRange.since && dateRange.until
+      ? `since=${dateRange.since}&until=${dateRange.until}`
+      : "";
+
   return {
     dateRange,
+    dateQuery,
     setDateRange,
     setPreset,
     setCustomRange,
