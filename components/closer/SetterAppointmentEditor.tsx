@@ -114,7 +114,7 @@ export function SetterAppointmentEditor({ event, appointment, onClose, onSaved }
       }}
     >
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+        className="max-h-[90dvh] overflow-y-auto sm:max-w-lg"
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader className="min-w-0 pr-8">

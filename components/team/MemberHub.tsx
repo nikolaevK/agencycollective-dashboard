@@ -39,7 +39,8 @@ import { Badge, StatusBadge, badgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StickyTabs } from "@/components/layout/StickyTabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ClientChip, DueLabel, MemberAvatar, PriorityFlag, TaskStatusDot } from "./TeamBits";
 import { MonthlyRebillTracker } from "./MonthlyRebillTracker";
@@ -293,11 +294,14 @@ export function MemberHub({ adminId }: { adminId: string }) {
         />
       )}
 
-      {/* Tab bar + timeframe */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as HubTab)}>
+      {/* Tab bar + timeframe — sticky on phones. Below sm the timeframe row
+          (h-8 toggle + gap-3) scrolls away above the stuck bar: -top-11 =
+          32 + 12 px, keeping the bar's own 8px top padding. */}
+      <StickyTabs value={tab} onValueChange={(v) => setTab(v as HubTab)} className="max-sm:-top-11">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Scrolls horizontally on narrow screens instead of overflowing. */}
-          <div className="max-w-full overflow-x-auto">
+          {/* Scrolls horizontally on narrow screens instead of overflowing.
+              Its own row below sm (the -top-11 above relies on it). */}
+          <div className="max-w-full overflow-x-auto max-sm:w-full">
             <TabsList>
               {tabs.map((t) => (
                 <TabsTrigger key={t.id} value={t.id}>
@@ -331,7 +335,7 @@ export function MemberHub({ adminId }: { adminId: string }) {
             ))}
           </ToggleGroup>
         </div>
-      </Tabs>
+      </StickyTabs>
 
       {tab === "home" && (
         <HomeTab

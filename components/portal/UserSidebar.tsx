@@ -104,7 +104,8 @@ export function UserSidebar({ displayName, isOpen = false, onClose }: UserSideba
     <aside
       className={cn(
         "ac-sidebar flex h-full w-64 shrink-0 flex-col border-r",
-        "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-in-out",
+        // Phones: z-[60], over the bottom nav (z-50) and the shell's backdrop.
+        "fixed inset-y-0 left-0 z-50 max-md:z-[60] transition-transform duration-200 ease-in-out",
         "md:relative md:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}

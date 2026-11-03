@@ -119,7 +119,7 @@ export function ManageAccountsModal({ client, onClose, onUpdated }: ManageAccoun
           e.preventDefault();
           (e.currentTarget as HTMLElement | null)?.focus();
         }}
-        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
       >
         {/* Header */}
         <DialogHeader className="shrink-0 border-b px-6 pt-6 pb-4 pr-14">

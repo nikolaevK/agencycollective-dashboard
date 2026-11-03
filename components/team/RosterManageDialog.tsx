@@ -179,7 +179,7 @@ export function RosterManageDialog({
         aria-labelledby="team-roster-title"
         className={cn(
           dialogPanelClass,
-          "relative z-50 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden"
+          "relative z-50 flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden"
         )}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b px-6 py-4">
@@ -397,6 +397,7 @@ function MemberRosterRow({
         <span className="text-xs font-medium text-muted-foreground">Goal $</span>
         <Input
           type="number"
+          inputMode="decimal"
           min={0}
           value={goal}
           placeholder="0"
@@ -425,6 +426,7 @@ function MemberRosterRow({
           <span className="text-xs font-medium text-muted-foreground">Split %</span>
           <Input
             type="number"
+            inputMode="numeric"
             min={0}
             max={100}
             value={share}
@@ -564,6 +566,7 @@ function AddMemberRow({
         </Select>
         <Input
           type="number"
+          inputMode="decimal"
           min={0}
           value={goal}
           placeholder="Goal $"

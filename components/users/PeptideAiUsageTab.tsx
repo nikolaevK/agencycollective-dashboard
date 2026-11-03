@@ -9,6 +9,7 @@ import { StatusBadge, badgeTone } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PeptideAiPolicy } from "@/lib/peptideAi";
 import {
@@ -146,7 +147,9 @@ export function PeptideAiUsageTab() {
       </ToggleGroup>
 
       <Card>
-        <Table className="min-w-[720px]">
+        {/* Phones: no 720px floor and client names wrap (≥8rem), so Client +
+            State fit the screen and the money columns scroll in from the right. */}
+        <Table className="md:min-w-[720px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="px-4">Client</TableHead>
@@ -170,10 +173,13 @@ export function PeptideAiUsageTab() {
               const share = usage ? Math.min(1, usage.spentCents / cap) : 0;
               return (
                 <TableRow key={r.userId}>
-                  <TableCell className="px-4">
+                  <TableCell className="px-4 max-md:whitespace-normal">
                     <Link
                       href={`/dashboard/users/${r.userId}?tab=settings`}
-                      className="font-medium text-foreground underline-offset-4 hover:underline"
+                      className={cn(
+                        TOUCH_TARGET,
+                        "font-medium text-foreground underline-offset-4 hover:underline max-md:inline-block max-md:min-w-[8rem] [@media(pointer:coarse)]:after:-inset-y-1.5"
+                      )}
                     >
                       {r.displayName}
                     </Link>

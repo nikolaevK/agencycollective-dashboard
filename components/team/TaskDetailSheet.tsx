@@ -400,7 +400,7 @@ export function TaskDetailSheet({
         tabIndex={-1}
         className={cn(
           dialogPanelClass,
-          "relative z-50 w-full max-w-xl max-h-[92dvh] sm:max-h-[88vh] overflow-y-auto overscroll-contain rounded-b-none sm:rounded-4xl focus:outline-none"
+          "relative z-50 w-full max-w-xl max-h-[92dvh] sm:max-h-[88dvh] overflow-y-auto overscroll-contain rounded-b-none sm:rounded-4xl focus:outline-none"
         )}
       >
         {/* Top bar */}

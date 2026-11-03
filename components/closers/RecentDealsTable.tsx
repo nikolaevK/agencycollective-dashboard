@@ -9,9 +9,10 @@ import { FileText, MoreHorizontal, Pencil, Trash2, Link2, CalendarDays, StickyNo
 import { cn } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { useToast } from "@/components/providers/ToastProvider";
-import { Badge, BadgeDot, badgeToneHover, badgeVariants } from "@/components/ui/badge";
+import { Badge, BadgeDot, badgeButtonClass, badgeToneHover, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -113,7 +114,7 @@ function PaidStatusBadge({ deal, adminMode }: { deal: DealWithInvoice; adminMode
       className={cn(
         badgeVariants({ variant: "outline", tone: isPaid ? "success" : "danger" }),
         "h-7 gap-1.5 px-2.5 font-medium disabled:opacity-60 sm:h-5 sm:px-2",
-        adminMode && cn("cursor-pointer disabled:cursor-wait", badgeToneHover[isPaid ? "success" : "danger"])
+        adminMode && cn("cursor-pointer disabled:cursor-wait", badgeToneHover[isPaid ? "success" : "danger"], badgeButtonClass)
       )}
       title={adminMode ? (toggling ? "Updating…" : isPaid ? "Mark as unpaid" : "Mark as paid") : undefined}
     >
@@ -141,6 +142,14 @@ function formatDealDate(dateStr: string | null): string {
     return "---";
   }
 }
+
+/** Touch screens only: grows the 16px website link in a mobile deal card to
+ *  a 32px target — mostly downward, over the plain date line, so it never
+ *  steals taps from the client-name link right above it. */
+const WEBSITE_TOUCH = cn(
+  TOUCH_TARGET,
+  "[@media(pointer:coarse)]:after:-inset-x-1 [@media(pointer:coarse)]:after:-top-0.5 [@media(pointer:coarse)]:after:-bottom-3.5"
+);
 
 const INPUT_CLS =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-shadow";
@@ -473,8 +482,10 @@ export function RecentDealsTable({ deals, adminMode = true, closerId, title = "R
                           <div className="flex items-center gap-2 mt-0.5 min-w-0">
                             {deal.brandName && <span className="min-w-0 truncate text-xs text-muted-foreground">{deal.brandName}</span>}
                             {deal.website && (
-                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline truncate max-w-[150px]">
-                                {deal.website.replace(/^https?:\/\//, "")}
+                              // Truncation lives on the inner span: an overflow-hidden
+                              // link would clip its own touch area (WEBSITE_TOUCH).
+                              <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className={cn("min-w-0 max-w-[150px] text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline", WEBSITE_TOUCH)}>
+                                <span className="block truncate">{deal.website.replace(/^https?:\/\//, "")}</span>
                               </a>
                             )}
                           </div>

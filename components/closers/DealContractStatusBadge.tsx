@@ -2,7 +2,7 @@
 
 import { FileSignature } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BadgeDot, badgeToneHover, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { BadgeDot, badgeButtonClass, badgeToneHover, badgeVariants, type BadgeTone } from "@/components/ui/badge";
 
 interface Props {
   status: string | null;
@@ -23,19 +23,20 @@ export function DealContractStatusBadge({ status, onClick }: Props) {
 
   const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
 
+  // Without an onClick it's a status label, not a disabled control.
+  const Comp = onClick ? "button" : "span";
   return (
-    <button
+    <Comp
       onClick={onClick}
-      disabled={!onClick}
       className={cn(
         badgeVariants({ variant: "outline", tone: config.tone }),
         "gap-1.5 font-medium",
-        onClick ? cn("cursor-pointer", badgeToneHover[config.tone]) : "cursor-default"
+        onClick ? cn("cursor-pointer", badgeToneHover[config.tone], badgeButtonClass) : "cursor-default"
       )}
     >
       <BadgeDot tone={config.tone} />
       <FileSignature className="opacity-70" />
       {config.label}
-    </button>
+    </Comp>
   );
 }

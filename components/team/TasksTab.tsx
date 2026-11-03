@@ -6,6 +6,7 @@ import { Check, ChevronDown, ChevronRight, List, ListChecks, Columns3 } from "lu
 import { cn } from "@/lib/utils";
 import { StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -279,7 +280,11 @@ function ListView({
               type="button"
               onClick={() => onToggleGroup(g.id)}
               aria-expanded={!isCollapsed}
-              className="mb-2 flex items-center gap-2 rounded-xl px-1 py-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
+              // Touch: a 32px hit area for the 24px group header.
+              className={cn(
+                TOUCH_TARGET,
+                "mb-2 flex items-center gap-2 rounded-xl px-1 py-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 [@media(pointer:coarse)]:after:-inset-y-1"
+              )}
             >
               {isCollapsed ? (
                 <ChevronRight className="size-3.5 text-muted-foreground" />

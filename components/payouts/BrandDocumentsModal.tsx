@@ -210,6 +210,7 @@ function UploadArea({
           </Select>
           <Input
             type="number"
+            inputMode="numeric"
             value={tagYear || ""}
             onChange={(e) => setTagYear(Number(e.target.value))}
             placeholder="Year"

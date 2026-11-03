@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { ClientTeamMember, TeamRole } from "@/lib/clientProfile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { ChipPopover } from "./ChipPopover";
 import { useMirroredSelection } from "./ChipMultiSelect";
 
@@ -99,8 +100,14 @@ export function TeamPicker({
       onClick={(e) => e.stopPropagation()}
     >
       {selected.map((m) => (
-        <Badge key={m.adminId} variant="secondary" className="gap-1">
-          {m.name}
+        // Touch: the ×'s grown hit area may spill past the chip. Phones: a
+        // long name truncates instead of pushing the × off the card.
+        <Badge
+          key={m.adminId}
+          variant="secondary"
+          className="gap-1 max-md:max-w-full [@media(pointer:coarse)]:overflow-visible"
+        >
+          <span className="max-md:min-w-0 max-md:truncate">{m.name}</span>
           {!disabled && (
             <button
               type="button"
@@ -108,7 +115,11 @@ export function TeamPicker({
                 e.stopPropagation();
                 emit(selected.filter((x) => x.adminId !== m.adminId));
               }}
-              className="-mr-0.5 rounded-full opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+              // Touch: a 32px hit area and a × that doesn't need hover.
+              className={cn(
+                TOUCH_TARGET,
+                "-mr-0.5 rounded-full opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 [@media(pointer:coarse)]:opacity-80 [@media(pointer:coarse)]:after:-inset-2.5"
+              )}
               aria-label={`Remove ${m.name}`}
             >
               <X className="size-3" />

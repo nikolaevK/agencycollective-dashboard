@@ -128,7 +128,7 @@ export function CsmClientAssignDialog({
     // Every close path (X, outside click) runs close() so its refetch fires.
     <Dialog open onOpenChange={(o) => !o && close()}>
       <DialogContent
-        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg"
+        className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-lg"
         // The dialog never closed on Escape — keep it that way.
         onEscapeKeyDown={(e) => e.preventDefault()}
         // Nor did it move focus into the search box (on phones that pops

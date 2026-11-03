@@ -2,7 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge, badgeButtonClass, badgeVariants } from "@/components/ui/badge";
 import { type CrossReferenceEvent } from "@/hooks/useGhlContacts";
 import {
   DEFAULT_SUB_ACCOUNT_ID,
@@ -72,6 +72,8 @@ export function GhlEventChip({
       className={cn(
         badgeVariants({ variant: "outline" }),
         "max-w-full justify-start gap-1.5 bg-background px-1.5 text-[10px] font-normal",
+        // A link chip: 32px touch target (the name span still truncates).
+        badgeButtonClass,
         className
       )}
       title={`GHL contact (${sub.label})`}

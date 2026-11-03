@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Home, ClipboardCheck, BookOpen, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 
 export function PortalBottomNav() {
   const pathname = usePathname();
@@ -47,7 +48,10 @@ export function PortalBottomNav() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "relative flex items-center gap-1.5 transition-colors",
+                // Touch: the label-wide stacked items (e.g. "Kit", 20px) get a
+                // ≥44px hit area.
+                TOUCH_TARGET,
+                "flex items-center gap-1.5 transition-colors [@media(pointer:coarse)]:after:-inset-x-3 [@media(pointer:coarse)]:after:-inset-y-1",
                 isActive
                   ? "rounded-full bg-primary px-4 py-2 text-primary-foreground"
                   : "flex-col text-muted-foreground hover:text-foreground"

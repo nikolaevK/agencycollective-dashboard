@@ -3,9 +3,11 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { TOUCH_TARGET } from "@/components/ui/touch"
 
 // shadcn "Luma" style, ported to Tailwind v3 syntax (ring-3 → ring-[3px],
 // aria-invalid: → aria-[invalid=true]:, has-data-[x]: → has-[[data-x]]:).
+// Small sizes grow to a ~40px hit area on touch screens (TOUCH_TARGET).
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-4xl border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 [&:not([aria-haspopup]):active]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-[3px] aria-[invalid=true]:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
@@ -25,12 +27,12 @@ const buttonVariants = cva(
       size: {
         default:
           "h-9 gap-1.5 px-3 has-[[data-icon=inline-end]]:pr-2.5 has-[[data-icon=inline-start]]:pl-2.5",
-        xs: "h-6 gap-1 px-2.5 text-xs has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1 px-3 has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2",
+        xs: cn("h-6 gap-1 px-2.5 text-xs has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2 [&_svg:not([class*='size-'])]:size-3", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-x-1 [@media(pointer:coarse)]:after:-inset-y-2"),
+        sm: cn("h-8 gap-1 px-3 has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2", TOUCH_TARGET, "[@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:-inset-y-1"),
         lg: "h-10 gap-1.5 px-4 has-[[data-icon=inline-end]]:pr-3 has-[[data-icon=inline-start]]:pl-3",
         icon: "size-9",
-        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
+        "icon-xs": cn("size-6 [&_svg:not([class*='size-'])]:size-3", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-2"),
+        "icon-sm": cn("size-8", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-1"),
         "icon-lg": "size-10",
       },
     },

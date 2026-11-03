@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Users, UserCog, Handshake, Megaphone, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { PermissionKey } from "@/lib/permissions";
 
@@ -16,8 +17,13 @@ const allTabs: { href: string; label: string; icon: typeof LayoutDashboard; exac
 ];
 
 // Kit focus ring (rounded so it hugs the inactive stacked tabs too).
-const tabBase =
-  "flex items-center gap-1.5 rounded-2xl outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30";
+// Touch: inactive items are only as wide as their label ("MORE" ≈ 29px), so
+// each one's tap area reaches a little past it on every side.
+const tabBase = cn(
+  "flex items-center gap-1.5 rounded-2xl outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+  TOUCH_TARGET,
+  "[@media(pointer:coarse)]:after:-inset-2"
+);
 // Below the 390px design width the six items get tighter (padding, letter
 // spacing, and below 360px a 9px label) so they still fit side by side at
 // 320px; 390px and up is unchanged.

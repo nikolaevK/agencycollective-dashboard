@@ -214,6 +214,7 @@ export function ClientFilters({
           <span className="text-xs text-muted-foreground">MRR $</span>
           <input
             type="number"
+            inputMode="decimal"
             min={0}
             value={value.mrrMin}
             onChange={(e) => set("mrrMin", e.target.value)}
@@ -224,6 +225,7 @@ export function ClientFilters({
           <span className="text-muted-foreground">–</span>
           <input
             type="number"
+            inputMode="decimal"
             min={0}
             value={value.mrrMax}
             onChange={(e) => set("mrrMax", e.target.value)}

@@ -558,6 +558,7 @@ export function AddEditPayoutModal({
           </Select>
           <Input
             type="number"
+            inputMode="numeric"
             min={2000}
             max={2100}
             value={payoutYear}
@@ -606,6 +607,7 @@ export function AddEditPayoutModal({
           </Label>
           <Input
             type="number"
+            inputMode="decimal"
             step="0.01"
             min="0"
             value={amountDue}
@@ -619,6 +621,7 @@ export function AddEditPayoutModal({
           </Label>
           <Input
             type="number"
+            inputMode="decimal"
             step="0.01"
             min="0"
             value={amountPaid}
@@ -766,6 +769,7 @@ export function AddEditPayoutModal({
           </Label>
           <Input
             type="number"
+            inputMode="numeric"
             min="0"
             max="100"
             step="1"
@@ -896,6 +900,7 @@ export function AddEditPayoutModal({
                 <div className="relative w-20 shrink-0">
                   <Input
                     type="number"
+                    inputMode="numeric"
                     min="0"
                     max="100"
                     value={party.pct || ""}

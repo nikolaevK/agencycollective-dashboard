@@ -23,6 +23,7 @@ import { PRE_CALL_LABELS, POST_CALL_LABELS } from "@/lib/appointmentRules";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import {
   CalendarStateChip,
   CalendarStateLegend,
@@ -44,6 +45,10 @@ import {
   setterEventState,
   type SetterCalendarState,
 } from "@/components/closer/calendarState";
+
+/** Touch screens only: grows a 16px text link (Meet, mailto) to a 32px
+ *  target without changing its look. */
+const LINK_TOUCH = cn(TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-2");
 
 interface Props {
   events: CalendarEvent[];
@@ -253,7 +258,7 @@ export function SetterCalendarEventList({
                               href={event.meetLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              className={cn("inline-flex items-center gap-1 text-xs text-primary hover:underline", LINK_TOUCH)}
                             >
                               <Video className="h-3 w-3" />
                               Meet

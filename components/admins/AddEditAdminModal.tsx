@@ -165,6 +165,9 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="e.g. john"
+                  // A login name: no phone auto-capitalize / autocorrect.
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   required
                 />
                 <p className="text-xs text-muted-foreground">

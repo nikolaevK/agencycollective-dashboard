@@ -38,6 +38,7 @@ import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { ATTENDEE_RESPONSE_META, POST_CALL_TONE, PRE_CALL_TONE } from "@/components/closer/calendarState";
 
 interface Appointment {
@@ -114,6 +115,10 @@ interface Props {
 
 /** Inner record tile (one claim / deal / attendance mark). */
 const TILE = "rounded-2xl bg-muted/40 p-3";
+
+/** Touch screens only: grows a 16px text link (Meet, mailto) to a 32px
+ *  target without changing its look. */
+const LINK_TOUCH = cn(TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-2");
 
 function formatWhen(iso: string | null | undefined, withTime = true): string {
   if (!iso) return "—";
@@ -214,7 +219,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                           href={event.meetLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                          className={cn("inline-flex items-center gap-1 text-primary hover:underline", LINK_TOUCH)}
                         >
                           <Video className="size-3" />
                           Meet
@@ -292,7 +297,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                         {a.clientEmail && (
                           <a
                             href={`mailto:${a.clientEmail}`}
-                            className="inline-flex items-center gap-1 hover:text-foreground"
+                            className={cn("inline-flex min-w-0 items-center gap-1 hover:text-foreground [overflow-wrap:anywhere]", LINK_TOUCH)}
                           >
                             <Mail className="size-3" />
                             {a.clientEmail}
@@ -355,7 +360,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                         {d.clientEmail && (
                           <a
                             href={`mailto:${d.clientEmail}`}
-                            className="inline-flex items-center gap-1 hover:text-foreground"
+                            className={cn("inline-flex min-w-0 items-center gap-1 hover:text-foreground [overflow-wrap:anywhere]", LINK_TOUCH)}
                           >
                             <Mail className="size-3" />
                             {d.clientEmail}
@@ -366,7 +371,7 @@ export function LeadContextModal({ googleEventId, dealId, fallbackTitle, onClose
                             href={d.website.startsWith("http") ? d.website : `https://${d.website}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex min-w-0 max-w-full items-center gap-1 text-primary hover:underline"
+                            className={cn("inline-flex min-w-0 max-w-full items-center gap-1 text-primary hover:underline", LINK_TOUCH)}
                           >
                             <ExternalLink className="size-3 shrink-0" />
                             <span className="truncate">{d.website.replace(/^https?:\/\//, "")}</span>

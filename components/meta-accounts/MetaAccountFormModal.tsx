@@ -221,7 +221,17 @@ export function MetaAccountFormModal({
                   value={form[f.key]}
                   onChange={(e) => set(f.key, e.target.value)}
                   aria-invalid={(error !== null && (badLinks as string[]).includes(f.key)) || undefined}
-                  inputMode={f.key === "profileLink" || f.key === "twofaLink" ? "url" : undefined}
+                  inputMode={
+                    f.key === "profileLink" || f.key === "twofaLink"
+                      ? "url"
+                      : f.key === "fbEmail" || f.key === "recoveryEmail"
+                        ? "email"
+                        : undefined
+                  }
+                  // Credentials are case-sensitive: no phone auto-capitalize /
+                  // autocorrect (the profile name is a person's name).
+                  autoCapitalize={f.key === "profileName" ? undefined : "none"}
+                  autoCorrect={f.key === "profileName" ? undefined : "off"}
                 />
               </Field>
             ))}

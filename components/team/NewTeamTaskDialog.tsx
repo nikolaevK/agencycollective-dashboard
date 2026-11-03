@@ -139,7 +139,7 @@ export function NewTeamTaskDialog({
         // The old modal had no Escape handler — it closes only via the X
         // button, Cancel or a backdrop click.
         onEscapeKeyDown={(e) => e.preventDefault()}
-        className="max-h-[90vh] overflow-y-auto overscroll-contain sm:max-w-md"
+        className="max-h-[90dvh] overflow-y-auto overscroll-contain sm:max-w-md"
       >
         <DialogHeader className="min-w-0 pr-10">
           <DialogTitle>New team task</DialogTitle>

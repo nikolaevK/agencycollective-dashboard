@@ -58,12 +58,15 @@ export function InlineQuotaEditor({ currentQuota }: InlineQuotaEditorProps) {
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex-1">
+      // Wraps Save/Cancel under the field when the card is narrow (a half-
+      // width phone card left the field ~2 digits wide).
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="relative min-w-28 flex-1">
           <DollarSign className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input
             ref={inputRef}
             type="number"
+            inputMode="numeric"
             step="1"
             min="0"
             value={value}

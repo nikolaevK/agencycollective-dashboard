@@ -108,7 +108,9 @@ const TabsList = React.forwardRef<
     <TabsPrimitive.List
       ref={setRefs}
       className={cn(
-        "group/tabs relative inline-flex h-9 w-fit items-center justify-center rounded-full bg-muted p-1 text-muted-foreground",
+        // Touch screens get a taller list (and so ~35px triggers), even where a
+        // caller made it compact with h-8 — the media query outranks it.
+        "group/tabs relative inline-flex h-9 w-fit items-center justify-center rounded-full bg-muted p-1 text-muted-foreground [@media(pointer:coarse)]:h-10",
         className
       )}
       {...props}

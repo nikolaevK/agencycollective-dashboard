@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Megaphone, Star } from "lucide
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -1075,7 +1076,10 @@ function Field({
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       {onClick ? (
-        <button onClick={onClick} className={cn(LINK_CLS, "mt-0.5")}>
+        <button
+          onClick={onClick}
+          className={cn(LINK_CLS, "mt-0.5", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-1.5")}
+        >
           {value}
         </button>
       ) : (

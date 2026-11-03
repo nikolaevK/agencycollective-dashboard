@@ -295,6 +295,7 @@ export function AdAccountFormModal({
               <Input
                 id="ad-account-retainer"
                 type="number"
+                inputMode="decimal"
                 min={0}
                 step="0.01"
                 value={retainerDollars}
@@ -343,6 +344,7 @@ export function AdAccountFormModal({
                 <Input
                   id="ad-account-billing-day"
                   type="number"
+                  inputMode="numeric"
                   min={1}
                   max={31}
                   value={billingDay}
@@ -355,6 +357,7 @@ export function AdAccountFormModal({
                 <Input
                   id="ad-account-lead-days"
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   value={leadDays}
                   onChange={(e) => setLeadDays(e.target.value)}

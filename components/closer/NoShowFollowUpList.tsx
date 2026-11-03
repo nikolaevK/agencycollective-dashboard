@@ -27,7 +27,12 @@ import type { NoShowFollowUp } from "@/lib/eventAttendance";
 import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { POST_CALL_TONE, PRE_CALL_TONE } from "@/components/closer/calendarState";
+
+/** Touch screens only: grows a 16px text link (Meet, mailto) to a 32px
+ *  target without changing its look. */
+const LINK_TOUCH = cn(TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-2");
 
 export interface NoShowFollowUpListProps {
   items: NoShowFollowUp[];
@@ -163,7 +168,7 @@ export function NoShowFollowUpList({
                   {n.clientEmail && (
                     <a
                       href={`mailto:${n.clientEmail}`}
-                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      className={cn("inline-flex min-w-0 items-center gap-1 hover:text-foreground [overflow-wrap:anywhere]", LINK_TOUCH)}
                     >
                       <Mail className="size-3" />
                       {n.clientEmail}
@@ -174,7 +179,7 @@ export function NoShowFollowUpList({
                       href={n.meetLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      className={cn("inline-flex items-center gap-1 hover:text-foreground", LINK_TOUCH)}
                     >
                       <Video className="size-3" />
                       Meet

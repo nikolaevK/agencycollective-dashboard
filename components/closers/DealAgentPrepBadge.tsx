@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Bot, Loader2, RotateCcw, Sparkles, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BadgeDot, badgeToneHover, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { BadgeDot, badgeButtonClass, badgeToneHover, badgeVariants, type BadgeTone } from "@/components/ui/badge";
 import type { DealPrepStatus } from "@/lib/dealPrepRules";
 
 /** Deal queue row badge for the deal-prep agent (lib/dealPrep.ts). */
@@ -66,7 +66,7 @@ export function DealAgentPrepBadge({ prep, onClick }: { prep: DealAgentPrepBadge
         badgeVariants({ variant: "outline", tone: style.tone }),
         "gap-1.5 font-medium",
         prep.blocker && prep.status === "needs_input" && "border-amber-500/60",
-        onClick ? cn("cursor-pointer", badgeToneHover[style.tone]) : "cursor-default"
+        onClick ? cn("cursor-pointer", badgeToneHover[style.tone], badgeButtonClass) : "cursor-default"
       )}
     >
       <BadgeDot tone={style.tone} />

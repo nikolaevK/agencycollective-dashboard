@@ -30,7 +30,9 @@ export function InvoiceField({
 }
 
 /** A labeled text input (or 2-row textarea) for the settings/profile forms.
- *  `wide` spans both columns of their 2-column field grids. */
+ *  `wide` spans both columns of their 2-column field grids. `email` only
+ *  picks the phone's email keyboard (no auto-capitalize / autocorrect) —
+ *  the field stays type="text", so nothing is validated differently. */
 export function TextField({
   label,
   value,
@@ -38,6 +40,7 @@ export function TextField({
   placeholder,
   wide,
   multiline,
+  email,
 }: {
   label: string;
   value: string;
@@ -45,6 +48,7 @@ export function TextField({
   placeholder?: string;
   wide?: boolean;
   multiline?: boolean;
+  email?: boolean;
 }) {
   const id = useId();
   return (
@@ -59,7 +63,15 @@ export function TextField({
           className="resize-y"
         />
       ) : (
-        <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+        <Input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputMode={email ? "email" : undefined}
+          autoCapitalize={email ? "none" : undefined}
+          autoCorrect={email ? "off" : undefined}
+        />
       )}
     </InvoiceField>
   );

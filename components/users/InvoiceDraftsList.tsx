@@ -401,7 +401,7 @@ export function InvoiceDraftsPanel({ onClose }: { onClose: () => void }) {
         aria-label="Invoice drafts"
         className={cn(
           dialogPanelClass,
-          "relative z-50 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none sm:rounded-b-4xl"
+          "relative z-50 flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none sm:rounded-b-4xl"
         )}
         onClick={(e) => e.stopPropagation()}
       >

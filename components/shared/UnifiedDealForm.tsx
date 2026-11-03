@@ -668,6 +668,8 @@ export function UnifiedDealForm({
           <input
             type="text"
             inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
             autoComplete="off"
             value={ccInputValue}
             onChange={(e) => {
@@ -792,6 +794,7 @@ export function UnifiedDealForm({
             <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0"
               value={dealValue}

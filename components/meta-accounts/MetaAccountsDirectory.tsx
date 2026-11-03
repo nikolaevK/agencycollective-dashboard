@@ -22,8 +22,9 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BadgeDot, badgeTone, badgeToneHover, badgeVariants } from "@/components/ui/badge";
+import { BadgeDot, badgeButtonClass, badgeTone, badgeToneHover, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
@@ -674,7 +675,10 @@ function ProfileLink({ value }: { value: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="shrink-0 rounded-full p-1.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 md:p-1"
+      className={cn(
+        TOUCH_TARGET,
+        "shrink-0 rounded-full p-1.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 md:p-1 [@media(pointer:coarse)]:after:-inset-1.5"
+      )}
       title="Open FB profile"
       aria-label="Open FB profile"
     >
@@ -864,7 +868,9 @@ function InlineChipSelect({
                 badgeToneHover.neutral
               ),
           // ≥24px touch target on phones; the dense badge height on desktop.
-          "h-7 cursor-pointer px-2.5 md:h-5 md:px-2"
+          "h-7 cursor-pointer px-2.5 md:h-5 md:px-2",
+          // + a larger hit area on touch screens (tablets get the dense chip).
+          badgeButtonClass
         )}
       >
         {value && <BadgeDot className={swatchClass(color)} />}

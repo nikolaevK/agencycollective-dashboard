@@ -327,7 +327,7 @@ export function InvoiceFollowUpDialog({
     >
       <div className={dialogOverlayClass} aria-hidden />
       <div
-        className={cn(dialogPanelClass, "relative z-50 flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden")}
+        className={cn(dialogPanelClass, "relative z-50 flex w-full max-w-lg max-h-[90dvh] flex-col overflow-hidden")}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

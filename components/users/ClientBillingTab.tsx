@@ -491,6 +491,7 @@ export function ClientBillingTab({
               <Input
                 id="billing-day"
                 type="number"
+                inputMode="numeric"
                 min={1}
                 max={31}
                 value={form.billingDay}
@@ -502,6 +503,7 @@ export function ClientBillingTab({
               <Input
                 id="billing-lead-days"
                 type="number"
+                inputMode="numeric"
                 min={0}
                 value={form.leadDays}
                 onChange={(e) => set("leadDays", clampNumberInput(e.target.value, 0))}

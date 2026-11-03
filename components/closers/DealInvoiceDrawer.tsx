@@ -1603,15 +1603,18 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
   // underneath (which used to close too and drop its unsaved edits).
   useEscapeKey(() => { void handleClose(); });
 
+  // display:contents wrapper: rendered inside a space-y-3 card, the backdrop
+  // and panel would each pick up its 12px margin-top and sit 12px low.
   return (
-    <>
+    <div className="contents">
       <div className={cn(dialogOverlayClass, "z-[70]")} onClick={handleClose} />
       <div className={cn(dialogPanelClass, "fixed inset-0 z-[70] flex flex-col overflow-hidden rounded-none md:inset-4 md:rounded-4xl")}>
-        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
-          <h3 className="text-base font-semibold tracking-tight text-foreground">
+        {/* The title gives way first, so Edit Contract + close always fit (320px). */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+          <h3 className="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
             {editing ? "Contract Editor" : "Contract Preview"}
           </h3>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {!editing && !loading && token && (
               <Button size="sm" onClick={handleStartEditing} disabled={switchingToEdit}>
                 {switchingToEdit ? <Loader2 className="animate-spin" /> : <Pencil />}
@@ -1654,6 +1657,6 @@ function ContractPreviewOverlay({ docusealTemplateId, alreadyCloned, onClose, on
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

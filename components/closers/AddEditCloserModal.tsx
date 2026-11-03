@@ -188,6 +188,7 @@ export function AddEditCloserModal({ closer, onClose, onSaved }: Props) {
               <Percent className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.1"
                 min="0"
                 max="100"
@@ -211,6 +212,7 @@ export function AddEditCloserModal({ closer, onClose, onSaved }: Props) {
               <DollarSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="number"
+                inputMode="numeric"
                 step="1"
                 min="0"
                 value={quota}

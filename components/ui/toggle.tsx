@@ -5,6 +5,7 @@ import * as TogglePrimitive from "@radix-ui/react-toggle"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { TOUCH_TARGET } from "@/components/ui/touch"
 
 // shadcn "Luma" style, ported to Tailwind v3 syntax.
 const toggleVariants = cva(
@@ -18,7 +19,7 @@ const toggleVariants = cva(
       size: {
         default:
           "h-9 min-w-9 px-3 has-[[data-icon=inline-end]]:pr-2.5 has-[[data-icon=inline-start]]:pl-2.5",
-        sm: "h-8 min-w-8 px-3 has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2",
+        sm: cn("h-8 min-w-8 px-3 has-[[data-icon=inline-end]]:pr-2 has-[[data-icon=inline-start]]:pl-2", TOUCH_TARGET, "[@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:-inset-y-1"),
         lg: "h-10 min-w-10 px-4 has-[[data-icon=inline-end]]:pr-3 has-[[data-icon=inline-start]]:pl-3",
       },
     },

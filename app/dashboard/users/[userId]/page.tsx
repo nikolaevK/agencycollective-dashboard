@@ -54,9 +54,11 @@ import { SparklinePlaceholder } from "@/components/shared/SparklinePlaceholder";
 import type { MetricSparkline as MetricSparklineType } from "@/components/shared/MetricSparkline";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StickyTabs } from "@/components/layout/StickyTabs";
 import { mergeTimeSeries } from "@/lib/timeseries";
 import { foldClientMonths, trendMonths } from "@/lib/clientTrendSeries";
 import { businessTodayYmd } from "@/lib/businessTime";
@@ -562,7 +564,10 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
                       }
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex min-w-0 items-center gap-1.5 text-foreground underline-offset-4 hover:underline"
+                      className={cn(
+                        TOUCH_TARGET,
+                        "flex min-w-0 items-center gap-1.5 text-foreground underline-offset-4 hover:underline [@media(pointer:coarse)]:after:-inset-y-1.5"
+                      )}
                     >
                       <Globe className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">{client.profile.website}</span>
@@ -663,8 +668,8 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
           />
         </div>
 
-        {/* Tab strip */}
-        <Tabs value={tab} onValueChange={(v) => setTab(v as DetailTab)}>
+        {/* Tab strip — sticky on phones; a ?tab= deep link scrolls it up */}
+        <StickyTabs value={tab} onValueChange={(v) => setTab(v as DetailTab)} scrollOnMount={tab !== "overview"}>
           <div className="overflow-x-auto">
             <TabsList>
               {DETAIL_TABS.map((t) => (
@@ -674,7 +679,7 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
               ))}
             </TabsList>
           </div>
-        </Tabs>
+        </StickyTabs>
 
         {tab === "overview" && (
           <div className="space-y-6">
@@ -739,7 +744,7 @@ export default function ClientProfilePage({ params, searchParams }: ClientProfil
                       <Button
                         variant="link"
                         onClick={() => setShowAccounts(true)}
-                        className="h-auto p-0 align-baseline"
+                        className={cn("h-auto p-0 align-baseline", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-1.5")}
                       >
                         Add one
                       </Button>

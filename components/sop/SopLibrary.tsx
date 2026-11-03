@@ -36,7 +36,7 @@ import {
   Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { StatusBadge, badgeVariants } from "@/components/ui/badge";
+import { StatusBadge, badgeButtonClass, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -152,7 +152,10 @@ function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, 
       {...noDrag}
       type="button"
       onClick={onOpen}
-      className="max-w-full truncate rounded-md text-left text-sm font-medium text-foreground outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      // Touch: padding grows the 20px line to a 32px target and the negative
+      // margin takes it back out of the layout (truncate's overflow clip rules
+      // out the ::after hit-area trick here).
+      className="max-w-full truncate rounded-md text-left text-sm font-medium text-foreground outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/30 [@media(pointer:coarse)]:-my-1.5 [@media(pointer:coarse)]:py-1.5"
       title={sop.title}
     >
       {sop.title || "Untitled SOP"}
@@ -174,6 +177,7 @@ function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, 
             aria-pressed={active}
             className={cn(
               badgeVariants({ variant: active ? "default" : "outline" }),
+              badgeButtonClass,
               "max-w-full gap-1 font-normal",
               !active && "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}

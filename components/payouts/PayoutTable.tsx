@@ -46,9 +46,17 @@ const optionRowClass =
 
 // Inline cell triggers (vertical / sales rep / referral): compact truncating
 // text that inherits the surrounding font size (text-sm in the table,
-// text-xs on the mobile cards).
+// text-xs on the mobile cards). The max width gives back the -ml-1.5 pull —
+// with max-w-full every value lost its last 6px to an ellipsis ("Skinc…").
+// On touch screens the 22px trigger gets a ~38px hit area, same look.
 const cellTriggerClass =
-  "-ml-1.5 h-auto max-w-full justify-start px-1.5 py-0.5 font-normal text-[length:inherit] text-muted-foreground hover:text-foreground";
+  "-ml-1.5 h-auto max-w-[calc(100%+0.375rem)] justify-start px-1.5 py-0.5 font-normal text-[length:inherit] text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:after:-inset-y-2";
+
+// Mobile-card link row (View POC / Service / Docs), 2px under the vertical
+// trigger: its touch area reaches only 2px up so it doesn't swallow the
+// trigger's lower half.
+const cardLinkClass =
+  "h-auto px-0 py-1 text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:after:-top-0.5";
 
 // ---------------------------------------------------------------------------
 // Inline toggle badge
@@ -780,6 +788,7 @@ function ReferralDropdown({
             <div className="flex gap-1 items-center">
               <Input
                 type="number"
+                inputMode="numeric"
                 min="0"
                 max="100"
                 value={pctVal}
@@ -1427,7 +1436,7 @@ export function PayoutTable({
                       variant="link"
                       size="xs"
                       onClick={() => setPocId(p.id)}
-                      className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
+                      className={cardLinkClass}
                     >
                       <UserCircle />
                       View POC
@@ -1438,7 +1447,7 @@ export function PayoutTable({
                       variant="link"
                       size="xs"
                       onClick={() => setServiceId(p.id)}
-                      className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
+                      className={cardLinkClass}
                     >
                       <Briefcase />
                       View Service
@@ -1448,7 +1457,7 @@ export function PayoutTable({
                     variant="link"
                     size="xs"
                     onClick={() => onViewDocs(p.brandName)}
-                    className="h-auto px-0 py-1 text-muted-foreground hover:text-foreground"
+                    className={cardLinkClass}
                   >
                     <FileText />
                     Docs
@@ -1482,7 +1491,9 @@ export function PayoutTable({
             {/* Sales Rep */}
             <div className="flex items-center gap-1 mb-3 min-w-0">
               <span className="text-[10px] text-muted-foreground shrink-0">Rep</span>
-              <div className="min-w-0 truncate text-xs text-muted-foreground">
+              {/* No overflow clip here: it would cut the trigger's touch
+                  area. The trigger truncates its own label. */}
+              <div className="min-w-0 text-xs text-muted-foreground">
                 <SalesRepBadge
                   value={p.salesRep}
                   payoutId={p.id}
@@ -1497,7 +1508,7 @@ export function PayoutTable({
             {(p.referral || p.referralPct != null) && (
               <div className="flex items-center gap-1 mb-3 min-w-0">
                 <span className="text-[10px] text-muted-foreground shrink-0">Ref</span>
-                <div className="min-w-0 truncate text-xs text-muted-foreground">
+                <div className="min-w-0 text-xs text-muted-foreground">
                   <ReferralBadge
                     value={p.referral}
                     pct={p.referralPct}

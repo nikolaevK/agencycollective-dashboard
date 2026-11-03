@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import type { CloserRole } from "@/lib/closers";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { CloserSidebar } from "@/components/closer/CloserSidebar";
 import { CloserTopBar } from "@/components/closer/CloserTopBar";
 
@@ -13,13 +14,37 @@ interface Props {
 
 function Shell({ displayName, role, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // The mobile drawer is modal, like the admin shell's: Escape closes it and
+  // the rest of the portal is inert while it's open. Crossing md closes it —
+  // it only exists on phones.
+  useEscapeKey(() => setSidebarOpen(false), sidebarOpen);
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!sidebarOpen || !content) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    content.inert = true;
+    return () => {
+      content.inert = false;
+      opener?.focus({ preventScroll: true });
+    };
+  }, [sidebarOpen]);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const close = () => setSidebarOpen(false);
+    mq.addEventListener("change", close);
+    return () => mq.removeEventListener("change", close);
+  }, []);
 
   return (
     <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden">
-      {/* Mobile backdrop */}
+      {/* Mobile backdrop — over the dashboards' floating buttons (z-40) and
+          any z-50 bar, under the drawer (z-[60]) */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          aria-hidden
+          className="fixed inset-0 z-[55] bg-black/50 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -31,7 +56,7 @@ function Shell({ displayName, role, children }: Props) {
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+      <div ref={contentRef} className="flex flex-1 flex-col overflow-hidden min-w-0">
         <CloserTopBar
           displayName={displayName}
           role={role}

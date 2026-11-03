@@ -156,6 +156,9 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="e.g. john"
+                // A login name: no phone auto-capitalize / autocorrect.
+                autoCapitalize="none"
+                autoCorrect="off"
                 required
                 className="h-11"
               />

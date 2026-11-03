@@ -19,8 +19,9 @@ export function LinkEventDealModal({ event, onClose }: Props) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className={dialogOverlayClass} onClick={onClose} />
       <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain")}>
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-4 py-4 border-b sm:px-6">
+        {/* Header — sticky like the Edit Deal modal, so close stays in reach
+            while scrolling the long form on a phone. */}
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-4 border-b bg-popover sm:px-6">
           <div className="min-w-0">
             <h3 className="text-base font-medium">Link as Deal</h3>
             <p className="text-xs text-muted-foreground mt-0.5 [overflow-wrap:anywhere]">

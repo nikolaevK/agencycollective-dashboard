@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
+import { TOUCH_TARGET } from "@/components/ui/touch"
 
 /** Status color families. "neutral" is the plain outline look. */
 export type BadgeTone = "neutral" | "success" | "warning" | "danger" | "info"
@@ -65,6 +66,13 @@ const badgeVariants = cva(
   }
 )
 
+/** For a badge rendered as a <button> (status chips that open a drawer): on
+ *  touch screens an invisible ::after makes the 20px chip a 32px target. */
+const badgeButtonClass = cn(
+  TOUCH_TARGET,
+  "overflow-visible [@media(pointer:coarse)]:after:-inset-x-1 [@media(pointer:coarse)]:after:-inset-y-1.5"
+)
+
 export interface BadgeProps
   extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof badgeVariants> {}
@@ -95,4 +103,4 @@ function StatusBadge({
   )
 }
 
-export { Badge, BadgeDot, StatusBadge, badgeVariants }
+export { Badge, BadgeDot, StatusBadge, badgeButtonClass, badgeVariants }

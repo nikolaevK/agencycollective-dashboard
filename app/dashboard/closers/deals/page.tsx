@@ -291,8 +291,10 @@ export default function AdminDealsPage() {
             onValueChange={(v) => { if (v) setStatusFilter(v as StatusFilter); }}
             className="max-w-full overflow-x-auto"
           >
+            {/* shrink-0: on a narrow phone the pills scroll sideways instead
+                of squeezing until the labels spill out of their borders. */}
             {filters.map((f) => (
-              <ToggleGroupItem key={f.value} value={f.value} className="px-3">
+              <ToggleGroupItem key={f.value} value={f.value} className="shrink-0 px-3">
                 {f.label} ({f.count})
               </ToggleGroupItem>
             ))}
@@ -309,7 +311,7 @@ export default function AdminDealsPage() {
               <ToggleGroupItem
                 key={f.value}
                 value={f.value}
-                className="px-3"
+                className="shrink-0 px-3"
                 title={
                   f.value === "needs_review"
                     ? "Deals with invoice awaiting admin review"

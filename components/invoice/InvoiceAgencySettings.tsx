@@ -163,7 +163,7 @@ export function InvoiceAgencySettings() {
               <TextField label="City" value={senderCity} onChange={setSenderCity} />
               <TextField label="Zip Code" value={senderZip} onChange={setSenderZip} />
               <TextField label="Country" value={senderCountry} onChange={setSenderCountry} />
-              <TextField label="Email" value={senderEmail} onChange={setSenderEmail} />
+              <TextField email label="Email" value={senderEmail} onChange={setSenderEmail} />
               <TextField wide label="Phone" value={senderPhone} onChange={setSenderPhone} />
             </div>
           </section>

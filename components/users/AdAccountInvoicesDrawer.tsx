@@ -487,6 +487,7 @@ function RegisterForm({
           <Input
             id="adreg-amount"
             type="number"
+            inputMode="decimal"
             min={0}
             step="0.01"
             className="tabular-nums"

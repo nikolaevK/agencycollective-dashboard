@@ -454,7 +454,7 @@ export default function CloserCalendarPage() {
           return (
             <div className="fixed inset-0 z-[60] flex items-center justify-center">
               <div className={dialogOverlayClass} onClick={() => setEditingDealId(null)} />
-              <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto overscroll-contain")}>
+              <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-lg mx-4 max-h-[90dvh] overflow-y-auto overscroll-contain")}>
                 <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b bg-popover">
                   <h3 className="text-base font-medium">Edit Deal</h3>
                   <Button

@@ -512,6 +512,7 @@ function TemplateFormModal({
               <Input
                 id="contract-template-docuseal"
                 type="number"
+                inputMode="numeric"
                 value={docusealTemplateId}
                 onChange={(e) => setDocusealTemplateId(e.target.value)}
                 placeholder="DocuSeal template ID"
@@ -883,7 +884,9 @@ function TemplateBuilderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-background">
+    // !mt-0: rendered inside the page's space-y-6, whose margin pushed this
+    // full-screen view 24px down (the page header showed through on top).
+    <div className="fixed inset-0 z-[60] !mt-0 flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 border-b px-4 sm:px-6 py-3 shrink-0">
         <h2 className="min-w-0 text-base font-semibold tracking-tight text-foreground flex items-center gap-2">
@@ -904,8 +907,10 @@ function TemplateBuilderModal({
         </div>
       </div>
 
-      {/* Builder */}
-      <div className="flex-1 overflow-hidden">
+      {/* Builder — scrolls when DocuSeal's layout is taller than the
+          screen (phones) instead of clipping; the light surface spans the
+          scrolled area too (same container as the deal contract editor). */}
+      <div className={cn("min-h-0 flex-1 overflow-auto overscroll-contain", token && "bg-white text-neutral-900")}>
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />

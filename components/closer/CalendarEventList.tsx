@@ -10,6 +10,7 @@ import type { DealStatus } from "@/lib/deals";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import {
   Select,
   SelectContent,
@@ -45,6 +46,10 @@ import {
   isValidSubAccountId,
   type GhlSubAccountId,
 } from "@/lib/ghl/subAccounts";
+
+/** Touch screens only: grows a 16px text link (Meet, mailto) to a 32px
+ *  target without changing its look. */
+const LINK_TOUCH = cn(TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-y-2");
 
 export type AttendeeResponseStatus =
   | "needsAction"
@@ -447,7 +452,7 @@ export function CalendarEventList({
                             href={event.meetLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            className={cn("inline-flex items-center gap-1 text-xs text-primary hover:underline", LINK_TOUCH)}
                           >
                             <Video className="h-3 w-3" />
                             Meet
@@ -572,7 +577,7 @@ export function CalendarEventList({
                         {setterClaim.clientEmail && (
                           <a
                             href={`mailto:${setterClaim.clientEmail}`}
-                            className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground break-all"
+                            className={cn("inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground break-all", LINK_TOUCH)}
                           >
                             <Mail className="h-3 w-3 shrink-0" />
                             {setterClaim.clientEmail}

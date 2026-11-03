@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Toggle } from "@/components/ui/toggle";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useConfirm } from "@/components/ui/use-confirm";
 
@@ -454,8 +455,11 @@ export function CloserRecentDeals({ deals, readOnly }: Props) {
                       <div className="flex items-center gap-2 mt-0.5 min-w-0">
                         {deal.brandName && <span className="min-w-0 truncate text-xs text-muted-foreground">{deal.brandName}</span>}
                         {deal.website && (
-                          <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className="min-w-0 text-xs text-primary underline-offset-4 hover:underline truncate max-w-[150px]">
-                            {deal.website.replace(/^https?:\/\//, "")}
+                          // Touch screens: a 32px target over the plain text lines
+                          // around it. Truncation lives on the inner span — an
+                          // overflow-hidden link would clip that touch area.
+                          <a href={deal.website.startsWith("http") ? deal.website : `https://${deal.website}`} target="_blank" rel="noopener noreferrer" className={cn("min-w-0 max-w-[150px] text-xs text-primary underline-offset-4 hover:underline", TOUCH_TARGET, "[@media(pointer:coarse)]:after:-inset-x-1 [@media(pointer:coarse)]:after:-inset-y-2")}>
+                            <span className="block truncate">{deal.website.replace(/^https?:\/\//, "")}</span>
                           </a>
                         )}
                       </div>

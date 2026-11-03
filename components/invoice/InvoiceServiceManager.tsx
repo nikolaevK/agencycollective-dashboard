@@ -222,6 +222,7 @@ function ServiceForm({
           <Input
             id={`${id}-rate`}
             type="number"
+            inputMode="decimal"
             min="0"
             step="any"
             value={rate}

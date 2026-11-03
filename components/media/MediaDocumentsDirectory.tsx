@@ -806,9 +806,11 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
           onDragLeave={(e) => { if (e.currentTarget === e.target) setOsDragOver(false); }}
           onDrop={onOsDrop}
         >
-          {/* Header / toolbar */}
+          {/* Header / toolbar. The title group's min width makes the filters
+              wrap to their own row on narrow panes — at min-w-0 it shrank
+              below its icon + item count and they overlapped the filters. */}
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex min-w-[10rem] flex-1 items-center gap-2">
               {activeFolder === null ? (
                 <Files className="size-4 shrink-0 text-muted-foreground" />
               ) : (

@@ -124,7 +124,10 @@ function ItemRow({
         isDragging && "relative z-10 opacity-80 shadow-lg ring-2 ring-ring/30"
       )}
     >
-      <div className="flex items-start gap-2">
+      {/* Phones: handle, line number and actions share a top bar so the
+          fields get the full card width (a handle gutter + action column
+          squeezed the name to ~230px). sm+: handle | fields | actions. */}
+      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:items-start">
         {canReorder ? (
           <Button
             type="button"
@@ -138,10 +141,13 @@ function ItemRow({
             <GripVertical />
           </Button>
         ) : (
-          <span className="w-9 shrink-0 sm:w-5" />
+          <span className="hidden w-5 shrink-0 sm:block" />
+        )}
+        {!locked && (
+          <span className="text-xs font-medium text-muted-foreground sm:hidden">Line {index + 1}</span>
         )}
 
-        <div className="min-w-0 flex-1 space-y-2">
+        <div className="order-last min-w-0 grow basis-full space-y-2 sm:order-none sm:basis-0">
           {/* Name + numbers: one table row when the editor is wide; otherwise
               the name gets its own full-width line so it stays readable (a
               drawer with the live preview beside it is narrow on any screen),
@@ -216,8 +222,9 @@ function ItemRow({
           )}
         </div>
 
-        {/* Row actions — Remove sits at the bottom, away from Duplicate. */}
-        <div className="flex shrink-0 flex-col items-center gap-1 self-stretch sm:mt-0.5">
+        {/* Row actions — Remove sits apart from Duplicate (at the bottom on
+            sm+). Computed lines have none, so no empty bar on phones. */}
+        <div className={cn("ml-auto flex shrink-0 items-center gap-1 sm:ml-0 sm:mt-0.5 sm:flex-col sm:self-stretch", locked && "hidden sm:flex")}>
           {onSavePreset && !locked && (
             <Button
               type="button"
@@ -254,7 +261,7 @@ function ItemRow({
               disabled={!canRemove}
               title={canRemove ? "Remove line" : "An invoice needs at least one line"}
               aria-label={`Remove ${label}`}
-              className={cn(ACTION, "mt-auto hover:bg-destructive/10 hover:text-destructive")}
+              className={cn(ACTION, "ml-2 hover:bg-destructive/10 hover:text-destructive sm:ml-0 sm:mt-auto")}
             >
               <Trash2 className="size-4 sm:size-3.5" />
             </Button>

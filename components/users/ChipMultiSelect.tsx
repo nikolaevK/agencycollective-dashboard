@@ -5,6 +5,7 @@ import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, BadgeDot, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Input } from "@/components/ui/input";
 import { ChipPopover } from "./ChipPopover";
 
@@ -118,10 +119,16 @@ export function ChipMultiSelect({
             key={v}
             variant="outline"
             tone={tone}
-            className={cn(tone ? "gap-1.5" : "gap-1", !toneOf && colorOf?.(v))}
+            // Touch: the ×'s grown hit area may spill past the chip. Phones:
+            // a long label truncates instead of pushing the × off the card.
+            className={cn(
+              tone ? "gap-1.5" : "gap-1",
+              !toneOf && colorOf?.(v),
+              "max-md:max-w-full [@media(pointer:coarse)]:overflow-visible"
+            )}
           >
             {tone && <BadgeDot tone={tone} />}
-            {labelOf(v)}
+            <span className="max-md:min-w-0 max-md:truncate">{labelOf(v)}</span>
             {!disabled && (
               <button
                 type="button"
@@ -129,7 +136,11 @@ export function ChipMultiSelect({
                   e.stopPropagation();
                   emit(selected.filter((x) => x !== v));
                 }}
-                className="-mr-0.5 rounded-full opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+                // Touch: a 32px hit area and a × that doesn't need hover.
+                className={cn(
+                  TOUCH_TARGET,
+                  "-mr-0.5 rounded-full opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 [@media(pointer:coarse)]:opacity-80 [@media(pointer:coarse)]:after:-inset-2.5"
+                )}
                 aria-label={`Remove ${labelOf(v)}`}
               >
                 <X className="size-3" />

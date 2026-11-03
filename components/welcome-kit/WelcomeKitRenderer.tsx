@@ -5,6 +5,7 @@ import { Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { badgeTone, badgeVariants } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { TOUCH_TARGET } from "@/components/ui/touch";
 import { Card } from "@/components/ui/card";
 import { resolveIcon } from "./icons";
 import type {
@@ -427,7 +428,12 @@ export function WelcomeKitRenderer({ doc, variant = "portal", slug }: Props) {
                   <a
                     key={s.id}
                     href={`#${s.id}`}
-                    className="flex items-center gap-3 text-muted-foreground hover:text-foreground transition-colors text-sm group"
+                    // Touch: the 20px row grows into the space-y-3 gaps
+                    // (a 32px target, no layout change).
+                    className={cn(
+                      TOUCH_TARGET,
+                      "flex items-center gap-3 text-muted-foreground hover:text-foreground transition-colors text-sm group [@media(pointer:coarse)]:after:-inset-y-1.5"
+                    )}
                   >
                     <span className="text-[11px] font-medium tabular-nums text-muted-foreground/70 group-hover:text-foreground w-4 text-right shrink-0">
                       {displayLead}

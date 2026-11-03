@@ -111,8 +111,10 @@ export function CcChipsInput({ field, exclude = [], placeholder = "add CC emailâ
           disabled && "opacity-50"
         )}
       >
+        {/* overflow-visible: the badge's clip would cut the remove button's
+            touch area; the address span truncates on its own. */}
         {emails.map((cc) => (
-          <Badge key={cc} variant="secondary" className="h-6 max-w-full gap-0.5 pl-2 pr-0 font-normal">
+          <Badge key={cc} variant="secondary" className="h-6 max-w-full gap-0.5 overflow-visible pl-2 pr-0 font-normal">
             <span className="truncate">{cc}</span>
             <Button
               type="button"
@@ -135,6 +137,8 @@ export function CcChipsInput({ field, exclude = [], placeholder = "add CC emailâ
           id={id}
           type="text"
           inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
           autoComplete="off"
           disabled={disabled}
           value={draft}
