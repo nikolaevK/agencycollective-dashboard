@@ -87,26 +87,33 @@ export function NativeSelect({ className, ...props }: ComponentProps<"select">) 
 /** Status line under a form (saved / failed) — the drawers' notice look. */
 export const INVOICE_NOTICE = "rounded-2xl border px-3 py-2 text-xs font-medium";
 
-/** Segmented control track + items (ToggleGroup), matching the drawers. */
-export const SEGMENT_TRACK = "rounded-3xl bg-muted p-1";
+/** Segmented control matching the drawers' ToggleGroups, built from plain
+ *  aria-pressed buttons in a role="group" track — each its own Tab stop (a
+ *  single ToggleGroup announces a radio group, which then has to support
+ *  arrow keys). */
+export const SEGMENT_TRACK = "flex items-center gap-1 rounded-3xl bg-muted p-1";
 export const SEGMENT_ITEM =
-  "h-9 sm:h-7 rounded-full px-3 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+  "inline-flex h-9 items-center justify-center gap-1 whitespace-nowrap rounded-full px-3 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:h-7 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
 /**
  * The invoice theme colors (data, not chrome — they print on the PDF). The
- * selected one gets a card-colored gap + a ring in its own color.
+ * selected one gets a card-colored gap + a ring in its own color (an inline
+ * box-shadow), so keyboard focus is an outline drawn outside that ring.
  */
 export function ThemeSwatches({
   value,
   onChange,
   size = "md",
+  label = "Theme color",
 }: {
   value: string;
   onChange: (color: string) => void;
   size?: "sm" | "md";
+  /** The group's accessible name. */
+  label?: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div role="group" aria-label={label} className="flex flex-wrap gap-2">
       {THEME_COLORS.map((t) => {
         const selected = value === t.color;
         return (
@@ -118,7 +125,7 @@ export function ThemeSwatches({
             aria-label={t.label}
             aria-pressed={selected}
             className={cn(
-              "relative rounded-full outline-none transition-transform focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "relative rounded-full outline-none transition-transform focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring",
               size === "md" ? "size-8" : "size-7",
               !selected && "hover:scale-110"
             )}

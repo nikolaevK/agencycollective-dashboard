@@ -22,7 +22,8 @@ const SopChatInterface = dynamic(
   { ssr: false, loading: () => <Skeleton className="h-[28rem] w-full rounded-3xl" /> }
 );
 
-// Warm a chunk on intent (hover / focus) so opening it rarely waits on the network.
+// Warm a chunk on intent (hover / focus) so opening it rarely waits on the
+// network: the builder on a SOP tile or the New SOP button, the chat on its tab.
 const warmBuilder = () => void import("@/components/sop/SopBuilder");
 const warmChat = () => void import("@/components/sop/SopChatInterface");
 
@@ -105,13 +106,8 @@ export function SopWorkspace() {
             </TabsTrigger>
           </TabsList>
           {/* The library unmounts while inactive, exactly like the old switch. */}
-          <TabsContent
-            value="library"
-            onPointerEnter={warmBuilder}
-            onFocusCapture={warmBuilder}
-            className="min-w-0 text-[length:inherit]"
-          >
-            <SopLibrary onOpenSop={openSop} />
+          <TabsContent value="library" className="min-w-0 text-[length:inherit]">
+            <SopLibrary onOpenSop={openSop} onWarmBuilder={warmBuilder} />
           </TabsContent>
         </Fragment>
       )}

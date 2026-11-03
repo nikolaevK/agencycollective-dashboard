@@ -8,10 +8,11 @@ import { isTableSeparator, parseInline, parseListLine, pdfSafe, splitTableCells,
 // Handles the structured markdown it generates: headings, paragraphs, bold /
 // italic / inline code, links (text + URL), nested bullet / numbered / task
 // lists, GFM tables (with or without outer pipes), blockquotes, fenced code
-// and horizontal rules. Inline parsing + the font-safe character mapping live
-// in lib/mediaChat/pdfText (tested). Colors match the report PDF
-// (components/chat/tool-renderers/reportPdfGenerator) so both kinds of saved
-// document look like one brand.
+// and horizontal rules. Small blocks stay on one page; ones that could be
+// taller than a page may break (KEEP_TOGETHER_CHARS). Inline parsing + the
+// font-safe character mapping live in lib/mediaChat/pdfText (tested). Colors
+// match the report PDF (components/chat/tool-renderers/reportPdfGenerator) so
+// both kinds of saved document look like one brand.
 
 const ACCENT = "#7c3aed";
 const TEXT = "#203044";
@@ -66,6 +67,18 @@ const st = StyleSheet.create({
 
 type RStyle = (typeof st)[keyof typeof st];
 
+/**
+ * Text up to this length (full page width — a handful of lines) is kept on one
+ * page; longer list items, blockquotes and table rows may break across pages,
+ * since an unbreakable (`wrap={false}`) element taller than a page is clipped.
+ */
+const KEEP_TOGETHER_CHARS = 600;
+
+/** A table row stays unbroken while its longest cell, scaled by the column count, is short. */
+function rowFitsTogether(cells: string[], cols: number): boolean {
+  return Math.max(0, ...cells.map((c) => c.length)) * cols <= KEEP_TOGETHER_CHARS;
+}
+
 function runStyle(r: Run): RStyle | undefined {
   if (r.code) return st.code;
   if (r.bold && r.italic) return st.bi;
@@ -99,7 +112,7 @@ function Table({ rows }: { rows: string[] }) {
   return (
     <View style={st.table}>
       {header && (
-        <View style={st.tHead} wrap={false}>
+        <View style={st.tHead} wrap={!rowFitsTogether(header, cols)}>
           {Array.from({ length: cols }).map((_, c) => (
             <View key={c} style={[st.tCell, { width: w }]}>
               <Inline text={header![c] ?? ""} base={st.tHeadText} />
@@ -108,7 +121,7 @@ function Table({ rows }: { rows: string[] }) {
         </View>
       )}
       {body.map((row, ri) => (
-        <View key={ri} style={st.tRow} wrap={false}>
+        <View key={ri} style={st.tRow} wrap={!rowFitsTogether(row, cols)}>
           {Array.from({ length: cols }).map((_, c) => (
             <View key={c} style={[st.tCell, { width: w }]}>
               <Inline text={row[c] ?? ""} base={st.tCellText} />
@@ -130,7 +143,7 @@ function ListItem({ item }: { item: ListLine }) {
       <Text style={st.bullet}>•</Text>
     );
   return (
-    <View style={[st.li, { marginLeft: item.depth * 14 }]} wrap={false}>
+    <View style={[st.li, { marginLeft: item.depth * 14 }]} wrap={item.text.length > KEEP_TOGETHER_CHARS}>
       {marker}
       <Inline text={item.text} base={st.liText} />
     </View>
@@ -207,9 +220,10 @@ function renderBlocks(md: string): React.ReactNode[] {
         buf.push(lines[i].replace(/^\s*(>\s?)+/, ""));
         i++;
       }
+      const quote = buf.join(" ");
       out.push(
-        <View key={k()} style={st.quote} wrap={false}>
-          <Inline text={buf.join(" ")} base={st.quoteText} />
+        <View key={k()} style={st.quote} wrap={quote.length > KEEP_TOGETHER_CHARS}>
+          <Inline text={quote} base={st.quoteText} />
         </View>
       );
       continue;

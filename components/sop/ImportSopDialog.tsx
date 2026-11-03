@@ -1,16 +1,22 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileUp, Loader2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
 import { createSopRequest } from "@/hooks/useSops";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT =
   ".pdf,.docx,.md,.markdown,.txt,.html,.htm,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*";
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// Hand-built (not Radix Dialog) because it must stay open — no Escape, no
+// overlay click, no close button — while an import is running.
 
 export function ImportSopDialog({
   open,
@@ -26,7 +32,51 @@ export function ImportSopDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const headingId = useId();
+
+  useEscapeKey(() => {
+    if (!busy) onClose();
+  }, open);
+
+  // Focus moves into the dialog on open and back to whatever opened it on
+  // close; Tab wraps inside it (focus that slipped out — e.g. off a button
+  // disabled mid-import — is pulled back in).
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panelRef.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      const panel = panelRef.current;
+      if (e.key !== "Tab" || !panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.getClientRects().length > 0
+      );
+      const active = document.activeElement;
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!panel.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -66,7 +116,11 @@ export function ImportSopDialog({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby={headingId}>
       <div className={dialogOverlayClass} onClick={busy ? undefined : onClose} aria-hidden />
-      <div className={cn(dialogPanelClass, "relative z-50 w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain p-6")}>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className={cn(dialogPanelClass, "relative z-50 w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain p-6 outline-none")}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 id={headingId} className="text-base font-semibold tracking-tight text-foreground">Import a document</h3>

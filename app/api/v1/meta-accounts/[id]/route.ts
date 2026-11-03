@@ -10,6 +10,7 @@ import {
   readMetaAccountInput,
   redactMetaAccount,
   DuplicateMetaAccountEmailError,
+  InvalidMetaAccountLinkError,
 } from "@/lib/metaAccounts";
 import { logAuditEvent } from "@/lib/auditLog";
 
@@ -54,6 +55,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     } catch (err) {
       if (err instanceof DuplicateMetaAccountEmailError) {
         return fail("conflict", err.message, 409);
+      }
+      if (err instanceof InvalidMetaAccountLinkError) {
+        return fail("invalid_request", err.message, 400);
       }
       throw err;
     }

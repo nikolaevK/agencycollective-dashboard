@@ -43,10 +43,13 @@ export function InvoiceServiceManager() {
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <Settings className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-          Manage Preset Services
-          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">({services.length})</span>
+        <Settings className="size-4 shrink-0 text-muted-foreground lg:max-xl:hidden" />
+        {/* Three of these share a row from lg up: between lg and xl the
+            decorative icon and "Manage" give way so the labels fit one line;
+            past that they wrap, never truncate. */}
+        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
+          <span className="lg:max-xl:hidden">Manage </span>Preset Services
+          <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground tabular-nums">({services.length})</span>
         </span>
         <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>

@@ -8,6 +8,8 @@
  * "displayed" while the UI renders an empty card.
  */
 
+import { stripMarkdownImages } from "./stripImages";
+
 export type PreparedTool =
   | { ok: true; input: Record<string, unknown>; ack: string }
   | { ok: false; error: string };
@@ -27,20 +29,13 @@ export function cleanLabel(v: unknown, max: number): string {
   return cleanText(typeof v === "string" ? v.replace(/\s+/g, " ") : v, max);
 }
 
-// `![alt](url)` (one level of parentheses inside the URL), `![alt][ref]`, and raw <img> tags.
-const MD_IMAGE_RE = /!\[([^\]]*)\]\((?:[^()\s]|\([^()]*\))*(?:\s+"[^"]*")?\)/g;
-const MD_IMAGE_REF_RE = /!\[([^\]]*)\]\[[^\]]*\]/g;
-const HTML_IMG_RE = /<img\b[^>]*>/gi;
-
 /**
- * Markdown images become their alt text. Generated documents are rendered by
- * markdown renderers outside this chat (the SOP library, other viewers) — an
- * image there would fetch a model-chosen URL on view, which a prompt-injected
- * pasted document could use to send conversation text to a third party.
+ * Markdown images become their alt text (parsed, not pattern-matched — see
+ * lib/docChat/stripImages). Generated documents are rendered by markdown
+ * renderers outside this chat (the SOP library, other viewers) — an image
+ * there would fetch a model-chosen URL on view.
  */
-export function stripMarkdownImages(text: string): string {
-  return text.replace(MD_IMAGE_RE, "$1").replace(MD_IMAGE_REF_RE, "$1").replace(HTML_IMG_RE, "");
-}
+export { stripMarkdownImages };
 
 /** stripMarkdownImages on every string inside `value` (objects/arrays copied). */
 export function deepStripImages(value: unknown, depth = 0): unknown {

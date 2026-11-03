@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { resolveIcon } from "@/components/welcome-kit/icons";
 import { IconPicker, Select, StringListEditor, TextArea, TextInput, Toggle } from "@/components/welcome-kit/builder/fields";
@@ -294,7 +296,9 @@ export function SopBuilder({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
-  const { data, isLoading, isError } = useQuery({
+  const router = useRouter();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const { data, error, isError, isFetching, refetch } = useQuery({
     queryKey: ["sop", sopId],
     queryFn: () => fetchRecord(sopId),
     staleTime: 30_000,
@@ -338,6 +342,61 @@ export function SopBuilder({
     () => draft !== null && JSON.stringify({ doc: draft, folder, tags, status }) !== savedJson,
     [draft, folder, tags, status, savedJson]
   );
+
+  // Leaving with unsaved edits asks first: the Library button, in-app links
+  // (below) and — via the browser's own prompt — closing or reloading the tab.
+  const confirmDiscard = () =>
+    confirm({
+      title: "Discard unsaved changes?",
+      description: "Your edits to this SOP haven't been saved.",
+      confirmText: "Discard",
+      destructive: true,
+    });
+
+  async function requestBack() {
+    if (dirty && !(await confirmDiscard())) return;
+    onBack();
+  }
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  // App links (sidebar, bottom nav) navigate client-side, past beforeunload,
+  // so their clicks are caught before Next's Link sees them: the SOPs page's
+  // own link goes back to the Library (the workspace would otherwise stay on
+  // this builder), any other page asks first when there are unsaved edits.
+  // New-tab / modified clicks, downloads, anchors and other origins pass through.
+  async function requestLeave(href: string) {
+    if (await confirmDiscard()) router.push(href);
+  }
+  const leave = useRef({ dirty, back: requestBack, go: requestLeave });
+  leave.current = { dirty, back: requestBack, go: requestLeave };
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!(a instanceof HTMLAnchorElement) || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+      const url = new URL(a.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname) {
+        if (url.hash && url.search === window.location.search) return; // in-page anchor
+        e.preventDefault();
+        void leave.current.back();
+      } else if (leave.current.dirty) {
+        e.preventDefault();
+        void leave.current.go(url.pathname + url.search + url.hash);
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   const saveMutation = useMutation<SaveResult, SaveError, SaveVars>({
     mutationFn: async (vars) => {
@@ -433,25 +492,40 @@ export function SopBuilder({
     setDraft({ ...draft, sections: arrayMove(draft.sections, oldI, newI) });
   }
 
-  // A failed first load must surface (the skeleton below waits for a draft).
-  if (isError && draft === null) {
-    return (
-      <QueryErrorState
-        title="Failed to load this SOP."
-        message="Please go back and try again."
-      />
-    );
-  }
+  const backButton = (
+    <Button type="button" variant="outline" onClick={() => void requestBack()}>
+      <ArrowLeft />
+      Library
+    </Button>
+  );
 
-  if (isLoading || draft === null) {
+  // Until the first load lands: the way back, then the skeleton — or, if the
+  // load failed (and isn't being retried), the error with a Retry.
+  if (draft === null) {
+    const notFound = error instanceof Error && error.message === "HTTP 404";
     return (
-      <Card className="p-6 md:p-8">
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      </Card>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">{backButton}</div>
+        {isError && !isFetching ? (
+          <QueryErrorState
+            title={notFound ? "This SOP no longer exists." : "Failed to load this SOP."}
+            message={
+              notFound
+                ? "It may have been deleted by someone else. Go back to the Library."
+                : "Something went wrong while loading. Your session may have expired."
+            }
+            onRetry={notFound ? undefined : () => void refetch()}
+          />
+        ) : (
+          <Card className="p-6 md:p-8">
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
     );
   }
 
@@ -471,10 +545,7 @@ export function SopBuilder({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Button type="button" variant="outline" onClick={onBack}>
-            <ArrowLeft />
-            Library
-          </Button>
+          {backButton}
           <Badge
             variant="outline"
             tone={statusTone}
@@ -664,6 +735,8 @@ export function SopBuilder({
           </div>
         </div>
       </div>
+
+      {confirmDialog}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { parseImportedInvoice } from "./importInvoice";
 
 interface Props {
   open: boolean;
@@ -49,17 +50,21 @@ export function InvoiceSavedList({ open, onClose, onLoad, onImport }: Props) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
+      let raw: unknown;
       try {
-        const data = JSON.parse(reader.result as string) as InvoiceData;
-        if (data.sender && data.receiver && data.details) {
-          onImport(data);
-          onClose();
-        } else {
-          setImportError("Invalid invoice file format");
-        }
+        raw = JSON.parse(reader.result as string);
       } catch {
         setImportError("Failed to parse JSON file");
+        return;
       }
+      // A file of the wrong shape used to reach the editor and crash the page.
+      const parsed = parseImportedInvoice(raw);
+      if (!parsed.ok) {
+        setImportError(parsed.error);
+        return;
+      }
+      onImport(parsed.data);
+      onClose();
     };
     reader.readAsText(file);
     // Let the same file be picked again after a failed import.

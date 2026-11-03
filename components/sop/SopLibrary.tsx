@@ -128,7 +128,7 @@ function FolderChip({ id, label, count, active, droppable, color, isAll, onSelec
 }
 
 // ── Draggable SOP tile ────────────────────────────────────────────────────────
-function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, onDownload, activeTag, busy }: {
+function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, onDownload, onWarm, activeTag, busy }: {
   sop: SopListItem;
   view: "grid" | "list";
   onOpen: () => void;
@@ -137,6 +137,7 @@ function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, 
   onEditTags: () => void;
   onTagClick: (tag: string) => void;
   onDownload: () => void;
+  onWarm?: () => void;
   activeTag: string;
   busy: boolean;
 }) {
@@ -228,6 +229,8 @@ function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, 
       <div
         ref={setNodeRef}
         {...listeners}
+        onPointerEnter={onWarm}
+        onFocus={onWarm}
         className={cn(
           "group relative flex cursor-grab flex-col gap-3 rounded-2xl bg-muted/40 p-3 transition-colors hover:bg-muted/70 active:cursor-grabbing",
           isDragging && "opacity-40"
@@ -251,6 +254,8 @@ function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, 
     <div
       ref={setNodeRef}
       {...listeners}
+      onPointerEnter={onWarm}
+      onFocus={onWarm}
       className={cn(
         "group flex cursor-grab flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-2 py-2 transition-colors hover:bg-muted/60 active:cursor-grabbing sm:flex-nowrap sm:px-3",
         isDragging && "opacity-40"
@@ -295,7 +300,11 @@ function FilesSkeleton({ view }: { view: "grid" | "list" }) {
 }
 
 // ── Main library ──────────────────────────────────────────────────────────────
-export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
+export function SopLibrary({ onOpenSop, onWarmBuilder }: {
+  onOpenSop: (id: string) => void;
+  /** Prefetch the builder chunk on intent (a SOP tile, the New SOP button). */
+  onWarmBuilder?: () => void;
+}) {
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
@@ -478,6 +487,7 @@ export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
     onEditTags: () => setTagsFor(s),
     onTagClick: (t: string) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t)),
     onDownload: () => downloadSop(s.id),
+    onWarm: onWarmBuilder,
     activeTag: tagFilter,
     busy: busyId === s.id,
   });
@@ -574,7 +584,14 @@ export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
 
           {/* Action bar */}
           <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
-            <Button type="button" size="sm" onClick={handleNew} disabled={creating}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleNew}
+              onPointerEnter={onWarmBuilder}
+              onFocus={onWarmBuilder}
+              disabled={creating}
+            >
               {creating ? <Loader2 className="animate-spin" /> : <Plus />}
               New SOP
             </Button>

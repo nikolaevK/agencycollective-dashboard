@@ -7,19 +7,7 @@ import { logAuditEvent } from "@/lib/auditLog";
 import { createApiToken, listApiTokens } from "@/lib/apiTokens";
 import { sanitizeScopes, sanitizeResourceIds } from "@/lib/apiScopes";
 import { listWorkspaceValues } from "@/lib/workspaces";
-
-/**
- * Workspace restriction input: array of registry slugs; unknown slugs are
- * dropped; empty/none → null = all workspaces (today's behavior).
- */
-async function sanitizeTokenWorkspaces(raw: unknown): Promise<string[] | null> {
-  if (!Array.isArray(raw)) return null;
-  const valid = await listWorkspaceValues();
-  const list = [
-    ...new Set(raw.map((v) => String(v).trim()).filter((v) => valid.has(v))),
-  ];
-  return list.length > 0 ? list : null;
-}
+import { parseTokenWorkspaces } from "./workspaceInput";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -76,13 +64,21 @@ export async function POST(request: Request) {
       );
     }
 
+    // Workspace restriction: omitted / null / [] = all workspaces; a list
+    // naming no existing workspace is rejected, never widened to all.
+    let workspaces: string[] | null = null;
+    if (body.workspaces !== undefined) {
+      const parsed = parseTokenWorkspaces(body.workspaces, await listWorkspaceValues());
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      workspaces = parsed.workspaces;
+    }
+
     const { record, token } = await createApiToken({
       name,
       scopes,
       clientIds: sanitizeResourceIds(body.clientIds),
       closerIds: sanitizeResourceIds(body.closerIds),
-      workspaces:
-        body.workspaces !== undefined ? await sanitizeTokenWorkspaces(body.workspaces) : null,
+      workspaces,
       expiresAt,
       createdBy: admin.id,
       createdByName: admin.displayName ?? admin.username,

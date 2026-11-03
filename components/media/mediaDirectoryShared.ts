@@ -12,7 +12,7 @@ export const FOLDER_COLOR_KEYS = ["gray", "red", "amber", "green", "teal", "blue
 export type FolderColor = (typeof FOLDER_COLOR_KEYS)[number];
 
 export const FOLDER_COLORS: Record<FolderColor, { icon: string; swatch: string }> = {
-  gray: { icon: "text-slate-500", swatch: "bg-slate-400" },
+  gray: { icon: "text-muted-foreground", swatch: "bg-muted-foreground" },
   red: { icon: "text-red-500", swatch: "bg-red-500" },
   amber: { icon: "text-amber-500", swatch: "bg-amber-500" },
   green: { icon: "text-green-500", swatch: "bg-green-500" },

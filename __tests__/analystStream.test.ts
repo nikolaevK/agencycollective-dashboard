@@ -102,6 +102,19 @@ describe("reduceStreamEvent", () => {
     expect(fellBack.message.servedBy).toBe("claude-sonnet-4-6");
   });
 
+  it("a mid-stream fallback drops the declined model's pending call (it is never sent or run)", () => {
+    const s = run([
+      { type: "turn_start", iteration: 1 },
+      { type: "tool_start", id: "t_declined", name: "generate_document" },
+      { type: "fallback", from: "claude-opus-5-5", to: "claude-opus-5", category: "bio" },
+    ]);
+    expect(s.pendingTools).toEqual([]);
+    // The fallback model's own call still shows its placeholder until its tool_use lands.
+    const next = reduceStreamEvent(s, { type: "tool_start", id: "t_new", name: "generate_document" });
+    expect(next.pendingTools).toEqual([{ id: "t_new", name: "generate_document" }]);
+    expect(reduceStreamEvent(next, { type: "tool_use", id: "t_new", name: "generate_document", input: {} }).pendingTools).toEqual([]);
+  });
+
   it("a local stop is ignored once the stream already finished", () => {
     const done = run([{ type: "done", stopReason: "end_turn" }]);
     expect(finishStreamLocally(done, "stopped", "Stopped.")).toBe(done);

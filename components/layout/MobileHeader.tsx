@@ -18,10 +18,12 @@ const DATE_PICKER_ROUTES = ["/dashboard"];
 
 interface MobileHeaderProps {
   onMenuClick?: () => void;
+  /** The menu drawer is open (aria-expanded). */
+  menuOpen?: boolean;
 }
 
 // Account actions (Log out) are in the menu drawer's footer.
-export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
+export function MobileHeader({ onMenuClick, menuOpen = false }: MobileHeaderProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const admin = useAdmin();
@@ -39,7 +41,7 @@ export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
       {/* Top row: hamburger + logo + actions */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Button variant="outline" size="icon" onClick={onMenuClick} aria-label="Open menu">
+          <Button variant="outline" size="icon" onClick={onMenuClick} aria-label="Open menu" aria-expanded={menuOpen}>
             <Menu />
           </Button>
           <AgencyLogo />

@@ -23,6 +23,17 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh,
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const refreshed = useRef(false);
+  const mainRef = useRef<HTMLDivElement>(null);
+
+  // The drawer only exists below md: crossing the breakpoint (resize, rotate)
+  // closes it, so its Escape layer, inert background and "open" state never
+  // linger on the desktop rail (or re-show it when the window narrows again).
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const close = () => setSidebarOpen(false);
+    mq.addEventListener("change", close);
+    return () => mq.removeEventListener("change", close);
+  }, []);
 
   function toggleSidebar() {
     const next = !sidebarCollapsed;
@@ -59,22 +70,22 @@ export function DashboardClientShell({ children, adminData, needsSessionRefresh,
             isOpen={sidebarOpen}
             collapsed={sidebarCollapsed}
             onClose={() => setSidebarOpen(false)}
+            backgroundRef={mainRef}
           />
         </Suspense>
 
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
+        <div ref={mainRef} className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <MobileHeader onMenuClick={() => setSidebarOpen(true)} menuOpen={sidebarOpen} />
           <div className="hidden md:block">
             <Suspense fallback={<div className="h-16 border-b bg-background" />}>
               <TopBar
-                onMenuClick={() => setSidebarOpen(true)}
                 sidebarCollapsed={sidebarCollapsed}
                 onToggleSidebar={toggleSidebar}
               />
             </Suspense>
           </div>
           {children}
-          <BottomNav onMenuClick={() => setSidebarOpen(true)} />
+          <BottomNav onMenuClick={() => setSidebarOpen(true)} menuOpen={sidebarOpen} />
         </div>
       </div>
     </AdminProvider>

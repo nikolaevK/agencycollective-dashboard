@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, readAdmins } from "@/lib/admins";
 import { readUsers } from "@/lib/users";
+import { listApiTokens } from "@/lib/apiTokens";
 import { ensureMigrated } from "@/lib/db";
 import { logAuditEvent } from "@/lib/auditLog";
 import {
@@ -133,12 +134,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
     }
 
-    // Refuse to remove a book that still holds clients OR admins. Orphaned
-    // admin scopes are worse than orphaned clients: the slug fails closed at
-    // first (they see nothing), but a later Add/Edit-Admin save would
-    // sanitize the dead slug away → NULL → the partner admin silently falls
-    // back to the MAIN book. Unassign the admins first.
-    const [users, admins] = await Promise.all([readUsers(), readAdmins()]);
+    // Refuse to remove a book that still holds clients, admins OR API tokens.
+    // Orphaned admin scopes are worse than orphaned clients: the slug fails
+    // closed at first (they see nothing), but a later Add/Edit-Admin save
+    // would sanitize the dead slug away → NULL → the partner admin silently
+    // falls back to the MAIN book. Unassign the admins first. Tokens are the
+    // same hazard (a restriction left naming only dead books is one edit away
+    // from "every book"), so a book a live token is restricted to stays too.
+    const [users, admins, tokens] = await Promise.all([
+      readUsers(),
+      readAdmins(),
+      listApiTokens(),
+    ]);
     const stillAssigned = users.filter((u) => u.workspace === value).length;
     if (stillAssigned > 0) {
       return NextResponse.json(
@@ -153,6 +160,20 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         {
           error: `${adminHolders} admin(s) still assigned to this workspace — unassign them first`,
+        },
+        { status: 409 }
+      );
+    }
+    // Live tokens block (expired included — an expiry can be extended).
+    // Revoked ones don't: if one is rotated back to life its dead slug still
+    // matches nothing, and token edits never widen a restriction implicitly.
+    const tokenHolders = tokens.filter(
+      (t) => !t.revokedAt && (t.workspaces ?? []).includes(value)
+    ).length;
+    if (tokenHolders > 0) {
+      return NextResponse.json(
+        {
+          error: `${tokenHolders} API token(s) still restricted to this workspace — edit or revoke them first`,
         },
         { status: 409 }
       );

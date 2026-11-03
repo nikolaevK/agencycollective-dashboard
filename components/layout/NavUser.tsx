@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import {
   DropdownMenu,
@@ -10,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { NavUserButton, UserAvatar, useAdminIdentity } from "@/components/layout/NavUserButton";
+import { NavUserButton, UserAvatar, logOutAdmin, useAdminIdentity } from "@/components/layout/NavUserButton";
 
 /**
  * The admin's account menu in the sidebar footer — the ONE place for account
@@ -18,15 +17,7 @@ import { NavUserButton, UserAvatar, useAdminIdentity } from "@/components/layout
  * the Sidebar, so the Radix dropdown stays out of the shell's first load.
  */
 export function NavUser({ side = "top" }: { side?: "top" | "right" }) {
-  const router = useRouter();
   const { name, detail } = useAdminIdentity();
-
-  async function handleLogout() {
-    await fetch("/api/auth/admin/logout", { method: "POST" });
-    // Creative Studio keeps generated images in this browser — don't leave them for the next admin.
-    void import("@/components/generate/imageStore").then((m) => m.clearStoredImages()).catch(() => {});
-    router.push("/?portal=admin");
-  }
 
   return (
     <DropdownMenu>
@@ -50,7 +41,7 @@ export function NavUser({ side = "top" }: { side?: "top" | "right" }) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void handleLogout()}>
+        <DropdownMenuItem onSelect={() => void logOutAdmin()}>
           <LogOut />
           Log out
         </DropdownMenuItem>

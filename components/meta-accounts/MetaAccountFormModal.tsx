@@ -23,8 +23,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { useMetaAccountOptions } from "@/hooks/useMetaAccountOptions";
 import type { MetaAccountDirectoryRow, MetaClientOption } from "@/lib/metaAccountDirectory";
+import {
+  META_ACCOUNT_LINK_FIELDS,
+  META_ACCOUNT_LINK_LABELS,
+  metaAccountLinkHref,
+} from "@/lib/metaAccountRules";
 
 // Radix SelectItem can't hold "" — the empty "— None —" / "— Unassigned —"
 // options map to this and back to "" in the form state.
@@ -116,20 +122,50 @@ export function MetaAccountFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState<FormState>(() => initial(account));
+  const [saved] = useState<FormState>(() => initial(account));
+  const [form, setForm] = useState<FormState>(saved);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { options: stages } = useMetaAccountOptions("stage");
   const { options: statuses } = useMetaAccountOptions("status");
+  const { confirm, dialog } = useConfirm();
   const isEdit = Boolean(account);
+  const dirty = (Object.keys(saved) as (keyof FormState)[]).some((k) => form[k] !== saved[k]);
+  // Link fields the server would reject (anything but an http(s) URL / bare domain).
+  const badLinks = META_ACCOUNT_LINK_FIELDS.filter(
+    (k) => form[k].trim() !== "" && !metaAccountLinkHref(form[k])
+  );
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  /** Every close path (Escape, outside click, X, Cancel) — typed credentials are never dropped silently. */
+  async function requestClose() {
+    if (busy) return;
+    if (
+      dirty &&
+      !(await confirm({
+        title: isEdit ? "Discard your changes to this account?" : "Discard this new account?",
+        description: "What you typed hasn't been saved.",
+        confirmText: "Discard",
+        destructive: true,
+      }))
+    )
+      return;
+    onClose();
+  }
+
   async function handleSubmit() {
     if (!form.fbEmail.trim()) {
       setError("An account email is required");
+      return;
+    }
+    if (badLinks.length > 0) {
+      setError(
+        `${META_ACCOUNT_LINK_LABELS[badLinks[0]]} must be a web address (https://…) or left empty`
+      );
+      document.getElementById(`meta-account-${badLinks[0]}`)?.focus();
       return;
     }
     setBusy(true);
@@ -155,11 +191,8 @@ export function MetaAccountFormModal({
   }
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open onOpenChange={(o) => { if (!o) requestClose(); }}>
       <DialogContent
-        // The old modal had no Escape handler — it closes only via the X,
-        // Cancel or a backdrop click.
-        onEscapeKeyDown={(e) => e.preventDefault()}
         // The old modal focused nothing on open — on phones focusing the
         // first input would pop the keyboard over the form.
         onOpenAutoFocus={(e) => {
@@ -187,6 +220,8 @@ export function MetaAccountFormModal({
                   id={`meta-account-${f.key}`}
                   value={form[f.key]}
                   onChange={(e) => set(f.key, e.target.value)}
+                  aria-invalid={(error !== null && (badLinks as string[]).includes(f.key)) || undefined}
+                  inputMode={f.key === "profileLink" || f.key === "twofaLink" ? "url" : undefined}
                 />
               </Field>
             ))}
@@ -267,7 +302,7 @@ export function MetaAccountFormModal({
         </div>
 
         <DialogFooter className="shrink-0 px-6 pt-4 pb-6">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
+          <Button variant="outline" onClick={requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={busy}>
@@ -276,6 +311,7 @@ export function MetaAccountFormModal({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {dialog}
     </Dialog>
   );
 }

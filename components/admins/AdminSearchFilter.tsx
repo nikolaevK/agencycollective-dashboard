@@ -1,8 +1,8 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export type AdminFilter = "all" | "super" | "standard";
 
@@ -33,21 +33,28 @@ export function AdminSearchFilter({ search, onSearchChange, filter, onFilterChan
           className="pl-9"
         />
       </div>
-      {/* Radix sends "" when the active pill is clicked again — the old pills
-          re-applied the current filter then, so do the same. */}
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        value={filter}
-        onValueChange={(v) => onFilterChange((v || filter) as AdminFilter)}
-      >
-        {filters.map((f) => (
-          <ToggleGroupItem key={f.value} value={f.value} className="px-3">
-            {f.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      {/* Plain aria-pressed pills (no Radix ToggleGroup — three buttons don't
+          need roving focus in the page chunk). Clicking the active pill
+          re-applies it, like the old pills. */}
+      <div role="group" aria-label="Filter admins" className="flex w-fit items-center gap-1">
+        {filters.map((f) => {
+          const active = filter === f.value;
+          return (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onFilterChange(f.value)}
+              className={cn(
+                "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-3xl border border-input px-3 text-sm font-medium outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                active ? "bg-muted" : "bg-transparent"
+              )}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

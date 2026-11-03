@@ -2,9 +2,6 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "@/lib/utils";
-import { badgeTone, badgeVariants } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { resolveIcon } from "@/components/welcome-kit/icons";
 import type { SopDoc, SopSection, SopBlock } from "@/lib/sop";
 import type { WkVariant } from "@/lib/welcomeKit";
@@ -12,6 +9,11 @@ import type { WkVariant } from "@/lib/welcomeKit";
 // Also the /sop-print page's content: every surface here is a token (the print
 // page drops the `dark` class, so the PDF is always the light paper look), soft
 // shadows are dropped on paper, and small blocks avoid splitting across pages.
+//
+// Plain class strings on purpose: the print page is a standalone route, and
+// the kit Card / Badge (cva) and cn (tailwind-merge) would add ~10 kB to it.
+// No class here overrides another, so a plain join renders the same.
+const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
 
 /* ------------------------------------------------------------------ */
 /*  Markdown — sanitized by default (no raw HTML)                      */
@@ -118,15 +120,26 @@ function MDLine({ children }: { children?: string }) {
 /*  Style maps (shared with the Welcome Kit look)                      */
 /* ------------------------------------------------------------------ */
 
-// Callouts use the kit status tones (faint tinted border + fill); the icon
-// takes the tone color, the copy stays readable foreground text.
+// Callouts use the kit status tones (faint tinted border + fill — the
+// `badgeTone` strings in components/ui/badge.tsx); the icon takes the tone
+// color, the copy stays readable foreground text.
 const VARIANT_STYLES: Record<WkVariant, string> = {
-  info: badgeTone.info,
-  success: badgeTone.success,
-  warning: badgeTone.warning,
-  danger: badgeTone.danger,
+  info: "border-sky-500/25 bg-sky-500/[0.08] text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300",
+  success:
+    "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300",
+  warning:
+    "border-amber-500/30 bg-amber-500/[0.08] text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300",
+  danger: "border-red-500/25 bg-red-500/[0.07] text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300",
   neutral: "border-transparent bg-muted/50 text-muted-foreground",
 };
+
+/** The kit Card's surface (components/ui/card.tsx). */
+const CARD =
+  "overflow-hidden rounded-[min(calc(var(--radius)*2.6),24px)] bg-card text-sm text-card-foreground shadow ring-1 ring-foreground/5 dark:ring-foreground/10";
+
+/** A kit outline Badge that wraps (the column's tag line). */
+const COLUMN_BADGE =
+  "mb-3 inline-flex h-auto w-fit max-w-full shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-normal break-words rounded-3xl border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground dark:bg-transparent";
 
 /** Neutral icon tile (no colored tiles in the kit). */
 const ICON_TILE =
@@ -167,9 +180,9 @@ function Block({ block }: { block: SopBlock }) {
       const Icon = block.icon ? resolveIcon(block.icon) : null;
       const neutral = block.variant === "neutral";
       return (
-        <div className={cn("p-4 rounded-2xl border flex items-start gap-3", VARIANT_STYLES[block.variant], KEEP)}>
+        <div className={cx("p-4 rounded-2xl border flex items-start gap-3", VARIANT_STYLES[block.variant], KEEP)}>
           {Icon && <Icon className="size-4 shrink-0 mt-0.5" />}
-          <div className={cn("min-w-0", neutral ? "text-muted-foreground" : "text-foreground")}>
+          <div className={cx("min-w-0", neutral ? "text-muted-foreground" : "text-foreground")}>
             {block.title && <p className="text-sm font-semibold text-foreground mb-0.5">{block.title}</p>}
             {block.body && <MD className="text-sm">{block.body}</MD>}
           </div>
@@ -179,7 +192,7 @@ function Block({ block }: { block: SopBlock }) {
 
     case "stat":
       return (
-        <div className={cn("rounded-2xl bg-muted/50 p-6 text-center flex flex-col items-center justify-center ring-1 ring-foreground/5 dark:ring-foreground/10 sm:max-w-xs", KEEP)}>
+        <div className={cx("rounded-2xl bg-muted/50 p-6 text-center flex flex-col items-center justify-center ring-1 ring-foreground/5 dark:ring-foreground/10 sm:max-w-xs", KEEP)}>
           <p className="text-5xl font-semibold tracking-tight tabular-nums leading-none text-foreground mb-2 break-words max-w-full">{block.value}</p>
           <p className="text-sm font-medium text-foreground break-words max-w-full">{block.label}</p>
           {block.caption && <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{block.caption}</p>}
@@ -193,7 +206,7 @@ function Block({ block }: { block: SopBlock }) {
           {block.title && <h4 className={BLOCK_TITLE}>{block.title}</h4>}
           <ul className="space-y-2.5">
             {block.items.map((item, i) => (
-              <li key={i} className={cn("flex items-start gap-3 text-sm text-foreground", KEEP)}>
+              <li key={i} className={cx("flex items-start gap-3 text-sm text-foreground", KEEP)}>
                 {block.marker === "dot" ? (
                   <span className="size-1.5 rounded-full bg-muted-foreground/60 shrink-0 mt-2" />
                 ) : (
@@ -214,7 +227,7 @@ function Block({ block }: { block: SopBlock }) {
           {block.title && <h4 className={BLOCK_TITLE}>{block.title}</h4>}
           <ol className="space-y-3">
             {block.steps.map((step, i) => (
-              <li key={step.id} className={cn("flex items-start gap-3", KEEP)}>
+              <li key={step.id} className={cx("flex items-start gap-3", KEEP)}>
                 <span
                   className={
                     block.ordered
@@ -243,8 +256,8 @@ function Block({ block }: { block: SopBlock }) {
             {block.items.map((it) => {
               const Icon = resolveIcon(it.icon);
               return (
-                <div key={it.id} className={cn("flex items-start gap-4", KEEP)}>
-                  <div className={cn(ICON_TILE, "size-10")}>
+                <div key={it.id} className={cx("flex items-start gap-4", KEEP)}>
+                  <div className={cx(ICON_TILE, "size-10")}>
                     <Icon className="size-5" />
                   </div>
                   <div className="min-w-0">
@@ -262,7 +275,7 @@ function Block({ block }: { block: SopBlock }) {
           {block.items.map((it) => {
             const Icon = resolveIcon(it.icon);
             return (
-              <div key={it.id} className={cn("p-5 bg-muted/40 rounded-2xl flex flex-col items-center text-center gap-2 min-w-0", KEEP)}>
+              <div key={it.id} className={cx("p-5 bg-muted/40 rounded-2xl flex flex-col items-center text-center gap-2 min-w-0", KEEP)}>
                 <Icon className="size-5 text-muted-foreground shrink-0" />
                 <div className="text-sm font-medium text-foreground break-words max-w-full"><MDLine>{it.label}</MDLine></div>
                 {it.desc && <div className="text-xs text-muted-foreground break-words max-w-full"><MDLine>{it.desc}</MDLine></div>}
@@ -280,13 +293,13 @@ function Block({ block }: { block: SopBlock }) {
           {block.items.map((col) => {
             const Icon = resolveIcon(col.icon);
             return (
-              <div key={col.id} className={cn("p-5 md:p-6 bg-muted/40 rounded-2xl min-w-0", KEEP)}>
+              <div key={col.id} className={cx("p-5 md:p-6 bg-muted/40 rounded-2xl min-w-0", KEEP)}>
                 <div className="flex items-center gap-3 mb-2 min-w-0">
                   <Icon className="size-4 text-muted-foreground shrink-0" />
                   <h4 className="font-medium text-foreground min-w-0 break-words"><MDLine>{col.title}</MDLine></h4>
                 </div>
                 {col.badge && (
-                  <span className={cn(badgeVariants({ variant: "outline" }), "mb-3 h-auto max-w-full whitespace-normal break-words bg-background dark:bg-transparent")}>
+                  <span className={COLUMN_BADGE}>
                     {col.badge}
                   </span>
                 )}
@@ -314,7 +327,7 @@ function Block({ block }: { block: SopBlock }) {
           {block.title && <h4 className={BLOCK_TITLE}>{block.title}</h4>}
           <div className="space-y-2">
             {block.rows.map((row) => (
-              <div key={row.id} className={cn("flex items-center justify-between gap-3 px-4 py-3 bg-muted/40 rounded-2xl", KEEP)}>
+              <div key={row.id} className={cx("flex items-center justify-between gap-3 px-4 py-3 bg-muted/40 rounded-2xl", KEEP)}>
                 <span className="text-sm font-medium text-foreground min-w-0 break-words"><MDLine>{row.label}</MDLine></span>
                 {row.value && (
                   <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
@@ -336,10 +349,10 @@ function Section({ section, index }: { section: SopSection; index: number }) {
   const Icon = resolveIcon(section.icon);
   const eyebrow = section.num || `${String(index + 1).padStart(2, "0")} / Section`;
   return (
-    <Card className={cn("p-5 md:p-8 min-w-0", PAPER)}>
+    <div className={cx(CARD, "p-5 md:p-8 min-w-0", PAPER)}>
       <section>
         <div className="flex items-center gap-4 mb-6 md:mb-8 print:break-after-avoid">
-          <div className={cn(ICON_TILE, "size-11")}>
+          <div className={cx(ICON_TILE, "size-11")}>
             <Icon className="size-5" />
           </div>
           <div className="min-w-0">
@@ -358,7 +371,7 @@ function Section({ section, index }: { section: SopSection; index: number }) {
           )}
         </div>
       </section>
-    </Card>
+    </div>
   );
 }
 
@@ -367,7 +380,7 @@ export function SopRenderer({ doc }: { doc: SopDoc }) {
     // The clip box is inset (-m-1 p-1) so it never shaves the cards' ring + shadow.
     <div className="-m-1 space-y-6 max-w-[calc(100%+0.5rem)] min-w-0 overflow-x-hidden p-1">
       {/* Header */}
-      <Card className={cn("p-6 md:p-10", PAPER, KEEP)}>
+      <div className={cx(CARD, "p-6 md:p-10", PAPER, KEEP)}>
         <span className="mb-4 inline-flex max-w-full rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
           Standard Operating Procedure
         </span>
@@ -375,7 +388,7 @@ export function SopRenderer({ doc }: { doc: SopDoc }) {
           {doc.title || "Untitled SOP"}
         </h1>
         {doc.summary && <p className="text-muted-foreground text-base md:text-lg leading-relaxed max-w-2xl">{doc.summary}</p>}
-      </Card>
+      </div>
 
       {/* Sections */}
       <div className="space-y-6">

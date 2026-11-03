@@ -9,6 +9,7 @@ import type { AdminPublic } from "./types";
 import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { allPermissionsFalse } from "@/lib/permissions";
 import { getInitials } from "@/lib/utils";
+import { useDialogFocus } from "./useDialogFocus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,6 +62,8 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
     }
   }, [open, admin]);
 
+  const focus = useDialogFocus<HTMLDivElement>();
+
   if (!open) return null;
 
   function handlePermChange(key: PermissionKey, value: boolean) {
@@ -87,13 +90,18 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
   }
 
   const titleId = `${uid}-title`;
+  // Name the admin being edited, so the form can't be mistaken for another's.
+  const title = admin ? `Edit ${admin.displayName || admin.username}` : "Add Admin";
 
   return (
     <div
+      ref={focus.ref}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden"
+      tabIndex={-1}
+      onKeyDown={focus.onKeyDown}
+      className="fixed inset-0 z-[60] flex flex-col bg-background outline-none md:hidden"
     >
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
@@ -102,7 +110,7 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
             <ArrowLeft className="size-5" />
           </Button>
           <h2 id={titleId} className="truncate text-base font-medium">
-            {isEdit ? "Edit Admin" : "Add Admin"}
+            {title}
           </h2>
         </div>
         <Button

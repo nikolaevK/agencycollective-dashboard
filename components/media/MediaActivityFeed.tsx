@@ -67,6 +67,9 @@ const CLEAR_OPTIONS: { label: string; params: string; all?: boolean }[] = [
   { label: "All activity", params: "all=1", all: true },
 ];
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function formatTimestamp(raw: string): string {
   // SQLite datetime('now') is zone-less UTC — normalize to an explicit instant.
   const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : raw.replace(" ", "T") + "Z";
@@ -113,8 +116,10 @@ export function MediaActivityFeed({ isManager }: { isManager: boolean }) {
   const [error, setError] = useState("");
   const headingId = useId();
   // A pick opens the confirm — keep focus there instead of handing it back
-  // to the menu trigger.
+  // to the menu trigger. The confirm hands it back itself when it closes.
   const pickedRef = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const { data: entries = [], isLoading, isError, refetch } = useQuery<ActivityEntry[]>({
     queryKey: ["media-activity"],
@@ -128,17 +133,54 @@ export function MediaActivityFeed({ isManager }: { isManager: boolean }) {
   });
 
   // Escape closes the confirm dialog (when not mid-clear). The Clear menu
-  // handles its own Escape.
+  // handles its own Escape. Tab wraps inside the dialog (focus that slipped
+  // out — e.g. off a button disabled mid-clear — is pulled back in).
   useEffect(() => {
     if (!pending) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (clearing) return;
-      setPending(null);
+      if (e.key === "Escape") {
+        if (!clearing) setPending(null);
+        return;
+      }
+      const panel = panelRef.current;
+      if (e.key !== "Tab" || !panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.getClientRects().length > 0
+      );
+      const active = document.activeElement;
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!panel.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pending, clearing]);
+
+  // Closing the confirm (cancel, Escape, overlay, or a finished clear) puts
+  // focus back on the Clear button that opened it.
+  const confirmOpen = pending !== null;
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (confirmOpen) wasOpen.current = true;
+    else if (wasOpen.current) {
+      wasOpen.current = false;
+      triggerRef.current?.focus({ preventScroll: true });
+    }
+  }, [confirmOpen]);
 
   async function runClear() {
     if (!pending) return;
@@ -178,7 +220,7 @@ export function MediaActivityFeed({ isManager }: { isManager: boolean }) {
             // closing underneath it can leave <body> pointer-events stuck.
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="group/clear shrink-0">
+                <Button ref={triggerRef} type="button" variant="outline" size="sm" className="group/clear shrink-0">
                   <Eraser />
                   Clear
                   <ChevronDown className="transition-transform group-data-[state=open]/clear:rotate-180" />
@@ -262,10 +304,12 @@ export function MediaActivityFeed({ isManager }: { isManager: boolean }) {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className={dialogOverlayClass} onClick={() => !clearing && setPending(null)} />
           <div
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={headingId}
-            className={cn(dialogPanelClass, "relative z-50 w-full max-w-sm space-y-4 p-6")}
+            tabIndex={-1}
+            className={cn(dialogPanelClass, "relative z-50 w-full max-w-sm space-y-4 p-6 outline-none")}
           >
             <div className="flex items-start justify-between gap-2">
               <h3 id={headingId} className="text-base font-medium leading-none text-foreground">

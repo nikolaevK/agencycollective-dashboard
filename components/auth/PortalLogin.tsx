@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export type RoleKey = "client" | "admin" | "closer";
 type Step = "credentials" | "createPassword" | "login";
@@ -53,6 +52,16 @@ export interface PortalLoginProps {
 // Shared sub-components
 // ---------------------------------------------------------------------------
 
+/** The kit Label's look on a native <label> — Radix Label isn't worth its
+ *  bytes on the login pages. */
+function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className="flex select-none items-center gap-2 text-sm font-medium leading-none">
+      {children}
+    </label>
+  );
+}
+
 function ErrorBox({ message }: { message: string }) {
   return (
     <div role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -82,7 +91,7 @@ function PasswordField({
 }) {
   return (
     <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <div className="relative">
         <Lock className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -314,7 +323,7 @@ function PortalLoginContent({ roleKeys, hero, welcome }: PortalLoginProps) {
               {step === "credentials" && (
                 <form onSubmit={handleCheck} className="grid gap-5">
                   <div className="grid gap-2">
-                    <Label htmlFor="identity">{config.identityLabel}</Label>
+                    <FieldLabel htmlFor="identity">{config.identityLabel}</FieldLabel>
                     <div className="relative">
                       <AtSign className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
@@ -412,7 +421,10 @@ function PortalLoginContent({ roleKeys, hero, welcome }: PortalLoginProps) {
 
             {/* ── Branding side (md+) ── */}
             <div className="hidden flex-col justify-between gap-10 border-l bg-muted p-10 md:flex">
-              <Logo className="invert dark:invert-0" />
+              {/* Flush with the hero text: left-aligned in its 128px box, and
+                  shifted past the PNG's transparent left margin (148px of a
+                  300px-tall canvas ≈ 15.8px at h-8) — clipped, it's empty. */}
+              <Logo className="[object-position:-15px_50%] invert dark:invert-0" />
               <div className="space-y-4">
                 <h2 className="text-4xl font-light leading-tight tracking-tight lg:text-5xl">
                   {hero.title}{" "}

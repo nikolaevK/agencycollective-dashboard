@@ -73,9 +73,6 @@ export function MetaAccountImportModal({
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
-        // The old modal had no Escape handler — it closes only via the X
-        // button or a backdrop click.
-        onEscapeKeyDown={(e) => e.preventDefault()}
         className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">

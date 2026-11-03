@@ -12,6 +12,8 @@ import {
   UpdateApiTokenInput,
 } from "@/lib/apiTokens";
 import { sanitizeScopes, sanitizeResourceIds } from "@/lib/apiScopes";
+import { listWorkspaceValues } from "@/lib/workspaces";
+import { parseTokenWorkspaces } from "../workspaceInput";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -75,21 +77,12 @@ export async function PATCH(
     if (body.clientIds !== undefined) changes.clientIds = sanitizeResourceIds(body.clientIds);
     if (body.closerIds !== undefined) changes.closerIds = sanitizeResourceIds(body.closerIds);
     if (body.workspaces !== undefined) {
-      // Array of registry slugs; empty/none → null = all workspaces.
-      if (body.workspaces === null || (Array.isArray(body.workspaces) && body.workspaces.length === 0)) {
-        changes.workspaces = null;
-      } else if (Array.isArray(body.workspaces)) {
-        const { listWorkspaceValues } = await import("@/lib/workspaces");
-        const valid = await listWorkspaceValues();
-        const list: string[] = [
-          ...new Set(
-            (body.workspaces as unknown[])
-              .map((v) => String(v).trim())
-              .filter((v) => valid.has(v))
-          ),
-        ];
-        changes.workspaces = list.length > 0 ? list : null;
-      }
+      // Omitted = unchanged; explicit null / [] = all workspaces. A list that
+      // names no existing workspace (e.g. its book was deleted) is rejected —
+      // never widened to null = every book.
+      const parsed = parseTokenWorkspaces(body.workspaces, await listWorkspaceValues());
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      changes.workspaces = parsed.workspaces;
     }
     if (body.expiresAt !== undefined) {
       const expiresAt =

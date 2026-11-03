@@ -1,5 +1,11 @@
 import { getDb, ensureMigrated, isUniqueViolation } from "./db";
 import type { Row } from "@libsql/client";
+import {
+  META_ACCOUNT_LINK_FIELDS,
+  META_ACCOUNT_LINK_LABELS,
+  metaAccountLinkHref,
+  type MetaAccountLinkField,
+} from "./metaAccountRules";
 
 // ---------------------------------------------------------------------------
 // Meta Accounts — inventory of aged Facebook accounts being provisioned and
@@ -107,6 +113,49 @@ function bool(v: unknown): boolean {
   return Number(v ?? 0) === 1;
 }
 
+/**
+ * Thrown when a create/update carries a link field that isn't an http(s) URL
+ * (e.g. `javascript:`) — the directory renders these into an href. The message
+ * never echoes the value: 2FA links are credentials, and route error logs print it.
+ */
+export class InvalidMetaAccountLinkError extends Error {
+  constructor(readonly field: MetaAccountLinkField) {
+    super(`${META_ACCOUNT_LINK_LABELS[field]} must be an http(s) URL (or left empty)`);
+  }
+}
+
+/** Stored form of a link field: null when blank, else its http(s) URL (bare domain → https://). */
+function linkValue(field: MetaAccountLinkField, v: unknown): string | null {
+  const s = str(v);
+  if (s === null) return null;
+  const href = metaAccountLinkHref(s);
+  if (!href) throw new InvalidMetaAccountLinkError(field);
+  return href;
+}
+
+/**
+ * Import path: a link cell that isn't a web link is skipped (stored empty) and
+ * the row's notes say why — one bad cell never fails the whole sheet. The 2FA
+ * link is a credential, so its value is never copied into the notes (which
+ * the external API returns unredacted).
+ */
+function dropInvalidImportLinks(input: MetaAccountInput): MetaAccountInput {
+  const reasons: string[] = [];
+  const out: MetaAccountInput = { ...input };
+  for (const field of META_ACCOUNT_LINK_FIELDS) {
+    const s = str(out[field]);
+    if (s === null || metaAccountLinkHref(s)) continue;
+    out[field] = null;
+    reasons.push(
+      field === "profileLink"
+        ? `Profile link not imported (not an http(s) URL): ${s}`
+        : "2FA link not imported (not an http(s) URL)"
+    );
+  }
+  if (reasons.length) out.notes = [str(out.notes), ...reasons].filter(Boolean).join(" · ");
+  return out;
+}
+
 function rowToMetaAccount(row: Row): MetaAccount {
   return {
     id: String(row.id),
@@ -187,18 +236,18 @@ const INSERT_COLUMNS = [
   "updated_at",
 ] as const;
 
-/** Normalize an input into the full row that will be inserted. */
+/** Normalize an input into the full row that will be inserted (throws InvalidMetaAccountLinkError). */
 function buildMetaAccount(input: MetaAccountInput, now: string): MetaAccount {
   return {
     id: crypto.randomUUID(),
     fbEmail: str(input.fbEmail) ?? "",
     fbPassword: str(input.fbPassword),
     twofaSecret: str(input.twofaSecret),
-    twofaLink: str(input.twofaLink),
+    twofaLink: linkValue("twofaLink", input.twofaLink),
     mailPassword: str(input.mailPassword),
     recoveryEmail: str(input.recoveryEmail),
     profileName: str(input.profileName),
-    profileLink: str(input.profileLink),
+    profileLink: linkValue("profileLink", input.profileLink),
     bmId: str(input.bmId),
     loginOk: !!input.loginOk,
     pageMade: !!input.pageMade,
@@ -280,7 +329,7 @@ export async function bulkCreateMetaAccounts(inputs: MetaAccountInput[]): Promis
   const now = new Date().toISOString();
   const stmts = inputs.map((input) => ({
     sql: INSERT_OR_IGNORE_SQL,
-    args: insertArgs(buildMetaAccount(input, now)),
+    args: insertArgs(buildMetaAccount(dropInvalidImportLinks(input), now)),
   }));
   const results = await db.batch(stmts, "write");
   return results.reduce((n, r) => n + (r.rowsAffected ?? 0), 0);
@@ -396,6 +445,8 @@ export async function updateMetaAccount(
       args.push(value ? 1 : 0);
     } else if (key === "fbEmail") {
       args.push(str(value) ?? "");
+    } else if (key === "profileLink" || key === "twofaLink") {
+      args.push(linkValue(key, value)); // throws before any write
     } else {
       args.push(str(value));
     }

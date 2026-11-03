@@ -9,8 +9,9 @@ import { Card } from "@/components/ui/card";
 import { badgeTone } from "@/components/ui/badge";
 import { createSopRequest } from "@/hooks/useSops";
 import { DocChat, type DocChatSuggestion } from "@/components/doc-chat/DocChat";
+import { useSaveInFlight } from "@/components/doc-chat/useSaveInFlight";
 import { docConversationToMarkdown, docMessageToMarkdown, sopToolMarkdown } from "@/lib/docChat/exportMarkdown";
-import { markOutputSaved, savedOutput } from "@/lib/docChat/store";
+import { pendingOutputSave, saveOutputOnce, savedOutput } from "@/lib/docChat/store";
 import type { ChatMessage, ToolUseBlock } from "@/types/chat";
 
 const SUGGESTIONS: DocChatSuggestion[] = [
@@ -49,10 +50,17 @@ const OpenSopContext = createContext<(id: string) => void>(() => {});
 const SopCard = memo(function SopCard({ tool }: { tool: ToolUseBlock }) {
   const onOpenSop = useContext(OpenSopContext);
   const queryClient = useQueryClient();
-  const [busy, setBusy] = useState<null | "open" | "save">(null);
+  // A save still running from before a remount (tab switch mid-save) is waited on, not repeated.
+  const [busy, setBusy] = useState<null | "open" | "save">(() => (pendingOutputSave(tool.id) ? "save" : null));
   // Saved (or already opened) → the library id, so neither button creates a duplicate.
   const [savedId, setSavedId] = useState<string | null>(() => savedOutput(tool.id) || null);
   const [err, setErr] = useState("");
+
+  useSaveInFlight(tool.id, (r) => {
+    setBusy(null);
+    if ("id" in r) setSavedId(r.id || null);
+    else setErr(r.error instanceof Error && r.error.message ? r.error.message : "Failed to save");
+  });
 
   const input = tool.input as Record<string, unknown>;
   const title = String(input.title ?? "Untitled SOP");
@@ -63,11 +71,13 @@ const SopCard = memo(function SopCard({ tool }: { tool: ToolUseBlock }) {
     if (savedId) return savedId;
     setErr("");
     try {
-      const { id } = await createSopRequest({ doc: input, folder: "AI Generated" });
-      markOutputSaved(tool.id, id);
-      setSavedId(id);
-      queryClient.invalidateQueries({ queryKey: ["sops"] });
-      return id;
+      const id = await saveOutputOnce(tool.id, async () => {
+        const { id } = await createSopRequest({ doc: input, folder: "AI Generated" });
+        queryClient.invalidateQueries({ queryKey: ["sops"] });
+        return id;
+      });
+      setSavedId(id || null);
+      return id || null;
     } catch (e) {
       setErr(e instanceof Error && e.message ? e.message : "Failed to save");
       return null;
@@ -99,7 +109,8 @@ const SopCard = memo(function SopCard({ tool }: { tool: ToolUseBlock }) {
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        {/* Wraps under the title on a narrow card instead of overflowing it. */}
+        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
           {savedId ? (
             <Button size="sm" variant="outline" disabled className={cn("disabled:opacity-100", badgeTone.success)}>
               <Check />

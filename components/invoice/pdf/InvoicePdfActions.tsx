@@ -35,21 +35,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isValidEmail } from "@/lib/invoice/email";
-
-// react-pdf + the PDF template (~500 kB) load on first use — not with the
-// Invoice page. Hovering/focusing the PDF buttons starts the download, so a
-// click rarely waits on it. Memoized: one fetch per page load.
-let pdfKit: Promise<[typeof import("@react-pdf/renderer"), typeof import("./InvoicePdfTemplate")]> | null = null;
-function loadPdfKit() {
-  if (!pdfKit) {
-    pdfKit = Promise.all([import("@react-pdf/renderer"), import("./InvoicePdfTemplate")]);
-    // A failed chunk load must not poison every later attempt.
-    pdfKit.catch(() => {
-      pdfKit = null;
-    });
-  }
-  return pdfKit;
-}
+// react-pdf loads on first use — hovering/focusing the PDF buttons starts the
+// download, so a click rarely waits on it.
+import { loadPdfKit } from "./pdfKit";
 
 interface Props {
   data: InvoiceData;
@@ -57,6 +45,9 @@ interface Props {
   onOpenSaved: () => void;
   /** In-page preview (the page's full-screen dialog). Falls back to a new tab. */
   onPreview?: () => void;
+  /** Hover/focus on Preview / Load: start fetching what the click will open. */
+  onWarmPreview?: () => void;
+  onWarmSaved?: () => void;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -74,7 +65,7 @@ function friendlyIssue(path: (string | number)[], message: string): string {
   return section ? `${section}: ${message}` : message;
 }
 
-export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }: Props) {
+export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview, onWarmPreview, onWarmSaved }: Props) {
   const id = useId();
   const [generating, setGenerating] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -281,7 +272,14 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }
             <FilePlus />
             New
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={onOpenSaved}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenSaved}
+            onPointerEnter={onWarmSaved}
+            onFocus={onWarmSaved}
+          >
             <FolderOpen />
             Load
           </Button>
@@ -331,9 +329,15 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }
         {/* PDF actions */}
         <div
           className="space-y-2 border-t pt-4"
-          // Warm the PDF renderer before the click lands.
-          onPointerEnter={() => void loadPdfKit()}
-          onFocus={() => void loadPdfKit()}
+          // Warm the PDF renderer (and the preview dialog) before the click lands.
+          onPointerEnter={() => {
+            void loadPdfKit();
+            onWarmPreview?.();
+          }}
+          onFocus={() => {
+            void loadPdfKit();
+            onWarmPreview?.();
+          }}
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Generate PDF</p>
           <div className="grid grid-cols-2 gap-2">

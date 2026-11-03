@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2, RotateCcw } from "lucide-react";
+import { Loader2, Maximize2, RotateCcw } from "lucide-react";
 import type {
   InvoiceData,
   InvoiceItem,
@@ -42,17 +42,60 @@ import { badgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { cn } from "@/lib/utils";
 
-// Click-to-open: the preview dialog pulls in react-pdf (~500 kB) and the saved
-// list a Radix Dialog — neither belongs in the page's first load.
-const InvoicePreviewDialog = dynamic(
-  () => import("./InvoicePreviewDialog").then((m) => m.InvoicePreviewDialog),
-  { ssr: false }
-);
-const InvoiceSavedList = dynamic(() => import("./InvoiceSavedList").then((m) => m.InvoiceSavedList), {
-  ssr: false,
-});
+/**
+ * A click-to-open chunk, memoized like loadPdfKit: one fetch per page load,
+ * and a failed load is dropped so the next click tries again.
+ */
+function lazyChunk<T>(load: () => Promise<T>): () => Promise<T> {
+  let chunk: Promise<T> | null = null;
+  return () => {
+    if (!chunk) {
+      chunk = load();
+      chunk.catch(() => {
+        chunk = null;
+      });
+    }
+    return chunk;
+  };
+}
+
+// Click-to-open: the preview dialog and the saved list (a Radix Dialog) stay
+// out of the page's first load. Loaded by hand, not next/dynamic: a failed
+// chunk (a tab left open across a deploy, a flaky network) must leave the
+// editor standing with a notice — next/dynamic throws it into the error
+// boundary — and the next click must be able to retry.
+const loadPreviewDialog = lazyChunk(() => import("./InvoicePreviewDialog").then((m) => m.InvoicePreviewDialog));
+const loadSavedList = lazyChunk(() => import("./InvoiceSavedList").then((m) => m.InvoiceSavedList));
+type PreviewDialogComponent = Awaited<ReturnType<typeof loadPreviewDialog>>;
+type SavedListComponent = Awaited<ReturnType<typeof loadSavedList>>;
+
+/** Hover/focus warm-up: the click reports a failure, the warm-up doesn't. */
+const warmPreviewDialog = () => void loadPreviewDialog().catch(() => {});
+const warmSavedList = () => void loadSavedList().catch(() => {});
+
+/**
+ * Today in the business timezone (Pacific), yyyy-mm-dd — what
+ * lib/businessTime's businessTodayYmd returns in the browser (its
+ * BILLING_TIME_ZONE override is server-only). Inlined because importing that
+ * module ships webpack's `process` polyfill (~1 kB) with this page.
+ */
+function businessTodayYmd(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+const chunkFailed = (what: string) =>
+  `Couldn't open ${what} — check your connection and try again. If it keeps failing, reload the page (your draft is saved).`;
 
 export function InvoicePage() {
   const [data, setData] = useState<InvoiceData>(INITIAL_INVOICE_DATA);
@@ -61,11 +104,21 @@ export function InvoicePage() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [previewMode, setPreviewMode] = useState<null | "live" | "pdf">(null);
   const [itemsNotice, setItemsNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [PreviewDialog, setPreviewDialog] = useState<PreviewDialogComponent | null>(null);
+  const [SavedList, setSavedList] = useState<SavedListComponent | null>(null);
+  const [chunkError, setChunkError] = useState<string | null>(null);
+  // The edit the debounced autosave hasn't written yet (flushed on unmount).
+  const pendingSave = useRef<InvoiceData | null>(null);
+  const seeded = useRef(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch agency config from DB
-  const { data: agencyConfig } = useQuery<Record<string, string>>({
+  const {
+    data: agencyConfig,
+    isError: configFailed,
+    isFetching: configFetching,
+    refetch: refetchConfig,
+  } = useQuery<Record<string, string>>({
     queryKey: ["agency-config"],
     queryFn: async () => {
       const res = await fetch("/api/admin/agency-config");
@@ -95,7 +148,8 @@ export function InvoicePage() {
       details: {
         ...INITIAL_INVOICE_DATA.details,
         items: [createEmptyItem()],
-        invoiceDate: new Date().toISOString().slice(0, 10),
+        // The business (Pacific) day — UTC is already tomorrow on Pacific evenings.
+        invoiceDate: businessTodayYmd(),
         invoiceLogo: agencyConfig?.default_logo ?? "",
         themeColor: agencyConfig?.default_theme_color ?? "#475569",
         paymentInfo: loadPaymentInfoFromConfig(agencyConfig, "local"),
@@ -105,9 +159,13 @@ export function InvoicePage() {
   }, [agencyConfig]);
 
   // On mount (once agency settings load), restore the saved draft if present —
-  // otherwise start from the agency defaults.
+  // otherwise start from the agency defaults. ONCE: a later agency-config
+  // refetch (Save Settings, a window refocus) must not re-seed — that replaced
+  // the sender, cleared Note to Customer and rolled back to the last autosave.
+  // "Reset Invoice" picks up the newest settings via buildDefaultInvoice.
   useEffect(() => {
-    if (!agencyConfig) return;
+    if (!agencyConfig || seeded.current) return;
+    seeded.current = true;
     const base = buildDefaultInvoice();
     const draft = loadDraft();
     if (draft) {
@@ -133,12 +191,28 @@ export function InvoicePage() {
   // Debounced auto-save
   useEffect(() => {
     if (!loaded) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => saveDraft(data), 500);
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
+    pendingSave.current = data;
+    const timer = setTimeout(() => {
+      pendingSave.current = null;
+      saveDraft(data);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [data, loaded]);
+
+  // Leaving the page (or the tab) inside the debounce window writes the last
+  // edit now instead of dropping it.
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingSave.current) return;
+      saveDraft(pendingSave.current);
+      pendingSave.current = null;
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
 
   // Recalculate totals when items or charges change
   useEffect(() => {
@@ -262,7 +336,45 @@ export function InvoicePage() {
     });
   };
 
+  // Open first, then load: the loading overlay covers the wait, and a failed
+  // chunk closes it again with a notice instead of crashing the page.
+  const openPreview = (mode: "live" | "pdf") => {
+    setChunkError(null);
+    setPreviewMode(mode);
+    if (PreviewDialog) return;
+    loadPreviewDialog().then(
+      (C) => setPreviewDialog(() => C),
+      () => {
+        setPreviewMode(null);
+        setChunkError(chunkFailed("the preview"));
+      }
+    );
+  };
+
+  const openSaved = () => {
+    setChunkError(null);
+    setSavedOpen(true);
+    if (SavedList) return;
+    loadSavedList().then(
+      (C) => setSavedList(() => C),
+      () => {
+        setSavedOpen(false);
+        setChunkError(chunkFailed("the saved invoices"));
+      }
+    );
+  };
+
   if (!loaded) {
+    // The editor seeds from the agency settings — without them it can't start.
+    if (configFailed && !configFetching) {
+      return (
+        <QueryErrorState
+          title="Couldn't load the invoice settings"
+          message="The agency's sender, logo and payment details didn't load. Check your connection and retry."
+          onRetry={() => void refetchConfig()}
+        />
+      );
+    }
     return <InvoicePageSkeleton />;
   }
 
@@ -368,9 +480,17 @@ export function InvoicePage() {
               <InvoicePdfActions
                 data={data}
                 onNewInvoice={handleNewInvoice}
-                onOpenSaved={() => setSavedOpen(true)}
-                onPreview={() => setPreviewMode("pdf")}
+                onOpenSaved={openSaved}
+                onPreview={() => openPreview("pdf")}
+                onWarmPreview={warmPreviewDialog}
+                onWarmSaved={warmSavedList}
               />
+
+              {chunkError && (
+                <p role="alert" className={cn(INVOICE_NOTICE, badgeTone.danger)}>
+                  {chunkError}
+                </p>
+              )}
 
               {confirmReset && (
                 <p role="status" className={cn(INVOICE_NOTICE, badgeTone.warning)}>
@@ -395,7 +515,14 @@ export function InvoicePage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Live Preview
                 </p>
-                <Button type="button" variant="ghost" size="xs" onClick={() => setPreviewMode("live")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => openPreview("live")}
+                  onPointerEnter={warmPreviewDialog}
+                  onFocus={warmPreviewDialog}
+                >
                   <Maximize2 />
                   Full screen
                 </Button>
@@ -412,27 +539,63 @@ export function InvoicePage() {
         </div>
       </div>
 
-      {previewMode && (
-        <InvoicePreviewDialog data={data} initialMode={previewMode} onClose={() => setPreviewMode(null)} />
-      )}
+      {previewMode &&
+        (PreviewDialog ? (
+          <PreviewDialog data={data} initialMode={previewMode} onClose={() => setPreviewMode(null)} />
+        ) : (
+          <ChunkLoading label="Opening preview…" dark onCancel={() => setPreviewMode(null)} />
+        ))}
 
       {/* Saved invoices modal — mounted only while open (lazy chunk). */}
-      {savedOpen && (
-        <InvoiceSavedList
-          open={savedOpen}
-          onClose={() => setSavedOpen(false)}
-          onLoad={handleLoadInvoice}
-          onImport={handleLoadInvoice}
-        />
-      )}
+      {savedOpen &&
+        (SavedList ? (
+          <SavedList
+            open={savedOpen}
+            onClose={() => setSavedOpen(false)}
+            onLoad={handleLoadInvoice}
+            onImport={handleLoadInvoice}
+          />
+        ) : (
+          <ChunkLoading label="Opening saved invoices…" onCancel={() => setSavedOpen(false)} />
+        ))}
     </>
   );
+}
+
+/**
+ * Stands in for a click-to-open dialog while its chunk loads (a warm-up on
+ * hover usually beats the click, so this only shows on a slow link — it fades
+ * in after a beat to avoid a flash). Escape or a click outside cancels.
+ */
+function ChunkLoading({ label, dark, onCancel }: { label: string; dark?: boolean; onCancel: () => void }) {
+  useEscapeKey(onCancel);
+  const overlay = (
+    <div
+      // dialogOverlayClass's look, spelled out: importing it from ui/dialog
+      // would put the Radix Dialog runtime into this page's first load.
+      className={cn(
+        "fixed inset-0 z-[80] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in-0 fill-mode-both delay-150 duration-200",
+        dark ? "bg-black/70" : "bg-black/30"
+      )}
+      onClick={onCancel}
+    >
+      <p
+        role="status"
+        className="flex items-center gap-2 rounded-full bg-popover px-4 py-2 text-sm text-popover-foreground shadow-xl"
+      >
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        {label}
+      </p>
+    </div>
+  );
+  return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
 }
 
 /** Mirrors the page while the agency settings (and the draft) load. */
 function InvoicePageSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading invoice">
+    <div aria-busy="true" role="status">
+      <span className="sr-only">Loading invoice…</span>
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <Skeleton key={i} className="h-12 w-full rounded-3xl" />

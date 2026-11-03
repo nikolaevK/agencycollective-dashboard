@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatValue } from "@/lib/analyst/format";
+import { clipboardCell } from "@/components/chat/tool-renderers/tableClipboard";
 import type { DisplayTableInput } from "@/types/chat";
 
 const COLLAPSED_ROWS = 12;
@@ -27,11 +28,10 @@ export const InlineTable = memo(function InlineTable({ input }: { input: Display
 
 
   async function copyTsv() {
-    // Tab-separated so it pastes straight into Sheets / Excel.
-    const clean = (v: string) => v.replace(/[\t\r\n]+/g, " ");
+    // Tab-separated so it pastes straight into Sheets / Excel (formulas neutralized — the table shows the raw text).
     const lines = [
-      columns.map((c) => clean(c.label)).join("\t"),
-      ...rows.map((r) => columns.map((c) => clean(formatValue(r[c.key], c.format, currency))).join("\t")),
+      columns.map((c) => clipboardCell(c.label, c.label)).join("\t"),
+      ...rows.map((r) => columns.map((c) => clipboardCell(r[c.key], formatValue(r[c.key], c.format, currency))).join("\t")),
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));

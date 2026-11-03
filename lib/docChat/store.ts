@@ -28,11 +28,36 @@ export function saveConversation(key: string, messages: ChatMessage[]): void {
  * of inviting a duplicate save.
  */
 const savedOutputs = new Map<string, string>();
+/** Saves still in flight (tool_use id → the save), so a remounted card joins one instead of starting another. */
+const pendingSaves = new Map<string, Promise<string>>();
 
 export function savedOutput(toolUseId: string): string | undefined {
   return savedOutputs.get(toolUseId);
 }
 
-export function markOutputSaved(toolUseId: string, recordId = ""): void {
-  savedOutputs.set(toolUseId, recordId);
+/** The save in flight for this item, if any (a card that mounts mid-save waits on it). */
+export function pendingOutputSave(toolUseId: string): Promise<string> | undefined {
+  return pendingSaves.get(toolUseId);
+}
+
+/**
+ * Save a generated item at most once: an item already saved resolves to its
+ * record id, a save already running (started by a card that has since
+ * unmounted) is joined, otherwise `save` runs. Resolves the record id ("" when
+ * there is none); a failed save rejects and can be tried again.
+ */
+export function saveOutputOnce(toolUseId: string, save: () => Promise<string | void>): Promise<string> {
+  const saved = savedOutputs.get(toolUseId);
+  if (saved !== undefined) return Promise.resolve(saved);
+  let pending = pendingSaves.get(toolUseId);
+  if (!pending) {
+    pending = save()
+      .then((recordId) => {
+        savedOutputs.set(toolUseId, recordId ?? "");
+        return recordId ?? "";
+      })
+      .finally(() => pendingSaves.delete(toolUseId));
+    pendingSaves.set(toolUseId, pending);
+  }
+  return pending;
 }

@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/providers/ToastProvider";
 import { CHAT_MODELS, DEFAULT_MODEL } from "@/lib/chatModels";
 import type { PendingTool } from "@/lib/analyst/streamReducer";
+import { loadImageStripper, withoutImages } from "@/lib/docChat/stripImagesClient";
 import type { ChatMessage, ContentBlock, NoticeBlock, ToolUseBlock } from "@/types/chat";
 
 /**
@@ -32,9 +33,10 @@ import type { ChatMessage, ContentBlock, NoticeBlock, ToolUseBlock } from "@/typ
  */
 
 const loadMarkdown = () => import("@/components/chat/Markdown");
-/** Start fetching the markdown renderer before the first reply arrives. */
+/** Start fetching the markdown renderer (and the Copy / Export image stripper) before the first reply arrives. */
 export function preloadDocChatMarkdown() {
   void loadMarkdown();
+  loadImageStripper().catch(() => {}); // retried on the first copy
 }
 const Markdown = dynamic(loadMarkdown, { loading: () => <Skeleton className="h-4 w-2/3 rounded-full" /> });
 
@@ -269,7 +271,8 @@ function DocChatMessageImpl({
 
   async function copyReply() {
     try {
-      await navigator.clipboard.writeText(toMarkdown(message));
+      const md = withoutImages(toMarkdown(message));
+      await navigator.clipboard.writeText(typeof md === "string" ? md : await md);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

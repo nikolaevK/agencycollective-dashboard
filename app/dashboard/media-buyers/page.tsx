@@ -3,12 +3,13 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { FolderOpen, Sparkles, Activity } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { MediaDocumentsDirectory } from "@/components/media/MediaDocumentsDirectory";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // The AI assistant (chat + markdown + PDF export) and the activity feed are
 // their own chunks, fetched the first time their tab opens — the Directory
@@ -36,6 +37,15 @@ const TABS: { id: TabId; label: string; icon: typeof FolderOpen }[] = [
 export default function MediaBuyersPage() {
   const admin = useAdmin();
   const [tab, setTab] = useState<TabId>("directory");
+  // The assistant mounts on its first open and then stays mounted (hidden on
+  // the other tabs), so a reply being written survives a look at the
+  // Directory or Activity.
+  const [chatVisited, setChatVisited] = useState(false);
+
+  function selectTab(v: string) {
+    setTab(v as TabId);
+    if (v === "assistant") setChatVisited(true);
+  }
 
   const isManager = admin.isSuper || admin.permissions.media_manage;
 
@@ -52,10 +62,10 @@ export default function MediaBuyersPage() {
           </p>
         </div>
 
-        {/* The row scrolls sideways on the narrowest phones instead of
-            widening the page. */}
-        <div className="overflow-x-auto">
-          <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+        <Tabs value={tab} onValueChange={selectTab} className="flex flex-col gap-6">
+          {/* The row scrolls sideways on the narrowest phones instead of
+              widening the page. */}
+          <div className="overflow-x-auto">
             <TabsList>
               {TABS.map((t) => {
                 const Icon = t.icon;
@@ -67,12 +77,25 @@ export default function MediaBuyersPage() {
                 );
               })}
             </TabsList>
-          </Tabs>
-        </div>
+          </div>
 
-        {tab === "directory" && <MediaDocumentsDirectory isManager={isManager} />}
-        {tab === "assistant" && <MediaChatInterface />}
-        {tab === "activity" && <MediaActivityFeed isManager={isManager} />}
+          {/* Directory + Activity unmount while inactive, like before. */}
+          <TabsContent value="directory" className="min-w-0 text-[length:inherit]">
+            <MediaDocumentsDirectory isManager={isManager} />
+          </TabsContent>
+          {/* Always present (so its trigger's aria-controls resolves); the
+              chat itself mounts on the first visit and then stays. */}
+          <TabsContent
+            value="assistant"
+            forceMount
+            className={cn("min-w-0 text-[length:inherit]", tab !== "assistant" && "hidden")}
+          >
+            {chatVisited && <MediaChatInterface />}
+          </TabsContent>
+          <TabsContent value="activity" className="min-w-0 text-[length:inherit]">
+            <MediaActivityFeed isManager={isManager} />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardShell>
   );

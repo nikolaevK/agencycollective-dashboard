@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useId } from "react";
 import { Check, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopeSelector } from "./ScopeSelector";
+import { workspacesToSend } from "./workspaceSelection";
 import type { ApiTokenPublic, ResourceOption, WorkspaceOption } from "./types";
 import type { AccessLevel, ResourceKey, TokenScopes } from "@/lib/apiScopes";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +28,9 @@ export interface TokenFormData {
   scopes: TokenScopes;
   clientIds: string[] | null;
   closerIds: string[] | null;
-  /** Workspace (book) restriction — null = all workspaces. */
-  workspaces: string[] | null;
+  /** Workspace (book) restriction — null = all workspaces; undefined (edit
+   *  only) = unchanged, left out of the PATCH. */
+  workspaces?: string[] | null;
   expiresAt: string | null;
 }
 
@@ -109,7 +111,8 @@ function ResourcePicker({
                   key={opt.id}
                   htmlFor={id}
                   className={cn(
-                    "flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm transition-colors",
+                    // `relative` anchors the Checkbox's hidden form input.
+                    "relative flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm transition-colors",
                     checked ? "bg-muted" : "hover:bg-muted/50"
                   )}
                 >
@@ -181,6 +184,19 @@ export function AddEditTokenModal({
 
   const hasScopes = Object.keys(scopes).length > 0;
 
+  // Books this token is restricted to that are no longer in the registry
+  // (deleted before deletes were blocked for restricted tokens). Shown as
+  // chips so the restriction stays visible and can be cleared (and re-ticked
+  // until saved). Only once the registry has loaded — it always holds main.
+  const unknownWorkspaces =
+    workspaces.length > 0
+      ? (token?.workspaces ?? []).filter((v) => !workspaces.some((w) => w.value === v))
+      : [];
+  const workspaceChips: WorkspaceOption[] = [
+    ...workspaces,
+    ...unknownWorkspaces.map((v) => ({ value: v, label: `${v} (deleted)` })),
+  ];
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     onSave({
@@ -189,7 +205,7 @@ export function AddEditTokenModal({
       scopes,
       clientIds: clientIds.length > 0 ? clientIds : null,
       closerIds: closerIds.length > 0 ? closerIds : null,
-      workspaces: tokenWorkspaces.length > 0 ? tokenWorkspaces : null,
+      workspaces: workspacesToSend(tokenWorkspaces, token),
       expiresAt: expiresAt || null,
     });
   }
@@ -246,7 +262,7 @@ export function AddEditTokenModal({
                 behavior every existing token has). Enforced by translating the
                 restriction into the client_ids machinery at auth time — no
                 endpoint behaves differently for unrestricted tokens. */}
-            {workspaces.length > 1 && (
+            {(workspaces.length > 1 || unknownWorkspaces.length > 0) && (
               <fieldset className="grid min-w-0 gap-2">
                 <legend className="mb-2 text-sm font-medium leading-none">Workspace access</legend>
                 <p className="text-xs text-muted-foreground">
@@ -255,7 +271,7 @@ export function AddEditTokenModal({
                   None selected = all workspaces.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {workspaces.map((w) => {
+                  {workspaceChips.map((w) => {
                     const checked = tokenWorkspaces.includes(w.value);
                     return (
                       <Button

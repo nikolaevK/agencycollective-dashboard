@@ -11,8 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { badgeTone } from "@/components/ui/badge";
 import { InlineTable } from "@/components/chat/tool-renderers/InlineTable";
 import { DocChat, type DocChatSuggestion } from "@/components/doc-chat/DocChat";
+import { useSaveInFlight } from "@/components/doc-chat/useSaveInFlight";
 import { docConversationToMarkdown, docMessageToMarkdown, mediaToolMarkdown } from "@/lib/docChat/exportMarkdown";
-import { markOutputSaved, savedOutput } from "@/lib/docChat/store";
+import { pendingOutputSave, saveOutputOnce, savedOutput } from "@/lib/docChat/store";
+import { withoutImages } from "@/lib/docChat/stripImagesClient";
 import type { ChatMessage, DisplayTableInput, ReportResult, ReportSectionResult, ToolUseBlock } from "@/types/chat";
 
 // Lazy: the report card pulls in the chart renderer, markdown pulls in
@@ -85,6 +87,10 @@ async function uploadPdf(blob: Blob, fileName: string, docType: string, platform
   }
 }
 
+function saveErrorText(e: unknown): string {
+  return e instanceof Error && e.message ? e.message : "Save failed";
+}
+
 function useInvalidateDirectory() {
   const queryClient = useQueryClient();
   return () => {
@@ -114,13 +120,20 @@ const DocumentCard = memo(function DocumentCard({ tool, isCorrection }: { tool: 
   const markdown = String(input.markdown ?? "");
   const summary = typeof input.summary === "string" ? input.summary : "";
 
-  const [busy, setBusy] = useState<null | "save" | "pdf">(null);
+  // A save started before a remount (tab switch mid-upload) is still running: wait for it, don't offer a second.
+  const [busy, setBusy] = useState<null | "save" | "pdf">(() => (pendingOutputSave(tool.id) ? "save" : null));
   const [saved, setSaved] = useState(() => savedOutput(tool.id) !== undefined);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const clipRef = useRef<HTMLDivElement>(null);
+
+  useSaveInFlight(tool.id, (r) => {
+    setBusy(null);
+    if ("id" in r) setSaved(true);
+    else setErr(saveErrorText(r.error));
+  });
 
   // Show the expand toggle only when the collapsed preview actually clips.
   useEffect(() => {
@@ -145,12 +158,13 @@ const DocumentCard = memo(function DocumentCard({ tool, isCorrection }: { tool: 
     setBusy("save");
     setErr("");
     try {
-      await uploadPdf(await buildPdf(), pdfFileName(title, "document"), docType, platform);
-      markOutputSaved(tool.id);
+      await saveOutputOnce(tool.id, async () => {
+        await uploadPdf(await buildPdf(), pdfFileName(title, "document"), docType, platform);
+        invalidate();
+      });
       setSaved(true);
-      invalidate();
     } catch (e) {
-      setErr(e instanceof Error && e.message ? e.message : "Save failed");
+      setErr(saveErrorText(e));
     } finally {
       setBusy(null);
     }
@@ -177,7 +191,8 @@ const DocumentCard = memo(function DocumentCard({ tool, isCorrection }: { tool: 
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(mediaToolMarkdown(tool.name, input) ?? markdown);
+      const md = withoutImages(mediaToolMarkdown(tool.name, input) ?? markdown);
+      await navigator.clipboard.writeText(typeof md === "string" ? md : await md);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -199,7 +214,8 @@ const DocumentCard = memo(function DocumentCard({ tool, isCorrection }: { tool: 
             <p className="text-xs text-muted-foreground">{meta}</p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        {/* Wraps under the title on a narrow card instead of overflowing it. */}
+        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -283,21 +299,29 @@ const MediaReportCard = memo(function MediaReportCard({ tool }: { tool: ToolUseB
   const invalidate = useInvalidateDirectory();
   // The route already validated + normalized the sections (lib/mediaChatTools).
   const report = useMemo(() => toReport(tool.input as Record<string, unknown>), [tool.input]);
-  const [saving, setSaving] = useState(false);
+  // As in DocumentCard: a save still running from before a remount is waited on, not repeated.
+  const [saving, setSaving] = useState(() => pendingOutputSave(tool.id) !== undefined);
   const [saved, setSaved] = useState(() => savedOutput(tool.id) !== undefined);
   const [err, setErr] = useState("");
+
+  useSaveInFlight(tool.id, (r) => {
+    setSaving(false);
+    if ("id" in r) setSaved(true);
+    else setErr(saveErrorText(r.error));
+  });
 
   async function handleSave() {
     setSaving(true);
     setErr("");
     try {
-      const { buildReportPdfBlob } = await import("@/components/chat/tool-renderers/reportPdfGenerator");
-      await uploadPdf(await buildReportPdfBlob(report), pdfFileName(report.title, "report"), "report");
-      markOutputSaved(tool.id);
+      await saveOutputOnce(tool.id, async () => {
+        const { buildReportPdfBlob } = await import("@/components/chat/tool-renderers/reportPdfGenerator");
+        await uploadPdf(await buildReportPdfBlob(report), pdfFileName(report.title, "report"), "report");
+        invalidate();
+      });
       setSaved(true);
-      invalidate();
     } catch (e) {
-      setErr(e instanceof Error && e.message ? e.message : "Save failed");
+      setErr(saveErrorText(e));
     } finally {
       setSaving(false);
     }

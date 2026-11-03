@@ -40,6 +40,7 @@ import { useConfirm } from "@/components/ui/use-confirm";
 import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import type { MediaDocType, MediaPlatform } from "@/lib/mediaDocuments";
 import { MediaDocumentTile } from "./MediaDocumentTile";
+import { MediaSelect } from "./MediaSelect";
 import { MediaTagInput } from "./MediaTagInput";
 import {
   DOC_TYPE_OPTIONS,
@@ -52,12 +53,6 @@ import {
   type DocView,
   type MediaFolderLite,
 } from "./mediaDirectoryShared";
-
-// Kit Select (Radix + popper) in its own chunk — server-rendered, so the
-// toolbar paints at once, but kept out of the page's first-load JS.
-const MediaSelect = dynamic(() => import("./MediaSelect").then((m) => m.MediaSelect), {
-  loading: () => <Skeleton className="h-8 w-28 rounded-3xl" />,
-});
 
 // Click-to-open dialogs — one chunk, fetched the first time one opens.
 const FolderSettingsDialog = dynamic(
@@ -210,9 +205,9 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
   const [osDragOver, setOsDragOver] = useState(false);
   const [error, setError] = useState("");
 
+  // The rename draft lives in the tile being renamed (a keystroke re-renders
+  // that tile only); the directory just knows which one it is.
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const renameSkipRef = useRef(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
@@ -228,6 +223,9 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
   });
 
   const documents = useMemo(() => data?.documents ?? [], [data]);
+  // Latest list for the tiles' callbacks, which stay stable (memoised tiles).
+  const documentsRef = useRef(documents);
+  documentsRef.current = documents;
   const serverFolders = useMemo<MediaFolderLite[]>(() => data?.folders ?? [], [data]);
 
   const counts = useMemo(() => {
@@ -436,42 +434,34 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
     [queryClient, refresh]
   );
 
-  const cancelRename = useCallback(() => {
-    // Mark the pending blur-commit as a cancel, then close the editor.
-    renameSkipRef.current = true;
-    setRenamingId(null);
-  }, []);
+  const cancelRename = useCallback(() => setRenamingId(null), []);
 
-  const commitRename = useCallback(async () => {
-    if (renameSkipRef.current) {
-      renameSkipRef.current = false;
-      setRenamingId(null);
-      return;
-    }
-    const id = renamingId;
-    if (!id) return;
-    const next = renameValue.trim();
-    setRenamingId(null);
-    const current = documents.find((d) => d.id === id);
-    if (!next || !current || next === current.fileName) return;
-    setError("");
-    setBusyId(id);
-    try {
-      const res = await fetch("/api/admin/media-buyers/documents", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, fileName: next }),
-      });
-      if (res.ok) refresh();
-      else setError("Rename failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [renamingId, renameValue, documents, refresh]);
+  const commitRename = useCallback(
+    async (id: string, value: string) => {
+      setRenamingId((cur) => (cur === id ? null : cur));
+      const next = value.trim();
+      const current = documentsRef.current.find((d) => d.id === id);
+      if (!next || !current || next === current.fileName) return;
+      setError("");
+      setBusyId(id);
+      try {
+        const res = await fetch("/api/admin/media-buyers/documents", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, fileName: next }),
+        });
+        if (res.ok) refresh();
+        else setError("Rename failed");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [refresh]
+  );
 
   const removeDoc = useCallback(
     async (id: string) => {
-      const doc = documents.find((d) => d.id === id);
+      const doc = documentsRef.current.find((d) => d.id === id);
       const ok = await confirm({
         title: `Delete “${doc?.fileName ?? "this file"}”?`,
         description: "The file is removed for every media buyer. This can't be undone.",
@@ -494,7 +484,7 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
         setBusyId(null);
       }
     },
-    [documents, confirm, refresh]
+    [confirm, refresh]
   );
 
   const uploadFiles = useCallback(
@@ -701,6 +691,12 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
   const moveDocObj = moveDocId ? documents.find((d) => d.id === moveDocId) ?? null : null;
   const tagsDocObj = tagsDocId ? documents.find((d) => d.id === tagsDocId) ?? null : null;
 
+  const showReaders = useCallback((id: string, fileName: string) => setReadersDoc({ id, fileName }), []);
+  const toggleTagFilter = useCallback(
+    (t: string) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t)),
+    []
+  );
+
   const renderTile = (doc: DocView, tileView: "grid" | "list") => (
     <MediaDocumentTile
       key={doc.id}
@@ -708,19 +704,16 @@ export function MediaDocumentsDirectory({ isManager }: { isManager: boolean }) {
       view={tileView}
       isManager={isManager}
       renaming={renamingId === doc.id}
-      renameValue={renameValue}
-      setRenameValue={setRenameValue}
-      onStartRename={() => { setRenamingId(doc.id); setRenameValue(doc.fileName); }}
+      onStartRename={setRenamingId}
       onCommitRename={commitRename}
       onCancelRename={cancelRename}
-      onOpenMove={() => setMoveDocId(doc.id)}
-      onOpenTags={() => setTagsDocId(doc.id)}
-      onDelete={() => removeDoc(doc.id)}
-      onToggleImportant={(next) => toggleDocImportant(doc.id, next)}
-      onAcknowledge={() => acknowledge(doc.id, true)}
-      onUnacknowledge={() => acknowledge(doc.id, false)}
-      onShowReaders={() => setReadersDoc({ id: doc.id, fileName: doc.fileName })}
-      onTagClick={(t) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t))}
+      onOpenMove={setMoveDocId}
+      onOpenTags={setTagsDocId}
+      onDelete={removeDoc}
+      onToggleImportant={toggleDocImportant}
+      onAcknowledge={acknowledge}
+      onShowReaders={showReaders}
+      onTagClick={toggleTagFilter}
       activeTag={tagFilter}
       busy={busyId === doc.id}
     />

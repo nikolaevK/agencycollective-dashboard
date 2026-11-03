@@ -7,6 +7,7 @@ import {
   updateMetaAccount,
   deleteMetaAccount,
   DuplicateMetaAccountEmailError,
+  InvalidMetaAccountLinkError,
   type MetaAccountInput,
 } from "@/lib/metaAccounts";
 import { logAuditEvent } from "@/lib/auditLog";
@@ -86,6 +87,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       ok = await updateMetaAccount(params.id, changes);
     } catch (err) {
       if (err instanceof DuplicateMetaAccountEmailError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      if (err instanceof InvalidMetaAccountLinkError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
       throw err;

@@ -14,6 +14,7 @@ import { AdminSearchFilter, type AdminFilter } from "@/components/admins/AdminSe
 import { AdminPagination } from "@/components/admins/AdminPagination";
 import { AuditLogCard } from "@/components/admins/AuditLogCard";
 import { AccessPolicyCard } from "@/components/admins/AccessPolicyCard";
+import { useChunkGate } from "@/components/admins/useChunkGate";
 import type { AdminPublic } from "@/components/admins/types";
 import type { AdminPermissions } from "@/lib/permissions";
 import { uploadAdminAvatar } from "@/app/actions/adminActions";
@@ -24,7 +25,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/components/ui/use-confirm";
 
 // Lazy: click-to-open forms (Selects, Switches, Checkboxes, Radix Dialog)
-// stay out of the page's first load.
+// stay out of the page's first load. Each opens only after its chunk has
+// loaded (useChunkGate): a spinner while it loads, a toast if it can't.
+const loadAdminForms = () =>
+  Promise.all([
+    import("@/components/admins/AddEditAdminModal"),
+    import("@/components/admins/AddEditAdminMobile"),
+  ]);
+const loadWorkspaceManager = () => import("@/components/admins/WorkspaceManagerModal");
 const AddEditAdminModal = dynamic(
   () => import("@/components/admins/AddEditAdminModal").then((m) => m.AddEditAdminModal),
   { ssr: false }
@@ -34,7 +42,7 @@ const AddEditAdminMobile = dynamic(
   { ssr: false }
 );
 const WorkspaceManagerModal = dynamic(
-  () => import("@/components/admins/WorkspaceManagerModal").then((m) => m.WorkspaceManagerModal),
+  () => loadWorkspaceManager().then((m) => m.WorkspaceManagerModal),
   { ssr: false }
 );
 
@@ -52,6 +60,7 @@ export function AdminsPanel() {
   const queryClient = useQueryClient();
   const { toastError } = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const { gate, pending: chunkPending } = useChunkGate();
   const { data: admins = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["admins"],
     queryFn: fetchAdmins,
@@ -90,7 +99,9 @@ export function AdminsPanel() {
   // Stats
   const superCount = admins.filter((a) => a.isSuper).length;
 
-  function openModal(a: AdminPublic | null) {
+  async function openModal(a: AdminPublic | null) {
+    // Both forms render together (one hidden by CSS), so both must load.
+    if (!(await gate(loadAdminForms))) return;
     setSelectedAdmin(a);
     setModalOpen(true);
   }
@@ -101,6 +112,10 @@ export function AdminsPanel() {
   }
 
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
+
+  async function openWorkspaces() {
+    if (await gate(loadWorkspaceManager)) setWorkspacesOpen(true);
+  }
 
   function handleSave(data: {
     id?: string;
@@ -188,7 +203,7 @@ export function AdminsPanel() {
           </div>
           {canMutate && (
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setWorkspacesOpen(true)}>
+              <Button variant="outline" onClick={openWorkspaces}>
                 <Boxes />
                 Workspaces
               </Button>
@@ -296,6 +311,7 @@ export function AdminsPanel() {
       )}
 
       {confirmDialog}
+      {chunkPending}
     </DashboardShell>
   );
 }

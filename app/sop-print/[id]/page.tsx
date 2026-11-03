@@ -2,9 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Printer, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { SopRenderer } from "@/components/sop/SopRenderer";
 import type { SopDoc } from "@/lib/sop";
+
+// The kit's default Button, as plain classes — this standalone page stays
+// lean (no Radix Slot / cva / tailwind-merge for one button).
+const PRINT_BUTTON =
+  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-4xl border border-transparent bg-primary bg-clip-padding px-3 text-sm font-medium text-primary-foreground outline-none transition-all select-none hover:bg-primary/80 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 /**
  * Standalone print view (no dashboard shell). Renders the EXACT same
@@ -62,10 +66,10 @@ export default function SopPrintPage({ params }: { params: { id: string } }) {
       {/* Screen-only toolbar */}
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur">
         <span className="text-sm font-medium text-foreground">SOP → PDF</span>
-        <Button type="button" onClick={() => window.print()} disabled={!doc}>
+        <button type="button" onClick={() => window.print()} disabled={!doc} className={PRINT_BUTTON}>
           <Printer />
           Print / Save as PDF
-        </Button>
+        </button>
       </div>
 
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">

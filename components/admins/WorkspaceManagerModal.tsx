@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +27,9 @@ interface WorkspaceRegistryEntry {
 /**
  * Manage the workspace (book) registry — separate Client Directories for
  * outside teams. Privileged admins only (the /api/admin/admins/workspaces
- * routes enforce it). Rename keeps the slug; delete refuses while clients are
- * still assigned (move them first via each client's Settings).
+ * routes enforce it). Rename keeps the slug; delete refuses while clients,
+ * admins or live API tokens still use the book (move clients via each
+ * client's Settings, unassign admins, edit or revoke the tokens).
  */
 export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -38,6 +39,23 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
   const [editLabel, setEditLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Row whose Rename button gets focus back once its rename closes.
+  const refocusRename = useRef<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    const value = refocusRename.current;
+    if (editing !== null || value === null) return;
+    refocusRename.current = null;
+    listRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-rename-for="${CSS.escape(value)}"]`)
+      ?.focus();
+  }, [editing]);
+
+  function endRename(value: string) {
+    refocusRename.current = value;
+    setEditing(null);
+  }
 
   const { data: registry = [], isLoading } = useQuery<WorkspaceRegistryEntry[]>({
     queryKey: ["workspace-registry"],
@@ -93,13 +111,14 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value, label }),
     });
-    if (ok) setEditing(null);
+    if (ok) endRename(value);
   }
 
   async function handleDelete(entry: WorkspaceRegistryEntry) {
     const ok = await confirm({
       title: `Remove workspace "${entry.label}"?`,
-      description: "All clients must be moved out and all admins unassigned first.",
+      description:
+        "All clients must be moved out, all admins unassigned and any API tokens restricted to it edited or revoked first.",
       confirmText: "Remove",
       destructive: true,
     });
@@ -112,7 +131,16 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto overscroll-contain sm:max-w-lg">
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto overscroll-contain sm:max-w-lg"
+          onEscapeKeyDown={(e) => {
+            // Escape inside a rename row cancels the rename, not the dialog.
+            if (editing === null) return;
+            if (!(e.target instanceof Element) || !e.target.closest("[data-renaming]")) return;
+            e.preventDefault();
+            endRename(editing);
+          }}
+        >
           <DialogHeader className="pr-10">
             <DialogTitle>Workspaces</DialogTitle>
             <DialogDescription>
@@ -127,9 +155,13 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           ) : (
-            <ul className="grid gap-2">
+            <ul ref={listRef} className="grid gap-2">
               {registry.map((w) => (
-                <li key={w.value} className="flex min-h-14 items-center gap-2 rounded-2xl border px-3 py-2">
+                <li
+                  key={w.value}
+                  data-renaming={editing === w.value ? "" : undefined}
+                  className="flex min-h-14 items-center gap-2 rounded-2xl border px-3 py-2"
+                >
                   {editing === w.value ? (
                     <>
                       <Input
@@ -171,6 +203,7 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
                               setEditing(w.value);
                               setEditLabel(w.label);
                             }}
+                            data-rename-for={w.value}
                             title="Rename"
                             aria-label={`Rename ${w.label}`}
                           >

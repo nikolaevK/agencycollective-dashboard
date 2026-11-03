@@ -60,10 +60,11 @@ export function InvoiceAgencyProfiles({ onApply }: Props) {
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <Users className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        <Users className="size-4 shrink-0 text-muted-foreground lg:max-xl:hidden" />
+        {/* Wraps rather than truncates (three of these share a row from lg up). */}
+        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
           Agency Profiles
-          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">({profiles.length})</span>
+          <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground tabular-nums">({profiles.length})</span>
         </span>
         <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>

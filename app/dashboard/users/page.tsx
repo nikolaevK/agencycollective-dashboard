@@ -551,7 +551,7 @@ export default function UsersPage() {
 function CountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white tabular-nums">
+    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground tabular-nums">
       {count > 99 ? "99+" : count}
     </span>
   );

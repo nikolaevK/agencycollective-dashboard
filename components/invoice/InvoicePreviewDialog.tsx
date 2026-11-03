@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { pdf } from "@react-pdf/renderer";
-import { Download, ExternalLink, FileText, Loader2, Monitor, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, ExternalLink, FileText, Loader2, Monitor, RotateCw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { InvoiceLivePreview } from "@/components/invoice/InvoiceLivePreview";
-import { InvoicePdfDocument } from "@/components/invoice/pdf/InvoicePdfTemplate";
+// react-pdf (~500 kB) loads only when Exact PDF is shown: Live opens at once,
+// and the drawers that import this dialog don't carry the renderer for it.
+import { loadPdfKit } from "@/components/invoice/pdf/pdfKit";
 import { Button } from "@/components/ui/button";
 import { dialogOverlayClass } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,6 +56,8 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // Bumped by "Try again" — re-runs the render (and a failed chunk load).
+  const [pdfAttempt, setPdfAttempt] = useState(0);
   const liveRef = useRef<HTMLDivElement>(null);
   const [fitW, setFitW] = useState<number | null>(null);
 
@@ -76,8 +79,8 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
     let url: string | null = null;
     setPdfUrl(null);
     setPdfError(null);
-    pdf(<InvoicePdfDocument data={data} />)
-      .toBlob()
+    loadPdfKit()
+      .then(([{ pdf }, { InvoicePdfDocument }]) => pdf(<InvoicePdfDocument data={data} />).toBlob())
       .then((blob) => {
         if (cancelled) return;
         url = URL.createObjectURL(blob);
@@ -91,7 +94,7 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
       if (url) URL.revokeObjectURL(url);
       setPdfUrl(null); // no link may keep pointing at the revoked URL
     };
-  }, [mode, data]);
+  }, [mode, data, pdfAttempt]);
 
   const fileName = `invoice-${data.details.invoiceNumber || "draft"}.pdf`;
   // Steps are page widths at 100% (= the default step). A view narrower than
@@ -203,7 +206,13 @@ export function InvoicePreviewDialog({ data: liveData, onClose, initialMode = "l
           </div>
         ) : pdfError ? (
           <div className="flex h-full items-center justify-center p-6">
-            <p className="max-w-md rounded-2xl bg-popover px-4 py-3 text-sm text-destructive">PDF generation failed: {pdfError}</p>
+            <div className="max-w-md space-y-3 rounded-2xl bg-popover px-4 py-3 text-center">
+              <p role="alert" className="text-sm text-destructive">PDF generation failed: {pdfError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPdfAttempt((n) => n + 1)}>
+                <RotateCw />
+                Try again
+              </Button>
+            </div>
           </div>
         ) : !pdfUrl ? (
           <div className="flex h-full items-center justify-center">

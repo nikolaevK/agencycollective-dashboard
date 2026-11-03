@@ -23,7 +23,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { InvoiceSignature } from "./InvoiceSignature";
 import { InvoiceField, SEGMENT_ITEM, SEGMENT_TRACK } from "./InvoiceField";
@@ -182,27 +181,29 @@ export function InvoiceFooterForm({
 
         {paymentInfo && (
           <CardContent className="space-y-4">
-            {/* Payment Type Toggle */}
+            {/* Payment Type Toggle — re-clicking the pressed type re-applies it */}
             <div className="grid gap-2">
-              <span className="text-sm font-medium leading-none">Payment Type</span>
-              <ToggleGroup
-                type="single"
-                // Each option stays its own Tab stop, as the old buttons were.
-                rovingFocus={false}
-                value={paymentType}
-                // Radix reports "" when the pressed option is clicked again;
-                // the old buttons re-applied that type then, so keep doing that.
-                onValueChange={(v) => handlePaymentTypeChange((v || paymentType) as PaymentType)}
-                aria-label="Payment Type"
-                className={cn("w-full", SEGMENT_TRACK)}
-              >
-                <ToggleGroupItem value="local" className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2")}>
-                  Local (Zelle + Wire)
-                </ToggleGroupItem>
-                <ToggleGroupItem value="international" className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2")}>
-                  International (Wire)
-                </ToggleGroupItem>
-              </ToggleGroup>
+              <span id={`${id}-payment-type`} className="text-sm font-medium leading-none">
+                Payment Type
+              </span>
+              <div role="group" aria-labelledby={`${id}-payment-type`} className={cn("w-full", SEGMENT_TRACK)}>
+                {(
+                  [
+                    ["local", "Local (Zelle + Wire)"],
+                    ["international", "International (Wire)"],
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={paymentType === type}
+                    onClick={() => handlePaymentTypeChange(type)}
+                    className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Load from template */}

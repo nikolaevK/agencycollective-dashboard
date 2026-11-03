@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDraggable } from "@dnd-kit/core";
 import {
@@ -32,28 +33,86 @@ import {
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 const noDrag = { onMouseDown: stop, onTouchStart: stop, onPointerDown: stop };
 
-function MenuPlaceholder() {
+// The secondary-actions menu (Radix DropdownMenu) is fetched on intent
+// (hover / focus of a ⋯ button) and mounted by a tile only on its first open:
+// until then each tile carries just this static button, styled like the
+// menu's own trigger.
+const warmMenu = () => void import("./MediaDocumentMenu");
+
+function MenuButton({ label, onOpen }: { label: string; onOpen?: (byKeyboard: boolean) => void }) {
   return (
-    <Button type="button" variant="ghost" size="icon-sm" disabled className="text-muted-foreground" aria-label="More actions">
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      {...noDrag}
+      // A keyboard-activated click carries detail 0.
+      onClick={(e) => onOpen?.(e.detail === 0)}
+      onPointerEnter={warmMenu}
+      onFocus={warmMenu}
+      className="text-muted-foreground"
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={false}
+      title="More actions"
+    >
       <MoreHorizontal />
     </Button>
   );
 }
 
-// The secondary-actions menu (Radix DropdownMenu) loads after first paint.
 const MediaDocumentMenu = dynamic(
   () => import("./MediaDocumentMenu").then((m) => m.MediaDocumentMenu),
-  { ssr: false, loading: MenuPlaceholder }
+  { ssr: false, loading: () => <MenuButton label="More actions" /> }
 );
 
-/** One file in the directory — a grid tile or a list row, draggable onto a folder. */
-export function MediaDocumentTile({
+/** The inline rename field — its draft lives here, so a keystroke re-renders
+ *  only this tile, not the directory. */
+function RenameInput({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const cancelled = useRef(false);
+  return (
+    <Input
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      {...noDrag}
+      onKeyDown={(e) => {
+        // Enter → blur → single commit via onBlur. Escape → cancel (skip the
+        // blur-commit). This avoids the double-commit / "Escape saves" bug.
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          cancelled.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={() => {
+        if (!cancelled.current) onCommit(value);
+      }}
+      aria-label="File name"
+      className="h-7 rounded-xl px-2"
+    />
+  );
+}
+
+/**
+ * One file in the directory — a grid tile or a list row, draggable onto a
+ * folder. Memoised: the directory hands it stable, id-taking callbacks, so a
+ * change to one file (or the directory's own state) doesn't re-render the rest.
+ */
+export const MediaDocumentTile = memo(function MediaDocumentTile({
   doc,
   view,
   isManager,
   renaming,
-  renameValue,
-  setRenameValue,
   onStartRename,
   onCommitRename,
   onCancelRename,
@@ -62,7 +121,6 @@ export function MediaDocumentTile({
   onDelete,
   onToggleImportant,
   onAcknowledge,
-  onUnacknowledge,
   onShowReaders,
   onTagClick,
   activeTag,
@@ -72,22 +130,24 @@ export function MediaDocumentTile({
   view: "grid" | "list";
   isManager: boolean;
   renaming: boolean;
-  renameValue: string;
-  setRenameValue: (v: string) => void;
-  onStartRename: () => void;
-  onCommitRename: () => void;
+  onStartRename: (id: string) => void;
+  onCommitRename: (id: string, value: string) => void;
   onCancelRename: () => void;
-  onOpenMove: () => void;
-  onOpenTags: () => void;
-  onDelete: () => void;
-  onToggleImportant: (next: boolean) => void;
-  onAcknowledge: () => void;
-  onUnacknowledge: () => void;
-  onShowReaders: () => void;
+  onOpenMove: (id: string) => void;
+  onOpenTags: (id: string) => void;
+  onDelete: (id: string) => void;
+  onToggleImportant: (id: string, next: boolean) => void;
+  onAcknowledge: (id: string, ack: boolean) => void;
+  onShowReaders: (id: string, fileName: string) => void;
   onTagClick: (tag: string) => void;
   activeTag: string;
   busy: boolean;
 }) {
+  // "idle" until the ⋯ menu is first opened (static button, no Radix root);
+  // from then on the real menu stays mounted, open or closed.
+  const [menu, setMenu] = useState<"idle" | "open" | "closed">("idle");
+  const [menuByKeyboard, setMenuByKeyboard] = useState(false);
+
   // Only spread drag listeners (not `attributes`) — `attributes` would add
   // role="button"/tabIndex=0 to a node that contains real <a>/<button>
   // children (invalid nested-interactive a11y). The Move dialog is the
@@ -97,20 +157,10 @@ export function MediaDocumentTile({
   const Icon = isMd ? FileType2 : FileText;
 
   const nameNode = renaming ? (
-    <Input
-      autoFocus
-      value={renameValue}
-      onChange={(e) => setRenameValue(e.target.value)}
-      {...noDrag}
-      onKeyDown={(e) => {
-        // Enter → blur → single commit via onBlur. Escape → cancel (skip the
-        // blur-commit). This avoids the double-commit / "Escape saves" bug.
-        if (e.key === "Enter") e.currentTarget.blur();
-        else if (e.key === "Escape") onCancelRename();
-      }}
-      onBlur={onCommitRename}
-      aria-label="File name"
-      className="h-7 rounded-xl px-2"
+    <RenameInput
+      initial={doc.fileName}
+      onCommit={(value) => onCommitRename(doc.id, value)}
+      onCancel={onCancelRename}
     />
   ) : (
     <p className="truncate text-sm font-medium text-foreground" title={doc.fileName}>
@@ -169,7 +219,7 @@ export function MediaDocumentTile({
       variant="outline"
       size="xs"
       {...noDrag}
-      onClick={onUnacknowledge}
+      onClick={() => onAcknowledge(doc.id, false)}
       className={cn(badgeTone.success, badgeToneHover.success)}
       title="You've read this — click to undo"
     >
@@ -181,7 +231,7 @@ export function MediaDocumentTile({
       variant="outline"
       size="xs"
       {...noDrag}
-      onClick={onAcknowledge}
+      onClick={() => onAcknowledge(doc.id, true)}
       className={cn(doc.important && cn(badgeTone.warning, badgeToneHover.warning))}
       title="Mark as read"
     >
@@ -196,7 +246,7 @@ export function MediaDocumentTile({
       variant="ghost"
       size="xs"
       {...noDrag}
-      onClick={onShowReaders}
+      onClick={() => onShowReaders(doc.id, doc.fileName)}
       className="tabular-nums text-muted-foreground"
       title="See who has read this"
       aria-label={`See who has read this (${doc.ackCount})`}
@@ -233,16 +283,27 @@ export function MediaDocumentTile({
         <Button type="button" variant="ghost" size="icon-sm" disabled aria-label="Working…">
           <Loader2 className="animate-spin" />
         </Button>
+      ) : menu === "idle" ? (
+        <MenuButton
+          label={`More actions for ${doc.fileName}`}
+          onOpen={(byKeyboard) => {
+            setMenuByKeyboard(byKeyboard);
+            setMenu("open");
+          }}
+        />
       ) : (
         <MediaDocumentMenu
+          open={menu === "open"}
+          onOpenChange={(open) => setMenu(open ? "open" : "closed")}
+          focusFirstItem={menuByKeyboard}
           fileName={doc.fileName}
           important={doc.important}
           isManager={isManager}
-          onStartRename={onStartRename}
-          onOpenMove={onOpenMove}
-          onOpenTags={onOpenTags}
-          onToggleImportant={onToggleImportant}
-          onDelete={onDelete}
+          onStartRename={() => onStartRename(doc.id)}
+          onOpenMove={() => onOpenMove(doc.id)}
+          onOpenTags={() => onOpenTags(doc.id)}
+          onToggleImportant={(next) => onToggleImportant(doc.id, next)}
+          onDelete={() => onDelete(doc.id)}
         />
       )}
     </div>
@@ -290,7 +351,7 @@ export function MediaDocumentTile({
       ref={setNodeRef}
       {...listeners}
       className={cn(
-        "group flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50 active:cursor-grabbing sm:px-4",
+        "group flex cursor-grab flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 transition-colors hover:bg-muted/50 active:cursor-grabbing sm:flex-nowrap sm:px-4",
         isDragging && "opacity-40"
       )}
     >
@@ -307,11 +368,13 @@ export function MediaDocumentTile({
         </div>
         {tagChips}
       </div>
-      <div className="hidden shrink-0 items-center gap-1 sm:flex">
+      {/* Phones: read status + receipts drop to their own line under the
+          text (after the actions), so they stay reachable. */}
+      <div className="flex shrink-0 items-center gap-1 max-sm:order-last max-sm:basis-full max-sm:pl-8">
         {readPill}
         {readsBtn}
       </div>
       {actions}
     </div>
   );
-}
+});

@@ -159,6 +159,18 @@ describe("stream events", () => {
     expect(types).toEqual(["turn_start", "text_delta", "refusal", "done"]);
   });
 
+  it("passes the document wrap-up note and reports a wrapped-up reply as wrap_up", async () => {
+    runToolLoop.mockResolvedValue({ ...ENDED, wrappedUp: true });
+    const done = (await events(await mediaPOST(post(hi)))).at(-1);
+    expect(done).toMatchObject({ type: "done", stopReason: "wrap_up" });
+    const opts = runToolLoop.mock.calls[0][0] as LoopOpts & { wrapUpNote: string };
+    expect(opts.wrapUpNote).toContain("ask for them in their next message");
+
+    // A wrapped-up reply that hit another limit keeps that stop reason.
+    runToolLoop.mockResolvedValue({ ...ENDED, stopReason: "max_tokens", wrappedUp: true });
+    expect((await events(await mediaPOST(post(hi)))).at(-1)).toMatchObject({ type: "done", stopReason: "max_tokens" });
+  });
+
   it("maps a Claude failure to a safe, retryable message", async () => {
     runToolLoop.mockRejectedValue(new Error("socket hang up: secret internals"));
     const err = (await events(await mediaPOST(post(hi)))).at(-1);

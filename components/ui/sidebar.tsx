@@ -18,9 +18,13 @@ import { cn } from "@/lib/utils"
 //   full width.
 // - The caller owns the state: no provider cookie, no Cmd/Ctrl+B shortcut
 //   (it would steal "bold" from the app's text editors).
-// - Tooltips exist only in icon mode, and their Radix module is imported on
-//   the first collapse — it stays out of every page's first load.
-// - Badges sit at the icon's corner in icon mode instead of disappearing.
+// - Tooltips exist only on the md+ icon rail, and their Radix module is
+//   imported the first time the rail is collapsed there — it stays out of
+//   every page's first load, and phones never fetch it.
+// - Badges shrink to a dot at the icon's corner in icon mode instead of
+//   disappearing (the count would cover the 16px icon).
+// - The open drawer (below md) is a modal dialog: Tab cycles inside it. The
+//   caller moves focus in/out and makes the rest of the app inert.
 
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
@@ -43,6 +47,17 @@ function useSidebar() {
 }
 
 let tooltipKitCache: TooltipKit | null = null
+
+// Tailwind's md — where the drawer becomes the rail.
+const DESKTOP_QUERY = "(min-width: 768px)"
+function subscribeDesktop(onChange: () => void) {
+  const mq = window.matchMedia(DESKTOP_QUERY)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+const isDesktop = () => window.matchMedia(DESKTOP_QUERY).matches
+// Server + hydration: false, so tooltips only ever start on the client.
+const isDesktopOnServer = () => false
 
 function useTooltipKit(enabled: boolean): TooltipKit | null {
   const [kit, setKit] = React.useState<TooltipKit | null>(null)
@@ -76,13 +91,37 @@ type SidebarProps = React.ComponentPropsWithoutRef<"aside"> & {
   open?: boolean
 }
 
+// Keeps Tab / Shift+Tab inside the open drawer (wraps at either end).
+function trapTab(e: React.KeyboardEvent<HTMLElement>) {
+  if (e.key !== "Tab" || e.defaultPrevented) return
+  // Portaled content (the account menu) bubbles here through React, not the DOM.
+  if (!e.currentTarget.contains(e.target as Node)) return
+  const items = Array.from(
+    e.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not([disabled])")
+  ).filter((el) => el.getClientRects().length > 0)
+  if (items.length === 0) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
 const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
-  ({ collapsed = false, open = false, className, style, children, ...props }, ref) => {
-    const tooltipKit = useTooltipKit(collapsed)
+  ({ collapsed = false, open = false, className, style, onKeyDown, children, ...props }, ref) => {
+    const desktop = React.useSyncExternalStore(subscribeDesktop, isDesktop, isDesktopOnServer)
+    // A collapsed cookie on a phone must not load (or wrap the drawer in)
+    // tooltips — the drawer always shows its labels.
+    const tooltips = collapsed && desktop
+    const tooltipKit = useTooltipKit(tooltips)
     const state: SidebarContextValue["state"] = collapsed ? "collapsed" : "expanded"
     const value = React.useMemo<SidebarContextValue>(
-      () => ({ state, tooltipKit }),
-      [state, tooltipKit]
+      () => ({ state, tooltipKit: tooltips ? tooltipKit : null }),
+      [state, tooltips, tooltipKit]
     )
 
     return (
@@ -92,6 +131,14 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
           data-slot="sidebar"
           data-state={state}
           data-collapsible={collapsed ? "icon" : ""}
+          // Below md, open = a modal drawer over the app.
+          role={open ? "dialog" : undefined}
+          aria-modal={open ? true : undefined}
+          aria-label={open ? "Menu" : undefined}
+          onKeyDown={(e) => {
+            onKeyDown?.(e)
+            if (open) trapTab(e)
+          }}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH,
@@ -314,8 +361,7 @@ const SidebarMenuButton = React.forwardRef<HTMLButtonElement, SidebarMenuButtonP
       <TooltipProvider delayDuration={0}>
         <Tooltip>
           <TooltipTrigger asChild>{button}</TooltipTrigger>
-          {/* Below md the drawer is full width with labels — no tooltip. */}
-          <TooltipContent side="right" align="center" className="max-md:hidden">
+          <TooltipContent side="right" align="center">
             {tooltip}
           </TooltipContent>
         </Tooltip>
@@ -325,24 +371,25 @@ const SidebarMenuButton = React.forwardRef<HTMLButtonElement, SidebarMenuButtonP
 )
 SidebarMenuButton.displayName = "SidebarMenuButton"
 
-// A sibling of the button inside SidebarMenuItem. In icon mode the outer pill
-// turns opaque so a tinted badge (className) stays readable over the icon.
+// A sibling of the button inside SidebarMenuItem. In icon mode it shrinks to
+// a solid dot in the badge's text color (bg-current), ringed by the sidebar
+// background, at the button's corner — a count there would hide the icon.
 const SidebarMenuBadge = React.forwardRef<HTMLSpanElement, React.ComponentPropsWithoutRef<"span">>(
   ({ className, children, ...props }, ref) => (
     <span
       ref={ref}
       data-slot="sidebar-menu-badge"
       data-sidebar="menu-badge"
-      className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 select-none rounded-full md:group-data-[collapsible=icon]/sidebar:-right-1 md:group-data-[collapsible=icon]/sidebar:-top-1 md:group-data-[collapsible=icon]/sidebar:translate-y-0 md:group-data-[collapsible=icon]/sidebar:bg-sidebar"
+      className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 select-none rounded-full md:group-data-[collapsible=icon]/sidebar:right-0 md:group-data-[collapsible=icon]/sidebar:top-0 md:group-data-[collapsible=icon]/sidebar:translate-y-0 md:group-data-[collapsible=icon]/sidebar:bg-sidebar md:group-data-[collapsible=icon]/sidebar:p-0.5"
       {...props}
     >
       <span
         className={cn(
-          "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-medium tabular-nums text-sidebar-foreground md:group-data-[collapsible=icon]/sidebar:h-4 md:group-data-[collapsible=icon]/sidebar:min-w-4 md:group-data-[collapsible=icon]/sidebar:px-1 md:group-data-[collapsible=icon]/sidebar:text-[9px]",
+          "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-medium tabular-nums text-sidebar-foreground md:group-data-[collapsible=icon]/sidebar:size-2 md:group-data-[collapsible=icon]/sidebar:min-w-0 md:group-data-[collapsible=icon]/sidebar:border-0 md:group-data-[collapsible=icon]/sidebar:bg-current md:group-data-[collapsible=icon]/sidebar:p-0",
           className
         )}
       >
-        {children}
+        <span className="md:group-data-[collapsible=icon]/sidebar:hidden">{children}</span>
       </span>
     </span>
   )

@@ -8,7 +8,10 @@
  *   `tool_use` arrives, cleared at the next turn / end),
  * - `refusal` discards everything streamed since the current `turn_start`
  *   (a declined turn's partial output is incomplete) and adds a notice,
- * - `fallback` marks the reply as answered by another model (`servedBy`),
+ * - `fallback` marks the reply as answered by another model (`servedBy`)
+ *   and drops pending calls: the declined model's unfinished calls are never
+ *   run or sent (lib/claude/toolLoop echo rule), so their placeholders would
+ *   otherwise linger until the next turn,
  * - `done` / `error` / a local stop end the stream with the right notice.
  */
 
@@ -136,7 +139,12 @@ export function reduceStreamEvent(state: StreamState, event: SSEEvent): StreamSt
       // The only writer of `servedBy`, so it flags "a fallback model answered":
       // `done.servedBy` is just the last request's model (a later turn may be
       // the requested model again; a dated id never equals DEFAULT_MODEL).
-      return { ...state, message: { ...state.message, servedBy: event.to || state.message.servedBy } };
+      // Calls still pending here were started by the declined model.
+      return {
+        ...state,
+        pendingTools: [],
+        message: { ...state.message, servedBy: event.to || state.message.servedBy },
+      };
 
     case "refusal":
       return withBlocks(

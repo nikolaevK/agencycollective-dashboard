@@ -45,6 +45,7 @@ import type {
   MetaClientOption,
 } from "@/lib/metaAccountDirectory";
 import { summarizeMetaAccounts } from "@/lib/metaAccountSummary";
+import { metaAccountLinkHref } from "@/lib/metaAccountRules";
 import type { MetaAccount, MetaAccountInput } from "@/lib/metaAccounts";
 import type { MetaOptionKind } from "@/lib/metaAccountOptions";
 
@@ -70,6 +71,10 @@ const ChipPopover = dynamic(
 const PAGE_SIZE = 25;
 const QUERY_KEY = ["admin-meta-accounts"];
 const COL_COUNT = 12;
+// The pinned Account column's right divider. A box-shadow, not border-r: with
+// border-collapse a cell border belongs to the table grid and scrolls away
+// from the sticky cell.
+const STICKY_DIVIDER = "shadow-[inset_-1px_0_0_hsl(var(--border))]";
 
 interface DirectoryResponse {
   rows: MetaAccountDirectoryRow[];
@@ -370,7 +375,7 @@ export function MetaAccountsDirectory() {
           <Table className="min-w-[1600px] text-left">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <Th className="sticky left-0 z-20 border-r bg-card">Account</Th>
+                <Th className={cn("sticky left-0 z-20 bg-card", STICKY_DIVIDER)}>Account</Th>
                 <Th>Profile name</Th>
                 <Th>Password</Th>
                 <Th>2FA secret</Th>
@@ -402,11 +407,14 @@ export function MetaAccountsDirectory() {
               ) : (
                 paginated.map((row) => (
                   <TableRow key={row.id}>
-                    <Td className="sticky left-0 z-10 border-r bg-card">
+                    <Td className={cn("sticky left-0 z-10 bg-card", STICKY_DIVIDER)}>
                       <div className="flex items-center gap-1.5">
                         <p className="max-w-[220px] truncate font-medium">{row.fbEmail}</p>
-                        {row.profileLink && <ProfileLink href={row.profileLink} />}
+                        {row.profileLink && <ProfileLink value={row.profileLink} />}
                       </div>
+                      {row.profileLink && (
+                        <ProfileText value={row.profileLink} className="max-w-[220px] truncate" />
+                      )}
                       {row.recoveryEmail && (
                         <p className="max-w-[220px] truncate text-xs text-muted-foreground">↳ {row.recoveryEmail}</p>
                       )}
@@ -509,8 +517,9 @@ export function MetaAccountsDirectory() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="break-all text-sm font-medium">{row.fbEmail}</p>
-                        {row.profileLink && <ProfileLink href={row.profileLink} />}
+                        {row.profileLink && <ProfileLink value={row.profileLink} />}
                       </div>
+                      {row.profileLink && <ProfileText value={row.profileLink} className="break-all" />}
                       {row.profileName && <p className="text-xs">{row.profileName}</p>}
                       {row.recoveryEmail && (
                         <p className="break-all text-xs text-muted-foreground">↳ {row.recoveryEmail}</p>
@@ -652,18 +661,35 @@ function MobileField({ label, children }: { label: string; children: React.React
   );
 }
 
-function ProfileLink({ href }: { href: string }) {
+/**
+ * FB profile link icon — only for an http(s) URL. Stored values come from
+ * sheets, the API and agents, so anything else (javascript:, plain text) is
+ * never put in an href; ProfileText shows it as text instead.
+ */
+function ProfileLink({ value }: { value: string }) {
+  const href = metaAccountLinkHref(value);
+  if (!href) return null;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="shrink-0 rounded-full p-1 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      className="shrink-0 rounded-full p-1.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 md:p-1"
       title="Open FB profile"
       aria-label="Open FB profile"
     >
       <ExternalLink className="size-3.5" />
     </a>
+  );
+}
+
+/** A stored profile "link" that isn't a web link, shown as plain text. */
+function ProfileText({ value, className }: { value: string; className?: string }) {
+  if (metaAccountLinkHref(value)) return null;
+  return (
+    <p className={cn("text-xs text-muted-foreground", className)} title={value}>
+      Profile: {value}
+    </p>
   );
 }
 
@@ -761,6 +787,7 @@ function FilterGroup({
           onClick={onManage}
           className="-my-1 -mr-1.5 ml-auto text-muted-foreground"
           title={`Manage ${title.toLowerCase()} options`}
+          aria-label={`Manage ${title.toLowerCase()} options`}
         >
           <SlidersHorizontal />
           Manage
@@ -836,14 +863,20 @@ function InlineChipSelect({
                 "border-dashed font-normal text-muted-foreground",
                 badgeToneHover.neutral
               ),
-          "cursor-pointer"
+          // ≥24px touch target on phones; the dense badge height on desktop.
+          "h-7 cursor-pointer px-2.5 md:h-5 md:px-2"
         )}
       >
         {value && <BadgeDot className={swatchClass(color)} />}
         {label ?? placeholder}
       </button>
       {anchor && (
-        <ChipPopover anchor={anchor} onClose={() => setAnchor(null)} width={200}>
+        <ChipPopover
+          anchor={anchor}
+          onClose={() => setAnchor(null)}
+          width={240}
+          label={`${kindLabel} options`}
+        >
           {options.map((o) => (
             <button
               key={o.value}
@@ -853,29 +886,34 @@ function InlineChipSelect({
                 setAnchor(null);
               }}
               aria-pressed={o.value === value}
+              title={o.label}
               className={cn(
                 "flex w-full items-center gap-2 rounded-2xl px-2.5 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
                 o.value === value && "bg-muted"
               )}
             >
-              <span className={chipClass(o.color)}>
+              {/* Long labels (up to 40 chars) truncate inside the menu. */}
+              <span className={cn(chipClass(o.color), "min-w-0 shrink")}>
                 <BadgeDot className={swatchClass(o.color)} />
-                {o.label}
+                <span className="truncate">{o.label}</span>
               </span>
               {o.value === value && <Check className="ml-auto size-3.5 shrink-0 text-muted-foreground" />}
             </button>
           ))}
           {value && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange(null);
-                setAnchor(null);
-              }}
-              className="mt-1 flex w-full items-center gap-2 border-t px-2.5 pb-1 pt-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
-            >
-              Clear
-            </button>
+            <div className="mt-1 border-t pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null);
+                  setAnchor(null);
+                }}
+                aria-label={`Clear ${kindLabel.toLowerCase()}`}
+                className="flex w-full items-center rounded-2xl px-2.5 py-1.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
           )}
         </ChipPopover>
       )}
@@ -919,7 +957,9 @@ function SetupToggles({
             expanded ? "px-3" : "w-8",
             s.on
               ? cn(badgeTone.success, badgeToneHover.success)
-              : "border-transparent bg-muted text-muted-foreground/60 hover:text-foreground"
+              : // Outline = not done. Full muted-foreground on the card keeps
+                // the letter ≥4.5:1 in both themes.
+                "border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
         >
           {expanded ? s.title : s.letter}
@@ -929,42 +969,52 @@ function SetupToggles({
   );
 }
 
-/** Masked secret with reveal + copy. Plaintext by product decision — never log it. */
+/**
+ * Masked secret with reveal + copy. Plaintext by product decision — never log
+ * it. `link` (the 2FA link) opens only when it's an http(s) URL; any other
+ * stored value is shown as text while revealed, never put in an href.
+ */
 function Secret({ value, link, label }: { value: string | null; link?: string | null; label: string }) {
   const [shown, setShown] = useState(false);
   if (!value) return <Dash />;
+  const href = metaAccountLinkHref(link);
   return (
-    <div className="flex min-w-0 items-center gap-0.5">
-      <span
-        className={cn(
-          "mr-0.5 font-mono text-xs",
-          shown ? "max-w-[220px] break-all" : "max-w-[130px] truncate"
-        )}
-      >
-        {shown ? value : "••••••••"}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={() => setShown((s) => !s)}
-        title={shown ? "Hide" : "Reveal"}
-        aria-label={`${shown ? "Hide" : "Reveal"} ${label}`}
-        className="size-8 shrink-0 text-muted-foreground md:size-6"
-      >
-        {shown ? <EyeOff /> : <Eye />}
-      </Button>
-      <CopyBtn value={value} label={label} />
-      {link && (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-0.5">
+        <span
+          className={cn(
+            "mr-0.5 font-mono text-xs",
+            shown ? "max-w-[220px] break-all" : "max-w-[130px] truncate"
+          )}
+        >
+          {shown ? value : "••••••••"}
+        </span>
         <Button
-          asChild
           variant="ghost"
           size="icon-xs"
+          onClick={() => setShown((s) => !s)}
+          title={shown ? "Hide" : "Reveal"}
+          aria-label={`${shown ? "Hide" : "Reveal"} ${label}`}
           className="size-8 shrink-0 text-muted-foreground md:size-6"
         >
-          <a href={link} target="_blank" rel="noopener noreferrer" title="Open 2FA link" aria-label="Open 2FA link">
-            <ExternalLink />
-          </a>
+          {shown ? <EyeOff /> : <Eye />}
         </Button>
+        <CopyBtn value={value} label={label} />
+        {href && (
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-xs"
+            className="size-8 shrink-0 text-muted-foreground md:size-6"
+          >
+            <a href={href} target="_blank" rel="noopener noreferrer" title="Open 2FA link" aria-label="Open 2FA link">
+              <ExternalLink />
+            </a>
+          </Button>
+        )}
+      </div>
+      {shown && link && !href && (
+        <p className="max-w-[220px] break-all text-xs text-muted-foreground">2FA link: {link}</p>
       )}
     </div>
   );

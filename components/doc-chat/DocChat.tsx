@@ -15,6 +15,7 @@ import { buildApiHistory } from "@/lib/analyst/history";
 import { finishStreamLocally, initialStreamState, type PendingTool, type StreamState } from "@/lib/analyst/streamReducer";
 import { reduceDocChatEvent } from "@/lib/docChat/stream";
 import { loadConversation, saveConversation } from "@/lib/docChat/store";
+import { withoutImages } from "@/lib/docChat/stripImagesClient";
 import { DOC_CHAT_HISTORY_BUDGET, DOC_CHAT_MAX_INPUT_CHARS } from "@/lib/docChat/limits";
 import type { ChatMessage } from "@/types/chat";
 import { DocChatMessage, preloadDocChatMarkdown, type DocChatRenderers } from "./DocChatMessage";
@@ -56,6 +57,21 @@ export interface DocChatProps extends DocChatRenderers {
 
 const STREAM_FLUSH_MS = 50;
 const COUNTER_FROM = Math.floor(DOC_CHAT_MAX_INPUT_CHARS * 0.8);
+
+/**
+ * What the live region says when a reply ends. Nothing for the reader's own
+ * Stop, and nothing for an error (its notice is role="alert" and speaks for
+ * itself); a refusal / limit notice is read with it.
+ */
+function replyAnnouncement(title: string, message: ChatMessage, stopped: boolean): string {
+  if (stopped) return "";
+  const notice = [...(message.blocks ?? [])].reverse().find((b) => b.type === "notice");
+  if (notice?.type === "notice") {
+    if (notice.kind === "error" || notice.kind === "stopped") return "";
+    if (notice.kind !== "fallback") return `${title} finished replying. ${notice.text}`;
+  }
+  return `${title} finished replying.`;
+}
 
 function EmptyState({
   icon: Icon,
@@ -130,6 +146,8 @@ export function DocChat({
   const [model, setModel] = useState<ChatModelId>(DEFAULT_MODEL);
   const [elapsed, setElapsed] = useState(0);
   const [pinned, setPinned] = useState(true);
+  /** Screen-reader line for a finished reply (once per reply, never per token). */
+  const [announcement, setAnnouncement] = useState("");
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -142,6 +160,7 @@ export function DocChat({
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedAtRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pinnedRef = useRef(true);
 
@@ -187,6 +206,22 @@ export function DocChat({
     if (messages.length === 0) el.scrollTop = 0;
     else if (pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, pendingTools]);
+
+  // Content also grows AFTER an update — lazy markdown, report cards, a document
+  // expanded — and the list itself shrinks when the composer grows: stay at the
+  // bottom while pinned.
+  const hasMessages = messages.length > 0;
+  useEffect(() => {
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!list || !content || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current) list.scrollTop = list.scrollHeight;
+    });
+    ro.observe(content);
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [hasMessages]);
 
   const scrollToEnd = useCallback(() => {
     pinnedRef.current = true;
@@ -249,6 +284,7 @@ export function DocChat({
       setMessages([...history, userMessage, stream.message]);
       setPendingTools([]);
       setInput("");
+      setAnnouncement("");
       setIsLoading(true);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
 
@@ -296,13 +332,16 @@ export function DocChat({
         }
       } finally {
         flush();
-        if (streamRef.current?.message.id === stream.message.id) streamRef.current = null;
+        if (streamRef.current?.message.id === stream.message.id) {
+          setAnnouncement(replyAnnouncement(title, streamRef.current.message, stoppedRef.current));
+          streamRef.current = null;
+        }
         if (abortRef.current === controller) abortRef.current = null;
         busyRef.current = false;
         setIsLoading(false);
       }
     },
-    [endpoint, model, scheduleFlush, flush]
+    [endpoint, model, title, scheduleFlush, flush]
   );
 
   const handleStop = useCallback(() => {
@@ -341,11 +380,12 @@ export function DocChat({
     setTimeout(() => textareaRef.current?.focus({ preventScroll: true }), 0);
   }, [confirm]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     const msgs = messagesRef.current;
     if (msgs.length === 0) return;
     try {
-      const md = conversationToMarkdown(msgs);
+      const stripped = withoutImages(conversationToMarkdown(msgs));
+      const md = typeof stripped === "string" ? stripped : await stripped;
       const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
       const a = document.createElement("a");
       a.href = url;
@@ -456,7 +496,7 @@ export function DocChat({
           {messages.length === 0 ? (
             <EmptyState icon={icon} title={emptyTitle} description={emptyDescription} suggestions={suggestions} onPick={pickSuggestion} />
           ) : (
-            <div className="mx-auto w-full max-w-4xl space-y-6">
+            <div ref={contentRef} className="mx-auto w-full max-w-4xl space-y-6">
               {messages.map((msg, i) => {
                 const streaming = isLoading && i === lastIndex && msg.role === "assistant";
                 return (
@@ -538,6 +578,9 @@ export function DocChat({
           <p className="mt-1.5 text-center text-[11px] text-muted-foreground md:mt-2">{disclaimer}</p>
         </div>
       </form>
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </p>
       {confirmDialog}
     </Card>
   );

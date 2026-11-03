@@ -3,9 +3,12 @@ import {
   buildApiHistory,
   DEFAULT_HISTORY_BUDGET,
   INTERRUPTED_REPLY_TEXT,
+  markInterrupted,
   repairToolPairs,
+  TOOL_ROUND_CLOSED_TEXT,
   toApiMessages,
   trimHistory,
+  wasInterrupted,
 } from "@/lib/analyst/history";
 import type { ApiChatMessage, ChatMessage } from "@/types/chat";
 
@@ -60,7 +63,8 @@ describe("toApiMessages", () => {
         ],
       },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "t3", content: "<landing_page>…" }] },
-      { role: "assistant", content: [{ type: "text", text: "Done." }] },
+      // The stopped notice becomes an explicit marker after the reply's last text.
+      { role: "assistant", content: [{ type: "text", text: "Done." }, { type: "text", text: INTERRUPTED_REPLY_TEXT }] },
     ]);
   });
 
@@ -161,7 +165,7 @@ describe("trimHistory / buildApiHistory", () => {
   });
 });
 
-describe("repairToolPairs — interrupted tool rounds", () => {
+describe("repairToolPairs — open tool rounds", () => {
   const call: ApiChatMessage = {
     role: "assistant",
     content: [
@@ -170,7 +174,8 @@ describe("repairToolPairs — interrupted tool rounds", () => {
     ],
   };
   const result: ApiChatMessage = { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "<landing_page>…" }] };
-  const closer: ApiChatMessage = { role: "assistant", content: [{ type: "text", text: INTERRUPTED_REPLY_TEXT }] };
+  const closer: ApiChatMessage = { role: "assistant", content: [{ type: "text", text: TOOL_ROUND_CLOSED_TEXT }] };
+  const interrupted: ApiChatMessage = { role: "assistant", content: [{ type: "text", text: INTERRUPTED_REPLY_TEXT }] };
 
   /** Every tool round is closed by an assistant turn before the next user text; results never share a turn with text. */
   function assertRoundsClosed(history: ApiChatMessage[]) {
@@ -183,7 +188,7 @@ describe("repairToolPairs — interrupted tool rounds", () => {
     });
   }
 
-  it("closes a round stopped right after its results, keeping the results", () => {
+  it("closes a round the reply ended on (a tool card) with neutral text, keeping the results", () => {
     const history: ApiChatMessage[] = [{ role: "user", content: "q1" }, call, result, { role: "user", content: "q2" }];
     const repaired = repairToolPairs(history);
     expect(repaired).toEqual([{ role: "user", content: "q1" }, call, result, closer, { role: "user", content: "q2" }]);
@@ -214,7 +219,27 @@ describe("repairToolPairs — interrupted tool rounds", () => {
     expect(repairToolPairs(history)).toEqual(history);
   });
 
-  it("survives the client's convert → repair → trim → repair pipeline", () => {
+  it("a reply that ENDED on a tool card isn't replayed as interrupted", () => {
+    const msgs: ChatMessage[] = [
+      user("q1"),
+      {
+        id: "a1",
+        role: "assistant",
+        content: "",
+        blocks: [
+          { type: "tool_use", id: "t1", name: "generate_document", input: { title: "Brief", markdown: "body" } },
+          { type: "tool_result", tool_use_id: "t1", content: "Shown to the user as a document card." },
+        ],
+      },
+      user("q2"),
+    ];
+    const history = buildApiHistory(msgs);
+    assertRoundsClosed(history);
+    expect(history.at(-2)).toEqual(closer);
+    expect(JSON.stringify(history)).not.toContain(INTERRUPTED_REPLY_TEXT);
+  });
+
+  it("a reply the client knows was stopped after its results is closed as interrupted (convert → repair → trim → repair)", () => {
     const msgs: ChatMessage[] = [
       user("q1"),
       {
@@ -231,7 +256,61 @@ describe("repairToolPairs — interrupted tool rounds", () => {
     ];
     const history = buildApiHistory(msgs);
     assertRoundsClosed(history);
-    expect(history.at(-2)).toEqual(closer);
+    expect(history.at(-2)).toEqual(interrupted);
     expect(history.at(-1)).toEqual({ role: "user", content: "q2" });
+    // Idempotent: the server's repair leaves the client's marker alone.
+    expect(repairToolPairs(history)).toEqual(history);
+  });
+
+  it("marks errors, refusals and length / step limits, drops an unanswered call, and skips a reply with nothing sent", () => {
+    for (const kind of ["error", "refusal", "truncated", "limit"] as const) {
+      const history = buildApiHistory([
+        user("q1"),
+        {
+          id: "a1",
+          role: "assistant",
+          content: "",
+          blocks: [
+            { type: "text", text: "Writing it" },
+            { type: "tool_use", id: "t1", name: "generate_document", input: {} },
+            { type: "notice", kind, text: "x" },
+          ],
+        },
+        user("q2"),
+      ]);
+      expect(history[1]).toEqual({
+        role: "assistant",
+        content: [{ type: "text", text: "Writing it" }, { type: "text", text: INTERRUPTED_REPLY_TEXT }],
+      });
+    }
+    // A fallback notice isn't an interruption; a refusal before any output adds nothing.
+    const fallback = buildApiHistory([
+      user("q1"),
+      { id: "a1", role: "assistant", content: "", blocks: [{ type: "text", text: "ok" }, { type: "notice", kind: "fallback", text: "x" }] },
+      user("q2"),
+    ]);
+    expect(fallback[1]).toEqual({ role: "assistant", content: [{ type: "text", text: "ok" }] });
+    const empty = buildApiHistory([
+      user("q1"),
+      { id: "a1", role: "assistant", content: "", blocks: [{ type: "notice", kind: "refusal", text: "declined" }] },
+      user("q2"),
+    ]);
+    expect(empty).toEqual([{ role: "user", content: "q1" }, { role: "user", content: "q2" }]);
+  });
+});
+
+describe("markInterrupted / wasInterrupted", () => {
+  it("appends to the last assistant turn, closes trailing results, and ignores replies with nothing in the history", () => {
+    const out: ApiChatMessage[] = [{ role: "user", content: "q" }, { role: "assistant", content: "partial" }];
+    markInterrupted(out, 1);
+    expect(out[1]).toEqual({ role: "assistant", content: [{ type: "text", text: "partial" }, { type: "text", text: INTERRUPTED_REPLY_TEXT }] });
+    const results: ApiChatMessage[] = [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "ok" }] }];
+    markInterrupted(results, 0);
+    expect(results.at(-1)).toEqual({ role: "assistant", content: [{ type: "text", text: INTERRUPTED_REPLY_TEXT }] });
+    const none: ApiChatMessage[] = [{ role: "user", content: "q" }];
+    markInterrupted(none, 1);
+    expect(none).toHaveLength(1);
+    expect(wasInterrupted({ id: "a", role: "assistant", content: "", blocks: [{ type: "notice", kind: "stopped", text: "" }] })).toBe(true);
+    expect(wasInterrupted({ id: "a", role: "assistant", content: "x", blocks: [{ type: "text", text: "x" }] })).toBe(false);
   });
 });

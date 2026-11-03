@@ -27,9 +27,11 @@ import {
   ClipboardList,
   Printer,
   Boxes,
+  TrendingUp,
+  UsersRound,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
-import { BadgeDot, badgeTone, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { BadgeDot, badgeTone } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -130,23 +132,6 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Inline status chip (the live UI's outline + dot look) — a span, since it
- *  sits inside running text. */
-function Chip({
-  tone = "neutral",
-  children,
-}: {
-  tone?: BadgeTone;
-  children: React.ReactNode;
-}) {
-  return (
-    <span className={cn(badgeVariants({ variant: "outline", tone }), "gap-1.5 align-middle")}>
-      <BadgeDot tone={tone} />
-      {children}
-    </span>
-  );
-}
-
 function Note({
   tone = "info",
   children,
@@ -229,7 +214,8 @@ export default function AdminDocumentationPage() {
               </span>{" "}
               <Pill>/dashboard/*</Pill> — the surface you&apos;re on now.
               Sees every client, every ad account, every closer, and every
-              deal. Gated by <Pill>a_sess</Pill> cookie.
+              deal (admins of a partner workspace see only their own
+              book&apos;s clients). Gated by <Pill>a_sess</Pill> cookie.
             </Bullet>
             <Bullet>
               <span className="font-medium text-foreground">
@@ -251,9 +237,32 @@ export default function AdminDocumentationPage() {
             </Bullet>
           </ul>
           <p>
-            The admin sidebar shows only items your account has permission
-            for. The super admin (<Pill>agencycollective</Pill>) sees
+            The admin sidebar groups the pages into{" "}
+            <span className="font-medium text-foreground">Dashboard</span>{" "}
+            (Overview, Alerts),{" "}
+            <span className="font-medium text-foreground">Sales</span>{" "}
+            (Closers, Invoice, Revenue Projection),{" "}
+            <span className="font-medium text-foreground">Clients</span>{" "}
+            (Clients, Team),{" "}
+            <span className="font-medium text-foreground">Media</span>{" "}
+            (Creative Studio, Media Buyers, Meta Accounts),{" "}
+            <span className="font-medium text-foreground">Resources</span>{" "}
+            (SOPs, Documentation) and{" "}
+            <span className="font-medium text-foreground">Admin</span>{" "}
+            (Admins, API Tokens, API Docs). It shows only the items your
+            account has permission for, and a group with nothing visible is
+            hidden. The super admin (<Pill>agencycollective</Pill>) sees
             everything, including the Admins management page.
+          </p>
+          <p>
+            On desktop, the button at the left of the top bar collapses the
+            sidebar to an icon rail (hover an icon for its name); the choice
+            is remembered in this browser. On phones, the menu button opens
+            the sidebar as a drawer. Your name and{" "}
+            <span className="font-medium text-foreground">Log out</span> live
+            in the account menu at the bottom of the sidebar — the top bar
+            has no account menu. Logging out also clears the Image
+            Generator&apos;s images stored in this browser.
           </p>
         </Section>
 
@@ -266,58 +275,87 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard"
         >
           <p>
-            The landing page after sign-in. Aggregates Meta Ads insights
-            across every client account into one view.
+            The landing page after sign-in: how the agency is doing across
+            revenue, sales, clients and Meta ads, in four sections. Cards and
+            sections you lack the permission for are left out.
           </p>
           <SubSection title="What you see">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <span className="font-medium text-foreground">KPI grid</span> —
-                spend, impressions, reach, clicks, CTR, CPC, CPM, ROAS,
-                conversions, conversion value, cost-per-purchase, frequency.
-                Each card shows the absolute number and a delta vs the
-                previous comparable window.
+                <span className="font-medium text-foreground">At a glance</span>{" "}
+                — up to four cards, each opening its page:{" "}
+                <span className="font-medium text-foreground">Revenue collected</span>{" "}
+                (this month&apos;s paid vs due from the Payout Tracker —{" "}
+                <Pill>closers</Pill>, internal admins only),{" "}
+                <span className="font-medium text-foreground">Closed sales</span>{" "}
+                (this month&apos;s closed revenue, deal count and close rate —{" "}
+                <Pill>closers</Pill>),{" "}
+                <span className="font-medium text-foreground">Monthly MRR</span>{" "}
+                (active clients plus this month&apos;s re-bill bar, from the
+                Team hub rollup) and{" "}
+                <span className="font-medium text-foreground">Ad spend</span>{" "}
+                (the selected range, with ROAS and the number of spending
+                accounts).
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
-                  Spend by Account chart
+                  Revenue &amp; sales
                 </span>{" "}
-                — donut showing how spend is distributed across your client
-                accounts. Useful for spotting one client absorbing the
-                majority of spend.
+                (<Pill>closers</Pill>) — last 12 months: the Revenue Mix chart
+                (Payout Tracker, internal admins only) and the Revenue Trend
+                chart (Sales Overview).
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
-                  Alert feed (right column)
+                  Clients &amp; team
                 </span>{" "}
-                — the same alerts shown on the Alerts page, but filtered to
-                the currently selected time window.
+                — Re-bill Collection (this month&apos;s re-bill progress, opens
+                the Team hub), Re-bills Due (<Pill>users</Pill>) and Team
+                Workload (this week&apos;s tasks). For admins who only see
+                their own Team hub, Re-bill Collection and Team Workload cover
+                just their own clients and tasks.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">
-                  Accounts table
-                </span>{" "}
-                — every connected ad account, with its own KPIs and a click
-                target into the per-account drill-down.
+                <span className="font-medium text-foreground">Meta ads</span>{" "}
+                — agency-wide KPI cards (Amount spent, ROAS, Purchases,
+                Purchase value, Cost / purchase, then Impressions, Reach, CTR,
+                CPC, Frequency and — when tracked — IG profile visits), each
+                with a delta vs the previous same-length period and, for
+                multi-day ranges, a per-day trend line; a Performance Over Time
+                chart;{" "}
+                <span className="font-medium text-foreground">Spend by Account</span>{" "}
+                (the six biggest spenders as share-of-spend bars with their
+                ROAS, plus the top account&apos;s and top 3&apos;s share); the
+                latest{" "}
+                <span className="font-medium text-foreground">Alerts</span>{" "}
+                with an &ldquo;All alerts&rdquo; link; and the{" "}
+                <span className="font-medium text-foreground">Accounts table</span>{" "}
+                with a click target into each per-account drill-down.
               </Bullet>
             </ul>
           </SubSection>
           <SubSection title="Date range picker">
             <p>
-              The picker in the top-right applies to KPIs, charts, and the
-              accounts table simultaneously. Presets: Last 7 days, Last 30
-              days, This month, Last month. Custom range available too. The
-              selected range is mirrored into client portals so clients see
-              the same window when they log in.
+              The date picker in the header sets the Meta window — the Ad spend
+              card and everything in the Meta ads section, and the account
+              drill-downs you open from it. Presets: Today, Yesterday, Last 7
+              days (the default), Last 14 days, Last 30 days, Last 90 days,
+              This month, Last month — or a custom range. The range lives in
+              the page URL (<Pill>?preset=…</Pill> or{" "}
+              <Pill>?since=…&amp;until=…</Pill>), so a shared link carries it;
+              it does not affect client portals. The sales, payout and team
+              cards keep their own fixed windows (this month, last 12 months,
+              this week).
             </p>
           </SubSection>
           <SubSection title="Setup banner">
             <p>
               If <Pill>META_ACCESS_TOKEN</Pill> is missing or expired you&apos;ll
-              see a setup banner at the top with a link to the Settings page.
-              The dashboard tolerates a missing token (you can still use the
-              closer / users areas), but nothing under Overview will render
-              until it&apos;s configured.
+              see a setup banner at the top with a &ldquo;Go to Settings&rdquo;
+              link (this page — see Environment variables below), and the
+              Meta ads section and the Ad spend card say they couldn&apos;t
+              load the Meta ad accounts. Everything else on the Overview —
+              sales, payouts, clients and team — keeps working.
             </p>
           </SubSection>
         </Section>
@@ -369,37 +407,48 @@ export default function AdminDocumentationPage() {
         {/* ------------------------------------------------------ */}
         <Section icon={Bell} title="Alerts" subtitle="/dashboard/alerts">
           <p>
-            Continuously scans every connected ad account for known failure
-            modes and surfaces them on one page. The sidebar shows a badge
-            with the current count, red if any alerts are critical.
+            Checks the campaigns of the active connected ad accounts over
+            the selected date range and surfaces problems on one page, with
+            Critical / Warning counts and a severity filter. The sidebar shows
+            a badge with the current count, red if any alerts are critical.
           </p>
           <SubSection title="Severities">
+            <p>
+              One rule is switched on:{" "}
+              <span className="font-medium text-foreground">
+                campaign ROAS below 1.0x
+              </span>
+              . Its severity depends on how much the campaign spent in the
+              period; campaigns under $100 aren&apos;t flagged.
+            </p>
             <ul className="space-y-1.5 list-none pl-0">
               <li className="flex items-start gap-2">
                 <BadgeDot tone="danger" className="mt-2" />
                 <span>
                   <span className="font-medium text-foreground">Critical</span>{" "}
-                  — needs immediate attention (zero spend on an active
-                  campaign, billing failure, expired token, disabled pixel).
+                  — ROAS under 1.0x on $150 or more of spend.
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <BadgeDot tone="warning" className="mt-2" />
                 <span>
                   <span className="font-medium text-foreground">Warning</span>{" "}
-                  — notable but not urgent (CPC unusually high, CTR low,
-                  budget almost spent).
+                  — ROAS under 1.0x on $100–$150 of spend.
                 </span>
               </li>
             </ul>
+            <p>
+              The CTR-drop, CPC-spike and budget-pacing rules exist in the
+              code but are turned off.
+            </p>
           </SubSection>
           <SubSection title="What to do">
             <p>
-              Each alert links into the affected account, campaign, or ad
-              set so you can investigate. Alerts are read-only — there&apos;s
-              no &quot;dismiss&quot;; they disappear automatically when the
-              underlying condition resolves (e.g., spend resumes, CTR
-              recovers).
+              Each alert links into the affected campaign (or account) so you
+              can investigate. Alerts are read-only — there&apos;s no
+              &quot;dismiss&quot;; they disappear automatically when the
+              underlying condition resolves (e.g., the campaign&apos;s ROAS
+              climbs back to 1.0x).
             </p>
           </SubSection>
         </Section>
@@ -429,6 +478,10 @@ export default function AdminDocumentationPage() {
                 and summarize what changed.
               </Bullet>
               <Bullet>
+                Answer at the depth you pick — Quick, Balanced or Thorough
+                (the default: deepest, and slower).
+              </Bullet>
+              <Bullet>
                 Show its reasoning step by step (tool calls + their results
                 are visible inline).
               </Bullet>
@@ -445,8 +498,9 @@ export default function AdminDocumentationPage() {
                 won&apos;t cross-tenant a client&apos;s account.
               </Bullet>
               <Bullet>
-                Conversations are not persisted across reloads (yet) — copy
-                anything you want to keep.
+                Conversations aren&apos;t saved: one survives switching
+                Creative Studio tabs but not a reload — use Export (.md) to
+                keep it.
               </Bullet>
             </ul>
           </SubSection>
@@ -461,27 +515,59 @@ export default function AdminDocumentationPage() {
           subtitle="Creative Studio → Image Generator (/dashboard/creative?tab=image) · permission: studio"
         >
           <p>
-            Google Gemini-powered image generation for creative ideation.
-            Type a description and the studio produces variations you can
-            download.
+            Google Gemini-powered image generation as a chat thread: describe
+            an image, then refine it message by message.
           </p>
+          <SubSection title="Settings">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">Mode</span> —
+                Multi-turn (each message edits the latest image) or
+                Single-turn (every prompt stands alone; attach images to edit
+                them in one shot). Switching mode clears the thread.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Model</span> —
+                which Gemini image model renders the turn.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Resolution</span>{" "}
+                — 2K by default; higher takes longer and costs more. In
+                multi-turn mode a 4K turn restarts from the latest image.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Aspect ratio</span>{" "}
+                — Auto (match the input image, else square) or a fixed ratio.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Google Search</span>{" "}
+                — lets the model look up real-world facts (products, places,
+                events), on models that support it.
+              </Bullet>
+            </ul>
+          </SubSection>
           <SubSection title="Workflow">
             <Step n={1}>
-              Write a prompt describing the creative you want (style,
-              subject, mood, aspect ratio).
+              Write a prompt; optionally attach up to 4 reference images
+              (pick, paste or drop them).
             </Step>
             <Step n={2}>
-              Click Generate. Multiple variations are rendered side by side.
+              Send. The image appears in the thread; keep messaging to refine
+              it.
             </Step>
             <Step n={3}>
-              Download any variation as PNG, or iterate by editing your
-              prompt and regenerating.
+              On each image: Download, Copy, Use as reference, or open it
+              full size — and on earlier images, continue editing from that
+              one.
             </Step>
           </SubSection>
           <Note tone="warn">
-            Generated images are not auto-saved to your Meta library — this
-            is a brainstorming surface, not a publishing surface. Use the Ad
-            Copy tab to draft accompanying copy for the creative you settle on.
+            Generated images are kept in this browser (IndexedDB) so the
+            thread survives a reload; the thread is tied to your admin login
+            and the images are cleared when you log out. Nothing is saved to
+            your Meta library — this is a brainstorming surface, not a
+            publishing surface. Use the Ad Copy tab to draft accompanying copy
+            for the creative you settle on.
           </Note>
         </Section>
 
@@ -494,16 +580,47 @@ export default function AdminDocumentationPage() {
           subtitle="Creative Studio → JSON Editor (/dashboard/creative?tab=json) · permission: jsoneditor"
         >
           <p>
-            A scratchpad for crafting and validating Meta Ads API payloads
-            (custom audiences, complex targeting blocks, ad creative specs).
-            Provides syntax highlighting, error checking, and Claude-assisted
-            suggestions for valid Meta JSON shapes.
+            An image editor that works through JSON. Upload a photo, Claude
+            describes the scene as structured JSON for the kind of edit you
+            pick, you change values in that JSON, and Gemini re-renders the
+            photo with those changes.
           </p>
-          <p>
-            Use it when you need to hand-craft a payload Meta&apos;s UI
-            doesn&apos;t expose, or when validating a payload before sending
-            it via the Meta SDK in another tool.
-          </p>
+          <SubSection title="Workflow">
+            <Step n={1}>
+              Pick a use case: Colors &amp; Materials, Object Swap, Weather
+              &amp; Lighting, Camera Perspective, or Text &amp; Logos. Object
+              Swap and Camera Perspective also take a reference image (the
+              object to swap in, or the photo whose camera angle to copy).
+            </Step>
+            <Step n={2}>
+              Upload the photo (large images are shrunk in the browser first)
+              and click{" "}
+              <span className="font-medium text-foreground">Analyze image</span>{" "}
+              — Claude returns the scene JSON.
+            </Step>
+            <Step n={3}>
+              Edit values in the JSON, or use the Quick edits presets (with a
+              reference: &ldquo;Swap in reference object&rdquo; / &ldquo;Copy
+              camera from reference&rdquo;). The Changes list shows every
+              added, removed and changed value; Format, Reset to the analysis,
+              Copy and Download sit on the editor.
+            </Step>
+            <Step n={4}>
+              Pick the model and resolution (2K by default) and click{" "}
+              <span className="font-medium text-foreground">Generate image</span>.
+            </Step>
+          </SubSection>
+          <SubSection title="Versions">
+            <p>
+              Each generation is kept as a numbered version (the latest 8 in
+              the session). View a version as Result, Compare (shown next to
+              the original) or Original, download it, or click{" "}
+              <span className="font-medium text-foreground">
+                Edit this version
+              </span>{" "}
+              to make it the new source photo.
+            </p>
+          </SubSection>
         </Section>
 
         {/* ------------------------------------------------------ */}
@@ -515,32 +632,53 @@ export default function AdminDocumentationPage() {
           subtitle="Creative Studio → Ad Copy (/dashboard/creative?tab=ad-copy) · permission: adcopy"
         >
           <p>
-            Draft, organize, and iterate on ad copy for each client account.
-            Pull existing creative copy from Meta as a starting point; save
-            drafts locally as you refine.
+            Write Meta ad copy from a campaign&apos;s live creatives. Pick an
+            account and campaign, choose up to 10 of its creatives for Claude
+            to read (their images, live copy and results) or upload up to 10
+            original images, and Claude writes primary texts, headlines and
+            descriptions you can edit, preview, and turn into a paused draft
+            ad.
           </p>
           <SubSection title="What you can do">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                Browse existing ad creatives by account and pull their copy
-                into the editor.
+                Set the brief: industry, tone (Mix of angles, Direct response,
+                Educational, Story / UGC, Offer &amp; urgency, Premium /
+                authority), primary-text length (Short / Medium / Long),
+                emojis on or off, how many primary texts, headlines and
+                descriptions (1–10 each), optional notes for Claude, the
+                landing page, and the model.
               </Bullet>
               <Bullet>
-                Generate copy variations using Claude (tone, length, hook
-                style controls).
+                Edit the results freely: pin the keepers (Regenerate keeps
+                pinned items), rewrite a single item, or copy any line.
               </Bullet>
               <Bullet>
-                Save drafts; they persist across sessions.
+                Preview the ad as it would appear in Facebook Feed, Instagram
+                Feed or Stories &amp; Reels, on mobile or desktop, against each
+                placement&apos;s character limits.
               </Bullet>
               <Bullet>
-                Publish back to Meta — the &quot;publish draft&quot; endpoint
-                pushes the edited copy to the live creative.
+                <span className="font-medium text-foreground">
+                  Create draft ad
+                </span>{" "}
+                — creates a <span className="font-medium">new</span> ad with
+                status Paused in the campaign (you pick the ad set, Facebook
+                Page, ad name, website URL and image). Existing ads and
+                creatives are never edited.
+              </Bullet>
+              <Bullet>
+                The copy isn&apos;t saved: it survives switching Creative
+                Studio tabs, but switching campaigns or reloading clears it.
               </Bullet>
             </ul>
           </SubSection>
           <Note tone="warn">
-            Publishing changes the creative on the live account. Coordinate
-            with the client before pushing changes to ads currently spending.
+            Create draft ad writes to the client&apos;s live ad account. The
+            ad is created paused — nothing runs until someone turns it on in
+            Ads Manager. If a create is interrupted, the dialog asks you to
+            check Ads Manager before retrying, so a retry can&apos;t silently
+            create a duplicate. Partner-book admins can&apos;t create drafts.
           </Note>
         </Section>
 
@@ -553,9 +691,12 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard/invoice · permission: invoice"
         >
           <p>
-            Build, preview, and send client invoices. Pre-fills with agency
-            sender details and supports both local (Zelle/Wire) and
-            international (SWIFT) payment instructions.
+            The Invoice Generator: a standalone tool for one-off invoices.
+            Type in any recipient, then preview, download, or email the PDF.
+            It isn&apos;t connected to deals or clients and doesn&apos;t track
+            payment status. Pre-fills with agency sender details and supports
+            both local (Zelle/Wire) and international (SWIFT) payment
+            instructions.
           </p>
           <SubSection title="Components">
             <ul className="space-y-1.5 list-none pl-0">
@@ -572,7 +713,7 @@ export default function AdminDocumentationPage() {
                   Sender / receiver details
                 </span>{" "}
                 — agency info defaults from <Pill>agency_config</Pill> table;
-                receiver fields are per-invoice.
+                receiver fields are typed in per invoice.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -583,16 +724,77 @@ export default function AdminDocumentationPage() {
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">PDF + send</span>{" "}
-                — renders a PDF and emails it via the linked deal&apos;s
-                contact email. Status (draft / sent / paid) tracks on the row.
+                — Download PDF, Preview, Print, or export JSON / CSV / XML.{" "}
+                <span className="font-medium text-foreground">Send Invoice</span>{" "}
+                emails the PDF (plus optional attachments) to the address you
+                type, from a configured SMTP mailbox; the send isn&apos;t
+                recorded anywhere.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Saved invoices</span>{" "}
+                — Save keeps a copy in this browser only (the Saved list,
+                which can also import an exported JSON file), and the invoice
+                in progress is kept in this browser between visits. Nothing is stored on the server and there is no
+                draft / sent / paid status.
               </Bullet>
             </ul>
           </SubSection>
           <p>
-            Deals created in the Closers section auto-generate an invoice
-            when the deal is marked <Pill>closed</Pill>. The invoice appears
-            in this surface where you can review and send it.
+            Deal invoices don&apos;t live here: when a deal is{" "}
+            <Pill>closed</Pill> its draft invoice is generated automatically,
+            and you review and send it from the deal&apos;s invoice drawer in
+            Closers → Deal queue. Client re-bill and ad-account invoices are
+            sent from the Client Directory (Billing tab / Ad Accounts).
           </p>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
+        {/* Revenue Projection                                      */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={TrendingUp}
+          title="Revenue Projection"
+          subtitle="/dashboard/projection · permission: dashboard"
+        >
+          <p>
+            A what-if model of the active client book and company revenue.
+            Move the levers and the KPI cards, charts and month-by-month table
+            recompute instantly. Nothing is saved — a reload resets the
+            levers.
+          </p>
+          <ul className="space-y-1.5 list-none pl-0">
+            <Bullet>
+              <span className="font-medium text-foreground">Growth levers</span>{" "}
+              — starting active book, monthly retention (presets Today ~7% /
+              Baseline 65% / Stretch 80%), new accounts won per month, and how
+              much retention improves per month.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">Horizon</span> —
+              the rest of this year, or a full 12 months.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">
+                Revenue averages &amp; costs
+              </span>{" "}
+              — average retainer per active client, average first billing of a
+              new account, performance fee per rebilling client (presets Off /
+              $5K / $7.5K / $10K), and monthly operating expenses for the
+              profit figures.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">Use live</span>{" "}
+              buttons seed the starting book and the average retainer from the
+              Client Directory: the active clients and their average Monthly
+              MRR (PepAds clients count with their manual MRR).
+            </Bullet>
+            <Bullet>
+              Output: book, revenue and profit KPI cards (including a Book
+              Index where the start = 100, and the annualized run-rate), the
+              Active client book chart, Revenue scenarios by retention, and the
+              Month-by-month projection table.
+            </Bullet>
+          </ul>
         </Section>
 
         {/* ------------------------------------------------------ */}
@@ -623,7 +825,7 @@ export default function AdminDocumentationPage() {
               {
                 name: "Support",
                 what:
-                  "Live admin↔client chat across all client conversations. Unread count surfaces as a red badge on the tab. Replies appear in the client portal instantly via polling.",
+                  "Live admin↔client chat across all client conversations, plus a Feedback view of what clients submit from their portal. Unread count surfaces as a red badge on the tab. Replies appear in the client portal via polling.",
               },
               {
                 name: "Peptide AI",
@@ -725,8 +927,10 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <SubSection title="Filters">
             <p>
-              Filter the directory by search, status, category, re-bill status,
-              MRR range, date-joined range, and last-re-bill range. The{" "}
+              Filter the directory by search, status, book (Agency Collective
+              / PepAds), category, re-bill status, MRR range, date-joined
+              range, and last-re-bill range — plus workspace once partner
+              workspaces exist. The{" "}
               <span className="font-medium text-foreground">Re-bills Due</span>{" "}
               summary card opens the alerts banner.
             </p>
@@ -785,12 +989,32 @@ export default function AdminDocumentationPage() {
                 {
                   name: "Overview",
                   what:
-                    "Profile, onboarding progress, and linked Meta accounts with per-account KPI cards (plus a combined-performance chart when 2+ accounts).",
+                    "Payment history chart (Payout DB, last 12 months), the “More from Agency Collective” services the client has looked at (internal admins, once there's activity), onboarding progress, and linked Meta accounts with per-account KPI cards (plus a combined-performance chart when 2+ accounts).",
+                },
+                {
+                  name: "Onboarding",
+                  what:
+                    "The client's onboarding questionnaire answers — shown once they submit it, flagged if they edit it afterwards.",
+                },
+                {
+                  name: "My Brand",
+                  what:
+                    "Brand book, product photos and Google Drive / Dropbox links. Both the client and admins can upload; clients can delete only their own uploads.",
+                },
+                {
+                  name: "Ad Creatives",
+                  what:
+                    "Creatives the agency uploads for the client to view and download (admins upload, clients can't).",
                 },
                 {
                   name: "Billing",
                   what:
                     "Re-bill schedule + config (pause, extend, billing day, manual last-rebill, lead days), the client's payout payment history, and a Send re-bill invoice action.",
+                },
+                {
+                  name: "Ad Accounts",
+                  what:
+                    "This client's ad accounts (retainer + ad-spend fee) with their billing and invoices — the per-client view of the directory's Ad Accounts tab, with the same Guide.",
                 },
                 {
                   name: "Documents",
@@ -805,7 +1029,7 @@ export default function AdminDocumentationPage() {
                 {
                   name: "Settings",
                   what:
-                    "Edit profile / status / category, toggle AI Analyst, set the Design Board (Figma) link + toggle, manage Meta accounts, and edit the Payout-DB brand link + join date.",
+                    "Profile & access (name, email, category, status, logo, AI Analyst and Design Board access), Manage Meta accounts, the Peptide AI switch + budget, the Payout-DB brand link + date joined (and the workspace, for unscoped admins), the roster profile, and manual billing for PepAds clients.",
                 },
               ]}
             />
@@ -971,10 +1195,12 @@ export default function AdminDocumentationPage() {
                 </Bullet>
                 <Bullet>
                   <span className="font-medium text-foreground">Resend</span> —
-                  sending a fresh invoice while one is still{" "}
-                  <span className="font-medium text-foreground">sent</span>{" "}
+                  sending a fresh invoice for the same billing cycle while one
+                  is still <span className="font-medium text-foreground">sent</span>{" "}
                   supersedes the old one automatically. Only the latest is the
-                  &ldquo;current&rdquo; invoice for this cycle.
+                  &ldquo;current&rdquo; invoice for this cycle; awaiting
+                  invoices for other cycles stay open unless you tick them in
+                  the send drawer.
                 </Bullet>
               </ul>
             </SubSection>
@@ -1002,9 +1228,10 @@ export default function AdminDocumentationPage() {
                   MRR, recipient = client email — adjust as needed.
                 </Bullet>
                 <Bullet>
-                  No email goes out. No PDF is generated. If a current{" "}
+                  No email goes out. No PDF is generated. If a{" "}
                   <span className="font-medium text-foreground">sent</span>{" "}
-                  invoice already exists for the client, it&apos;s superseded.
+                  invoice already exists for the same cycle, it&apos;s
+                  superseded.
                 </Bullet>
               </ul>
             </SubSection>
@@ -1023,19 +1250,63 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <SubSection title="Support inbox">
             <p>
-              The Support tab aggregates every client&apos;s conversation
-              into one inbox. The conversation list shows the latest message
-              preview, unread count, and timestamp. Open any conversation to
-              reply inline. Feedback (sentiment + rating + free-form body)
-              from clients appears alongside their messages so you can act
-              on it without leaving the page.
+              The Support tab has two views.{" "}
+              <span className="font-medium text-foreground">Conversations</span>{" "}
+              aggregates every client&apos;s chat into one inbox — the list
+              shows the latest message preview, unread count, and timestamp;
+              open any conversation to reply inline.{" "}
+              <span className="font-medium text-foreground">Feedback</span>{" "}
+              lists what clients submit from their portal&apos;s Support page
+              (sentiment, a star rating and a free-form message) — filter it
+              by status, move each item between Open, In Progress and
+              Resolved, and reply.
             </p>
             <p>
-              Admin presence is heartbeated every 30 seconds while you have
-              the tab focused — clients see &quot;Team is online&quot; in
-              their portal when any admin is active.
+              Admin presence is heartbeated every 60 seconds while a dashboard
+              tab is visible (for admins with the <Pill>users</Pill>{" "}
+              permission) — clients see &quot;Team is online&quot; on their
+              portal&apos;s Support page when any such admin is active.
             </p>
           </SubSection>
+        </Section>
+
+        {/* ------------------------------------------------------ */}
+        {/* Team                                                    */}
+        {/* ------------------------------------------------------ */}
+        <Section
+          icon={UsersRound}
+          title="Team"
+          subtitle="/dashboard/team · every admin (no permission key)"
+        >
+          <p>
+            One hub per team member, combining Client Directory rollups —
+            the member&apos;s clients, MRR managed, and the monthly re-bill
+            tracker against their goal — with task management. Every admin
+            can open the Team page and their own hub. The page&apos;s own{" "}
+            <span className="font-medium text-foreground">Documentation</span>{" "}
+            tab is the full guide; this is the summary.
+          </p>
+          <Tabs
+            items={[
+              {
+                name: "Overview",
+                what:
+                  "Member cards with a KPI strip (Members) and 12-month trend charts (Insights). Admins without the admin permission who aren't a Head of Ads see only their own card. Manage roster is for super admins and the admin permission.",
+              },
+              {
+                name: "Member hub (/dashboard/team/[adminId])",
+                what:
+                  "Home, Tasks (list or board), Action Items, Tagged and Clients tabs. Opening someone else's hub needs super or the admin permission — or being the Head of Ads for a book they belong to.",
+              },
+            ]}
+          />
+          <Note>
+            Team access is checked in the API, not by a permission key. Roster
+            changes and the CSM auto-split need super or the{" "}
+            <Pill>admin</Pill> permission; managing another member&apos;s
+            goals and tasks needs the same — or being the Head of Ads for a
+            book that member belongs to.
+          </Note>
         </Section>
 
         {/* ------------------------------------------------------ */}
@@ -1060,18 +1331,22 @@ export default function AdminDocumentationPage() {
                   Credentials
                 </span>{" "}
                 — FB email + password, 2FA secret (with an optional
-                code-generator link), mail password, recovery email. Masked in
-                the table with per-cell reveal and copy buttons.
+                code-generator link), mail password, recovery email. The FB
+                password, 2FA secret and mail password are masked with
+                per-cell reveal and copy buttons; the FB email and recovery
+                email show in plain text.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
                   Setup checklist
                 </span>{" "}
-                — five toggleable letters:{" "}
+                — five toggleable steps, shown as letters in the desktop
+                table:{" "}
                 <Pill>L</Pill> login OK, <Pill>P</Pill> page made,{" "}
                 <Pill>A</Pill> ad account made, <Pill>B</Pill> BM made,{" "}
-                <Pill>C</Pill> card added. The &quot;Setup complete&quot;
-                summary card counts rows with all five done.
+                <Pill>C</Pill> card added (the mobile cards spell the labels
+                out). The &quot;Setup complete&quot; summary card counts rows
+                with all five done.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Pipeline</span>{" "}
@@ -1173,7 +1448,7 @@ export default function AdminDocumentationPage() {
               {
                 name: "Overview",
                 what:
-                  "Team-wide KPIs over a chosen time window (week / month / quarter / custom). Leaderboard ranks closers by closed revenue. Team output chart shows daily deal counts.",
+                  "Sales Overview: lifetime team KPIs plus the same metrics for a chosen time window (today / this week / this month / last month / last 30 days / this quarter / this year / all time / custom), and a 12-month revenue trend. The leaderboard ranks closers by revenue (or paid revenue, close rate, show rate); the Team Output chart shows closed revenue per closer (top 10).",
               },
               {
                 name: "Manage",
@@ -1183,49 +1458,56 @@ export default function AdminDocumentationPage() {
               {
                 name: "Deals",
                 what:
-                  "Team-wide deal queue across every closer. Filter by status (closed, follow_up, rescheduled, pending_signature, not_closed), service category, or date. Admin can override fields on any deal (closer, setter, tier, paid_status, status).",
+                  "The admin deal queue: closed and pending-signature deals across every closer (in-flight deals stay in the closer's portal). Browse by month, search, and filter by status and paid / unpaid / needs review / agent ready. New deal, Agent drafts and Agent playbook live here. Admin can edit any deal, override the setter tier and no-retainer flag, toggle paid status, and review + send its invoice.",
               },
               {
                 name: "Calendar",
                 what:
-                  "Team-wide Google Calendar view with attendance state and GHL sync chips. Admin can Push/Pull individual events to reconcile dashboard ↔ GHL for any closer.",
+                  "Team-wide Google Calendar view with a state chip per event, attendance marks and GHL sync status. Admin can Push/Pull individual events to reconcile dashboard ↔ GHL for any closer.",
               },
               {
                 name: "Payouts",
                 what:
-                  "Monthly payout tracker. Per-brand rows with sales rep, amount due/paid, signed status, contract scope and invoice docs attached. Filters by month/year/vertical/sales rep.",
+                  "Monthly payout tracker (Ledger + Insights tabs). Per-brand rows with sales rep, amount due/paid, signed status, contract scope and invoice docs attached. Pick the month/year, search by brand name, and filter paid / unpaid or by date joined.",
               },
               {
                 name: "Contracts",
                 what:
-                  "DocuSeal template manager. Create, edit, and assign default templates per service category. Track signing status across deals.",
+                  "DocuSeal template manager. Upload a document or build a template in DocuSeal's form builder, then map templates to service categories (with one default). A deal's signing status shows on its contract badge in the Deal queue.",
               },
               {
                 name: "GHL Contacts",
                 what:
-                  "Read-only browser for the connected GoHighLevel sub-account. Search, filter by tag / source / DND / opportunities count, view individual contact pages with messages, opportunities, appointments, and notes.",
+                  "Read-only browser for the connected GoHighLevel sub-accounts. Search by name / email / phone; filter by appointment timing, appointment status, tags, pipeline stage, source, last-updated age and date range; open a contact for their notes, appointments, messages and opportunities.",
               },
             ]}
           />
           <SubSection title="Closer detail (/dashboard/closers/[closerId])">
             <p>
-              Click any closer in the Manage tab to open their detail page.
-              Shows their:
+              Click any closer in the Manage tab (or View Dashboard in its row
+              menu) to open their detail page. Shows their:
             </p>
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
+                <span className="font-medium text-foreground">Header</span>{" "}
+                — avatar, display name, status and role badges, email, and a{" "}
                 <span className="font-medium text-foreground">
-                  Personal info
+                  View their dashboard
                 </span>{" "}
-                — display name, email, role, commission rate, quota,
-                status, avatar.
+                button.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
-                  Stats (current window)
+                  Lifetime stats
                 </span>{" "}
-                — appointments set / closed, show rate, revenue attributed,
-                commission earned, pending deals.
+                — closed revenue (with the closed-deal count), paid revenue,
+                outstanding, pending pipeline, and average deal value.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Performance Trends
+                </span>{" "}
+                — their deals charted by closing date.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -1233,20 +1515,6 @@ export default function AdminDocumentationPage() {
                 </span>{" "}
                 — every deal they&apos;ve closed or are working with
                 statuses + linked invoice / contract states.
-              </Bullet>
-              <Bullet>
-                <span className="font-medium text-foreground">
-                  Appointments
-                </span>{" "}
-                — for setters: their claimed Google Calendar events with
-                pre/post-call statuses, notes, and tier picks.
-              </Bullet>
-              <Bullet>
-                <span className="font-medium text-foreground">
-                  Activity log
-                </span>{" "}
-                — admin actions taken on this closer&apos;s record (role
-                changes, commission updates, status toggles).
               </Bullet>
             </ul>
             <p>
@@ -1312,13 +1580,26 @@ export default function AdminDocumentationPage() {
           <SubSection title="What each event card shows">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                Title, time, calendar owner, attendees, Google Meet link.
+                Title, time, calendar name, attendee count, Google Meet link,
+                location, and — for a linked deal — the closer&apos;s name.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  State chip + colored rail
+                </span>{" "}
+                — every card carries a chip and a matching left rail saying
+                where the event stands, by precedence: a linked deal (Deal
+                closed / Pending signature / Deal follow-up / Deal
+                rescheduled / Deal not closed / Deal linked) → the attendance
+                mark (Showed / No-show) → Cancelled → All day → Live now →
+                Needs outcome → Upcoming. A legend above the list counts the
+                week&apos;s events per state.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Pills</span> —
-                Deal Linked (green) if a deal references this event;
-                Setter: NAME if a setter has claimed this event;
-                Tentative / Cancelled if the Google event has that status.
+                Setter: NAME if a setter has claimed this event; Tentative /
+                Cancelled if the Google event has that status (unless the
+                state chip already says Cancelled).
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -1326,7 +1607,8 @@ export default function AdminDocumentationPage() {
                 </span>{" "}
                 — read-only Showed / No Show indicator showing the team-wide
                 latest mark across all closers who interacted with this
-                event.
+                event, with an &ldquo;Attributed to&rdquo; picker to move the
+                mark to another closer.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -1337,8 +1619,9 @@ export default function AdminDocumentationPage() {
                 / email, free-form setter notes.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">GHL sync chip</span>{" "}
-                — Synced / Out of sync / Syncing. On out-of-sync, exposes{" "}
+                <span className="font-medium text-foreground">GHL sync status</span>{" "}
+                — &ldquo;Synced with GHL&rdquo; as muted text with a check, or
+                a grey &ldquo;Out of sync with GHL&rdquo; panel with{" "}
                 <span className="font-medium text-foreground">
                   [Push to GHL]
                 </span>{" "}
@@ -1354,8 +1637,10 @@ export default function AdminDocumentationPage() {
             <p>
               Week navigator at the top (← / →) jumps weeks. The calendar
               owner filter chip row lets you focus on events from a single
-              Google calendar when multiple are connected. &quot;Back to
-              this week&quot; resets the view.
+              Google calendar when multiple are connected, and the Source
+              pills (All / each GHL sub-account / Non-GHL) narrow it by CRM
+              source when there&apos;s more than one. &quot;Back to this
+              week&quot; resets the view.
             </p>
           </SubSection>
         </Section>
@@ -1372,7 +1657,7 @@ export default function AdminDocumentationPage() {
             Show/no-show marks in the dashboard and GHL&apos;s{" "}
             <Pill>appointmentStatus</Pill> stay in step automatically. No
             webhooks or GHL automations are required — outbound is real-time,
-            inbound is on-demand via the chip.
+            inbound is on-demand via the card&apos;s Pull from GHL button.
           </p>
           <SubSection title="How matching works">
             <p>
@@ -1403,20 +1688,29 @@ export default function AdminDocumentationPage() {
               </Bullet>
             </ul>
           </SubSection>
-          <SubSection title="The sync chip">
+          <SubSection title="The sync status on each card">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <Chip tone="success">Synced</Chip>{" "}
-                — dashboard and GHL agree.
+                <span className="inline-flex items-center gap-1 align-middle text-xs">
+                  <CheckCircle2 className="size-3 text-emerald-500" />
+                  Synced with GHL
+                </span>{" "}
+                — muted text with a green check (plus the sub-account&apos;s
+                short badge): dashboard and GHL agree.
               </Bullet>
               <Bullet>
-                <Chip tone="warning">Out of sync</Chip>{" "}
-                — they disagree. The chip shows both observed values and
-                exposes the two recovery buttons.
+                <span className="font-medium text-foreground">
+                  Out of sync with GHL
+                </span>{" "}
+                — they disagree. A grey panel with an amber warning icon shows
+                both observed values (Dashboard · GHL) and the two recovery
+                buttons.
               </Bullet>
               <Bullet>
-                <Chip>Syncing…</Chip>{" "}
-                — spinner while a click is in flight.
+                <span className="font-medium text-foreground">
+                  Syncing with GHL…
+                </span>{" "}
+                — spinner while a push to GHL hasn&apos;t come back yet.
               </Bullet>
             </ul>
           </SubSection>
@@ -1446,7 +1740,7 @@ export default function AdminDocumentationPage() {
               users endpoint) to the dashboard <Pill>closers.display_name</Pill>{" "}
               column. Names must match (lowercase, whitespace-collapsed). If
               no match, the Pull returns{" "}
-              <Pill>outcome: needs_attribution</Pill> and the chip stays
+              <Pill>outcome: needs_attribution</Pill> and the card stays
               out of sync — the names need to be aligned (or a{" "}
               <Pill>ghl_user_id</Pill> column added).
             </p>
@@ -1455,18 +1749,18 @@ export default function AdminDocumentationPage() {
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
                 Event has no GHL counterpart (composite-key mismatch) — no
-                chip rendered. Behaves like the pre-sync dashboard.
+                sync status rendered. Behaves like the pre-sync dashboard.
               </Bullet>
               <Bullet>
                 No GHL sub-account configured (<Pill>GHL_PIT</Pill> +{" "}
                 <Pill>GHL_LOCATION_ID</Pill> for Peptide Ads and/or{" "}
                 <Pill>GHL_PIT_AGENCY</Pill> +{" "}
                 <Pill>GHL_LOCATION_ID_AGENCY</Pill> for Agency Collective) —
-                chip never appears anywhere.
+                sync status never appears anywhere.
               </Bullet>
               <Bullet>
-                GHL automation immediately overwrites your push — chip flips
-                to Out of sync on next refetch. Click Push again or
+                GHL automation immediately overwrites your push — the card
+                flips to Out of sync on next refetch. Click Push again or
                 investigate the GHL workflow.
               </Bullet>
             </ul>
@@ -1477,7 +1771,7 @@ export default function AdminDocumentationPage() {
               event&apos;s <Pill>{`{id, title, start, end}`}</Pill> to the
               attendance endpoint, which composite-matches against the
               cached GHL bulk listing and creates link rows in parallel for
-              any matches. Result: the chip appears on first page load,
+              any matches. Result: the sync status appears on first page load,
               not after first click.
             </p>
           </SubSection>
@@ -1500,42 +1794,82 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard/closers/deals"
         >
           <p>
-            Cross-team deal queue with full admin override on every field.
+            Closed and pending-signature deals across the whole sales team,
+            with admin edits on every deal. In-flight deals (follow-up,
+            rescheduled, not closed) stay with the closer in their portal.
           </p>
+          <SubSection title="Header actions">
+            <ul className="space-y-1.5 list-none pl-0">
+              <Bullet>
+                <span className="font-medium text-foreground">New deal</span>{" "}
+                — enter a deal yourself, credited to an active closer or the
+                built-in House closer (the default). It&apos;s created closed
+                and its draft invoice opens for review — nothing is emailed.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">
+                  Agent playbook
+                </span>{" "}
+                — how to start a deal-prep run in Claude (with a Copy prompt
+                button), the editable playbook, and &ldquo;Learn from past
+                deals&rdquo;.
+              </Bullet>
+              <Bullet>
+                <span className="font-medium text-foreground">Agent drafts</span>{" "}
+                — a panel of deals proposed by agents over the API / MCP
+                (pending or reviewed); open one to edit, approve or reject it.
+              </Bullet>
+            </ul>
+          </SubSection>
           <SubSection title="Filters">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                Status — closed, follow_up, rescheduled, pending_signature,
-                not_closed
+                Metrics window (today … all time, or custom) — drives the
+                stat cards only.
               </Bullet>
-              <Bullet>Date range / month</Bullet>
-              <Bullet>Closer, setter, service category, brand</Bullet>
-              <Bullet>Paid / unpaid</Bullet>
+              <Bullet>
+                Deals from — the month the list shows (the current month by
+                default, or all months).
+              </Bullet>
+              <Bullet>
+                Search by client, brand, closer or invoice number.
+              </Bullet>
+              <Bullet>Status — All / Closed / Pending.</Bullet>
+              <Bullet>
+                Paid — All / Paid / Unpaid / Needs review (invoice still a
+                draft) / Agent ready (shown once the deal-prep agent has
+                prepared something).
+              </Bullet>
             </ul>
           </SubSection>
           <SubSection title="Per-row actions">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <span className="font-medium text-foreground">Edit</span> —
-                inline override of any field (closer, setter, tier,
-                no_retainer, paid_status, status, deal_value, notes).
-                Changes are audit-logged.
+                <span className="font-medium text-foreground">Edit</span>{" "}
+                (row menu) — opens the deal form: client details, status,
+                value, closing date, services, industry and notes, plus the
+                setter tier override (or none) and the no-retainer flag.
+                Changes are audit-logged. Delete is in the same menu.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Invoice</span>{" "}
-                — link to the generated invoice, view PDF, mark paid.
+                — click the invoice badge to open the invoice drawer: review
+                and edit the draft, add invoices, preview the PDF, and send it
+                (pending contracts go out with it).
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Contract</span>{" "}
-                — link to the DocuSeal submission, view signing URL, view
-                completed document.
+                — click the contract badge for its status, signing link and
+                signed documents, and to send or resend it.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">
-                  Calendar link
-                </span>{" "}
-                — if <Pill>google_event_id</Pill> is set, opens the deal in
-                the calendar view.
+                <span className="font-medium text-foreground">Paid</span> —
+                click the Paid / Unpaid badge to flip it.
+              </Bullet>
+              <Bullet>
+                Badges also mark admin-entered deals (Admin), deals moved to
+                another closer (Reassigned), the agent&apos;s prep state, and
+                calendar-linked deals (a calendar icon).
               </Bullet>
             </ul>
           </SubSection>
@@ -1642,10 +1976,17 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard/closers/contracts"
         >
           <p>
-            DocuSeal template manager. Pre-configured templates are uploaded
-            into DocuSeal; this page lets you map templates to service
-            categories so the right contract is sent automatically when a
-            deal is created.
+            DocuSeal template manager. This page lets you map DocuSeal
+            templates to service categories so the right contract is
+            generated when a deal closes.{" "}
+            <span className="font-medium text-foreground">Upload Document</span>{" "}
+            turns a PDF or DOCX into a new DocuSeal template,{" "}
+            <span className="font-medium text-foreground">Build Template</span>{" "}
+            opens DocuSeal&apos;s form builder, and{" "}
+            <span className="font-medium text-foreground">Add Template</span>{" "}
+            maps an existing one. Each row can preview its fields, open the
+            form builder, be edited, or be deleted (if unsigned contracts
+            still use it, you&apos;re asked to confirm first).
           </p>
           <SubSection title="Template fields">
             <ul className="space-y-1.5 list-none pl-0">
@@ -1655,16 +1996,17 @@ export default function AdminDocumentationPage() {
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
-                  DocuSeal template id
+                  DocuSeal template
                 </span>{" "}
-                — numeric id from DocuSeal&apos;s template library
+                — picked from your DocuSeal template library (or entered by
+                numeric id when no library templates are listed)
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
                   Service keys
                 </span>{" "}
-                — JSON array of deal service categories this template covers
-                (e.g. <Pill>[&quot;Meta Ads&quot;]</Pill>)
+                — comma-separated deal service categories this template covers
+                (e.g. <Pill>Meta Ads, Email Marketing</Pill>)
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Default</span>{" "}
@@ -1719,14 +2061,16 @@ export default function AdminDocumentationPage() {
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">Sort</span> —
-                Recently added, alphabetical, last appointment, etc.
+                Next appt, Last appt, Name, Recently added, Most stale.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
                   Filter chips
                 </span>{" "}
-                — by tag, source, DND flag, opportunities count, appointment
-                status set.
+                — Upcoming / Past / No appt / Has notes, appointment status
+                (Confirmed / Showed / No-show / Cancelled), tags, pipeline
+                stage, source, last-updated age (≤ 7 / 14 / 30 days, or stale
+                &gt; 30 days) and a from / to date range. Filters combine.
               </Bullet>
               <Bullet>
                 <span className="font-medium text-foreground">
@@ -1767,15 +2111,18 @@ export default function AdminDocumentationPage() {
           subtitle="/dashboard/admins · permission: admin"
         >
           <p>
-            Super-admin-only surface for managing the admin team. The
-            seeded super admin (<Pill>agencycollective</Pill>) cannot be
-            deleted and is the only account that can promote others to
-            super.
+            Where the admin team is managed. Opening the page needs the{" "}
+            <Pill>admin</Pill> permission; adding, editing and deleting admins
+            is super-admin only. Nobody can grant super status — new admins
+            are always created as standard admins and the API rejects any
+            change to it — and super admins (such as the seeded{" "}
+            <Pill>agencycollective</Pill>) cannot be deleted.
           </p>
           <SubSection title="Permission keys (13)">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <Pill>dashboard</Pill> — Overview + per-account drill-downs
+                <Pill>dashboard</Pill> — Overview, per-account drill-downs,
+                Alerts, Revenue Projection and this Documentation page
               </Bullet>
               <Bullet>
                 <Pill>analyst</Pill> — AI Analyst chat
@@ -1820,14 +2167,15 @@ export default function AdminDocumentationPage() {
           </SubSection>
           <SubSection title="Creating a new admin">
             <Step n={1}>
-              Sign in as <Pill>agencycollective</Pill>.
+              Sign in as a super admin (e.g. <Pill>agencycollective</Pill>).
             </Step>
             <Step n={2}>
-              Enter the new admin&apos;s username (lowercase, no spaces).
+              Click <span className="font-medium text-foreground">Add Admin</span>{" "}
+              and enter the new admin&apos;s username (lowercase, no spaces).
             </Step>
             <Step n={3}>
               Toggle each permission on/off as needed. Super status (full
-              bypass) can only be granted by the seed super admin.
+              bypass) can&apos;t be granted here or through the API.
             </Step>
             <Step n={4}>
               Share the username and direct them to{" "}
@@ -1839,9 +2187,11 @@ export default function AdminDocumentationPage() {
             <p>
               Every admin action (deal edits, user creates / deletes,
               permission grants, closer changes) writes to{" "}
-              <Pill>audit_log</Pill>. Available on each closer / user
-              detail page, scoped to that target. Audit writes are
-              fire-and-forget so they never block an operation.
+              <Pill>audit_log</Pill>. The latest 50 entries show in the{" "}
+              <span className="font-medium text-foreground">Recent Activity</span>{" "}
+              card on this Admins page (desktop only); API tokens with the{" "}
+              <Pill>audit:read</Pill> scope can query the full trail. Audit
+              writes are fire-and-forget so they never block an operation.
             </p>
           </SubSection>
         </Section>
@@ -1912,6 +2262,29 @@ export default function AdminDocumentationPage() {
           </p>
           <ul className="space-y-1.5 list-none pl-0">
             <Bullet>
+              <span className="font-medium text-foreground">Welcome Kit</span>{" "}
+              — the global onboarding kit you edit in Clients → Welcome Kit.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">Onboarding</span>{" "}
+              — two tabs: the{" "}
+              <span className="font-medium text-foreground">Questionnaire</span>{" "}
+              (five sections, autosaved, submitted when done — admins see the
+              answers on the client&apos;s Onboarding tab) and the{" "}
+              <span className="font-medium text-foreground">Setup checklist</span>{" "}
+              of Meta / Omnisend steps.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">My Brand</span> —
+              brand book, product photos and Drive links; the client and
+              admins both upload here.
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">Ad Creatives</span>{" "}
+              — creatives the agency uploads for the client to view and
+              download.
+            </Bullet>
+            <Bullet>
               <span className="font-medium text-foreground">Overview</span>{" "}
               — KPI cards, daily performance chart, top 3 ads by spend with
               creative thumbnails.
@@ -1933,18 +2306,29 @@ export default function AdminDocumentationPage() {
               per-client from the Settings tab. Hidden unless you set a link.
             </Bullet>
             <Bullet>
+              <span className="font-medium text-foreground">Peptide AI</span>{" "}
+              — opens the client&apos;s Peptide AI app, with a meter of their
+              monthly AI budget. Shown unless you switch it off for the client
+              (and only when Peptide AI is configured).
+            </Bullet>
+            <Bullet>
+              <span className="font-medium text-foreground">
+                More from Agency Collective
+              </span>{" "}
+              — our other services, with a request or book-a-call button.
+              Appears once at least one service is live; the catalog, page
+              copy and the tab name are edited in Clients → Cross-sell.
+            </Bullet>
+            <Bullet>
               <span className="font-medium text-foreground">Support chat</span>{" "}
               — direct line to admins. Their messages appear in the Clients
               → Support tab.
             </Bullet>
             <Bullet>
               <span className="font-medium text-foreground">Feedback</span>{" "}
-              — sentiment + rating + free-form. Admins review on the user
-              detail page.
-            </Bullet>
-            <Bullet>
-              <span className="font-medium text-foreground">Onboarding</span>{" "}
-              — checklist that fades out as the client completes steps.
+              — sentiment + rating + free-form, sent from the same Support
+              page. Admins review and reply under Clients → Support →
+              Feedback.
             </Bullet>
           </ul>
         </Section>
@@ -2101,6 +2485,52 @@ export default function AdminDocumentationPage() {
                 allow-list for <Pill>/api/v1</Pill> (default <Pill>*</Pill>;
                 the matching request Origin is echoed back).
               </Bullet>
+              <Bullet>
+                <Pill>SMTP_HOST</Pill> + <Pill>SMTP_USER</Pill> +{" "}
+                <Pill>SMTP_PASS</Pill> (+ <Pill>SMTP_PORT</Pill>, default{" "}
+                <Pill>587</Pill>; <Pill>SMTP_FROM</Pill>,{" "}
+                <Pill>SMTP_LABEL</Pill>) — the mailbox every invoice, re-bill
+                and follow-up email is sent from; without it, sends fail. An
+                optional second &ldquo;send from&rdquo; mailbox uses the same
+                names with <Pill>_2</Pill> (its host and port fall back to the
+                first one&apos;s).
+              </Bullet>
+              <Bullet>
+                <Pill>DOCUSEAL_API_KEY</Pill> (+ <Pill>DOCUSEAL_API_URL</Pill>,
+                default <Pill>https://api.docuseal.com</Pill>) — contracts and
+                scopes. <Pill>DOCUSEAL_USER_EMAIL</Pill> enables the template
+                form builder on the Contracts page.{" "}
+                <Pill>DOCUSEAL_WEBHOOK_SECRET</Pill> (header name{" "}
+                <Pill>DOCUSEAL_WEBHOOK_SECRET_KEY</Pill>, default{" "}
+                <Pill>x-docuseal-secret</Pill>) authenticates the signing
+                webhook — unset, the webhook accepts every request.
+              </Bullet>
+              <Bullet>
+                <Pill>NEXT_PUBLIC_VAPID_PUBLIC_KEY</Pill> +{" "}
+                <Pill>VAPID_PRIVATE_KEY</Pill> (+ <Pill>VAPID_SUBJECT</Pill>) —
+                admin Web Push notifications (the bell in the top bar). Unset,
+                push is disabled.
+              </Bullet>
+              <Bullet>
+                <Pill>PEPTIDE_AI_URL</Pill> (https) +{" "}
+                <Pill>PEPTIDE_AI_SHARED_SECRET</Pill> (min 32 chars, the same
+                value set in the Peptide AI app) — the client portal&apos;s
+                Peptide AI tab. Both or nothing; unset, the tab is hidden and
+                syncs do nothing.
+              </Bullet>
+              <Bullet>
+                <Pill>DEAL_PREP_ROUTINE_FIRE_URL</Pill> +{" "}
+                <Pill>DEAL_PREP_ROUTINE_TOKEN</Pill> — optional deal-prep auto
+                mode (a Claude routine fired per closed deal; both or nothing).
+                Without them, deal prep runs manually from Claude.{" "}
+                <Pill>DEAL_PREP_ENABLED=1</Pill> creates &ldquo;Agent
+                queued&rdquo; rows on close without a trigger.
+              </Bullet>
+              <Bullet>
+                <Pill>BILLING_TIME_ZONE</Pill> — the business time zone that
+                decides &ldquo;today&rdquo; for re-bill schedules (default{" "}
+                <Pill>America/Los_Angeles</Pill>).
+              </Bullet>
             </ul>
           </SubSection>
         </Section>
@@ -2197,10 +2627,18 @@ export default function AdminDocumentationPage() {
           <SubSection title="AI assistant & activity">
             <ul className="space-y-2">
               <Bullet>
-                A Claude-powered assistant tailored to media-buyer ops — drafts
-                SOPs, briefs, audits, media plans and reports, and corrects
-                pasted documents. Generated docs save into the directory in one
-                click.
+                The <span className="font-semibold text-foreground">AI Assistant</span>{" "}
+                tab is a Claude chat tailored to media-buyer ops — it drafts
+                SOPs, briefs, audits and media plans, builds client
+                performance reports, and corrects pasted documents. Each
+                document it produces comes as a card with Copy (markdown),
+                Download as PDF, and Save, which files it as a PDF in the
+                directory&apos;s &ldquo;AI Generated&rdquo; folder.
+              </Bullet>
+              <Bullet>
+                The conversation stays while you switch tabs, but not across a
+                reload — Export saves it as Markdown, and New chat clears it.
+                Replies can be stopped mid-way and retried or continued.
               </Bullet>
               <Bullet>
                 The <span className="font-semibold text-foreground">activity log</span>{" "}
@@ -2229,13 +2667,14 @@ export default function AdminDocumentationPage() {
             matches the preview. Available to{" "}
             <span className="font-semibold text-foreground">every admin</span> —
             there&apos;s no extra permission key; a valid admin session
-            (<Pill>a_sess</Pill>) is all that&apos;s required.
+            (<Pill>a_sess</Pill>) is all that&apos;s required (the sidebar
+            hides SOPs from partner-book admins).
           </p>
 
           <Tabs
             items={[
               { name: "Library", what: "Folder/tag directory of all SOPs, with create, import, drag-to-move, and PDF export." },
-              { name: "AI Assistant", what: "Ask Claude to draft a brand-new SOP from a prompt; it opens in the builder, fully editable." },
+              { name: "AI Assistant", what: "Describe a process and Claude drafts a structured SOP — save it to the library or open it in the builder to edit." },
             ]}
           />
 
@@ -2323,8 +2762,13 @@ export default function AdminDocumentationPage() {
                 <Sparkles className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 The <span className="font-semibold text-foreground">AI Assistant</span> tab uses
                 Claude to draft a new SOP from a description (e.g. &ldquo;an SOP for
-                booking discovery calls&rdquo;) directly in our block format, then opens
-                it in the builder. AI is used{" "}
+                booking discovery calls&rdquo;) directly in our block format. Each draft
+                comes as a card: <span className="font-semibold text-foreground">Save to library</span>{" "}
+                files it in the &ldquo;AI Generated&rdquo; folder, and{" "}
+                <span className="font-semibold text-foreground">Open in builder</span>{" "}
+                saves it and opens it for editing. The chat stays put while you switch
+                between Library and AI Assistant (a reload clears it; Export keeps a
+                Markdown copy). AI is used{" "}
                 <span className="font-semibold text-foreground">only here</span> — uploads never call a model.
               </Bullet>
               <Bullet>
@@ -2382,14 +2826,23 @@ export default function AdminDocumentationPage() {
                 (Client Directory, billing, ad accounts, welcome kit),{" "}
                 <Pill>media</Pill> (Media Buyers), <Pill>sops</Pill>,{" "}
                 <Pill>metaaccounts</Pill> (Meta Accounts — credential fields
-                are write-only, never returned by any API read), and the
-                read-only <Pill>audit</Pill> (audit trail).
+                are write-only, never returned by any API read),{" "}
+                <Pill>team</Pill> (Team hub: roster rollups, member tasks,
+                action items), and the read-only <Pill>audit</Pill> (audit
+                trail).
               </Bullet>
               <Bullet>
                 Tokens can optionally be restricted to specific clients or
                 closers (lists are filtered, aggregates are refused) and given
-                an expiry date. Every token shows per-day usage stats on its
-                card.
+                an expiry date. Once partner workspaces exist, the{" "}
+                <span className="font-semibold text-foreground">
+                  Workspace access
+                </span>{" "}
+                chips restrict a token to specific books (none selected = all
+                workspaces); keep partner-book tokens to the{" "}
+                <Pill>client</Pill> scope, since the other scopes aren&apos;t
+                workspace-filtered. Every token shows per-day usage stats on
+                its card.
               </Bullet>
               <Bullet>
                 Requests are rate-limited to 120/min per token. Revoking a
@@ -2541,11 +2994,12 @@ export default function AdminDocumentationPage() {
         {/* ------------------------------------------------------ */}
         <Section icon={MessageSquare} title="Need help?">
           <p>
-            Something not working as documented? Open the support chat from
-            the Clients tab and tag a super admin. For an end-user reference
-            (closer / setter portal), see the documentation page inside the{" "}
-            <Pill>/closer/*</Pill> portal — accessible from the closer
-            sidebar.
+            Something not working as documented? Contact a super admin — the
+            Clients → Support tab is the client inbox, not an internal
+            channel. For an end-user reference (closer / setter portal), see
+            the Documentation page inside the portal (<Pill>/closer/docs</Pill>)
+            — accessible from the closer sidebar. The Team page and the Ad
+            Accounts tab also carry their own in-app guides.
           </p>
         </Section>
       </div>

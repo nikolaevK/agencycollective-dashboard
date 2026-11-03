@@ -78,6 +78,24 @@ const onOpenChangeTo = (onClose: () => void) => (open: boolean) => {
   if (!open) onClose();
 };
 
+/**
+ * These dialogs are controlled (no DialogTrigger), so Radix's close handler
+ * has nothing to focus and drops focus on <body>. Hand it back to whatever
+ * opened the dialog (a tile's Move / Tags button, the folder-settings
+ * button) while that's still on the page.
+ */
+function useReturnFocus() {
+  const [opener] = useState(() =>
+    typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)
+  );
+  return (e: Event) => {
+    if (opener && opener !== document.body && opener.isConnected) {
+      e.preventDefault();
+      opener.focus();
+    }
+  };
+}
+
 // ── Folder settings (rename / color / delete) ─────────────────────────────────
 export function FolderSettingsDialog({ folder, count, onClose, onRename, onRecolor, onDelete }: {
   folder: SopFolder;
@@ -89,6 +107,7 @@ export function FolderSettingsDialog({ folder, count, onClose, onRename, onRecol
 }) {
   const [name, setName] = useState(folder.name);
   const [color, setColor] = useState<string>(folder.color);
+  const returnFocus = useReturnFocus();
 
   function save() {
     const next = name.trim();
@@ -98,7 +117,7 @@ export function FolderSettingsDialog({ folder, count, onClose, onRename, onRecol
 
   return (
     <Dialog open onOpenChange={onOpenChangeTo(onClose)}>
-      <DialogContent className="gap-5 sm:max-w-sm">
+      <DialogContent onCloseAutoFocus={returnFocus} className="gap-5 sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Folder settings</DialogTitle>
           <DialogDescription className="sr-only">Rename, recolor, or delete this folder.</DialogDescription>
@@ -175,6 +194,7 @@ export function MoveSopDialog({ sop, folders, onClose, onMove }: {
   onMove: (folder: string) => void;
 }) {
   const [newFolder, setNewFolder] = useState("");
+  const returnFocus = useReturnFocus();
   const moveTargets = folders.filter((f) => f !== sop.folder);
 
   function moveToNew() {
@@ -186,7 +206,7 @@ export function MoveSopDialog({ sop, folders, onClose, onMove }: {
 
   return (
     <Dialog open onOpenChange={onOpenChangeTo(onClose)}>
-      <DialogContent className="gap-4 sm:max-w-xs">
+      <DialogContent onCloseAutoFocus={returnFocus} className="gap-4 sm:max-w-xs">
         <DialogHeader className="min-w-0 pr-8">
           <DialogTitle>Move</DialogTitle>
           <DialogDescription className="truncate" title={sop.title}>{sop.title}</DialogDescription>
@@ -241,9 +261,10 @@ export function SopTagsDialog({ sop, onClose, onSave }: {
   onSave: (tags: string[]) => void;
 }) {
   const [tagDraft, setTagDraft] = useState<string[]>(sop.tags);
+  const returnFocus = useReturnFocus();
   return (
     <Dialog open onOpenChange={onOpenChangeTo(onClose)}>
-      <DialogContent className="gap-4 sm:max-w-xs">
+      <DialogContent onCloseAutoFocus={returnFocus} className="gap-4 sm:max-w-xs">
         <DialogHeader className="min-w-0 pr-8">
           <DialogTitle>Tags</DialogTitle>
           <DialogDescription className="truncate" title={sop.title}>{sop.title}</DialogDescription>

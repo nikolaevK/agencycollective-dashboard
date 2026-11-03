@@ -48,7 +48,9 @@ export function PermissionToggleList({ permissions, onChange, disabled }: Permis
             key={mod.key}
             htmlFor={id}
             className={cn(
-              "flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+              // `relative`: anchors the Switch's hidden form input, which
+              // otherwise stretches the scroll range of the overflow panel.
+              "relative flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
               checked ? "bg-muted/60" : "bg-transparent",
               disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/40"
             )}

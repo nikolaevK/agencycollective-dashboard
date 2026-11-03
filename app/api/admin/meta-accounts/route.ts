@@ -6,6 +6,7 @@ import { buildMetaAccountDirectory } from "@/lib/metaAccountDirectory";
 import {
   createMetaAccount,
   DuplicateMetaAccountEmailError,
+  InvalidMetaAccountLinkError,
   type MetaAccountInput,
 } from "@/lib/metaAccounts";
 import { logAuditEvent } from "@/lib/auditLog";
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
     account = await createMetaAccount(input);
   } catch (err) {
     if (err instanceof DuplicateMetaAccountEmailError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    if (err instanceof InvalidMetaAccountLinkError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     throw err;

@@ -184,6 +184,26 @@ describe("runToolLoop", () => {
     expect(calls[2].system).toBe(calls[0].system);
   });
 
+  it("uses the caller's wrap-up note when given one", async () => {
+    const { client, calls } = fakeClient([
+      { content: [toolUse("toolu_1")], stop_reason: "tool_use" },
+      { content: [text("Here is the first one; ask for the second next.")], stop_reason: "end_turn" },
+    ]);
+    const result = await runToolLoop({
+      ...baseOpts,
+      maxIterations: 2,
+      wrapUpNote: "Out of steps — tell the user to ask for the rest next.",
+      client,
+      runTools: async (c) => c.map((call) => ({ type: "tool_result", tool_use_id: call.id, content: "ok" })),
+    });
+    expect(result.wrappedUp).toBe(true);
+    const lastUser = (calls[1].messages as Array<{ content: Array<Record<string, unknown>> }>).at(-1)!;
+    expect(lastUser.content).toEqual([
+      { type: "tool_result", tool_use_id: "toolu_1", content: "ok" },
+      { type: "text", text: "Out of steps — tell the user to ask for the rest next." },
+    ]);
+  });
+
   it("fills in a missing tool result as an error", async () => {
     const { client, calls } = fakeClient([
       { content: [toolUse("toolu_1"), toolUse("toolu_2", "fetch_landing_page")], stop_reason: "tool_use" },

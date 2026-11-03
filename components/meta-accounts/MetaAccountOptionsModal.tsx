@@ -24,7 +24,7 @@ const KIND_COPY: Record<MetaOptionKind, { title: string; placeholder: string; bl
   stage: {
     title: "Warm-up stages",
     placeholder: "Add a stage…",
-    blurb: "The pipeline an account moves through. Drag order top→bottom = first→last.",
+    blurb: "The pipeline an account moves through, first to last — reorder with the arrows.",
   },
   status: {
     title: "Account statuses",
@@ -87,10 +87,10 @@ export function MetaAccountOptionsModal({
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
-        // The old modal had no Escape handler — it closes only via the X
-        // button or a backdrop click (Escape in a rename field cancels the
-        // rename only).
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        // Escape in a rename field cancels the rename only (the field handles it).
+        onEscapeKeyDown={(e) => {
+          if (e.target instanceof HTMLElement && e.target.dataset.renameField !== undefined) e.preventDefault();
+        }}
         className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
@@ -241,6 +241,7 @@ function OptionRow({
           maxLength={40}
           disabled={busy}
           aria-label="Option name"
+          data-rename-field=""
           className="h-8 min-w-0 flex-1"
         />
       ) : (

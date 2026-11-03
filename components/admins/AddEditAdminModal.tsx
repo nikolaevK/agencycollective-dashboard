@@ -11,6 +11,7 @@ import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { allPermissionsFalse } from "@/lib/permissions";
 import { cn, getInitials } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { useDialogFocus } from "./useDialogFocus";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { dialogOverlayClass, dialogPanelClass } from "@/components/ui/dialog";
@@ -90,6 +91,7 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
   }, [open, admin]);
 
   useEscapeKey(onClose, open);
+  const focus = useDialogFocus<HTMLDivElement>();
 
   if (!open) return null;
 
@@ -118,20 +120,25 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
   }
 
   const titleId = `${uid}-title`;
+  // Name the admin being edited, so the form can't be mistaken for another's.
+  const title = admin ? `Edit ${admin.displayName || admin.username}` : "Add Admin";
 
   return (
     <div className="fixed inset-0 z-[60] hidden md:flex items-center justify-center p-4">
       <div className={dialogOverlayClass} onClick={onClose} />
       <div
+        ref={focus.ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={cn(dialogPanelClass, "relative z-50 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden")}
+        tabIndex={-1}
+        onKeyDown={focus.onKeyDown}
+        className={cn(dialogPanelClass, "relative z-50 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden outline-none")}
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-6 pb-4">
-          <h2 id={titleId} className="text-base font-medium leading-none">
-            {isEdit ? "Edit Admin" : "Add Admin"}
+          <h2 id={titleId} className="min-w-0 truncate text-base font-medium leading-normal">
+            {title}
           </h2>
           <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="bg-secondary">
             <X />
@@ -214,7 +221,7 @@ export function AddEditAdminModal({ open, admin, onClose, onSave, isPending }: A
                       <label
                         key={w.value}
                         htmlFor={id}
-                        className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 text-sm hover:bg-muted/50"
+                        className="relative flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 text-sm hover:bg-muted/50"
                       >
                         <Checkbox
                           id={id}

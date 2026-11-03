@@ -212,7 +212,8 @@ function Presets<T extends string | number>({
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className="h-9 min-w-0 flex-1 truncate rounded-full px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:h-7"
+          // Wraps on a narrow phone ("Baseline 65%") instead of truncating.
+          className="min-h-9 min-w-0 flex-1 rounded-full px-2 py-1 text-xs font-medium leading-tight text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:min-h-7"
         >
           {o.label}
         </button>
@@ -235,9 +236,9 @@ function LiveButton({ disabled, onClick, children }: { disabled: boolean; onClic
 function Out({ label, value, sub, delta }: { label: string; value: string; sub: string; delta?: ReactNode }) {
   return (
     <div className="min-w-0 rounded-2xl bg-muted/50 p-3">
-      <div className="truncate text-xs text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="truncate text-xl font-semibold tracking-tight tabular-nums">{value}</span>
+        <span className="whitespace-nowrap text-xl font-semibold tracking-tight tabular-nums">{value}</span>
         {delta}
       </div>
       <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>
@@ -247,6 +248,11 @@ function Out({ label, value, sub, delta }: { label: string; value: string; sub: 
 
 // Phones: the decorative KPI icon gives its room to the label.
 const KPI_ICON = "max-sm:hidden";
+// …and a long label ("End monthly revenue") wraps instead of truncating in
+// the two-column phone grid (StatCard truncates its label <p>).
+const KPI_WRAP = "[&_p.truncate]:whitespace-normal";
+
+const BOOK_DELTA_TITLE = "End book vs the starting book";
 
 /** A red "Loss" chip on a profit card that went negative. */
 const lossChip = (v: number) => (v < 0 ? <StatusBadge tone="danger">Loss</StatusBadge> : undefined);
@@ -364,20 +370,22 @@ export function RevenueProjection() {
 
       {/* KPIs — book / revenue / profit, one row each from sm up */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard iconClassName={KPI_ICON} label="Start book" icon={Users} value={`${start}`} sub="baseline" />
+        <StatCard className={KPI_WRAP} iconClassName={KPI_ICON} label="Start book" icon={Users} value={`${start}`} sub="baseline" />
         <StatCard
+          className={KPI_WRAP}
           iconClassName={KPI_ICON}
           label="End book"
           icon={UserPlus}
           value={`${endBook}`}
-          delta={<TrendDelta current={endBook} previous={start} />}
+          delta={<TrendDelta current={endBook} previous={start} title={BOOK_DELTA_TITLE} />}
           sub={`by ${endLabel}`}
         />
-        <StatCard iconClassName={KPI_ICON} label="Book Index" icon={Gauge} value={`${endIdx}`} sub="start = 100" />
-        <StatCard iconClassName={KPI_ICON} label="End monthly revenue" icon={DollarSign} value={fmt(endRev)} sub="final month" />
-        <StatCard iconClassName={KPI_ICON} label="Cumulative revenue" icon={Sigma} value={fmt(cumRev)} sub={`${horizon} months`} />
-        <StatCard iconClassName={KPI_ICON} label="Annualized run-rate" icon={TrendingUp} value={fmt(runRate)} sub="end month × 12" />
+        <StatCard className={KPI_WRAP} iconClassName={KPI_ICON} label="Book Index" icon={Gauge} value={`${endIdx}`} sub="start = 100" />
+        <StatCard className={KPI_WRAP} iconClassName={KPI_ICON} label="End monthly revenue" icon={DollarSign} value={fmt(endRev)} sub="final month" />
+        <StatCard className={KPI_WRAP} iconClassName={KPI_ICON} label="Cumulative revenue" icon={Sigma} value={fmt(cumRev)} sub={`${horizon} months`} />
+        <StatCard className={KPI_WRAP} iconClassName={KPI_ICON} label="Annualized run-rate" icon={TrendingUp} value={fmt(runRate)} sub="end month × 12" />
         <StatCard
+          className={KPI_WRAP}
           iconClassName={KPI_ICON}
           label="End monthly profit"
           icon={PiggyBank}
@@ -386,6 +394,7 @@ export function RevenueProjection() {
           sub="revenue − expenses"
         />
         <StatCard
+          className={KPI_WRAP}
           iconClassName={KPI_ICON}
           label="Cumulative profit"
           icon={Coins}
@@ -394,6 +403,7 @@ export function RevenueProjection() {
           sub={`${horizon} months`}
         />
         <StatCard
+          className={KPI_WRAP}
           iconClassName={KPI_ICON}
           label="End net margin"
           icon={Percent}
@@ -531,12 +541,14 @@ export function RevenueProjection() {
 
             {/* Output + revenue chart — stays in view while the levers scroll */}
             <div className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {/* One column beside the levers at lg (the column is ~300px at
+                  1024–1279), three again from xl. */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
                 <Out
                   label="End active book"
                   value={`${endBook}`}
                   sub="clients"
-                  delta={<TrendDelta current={endBook} previous={start} />}
+                  delta={<TrendDelta current={endBook} previous={start} title={BOOK_DELTA_TITLE} />}
                 />
                 <Out label="End monthly revenue" value={fmt(endRev)} sub="final month" />
                 <Out label="Cumulative revenue" value={fmt(cumRev)} sub={`over ${horizon} mo`} />

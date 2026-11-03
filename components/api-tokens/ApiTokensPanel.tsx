@@ -13,22 +13,29 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/components/ui/use-confirm";
+import { useChunkGate } from "@/components/admins/useChunkGate";
 import type { TokenFormData } from "./AddEditTokenModal";
 import { TokenCard } from "./TokenCard";
 import type { ApiTokenPublic, ResourceOption, WorkspaceOption } from "./types";
 
 // Lazy: click-to-open dialogs (Radix Dialog, date picker, checkboxes) stay
-// out of the page's first load.
-const AddEditTokenModal = dynamic(
-  () => import("./AddEditTokenModal").then((m) => m.AddEditTokenModal),
-  { ssr: false }
-);
-// The shown-once secret must never wait on a chunk download: every action
-// that can reveal one (Create, Rotate) preloads it before its request.
+// out of the page's first load. They open only once their chunk has loaded
+// (useChunkGate): a spinner while it loads, a toast if it can't.
+const loadTokenModal = () => import("./AddEditTokenModal");
+const AddEditTokenModal = dynamic(() => loadTokenModal().then((m) => m.AddEditTokenModal), {
+  ssr: false,
+});
+// The shown-once secret must never depend on a chunk download that could
+// fail AFTER the server minted it: Create and Rotate await this chunk before
+// sending anything, and abort (nothing sent) if it can't load.
 const loadSecretReveal = () => import("./TokenSecretReveal");
 const TokenSecretReveal = dynamic(() => loadSecretReveal().then((m) => m.TokenSecretReveal), {
   ssr: false,
 });
+/** Warm a chunk early; a failure here is retried (and reported) by the gate. */
+function preload(load: () => Promise<unknown>) {
+  load().catch(() => {});
+}
 
 async function fetchTokens(): Promise<ApiTokenPublic[]> {
   const res = await fetch("/api/admin/api-tokens");
@@ -57,6 +64,7 @@ export function ApiTokensPanel() {
   const queryClient = useQueryClient();
   const { toastError } = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const { gate, pending: chunkPending } = useChunkGate();
   const [isPending, startTransition] = useTransition();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -79,9 +87,16 @@ export function ApiTokensPanel() {
     queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
   }
 
-  function handleSave(data: TokenFormData) {
+  async function openModal(token: ApiTokenPublic | null) {
+    if (!(await gate(loadTokenModal))) return;
+    setEditing(token);
+    setModalOpen(true);
+  }
+
+  async function handleSave(data: TokenFormData) {
+    const isEdit = Boolean(data.id);
+    if (!isEdit && !(await gate(loadSecretReveal))) return;
     startTransition(async () => {
-      const isEdit = Boolean(data.id);
       const res = await fetch(
         isEdit ? `/api/admin/api-tokens/${data.id}` : "/api/admin/api-tokens",
         {
@@ -92,7 +107,8 @@ export function ApiTokensPanel() {
             scopes: data.scopes,
             clientIds: data.clientIds,
             closerIds: data.closerIds,
-            // null = all workspaces; the routes sanitize against the registry.
+            // null = all workspaces; omitted (undefined) on an edit that
+            // didn't touch the selection, so it's never rewritten in passing.
             workspaces: data.workspaces,
             expiresAt: data.expiresAt,
           }),
@@ -113,7 +129,7 @@ export function ApiTokensPanel() {
   }
 
   async function handleRotate(token: ApiTokenPublic) {
-    void loadSecretReveal();
+    preload(loadSecretReveal);
     const ok = await confirm({
       title: `Rotate "${token.name}"?`,
       description:
@@ -122,6 +138,9 @@ export function ApiTokensPanel() {
       destructive: true,
     });
     if (!ok) return;
+    // Rotating kills the old secret at once — never rotate unless the new
+    // one can be shown.
+    if (!(await gate(loadSecretReveal))) return;
     startTransition(async () => {
       const res = await fetch(`/api/admin/api-tokens/${token.id}/rotate`, {
         method: "POST",
@@ -199,9 +218,8 @@ export function ApiTokensPanel() {
             {canMutate && (
               <Button
                 onClick={() => {
-                  void loadSecretReveal();
-                  setEditing(null);
-                  setModalOpen(true);
+                  preload(loadSecretReveal);
+                  void openModal(null);
                 }}
               >
                 <Plus />
@@ -252,10 +270,7 @@ export function ApiTokensPanel() {
                 key={token.id}
                 token={token}
                 canMutate={canMutate}
-                onEdit={(t) => {
-                  setEditing(t);
-                  setModalOpen(true);
-                }}
+                onEdit={(t) => void openModal(t)}
                 onRotate={handleRotate}
                 onRevoke={handleRevoke}
                 onDelete={handleDelete}
@@ -291,6 +306,7 @@ export function ApiTokensPanel() {
       )}
 
       {confirmDialog}
+      {chunkPending}
     </DashboardShell>
   );
 }

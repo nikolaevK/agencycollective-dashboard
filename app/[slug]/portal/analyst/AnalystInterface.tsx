@@ -22,7 +22,7 @@ import { Card } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { parseSSEStream } from "@/lib/chatStreamParser";
-import { repairToolPairs, trimHistory } from "@/lib/analyst/history";
+import { markInterrupted, repairToolPairs, trimHistory, wasInterrupted } from "@/lib/analyst/history";
 import type {
   ChatMessage as ChatMessageType,
   ApiContentBlock,
@@ -119,6 +119,7 @@ function messagesToApi(
       if (msg.content) out.push({ role: "assistant", content: msg.content });
       continue;
     }
+    const from = out.length;
     const assistantBlocks: ApiContentBlock[] = [];
     const toolResultBlocks: ApiContentBlock[] = [];
     const continuationBlocks: ApiContentBlock[] = [];
@@ -146,6 +147,8 @@ function messagesToApi(
     if (assistantBlocks.length > 0) out.push({ role: "assistant", content: assistantBlocks });
     if (toolResultBlocks.length > 0) out.push({ role: "user", content: toolResultBlocks });
     if (continuationBlocks.length > 0) out.push({ role: "assistant", content: continuationBlocks });
+    // A stopped reply says so (a finished one may end on a tool card).
+    if (wasInterrupted(msg)) markInterrupted(out, from);
   }
   return out;
 }
@@ -242,6 +245,13 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
 
       const controller = new AbortController();
       abortRef.current = controller;
+      // Stop keeps what streamed, marked stopped (so the next request tells the model).
+      const markStopped = () =>
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (!last || last.id !== assistantMessage.id) return prev;
+          return [...prev.slice(0, -1), { ...last, blocks: [...(last.blocks ?? []), { type: "notice", kind: "stopped", text: "Stopped." }] }];
+        });
 
       try {
         // Repair + trim: a stopped reply or failed tool leaves an unanswered
@@ -264,7 +274,10 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
         }
 
         for await (const event of parseSSEStream(res.body!)) {
-          if (controller.signal.aborted) break;
+          if (controller.signal.aborted) {
+            markStopped();
+            break;
+          }
 
           if (event.type === "text_delta") {
             setMessages((prev) => {
@@ -321,7 +334,10 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
           }
         }
       } catch (err) {
-        if ((err as Error).name === "AbortError") return;
+        if ((err as Error).name === "AbortError") {
+          markStopped();
+          return;
+        }
         const errorText = err instanceof Error ? err.message : "Something went wrong";
         setMessages((prev) => {
           const last = prev[prev.length - 1];

@@ -6,7 +6,6 @@ import type { SignatureData } from "@/types/invoice";
 import { SIGNATURE_FONTS, SIGNATURE_COLORS } from "@/lib/invoice/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 import { SEGMENT_ITEM, SEGMENT_TRACK } from "./InvoiceField";
@@ -222,24 +221,21 @@ export function InvoiceSignature({ signature, onChange }: Props) {
       {/* Editor */}
       {open && (
         <div className="space-y-4 rounded-2xl bg-muted/50 p-4">
-          {/* Tabs — each its own Tab stop, as the old buttons were */}
-          <ToggleGroup
-            type="single"
-            rovingFocus={false}
-            value={tab}
-            onValueChange={(v) => {
-              if (v) setTab(v as Tab);
-            }}
-            aria-label="Signature method"
-            className={cn("w-full", SEGMENT_TRACK)}
-          >
+          {/* Method — pressed buttons, each its own Tab stop */}
+          <div role="group" aria-label="Signature method" className={cn("w-full", SEGMENT_TRACK)}>
             {tabs.map((t) => (
-              <ToggleGroupItem key={t.id} value={t.id} className={cn(SEGMENT_ITEM, "min-w-0 flex-1 gap-1.5")}>
+              <button
+                key={t.id}
+                type="button"
+                aria-pressed={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(SEGMENT_ITEM, "min-w-0 flex-1 gap-1.5")}
+              >
                 <t.icon className="size-3.5" />
                 {t.label}
-              </ToggleGroupItem>
+              </button>
             ))}
-          </ToggleGroup>
+          </div>
 
           {/* Color selector */}
           {(tab === "draw" || tab === "type") && (

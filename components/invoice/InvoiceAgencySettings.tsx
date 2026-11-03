@@ -147,8 +147,8 @@ export function InvoiceAgencySettings() {
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <Building2 className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">Agency Settings</span>
+        <Building2 className="size-4 shrink-0 text-muted-foreground lg:max-xl:hidden" />
+        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">Agency Settings</span>
         <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
@@ -195,7 +195,7 @@ export function InvoiceAgencySettings() {
           {/* Default Theme Color */}
           <section className="space-y-3">
             <h4 className={SUBHEAD}>Default Theme Color</h4>
-            <ThemeSwatches size="sm" value={defaultThemeColor} onChange={setDefaultThemeColor} />
+            <ThemeSwatches size="sm" label="Default Theme Color" value={defaultThemeColor} onChange={setDefaultThemeColor} />
           </section>
 
           {/* Payment Template — Local */}

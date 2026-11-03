@@ -22,8 +22,9 @@
  *   `cache_control`; this adds top-level automatic caching so every loop
  *   iteration re-reads the growing transcript from cache.
  * - A wrap-up turn: when the iteration budget or the soft deadline is spent,
- *   the last request runs with `tool_choice: none` plus an appended note, so
- *   the model answers from what it has instead of being cut off mid-tool.
+ *   the last request runs with `tool_choice: none` plus an appended note
+ *   (`wrapUpNote`, default WRAP_UP_NOTE), so the model answers from what it
+ *   has instead of being cut off mid-tool.
  *
  * Errors: an abort (caller's signal) resolves with `stopReason: "aborted"`;
  * every other failure is the SDK's typed error, rethrown for the caller to map
@@ -52,7 +53,7 @@ export const SERVER_SIDE_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 /** Progress-update text between tool calls (`thinking.display: "updates"`). */
 export const THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18";
 
-/** Appended after the last tool results when the loop's budget is spent. */
+/** The default `wrapUpNote`: appended after the last tool results when the loop's budget is spent. */
 export const WRAP_UP_NOTE =
   "The tool budget for this reply is used up. Answer now from the data and tool results you already have, and say briefly what you could not get to.";
 
@@ -91,6 +92,8 @@ export interface ToolLoopOptions {
   maxIterations: number;
   /** Epoch ms; once passed, the next request is the wrap-up turn. */
   softDeadline?: number;
+  /** Text appended to the wrap-up turn (default WRAP_UP_NOTE). Fixed per loop. */
+  wrapUpNote?: string;
   display?: ThinkingDisplay;
   /** `fallbacks: "default"` (on unless explicitly false). */
   fallbacks?: boolean;
@@ -207,6 +210,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     runTools,
     display = "updates",
     fallbacks = true,
+    wrapUpNote = WRAP_UP_NOTE,
   } = opts;
   const maxIterations = Math.max(2, opts.maxIterations);
   const transcript: BetaMessageParam[] = [...opts.messages];
@@ -332,7 +336,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     const userContent: BetaContentBlockParam[] = [...toolResults];
     if (budgetSpent) {
       wrapUp = true;
-      userContent.push({ type: "text", text: WRAP_UP_NOTE });
+      userContent.push({ type: "text", text: wrapUpNote });
     }
     transcript.push({ role: "user", content: userContent });
   }

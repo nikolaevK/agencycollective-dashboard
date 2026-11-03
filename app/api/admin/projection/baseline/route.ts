@@ -4,8 +4,9 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, getEffectivePermissions } from "@/lib/admins";
 import { ensureMigrated } from "@/lib/db";
-import { buildClientDirectory } from "@/lib/clientDirectory";
+import { buildClientDirectory, filterRowsByWorkspace } from "@/lib/clientDirectory";
 import { effectiveMrrCents } from "@/lib/clientProfile";
+import { workspaceScopeOf } from "@/lib/workspaces";
 
 /**
  * Live baseline for the Revenue Projection tool, sourced from the same
@@ -31,7 +32,9 @@ export async function GET() {
 
   await ensureMigrated();
 
-  const rows = await buildClientDirectory();
+  // buildClientDirectory is deliberately unscoped — a partner-book admin must
+  // only see their own book's baseline, never the agency-wide numbers.
+  const rows = filterRowsByWorkspace(await buildClientDirectory(), workspaceScopeOf(admin));
   const active = rows.filter((r) => r.status === "active");
 
   const activeClientCount = active.length;

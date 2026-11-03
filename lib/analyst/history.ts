@@ -14,6 +14,9 @@
  * - repairs tool pairing (unanswered calls and orphan results are dropped;
  *   a tool round the reply never continued is closed with a short assistant
  *   turn),
+ * - marks a reply the client knows didn't finish (a stopped / error /
+ *   refusal / length or step-limit notice) with INTERRUPTED_REPLY_TEXT, so
+ *   the model still learns about real interruptions,
  * - trims the oldest exchanges to a message/byte budget, cutting only before
  *   a user's own message so no tool pair is split.
  *
@@ -22,7 +25,7 @@
  * request's tool loop), so trimming or repairing here can't invalidate them.
  */
 
-import type { ApiChatMessage, ApiContentBlock, ChatMessage } from "@/types/chat";
+import type { ApiChatMessage, ApiContentBlock, ChatMessage, NoticeKind } from "@/types/chat";
 
 export interface HistoryBudget {
   /** Max API messages (the route rejects more than 50). */
@@ -37,8 +40,42 @@ export interface HistoryBudget {
 
 export const DEFAULT_HISTORY_BUDGET: HistoryBudget = { maxMessages: 40, maxBytes: 450_000 };
 
-/** Closes a tool round the reply never continued (see repairToolPairs). */
+/**
+ * Closes a tool round that more user content follows (see repairToolPairs).
+ * Neutral on purpose: a reply may legitimately END on a tool card (the
+ * document tools ask for at most a line or two after it), so nothing here
+ * claims it was cut off — real interruptions are marked by the client
+ * (INTERRUPTED_REPLY_TEXT).
+ */
+export const TOOL_ROUND_CLOSED_TEXT = "(shown to the user above)";
+
+/** Ends a reply the client knows didn't finish (see markInterrupted). */
 export const INTERRUPTED_REPLY_TEXT = "(reply interrupted)";
+
+/** Notices that mean the reply didn't finish — everything but `fallback` (another model answered). */
+const INTERRUPTION_NOTICES: ReadonlySet<NoticeKind> = new Set(["stopped", "error", "refusal", "truncated", "limit"]);
+
+/** True when an assistant message carries a notice saying the reply was stopped, failed or cut short. */
+export function wasInterrupted(msg: ChatMessage): boolean {
+  return msg.role === "assistant" && (msg.blocks ?? []).some((b) => b.type === "notice" && INTERRUPTION_NOTICES.has(b.kind));
+}
+
+/**
+ * Mark the end of an interrupted reply whose API turns start at `out[from]`:
+ * after its tool results a closing assistant turn, else an extra text block
+ * on its last assistant turn. No-op when nothing of the reply reached `out`.
+ */
+export function markInterrupted(out: ApiChatMessage[], from: number): void {
+  if (out.length <= from) return;
+  const marker: ApiContentBlock = { type: "text", text: INTERRUPTED_REPLY_TEXT };
+  const last = out[out.length - 1];
+  if (last.role !== "assistant") {
+    out.push({ role: "assistant", content: [marker] });
+    return;
+  }
+  const content: ApiContentBlock[] = typeof last.content === "string" ? [{ type: "text", text: last.content }] : last.content;
+  out[out.length - 1] = { role: "assistant", content: [...content, marker] };
+}
 
 function blocksOf(msg: ApiChatMessage): ApiContentBlock[] | null {
   return Array.isArray(msg.content) ? msg.content : null;
@@ -67,8 +104,9 @@ function isUserText(msg: ApiChatMessage): boolean {
  * the continuation of an open tool round — and with thinking always on and
  * thinking blocks never replayed here, an open round whose assistant turn
  * has no thinking block is a 400 on every later message. Such a round is
- * closed with a short assistant turn (INTERRUPTED_REPLY_TEXT), which keeps
- * the results the model already fetched.
+ * closed with a short, neutral assistant turn (TOOL_ROUND_CLOSED_TEXT),
+ * which keeps the results the model already fetched. A reply that really
+ * was interrupted already ends in the client's INTERRUPTED_REPLY_TEXT turn.
  */
 export function repairToolPairs(messages: ApiChatMessage[]): ApiChatMessage[] {
   const out: ApiChatMessage[] = [];
@@ -121,7 +159,7 @@ function closeOpenToolRounds(messages: ApiChatMessage[]): ApiChatMessage[] {
       return;
     }
     out.push({ role: "user", content: results });
-    out.push({ role: "assistant", content: [{ type: "text", text: INTERRUPTED_REPLY_TEXT }] });
+    out.push({ role: "assistant", content: [{ type: "text", text: TOOL_ROUND_CLOSED_TEXT }] });
     if (rest.length > 0) out.push({ role: "user", content: rest });
   });
   return out;
@@ -174,7 +212,7 @@ function toolResultContent(content: unknown, historyContent: string | undefined)
   }
 }
 
-/** UI messages → API turns (ordered, display-only blocks dropped). Not yet repaired or trimmed. */
+/** UI messages → API turns (ordered, display-only blocks dropped, interruptions marked). Not yet repaired or trimmed. */
 export function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
   const out: ApiChatMessage[] = [];
 
@@ -188,6 +226,7 @@ export function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
       continue;
     }
 
+    const from = out.length;
     let assistant: ApiContentBlock[] = [];
     let results: ApiContentBlock[] = [];
     const flush = () => {
@@ -220,6 +259,7 @@ export function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
       // progress / notice blocks are display-only.
     }
     flush();
+    if (wasInterrupted(msg)) markInterrupted(out, from);
   }
   return out;
 }

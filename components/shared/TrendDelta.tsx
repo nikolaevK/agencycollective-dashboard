@@ -12,6 +12,8 @@ interface Props {
   mode?: "percent" | "pp";
   /** When true, a decrease is rendered green (e.g. outstanding balance). */
   lowerIsBetter?: boolean;
+  /** Tooltip naming what the chip compares; defaults to the previous period. */
+  title?: string;
 }
 
 /**
@@ -19,7 +21,7 @@ interface Props {
  * there is no previous bucket or both periods are zero; shows "new" when
  * something appeared from a zero baseline (a % of zero is meaningless).
  */
-export function TrendDelta({ current, previous, mode = "percent", lowerIsBetter }: Props) {
+export function TrendDelta({ current, previous, mode = "percent", lowerIsBetter, title }: Props) {
   if (previous == null) return null;
   if (previous === 0 && current === 0) return null;
 
@@ -38,7 +40,7 @@ export function TrendDelta({ current, previous, mode = "percent", lowerIsBetter 
       return (
         <span
           className="inline-flex items-center gap-0.5 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
-          title="No activity in the previous period"
+          title={title ?? "No activity in the previous period"}
         >
           new
         </span>
@@ -60,7 +62,7 @@ export function TrendDelta({ current, previous, mode = "percent", lowerIsBetter 
             ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
             : "bg-red-500/10 text-red-700 dark:text-red-400"
       )}
-      title="vs previous period of the same length"
+      title={title ?? "vs previous period of the same length"}
     >
       {direction === "up" && <ArrowUpRight className="h-3 w-3" />}
       {direction === "down" && <ArrowDownRight className="h-3 w-3" />}

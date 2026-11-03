@@ -22,6 +22,8 @@ const ICON = { type: "string", description: `Icon key: one of ${SOP_ICON_KEYS.jo
 const SHORT = 240;
 const BODY = 8_000;
 const ITEMS = 80;
+const BLOCKS = 80;
+const SECTIONS = 60;
 
 const BLOCK_SCHEMA = {
   anyOf: [
@@ -176,7 +178,7 @@ export const SOP_CHAT_TOOLS: BetaTool[] = [
         sections: {
           type: "array",
           minItems: 1,
-          maxItems: 60,
+          maxItems: SECTIONS,
           description: "Ordered SOP sections.",
           items: {
             type: "object",
@@ -186,7 +188,7 @@ export const SOP_CHAT_TOOLS: BetaTool[] = [
               title: { type: "string", maxLength: SHORT, description: "Section heading." },
               blocks: {
                 type: "array",
-                maxItems: ITEMS,
+                maxItems: BLOCKS,
                 description: "Ordered content blocks for this section.",
                 items: BLOCK_SCHEMA,
               },
@@ -206,11 +208,61 @@ export const SOP_DISPLAY_TOOLS = new Set(SOP_CHAT_TOOLS.map((t) => t.name));
 const SOP_ACK =
   "Shown to the user as an SOP card with Open in builder and Save to library buttons. Don't repeat the SOP in your reply — at most a line or two on what it covers or which placeholders to fill in.";
 
+/** The list a block holds and how many entries normalizeSopDoc keeps. */
+const BLOCK_LIST: Record<string, { key: string; max: number }> = {
+  checklist: { key: "items", max: ITEMS },
+  steps: { key: "steps", max: ITEMS },
+  cards: { key: "items", max: ITEMS },
+  rows: { key: "rows", max: ITEMS },
+  columns: { key: "items", max: 3 },
+};
+
+/**
+ * What normalizeSopDoc would cut from this SOP without a word (sections past
+ * 60, blocks past 80, list entries past 80 (columns past 3), bodies and steps
+ * past 8,000 characters) — null when it fits. Checked on the image-stripped
+ * input that gets saved.
+ */
+function overSaveCaps(sections: Record<string, unknown>[]): string | null {
+  if (sections.length > SECTIONS) {
+    return `The SOP has ${sections.length} sections — at most ${SECTIONS} can be saved. Merge related sections, or split it into several SOPs (one generate_sop call each).`;
+  }
+  for (const [i, section] of sections.entries()) {
+    const name = `Section ${i + 1}${section.title ? ` ("${section.title}")` : ""}`;
+    const blocks = section.blocks as Record<string, unknown>[];
+    if (blocks.length > BLOCKS) {
+      return `${name} has ${blocks.length} blocks — at most ${BLOCKS} per section. Split it into more sections.`;
+    }
+    for (const block of blocks) {
+      const spec = BLOCK_LIST[block.type as string];
+      const list = spec && Array.isArray(block[spec.key]) ? (block[spec.key] as unknown[]) : [];
+      // A checklist drops empty items before counting; other lists count every entry.
+      const count = block.type === "checklist" ? list.filter((item) => typeof item === "string" && item !== "").length : list.length;
+      if (spec && count > spec.max) {
+        return `${name} has a ${block.type} block with ${count} ${spec.key} — at most ${spec.max} per block. Split it into several blocks.`;
+      }
+      const texts =
+        block.type === "steps"
+          ? list.flatMap((step) => (isPlainObject(step) ? [step.text, step.detail] : []))
+          : block.type === "text" || block.type === "callout"
+            ? [block.body]
+            : [];
+      const long = texts.find((t): t is string => typeof t === "string" && t.length > BODY);
+      if (long) {
+        return `${name} has a ${block.type} block with ${long.length.toLocaleString("en-US")} characters of text — at most ${BODY.toLocaleString("en-US")} per body or step. Split it into several blocks.`;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Validate one `generate_sop` call: a title and at least one section with a
  * known block. Unknown block types are dropped (saving drops them too, so the
- * card's counts match what gets saved); markdown images become alt text.
- * Length caps are left to normalizeSopDoc on save.
+ * card's counts match what gets saved); markdown images become alt text. An
+ * SOP over the save caps goes back to the model (overSaveCaps) instead of
+ * being cut silently on save. Shorter caps (titles, labels, captions) are
+ * left to normalizeSopDoc.
  */
 export function prepareSopTool(name: string, input: unknown): PreparedTool {
   if (!SOP_DISPLAY_TOOLS.has(name)) return { ok: false, error: `Unknown tool "${name}".` };
@@ -237,9 +289,8 @@ export function prepareSopTool(name: string, input: unknown): PreparedTool {
     };
   }
   const summary = cleanText(input.summary, 1_200);
-  return {
-    ok: true,
-    input: deepStripImages({ title, ...(summary ? { summary } : {}), sections }) as Record<string, unknown>,
-    ack: SOP_ACK,
-  };
+  const doc = deepStripImages({ title, ...(summary ? { summary } : {}), sections }) as Record<string, unknown>;
+  const overCap = overSaveCaps(doc.sections as Record<string, unknown>[]);
+  if (overCap) return { ok: false, error: overCap };
+  return { ok: true, input: doc, ack: SOP_ACK };
 }

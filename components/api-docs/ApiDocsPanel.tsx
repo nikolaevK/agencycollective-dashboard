@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { ExternalLink, KeyRound, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DashboardShell } from "@/components/layout/DashboardShell";
@@ -10,7 +9,6 @@ import { badgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -22,15 +20,9 @@ import {
 import { CodeBlock } from "./CodeBlock";
 import { OperationCard } from "./OperationCard";
 import { METHOD_TONE } from "./methodTone";
-import type { JumpGroup } from "./ApiDocsJumpMenu";
+import { ApiDocsJumpMenu, type JumpGroup } from "./ApiDocsJumpMenu";
 import { listOperations, openApiSpec } from "@/lib/api/openapi";
 import { SCOPE_MODULES } from "@/lib/apiScopes";
-
-// Lazy: the phone-only jump menu's Radix Select stays out of the first load.
-const ApiDocsJumpMenu = dynamic(() => import("./ApiDocsJumpMenu").then((m) => m.ApiDocsJumpMenu), {
-  ssr: false,
-  loading: () => <Skeleton className="h-9 w-full rounded-3xl" />,
-});
 
 const REFERENCE_SECTIONS = [
   { id: "authentication", label: "Authentication" },

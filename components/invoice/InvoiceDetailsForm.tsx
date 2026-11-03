@@ -60,20 +60,25 @@ export function InvoiceDetailsForm({
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex flex-col gap-6 sm:flex-row">
-          {/* Logo */}
+          {/* Logo — the label targets the upload tile; once a logo is set the
+              tile is gone, so it names the image + remove button's group. */}
           <div className="grid shrink-0 content-start gap-2">
-            <Label htmlFor={`${id}-logo`}>Logo</Label>
-            <LogoField
-              size="lg"
-              id={`${id}-logo`}
-              logo={logo}
-              inputRef={fileRef}
-              onFile={handleLogoUpload}
-              onRemove={() => {
-                onChange("invoiceLogo", "");
-                if (fileRef.current) fileRef.current.value = "";
-              }}
-            />
+            <Label id={`${id}-logo-label`} htmlFor={logo ? undefined : `${id}-logo`}>
+              Logo
+            </Label>
+            <div role="group" aria-labelledby={`${id}-logo-label`}>
+              <LogoField
+                size="lg"
+                id={`${id}-logo`}
+                logo={logo}
+                inputRef={fileRef}
+                onFile={handleLogoUpload}
+                onRemove={() => {
+                  onChange("invoiceLogo", "");
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+              />
+            </div>
             {logoError && (
               <p role="alert" className="max-w-40 text-xs text-destructive">
                 {logoError}
@@ -134,7 +139,7 @@ export function InvoiceDetailsForm({
         {/* Theme color selector */}
         <div className="grid gap-3">
           <span className="text-sm font-medium leading-none">Theme Color</span>
-          <ThemeSwatches value={themeColor} onChange={(c) => onChange("themeColor", c)} />
+          <ThemeSwatches label="Theme Color" value={themeColor} onChange={(c) => onChange("themeColor", c)} />
         </div>
       </CardContent>
     </Card>

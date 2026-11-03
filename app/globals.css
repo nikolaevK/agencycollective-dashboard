@@ -95,8 +95,11 @@
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 63% 42%;
-    --destructive-foreground: 0 0% 98%;
+    /* Light enough to read as TEXT on the dark card (6.4:1; 4.7:1 on the kit's
+       /20 tinted buttons) — the old 0 63% 42% was 2.7:1. Solid fills therefore
+       take dark text (6.4:1). */
+    --destructive: 0 80% 70%;
+    --destructive-foreground: 0 0% 9%;
 
     /* shadcn's white 10% / 15% over the card, flattened (HSL vars here
        can't carry alpha — Tailwind appends its own opacity). */

@@ -9,6 +9,9 @@
  *   document (a tool call was still pending) can't be continued — the cut-off
  *   call is dropped whole and isn't in the history — so it says to ask for the
  *   document in parts instead of offering "Continue",
+ * - a reply the route's wrap-up turn finished (stopReason "wrap_up": its
+ *   step or time budget ran out) says to ask for anything missing next —
+ *   a second requested document can't be produced in that reply,
  * - refusal hints talk about documents, not ad metrics.
  */
 
@@ -42,6 +45,13 @@ export function docEndNotice(stopReason: string | undefined, writing: boolean): 
         : { type: "notice", kind: "limit", text: "The reply ran out of time before it finished.", action: "continue" };
     case "iteration_limit":
       return { type: "notice", kind: "limit", text: "Stopped after the maximum number of steps for one reply.", action: "continue" };
+    case "wrap_up":
+      return {
+        type: "notice",
+        kind: "limit",
+        text: "This reply used up its steps or time, so Claude wrapped it up. If a document you asked for is missing, ask for it next.",
+        action: "continue",
+      };
     default:
       return endNotice(stopReason);
   }
