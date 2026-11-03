@@ -1,10 +1,20 @@
 "use client";
 
 import { Pencil, Trash2, ShieldCheck, Shield } from "lucide-react";
-import Image from "next/image";
+import { AdminAvatar } from "./AdminAvatar";
 import { AdminPermissionGrid } from "./AdminPermissionGrid";
 import { adminRoleLabel, type AdminPublic } from "./types";
-import { getInitials } from "@/lib/utils";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface AdminTableProps {
   admins: AdminPublic[];
@@ -14,99 +24,103 @@ interface AdminTableProps {
   isPending: boolean;
 }
 
+export function AdminRoleBadge({ admin }: { admin: AdminPublic }) {
+  return admin.isSuper ? (
+    <Badge variant="default">
+      <ShieldCheck />
+      Super Admin
+    </Badge>
+  ) : (
+    <Badge variant="secondary">
+      <Shield />
+      {adminRoleLabel(admin.role)}
+    </Badge>
+  );
+}
+
 export function AdminTable({ admins, canMutate, onEdit, onDelete, isPending }: AdminTableProps) {
   return (
-    <div className="hidden md:block rounded-xl border border-border overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/40">
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Admin</th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Role</th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Permissions</th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Password</th>
-            {canMutate && <th className="px-4 py-3" />}
-          </tr>
-        </thead>
-        <tbody>
+    <Card className="hidden md:block">
+      <Table className="min-w-[680px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="pl-4">Admin</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead>Permissions</TableHead>
+            <TableHead>Password</TableHead>
+            {canMutate && (
+              <TableHead className="pr-4 text-right">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {admins.length === 0 && (
-            <tr>
-              <td colSpan={canMutate ? 5 : 4} className="px-4 py-8 text-center text-muted-foreground text-xs">
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={canMutate ? 5 : 4} className="py-12 text-center text-muted-foreground">
                 No admins found.
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           )}
-          {admins.map((admin) => (
-            <tr key={admin.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold overflow-hidden shrink-0">
-                    {admin.avatarPath ? (
-                      <Image src={admin.avatarPath} alt="" width={32} height={32} className="h-full w-full object-cover" />
-                    ) : (
-                      getInitials(admin.displayName, admin.username)
-                    )}
+          {admins.map((admin) => {
+            const name = admin.displayName || admin.username;
+            return (
+              <TableRow key={admin.id}>
+                <TableCell className="pl-4">
+                  <div className="flex items-center gap-3">
+                    <AdminAvatar admin={admin} size={32} />
+                    <div className="min-w-0 max-w-[16rem]">
+                      <p className="font-medium truncate">{name}</p>
+                      {admin.email && <p className="text-xs text-muted-foreground truncate">{admin.email}</p>}
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{admin.displayName || admin.username}</p>
-                    {admin.email && <p className="text-xs text-muted-foreground truncate">{admin.email}</p>}
-                  </div>
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                {admin.isSuper ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    <ShieldCheck className="h-3 w-3" />
-                    Super Admin
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Shield className="h-3 w-3" />
-                    {adminRoleLabel(admin.role)}
-                  </span>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                <AdminPermissionGrid permissions={admin.permissions} isSuper={admin.isSuper} />
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                    admin.hasPassword
-                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                  }`}
-                >
-                  {admin.hasPassword ? "Set" : "Pending"}
-                </span>
-              </td>
-              {canMutate && (
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => onEdit(admin)}
-                      disabled={isPending}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-40"
-                      title="Edit admin"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    {!admin.isSuper && (
-                      <button
-                        onClick={() => onDelete(admin.id)}
+                </TableCell>
+                <TableCell>
+                  <AdminRoleBadge admin={admin} />
+                </TableCell>
+                <TableCell>
+                  <AdminPermissionGrid permissions={admin.permissions} isSuper={admin.isSuper} />
+                </TableCell>
+                <TableCell>
+                  <StatusBadge tone={admin.hasPassword ? "success" : "warning"}>
+                    {admin.hasPassword ? "Set" : "Pending"}
+                  </StatusBadge>
+                </TableCell>
+                {canMutate && (
+                  <TableCell className="pr-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onEdit(admin)}
                         disabled={isPending}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-40"
-                        title="Delete admin"
+                        title="Edit admin"
+                        aria-label={`Edit ${name}`}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                        <Pencil />
+                      </Button>
+                      {!admin.isSuper && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => onDelete(admin.id)}
+                          disabled={isPending}
+                          title="Delete admin"
+                          aria-label={`Delete ${name}`}
+                          className="hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
+                        >
+                          <Trash2 />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </Card>
   );
 }

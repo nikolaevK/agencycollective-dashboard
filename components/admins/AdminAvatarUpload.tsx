@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { Camera } from "lucide-react";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface AdminAvatarUploadProps {
   currentPath: string | null;
@@ -13,6 +14,7 @@ interface AdminAvatarUploadProps {
 export function AdminAvatarUpload({ currentPath, initials, onFileSelect, previewUrl }: AdminAvatarUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
+  const { toastError } = useToast();
 
   const displayUrl = previewUrl ?? localPreview ?? currentPath;
 
@@ -29,12 +31,12 @@ export function AdminAvatarUpload({ currentPath, initials, onFileSelect, preview
 
     // Client-side validation
     if (file.size > 2 * 1024 * 1024) {
-      alert("File too large (max 2 MB)");
+      toastError("File too large (max 2 MB)");
       return;
     }
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!["png", "jpg", "jpeg", "webp"].includes(ext ?? "")) {
-      alert("Invalid file type. Allowed: PNG, JPG, WEBP");
+      toastError("Invalid file type. Allowed: PNG, JPG, WEBP");
       return;
     }
 
@@ -47,7 +49,8 @@ export function AdminAvatarUpload({ currentPath, initials, onFileSelect, preview
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="relative group h-20 w-20 rounded-full bg-primary/10 text-primary overflow-hidden"
+        aria-label="Upload avatar"
+        className="group relative size-20 overflow-hidden rounded-full bg-muted text-muted-foreground ring-1 ring-foreground/10 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
       >
         {displayUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -57,13 +60,13 @@ export function AdminAvatarUpload({ currentPath, initials, onFileSelect, preview
             className="h-full w-full object-cover"
           />
         ) : (
-          <span className="flex h-full w-full items-center justify-center text-xl font-bold">
+          <span className="flex h-full w-full items-center justify-center text-xl font-semibold">
             {initials}
           </span>
         )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Camera className="h-5 w-5 text-white" />
-        </div>
+        <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          <Camera className="size-5 text-white" />
+        </span>
       </button>
       <input
         ref={inputRef}

@@ -1,11 +1,15 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Pen, Type, Upload, X, Trash2 } from "lucide-react";
+import { Pen, Type, Upload, Trash2 } from "lucide-react";
 import type { SignatureData } from "@/types/invoice";
 import { SIGNATURE_FONTS, SIGNATURE_COLORS } from "@/lib/invoice/validation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
+import { SEGMENT_ITEM, SEGMENT_TRACK } from "./InvoiceField";
 
 interface Props {
   signature: SignatureData | null;
@@ -13,6 +17,10 @@ interface Props {
 }
 
 type Tab = "draw" | "type" | "upload";
+
+// The signature surfaces stay white in both themes: the signature prints on
+// the white invoice page, and its ink colors are picked for paper.
+const PAPER = "rounded-2xl border bg-white";
 
 export function InvoiceSignature({ signature, onChange }: Props) {
   const [open, setOpen] = useState(false);
@@ -24,6 +32,7 @@ export function InvoiceSignature({ signature, onChange }: Props) {
   const [selectedColor, setSelectedColor] = useState(
     signature?.color || SIGNATURE_COLORS[0].color
   );
+  const [uploadError, setUploadError] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawing = useRef(false);
@@ -129,9 +138,10 @@ export function InvoiceSignature({ signature, onChange }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isPdfImageType(file.type)) {
-      alert(PDF_IMAGE_ERROR);
+      setUploadError(PDF_IMAGE_ERROR);
       return;
     }
+    setUploadError("");
     const reader = new FileReader();
     reader.onload = () => {
       onChange({
@@ -150,26 +160,32 @@ export function InvoiceSignature({ signature, onChange }: Props) {
   ];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-semibold text-foreground uppercase tracking-wide">
-          Signature
-        </label>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-base font-medium leading-snug">Signature</h3>
         {signature && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => onChange(null)}
-            className="text-xs text-destructive hover:text-destructive/80 transition-colors"
+            className="text-destructive hover:text-destructive"
           >
             Remove
-          </button>
+          </Button>
         )}
       </div>
 
-      {/* Preview of current signature */}
+      {/* Preview of current signature — click to edit */}
       {signature && !open && (
-        <div
+        <button
+          type="button"
           onClick={() => setOpen(true)}
-          className="cursor-pointer rounded-lg border border-border bg-white p-3 hover:border-primary/50 transition-colors"
+          aria-label="Edit signature"
+          className={cn(
+            PAPER,
+            "block w-full p-3 text-left outline-none transition-shadow hover:ring-2 hover:ring-ring/30 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+          )}
         >
           {signature.type === "draw" || signature.type === "upload" ? (
             <img
@@ -178,7 +194,8 @@ export function InvoiceSignature({ signature, onChange }: Props) {
               className="h-16 object-contain"
             />
           ) : (
-            <p
+            <span
+              className="block"
               style={{
                 fontFamily: `'${signature.fontFamily}', cursive`,
                 color: signature.color || "#000",
@@ -186,42 +203,43 @@ export function InvoiceSignature({ signature, onChange }: Props) {
               }}
             >
               {signature.data}
-            </p>
+            </span>
           )}
-        </div>
+        </button>
       )}
 
       {!signature && !open && (
         <button
+          type="button"
           onClick={() => setOpen(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-4 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed py-4 text-sm text-muted-foreground outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
         >
-          <Pen className="h-4 w-4" />
+          <Pen className="size-4" />
           Add Signature
         </button>
       )}
 
-      {/* Modal */}
+      {/* Editor */}
       {open && (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-          {/* Tabs */}
-          <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+        <div className="space-y-4 rounded-2xl bg-muted/50 p-4">
+          {/* Tabs — each its own Tab stop, as the old buttons were */}
+          <ToggleGroup
+            type="single"
+            rovingFocus={false}
+            value={tab}
+            onValueChange={(v) => {
+              if (v) setTab(v as Tab);
+            }}
+            aria-label="Signature method"
+            className={cn("w-full", SEGMENT_TRACK)}
+          >
             {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  tab === t.id
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <t.icon className="h-3.5 w-3.5" />
+              <ToggleGroupItem key={t.id} value={t.id} className={cn(SEGMENT_ITEM, "min-w-0 flex-1 gap-1.5")}>
+                <t.icon className="size-3.5" />
                 {t.label}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
 
           {/* Color selector */}
           {(tab === "draw" || tab === "type") && (
@@ -230,12 +248,15 @@ export function InvoiceSignature({ signature, onChange }: Props) {
               {SIGNATURE_COLORS.map((c) => (
                 <button
                   key={c.name}
+                  type="button"
                   onClick={() => setSelectedColor(c.color)}
+                  aria-label={c.name}
+                  aria-pressed={selectedColor === c.color}
                   className={cn(
-                    "h-6 w-6 rounded-full border-2 transition-all",
+                    "size-6 rounded-full border-2 outline-none transition-all focus-visible:ring-[3px] focus-visible:ring-ring/50",
                     selectedColor === c.color
-                      ? "border-primary scale-110"
-                      : "border-transparent hover:scale-105"
+                      ? "scale-110 border-foreground"
+                      : "border-foreground/15 hover:scale-105"
                   )}
                   style={{ backgroundColor: c.color }}
                 />
@@ -257,50 +278,44 @@ export function InvoiceSignature({ signature, onChange }: Props) {
                 onTouchStart={startDraw}
                 onTouchMove={draw}
                 onTouchEnd={stopDraw}
-                className="w-full rounded-lg border border-border bg-white cursor-crosshair touch-none"
+                className={cn(PAPER, "w-full cursor-crosshair touch-none")}
                 style={{ height: "120px" }}
               />
-              <div className="flex gap-2">
-                <button
-                  onClick={clearCanvas}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Clear
-                </button>
-              </div>
+              <Button type="button" variant="ghost" size="xs" onClick={clearCanvas} className="-ml-2.5">
+                <Trash2 />
+                Clear
+              </Button>
             </div>
           )}
 
           {/* Type tab */}
           {tab === "type" && (
             <div className="space-y-3">
-              <input
+              <Input
                 type="text"
+                aria-label="Typed signature"
                 value={typedText}
                 onChange={(e) => setTypedText(e.target.value)}
                 placeholder="Type your signature"
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
               />
               <div className="flex flex-wrap gap-2">
                 {SIGNATURE_FONTS.map((f) => (
-                  <button
+                  <Button
                     key={f.name}
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setSelectedFont(f.name)}
-                    className={cn(
-                      "rounded-md border px-3 py-1.5 text-sm transition-colors",
-                      selectedFont === f.name
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border text-muted-foreground hover:border-primary/50"
-                    )}
+                    aria-pressed={selectedFont === f.name}
+                    className="text-sm font-normal aria-pressed:border-foreground aria-pressed:bg-muted"
                     style={{ fontFamily: `'${f.name}', cursive` }}
                   >
                     {f.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {typedText && (
-                <div className="rounded-lg border border-border bg-white p-3">
+                <div className={cn(PAPER, "p-3")}>
                   <p
                     style={{
                       fontFamily: `'${selectedFont}', cursive`,
@@ -317,12 +332,13 @@ export function InvoiceSignature({ signature, onChange }: Props) {
 
           {/* Upload tab */}
           {tab === "upload" && (
-            <div>
+            <div className="space-y-2">
               <button
+                type="button"
                 onClick={() => fileRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-6 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-foreground/15 py-6 text-sm text-muted-foreground outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
               >
-                <Upload className="h-5 w-5" />
+                <Upload className="size-5" />
                 Upload signature image
               </button>
               <input
@@ -332,24 +348,27 @@ export function InvoiceSignature({ signature, onChange }: Props) {
                 onChange={handleFileUpload}
                 className="hidden"
               />
+              {uploadError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {uploadError}
+                </p>
+              )}
             </div>
           )}
 
           {/* Actions */}
           <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setOpen(false)}
-              className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel
-            </button>
+            </Button>
             {tab !== "upload" && (
-              <button
+              <Button
+                type="button"
+                size="sm"
                 onClick={tab === "draw" ? handleSaveDrawn : handleSaveTyped}
-                className="rounded-md px-4 py-1.5 text-xs font-medium text-white ac-gradient hover:opacity-90 transition-opacity"
               >
                 Save Signature
-              </button>
+              </Button>
             )}
           </div>
         </div>

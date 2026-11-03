@@ -63,7 +63,7 @@ export function describeClaudeError(err: unknown): DescribedError {
   }
   return {
     code: "unknown",
-    message: "Something went wrong while analyzing. Try again.",
+    message: "Something went wrong. Try again.",
     retryable: true,
   };
 }

@@ -1,16 +1,18 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import { CodeBlock } from "./CodeBlock";
+import { METHOD_TONE } from "./methodTone";
 import type { FlatOperation, OpenApiSchema } from "@/lib/api/openapi";
-
-const METHOD_BADGE: Record<string, string> = {
-  get: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  post: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  put: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  patch: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  delete: "bg-red-500/10 text-red-600 dark:text-red-400",
-};
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function schemaTypeLabel(schema?: OpenApiSchema): string {
   if (!schema) return "any";
@@ -69,34 +71,37 @@ function buildCurl(operation: FlatOperation): string {
   return lines.join("\n");
 }
 
+// Compact docs tables: shorter header row, wrapping description cells.
+const TH = "h-9 px-2 text-xs text-muted-foreground first:pl-0";
+const TD = "px-2 py-1.5 text-xs whitespace-normal align-top first:pl-0";
+
 export function OperationCard({ operation }: { operation: FlatOperation }) {
   const params = operation.parameters ?? [];
   const bodyProps = operation.requestBody?.schema.properties;
   const bodyRequired = new Set(operation.requestBody?.schema.required ?? []);
 
   return (
-    <div id={operation.operationId} className="scroll-mt-24 rounded-xl border border-border bg-card p-5 space-y-4">
+    <Card id={operation.operationId} className="scroll-mt-24 space-y-4 p-4 md:p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={cn(
-            "rounded-md px-2 py-0.5 font-mono text-xs font-bold uppercase",
-            METHOD_BADGE[operation.method] ?? "bg-muted text-muted-foreground"
-          )}
+        <Badge
+          variant="outline"
+          tone={METHOD_TONE[operation.method] ?? "neutral"}
+          className="font-mono font-semibold uppercase"
         >
           {operation.method}
-        </span>
-        <code className="font-mono text-sm break-all">/api/v1{operation.path}</code>
-        <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+        </Badge>
+        <code className="min-w-0 font-mono text-sm break-all">/api/v1{operation.path}</code>
+        <Badge variant="secondary" className="ml-auto font-mono">
           {operation["x-scope"]}
-        </span>
+        </Badge>
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold">{operation.summary}</h3>
+        <h4 className="text-sm font-semibold">{operation.summary}</h4>
         {operation.description && (
           <p className="mt-1 text-xs text-muted-foreground">{operation.description}</p>
         )}
-        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+        <p className="mt-1 font-mono text-[11px] text-muted-foreground break-all">
           operationId: {operation.operationId}
           {operation["x-binary"] && " · binary response"}
           {operation["x-multipart"] && " · multipart/form-data"}
@@ -104,61 +109,63 @@ export function OperationCard({ operation }: { operation: FlatOperation }) {
       </div>
 
       {params.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="py-1.5 pr-3 font-medium">Parameter</th>
-                <th className="py-1.5 pr-3 font-medium">In</th>
-                <th className="py-1.5 pr-3 font-medium">Type</th>
-                <th className="py-1.5 font-medium">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {params.map((p) => (
-                <tr key={`${p.in}-${p.name}`} className="border-b border-border/50">
-                  <td className="py-1.5 pr-3 font-mono">
-                    {p.name}
-                    {(p.required || p.in === "path") && <span className="text-red-500">*</span>}
-                  </td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">{p.in}</td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">{schemaTypeLabel(p.schema)}</td>
-                  <td className="py-1.5 text-muted-foreground">{p.description ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table className="min-w-[480px]">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className={TH}>Parameter</TableHead>
+              <TableHead className={TH}>In</TableHead>
+              <TableHead className={TH}>Type</TableHead>
+              <TableHead className={TH}>Description</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {params.map((p) => (
+              <TableRow key={`${p.in}-${p.name}`} className="hover:bg-transparent">
+                <TableCell className={`${TD} font-mono whitespace-nowrap`}>
+                  {p.name}
+                  {(p.required || p.in === "path") && (
+                    <span className="text-destructive" title="Required">*</span>
+                  )}
+                </TableCell>
+                <TableCell className={`${TD} text-muted-foreground`}>{p.in}</TableCell>
+                <TableCell className={`${TD} text-muted-foreground`}>{schemaTypeLabel(p.schema)}</TableCell>
+                <TableCell className={`${TD} text-muted-foreground`}>{p.description ?? ""}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {bodyProps && !operation["x-multipart"] && (
-        <div className="overflow-x-auto">
-          <p className="mb-1.5 text-xs font-medium">Request body (JSON)</p>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="py-1.5 pr-3 font-medium">Field</th>
-                <th className="py-1.5 pr-3 font-medium">Type</th>
-                <th className="py-1.5 font-medium">Description</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium">Request body (JSON)</p>
+          <Table className="min-w-[480px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className={TH}>Field</TableHead>
+                <TableHead className={TH}>Type</TableHead>
+                <TableHead className={TH}>Description</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {Object.entries(bodyProps).map(([name, schema]) => (
-                <tr key={name} className="border-b border-border/50">
-                  <td className="py-1.5 pr-3 font-mono">
+                <TableRow key={name} className="hover:bg-transparent">
+                  <TableCell className={`${TD} font-mono whitespace-nowrap`}>
                     {name}
-                    {bodyRequired.has(name) && <span className="text-red-500">*</span>}
-                  </td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">{schemaTypeLabel(schema)}</td>
-                  <td className="py-1.5 text-muted-foreground">{schema.description ?? ""}</td>
-                </tr>
+                    {bodyRequired.has(name) && (
+                      <span className="text-destructive" title="Required">*</span>
+                    )}
+                  </TableCell>
+                  <TableCell className={`${TD} text-muted-foreground`}>{schemaTypeLabel(schema)}</TableCell>
+                  <TableCell className={`${TD} text-muted-foreground`}>{schema.description ?? ""}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
       <CodeBlock code={buildCurl(operation)} language="curl" />
-    </div>
+    </Card>
   );
 }

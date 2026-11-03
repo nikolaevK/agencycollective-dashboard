@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { Bold, Italic, Heading, List, ListOrdered, Link2, Quote } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Labeled } from "@/components/welcome-kit/builder/fields";
 
 type WrapAction = { icon: typeof Bold; title: string; wrap: [string, string]; sample: string };
@@ -84,25 +84,27 @@ export function MarkdownTextArea({
 
   return (
     <Labeled label={label}>
-      <div className="rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-primary/40">
-        <div className="flex flex-wrap items-center gap-0.5 border-b border-border/60 px-1.5 py-1">
+      <div className="rounded-2xl bg-input/50 transition-[box-shadow] focus-within:ring-[3px] focus-within:ring-ring/30">
+        <div className="flex flex-wrap items-center gap-0.5 border-b border-foreground/5 px-1.5 py-1 dark:border-foreground/10">
           {actions.map((a, i) => {
             const Icon = a.icon;
             return (
-              <button
+              <Button
                 key={i}
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 title={a.title}
                 aria-label={a.title}
                 onMouseDown={(e) => e.preventDefault()} // keep textarea selection
                 onClick={() => apply(a)}
-                className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                className="size-7 text-muted-foreground"
               >
-                <Icon className="h-3.5 w-3.5" />
-              </button>
+                <Icon className="size-3.5" />
+              </Button>
             );
           })}
-          <span className="ml-auto hidden pr-1 text-[10px] text-muted-foreground sm:block">
+          <span className="ml-auto hidden pr-1.5 text-[11px] text-muted-foreground sm:block">
             **bold** · *italic* · [text](url)
           </span>
         </div>
@@ -112,7 +114,7 @@ export function MarkdownTextArea({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
-          className={cn("w-full resize-y bg-transparent px-3 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:outline-none")}
+          className="w-full resize-y bg-transparent px-3 py-2 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
         />
       </div>
     </Labeled>

@@ -2,7 +2,19 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ui/use-confirm";
 
 interface WorkspaceRegistryEntry {
   value: string;
@@ -20,6 +32,7 @@ interface WorkspaceRegistryEntry {
  */
 export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [newLabel, setNewLabel] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -84,101 +97,96 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
   }
 
   async function handleDelete(entry: WorkspaceRegistryEntry) {
-    if (
-      !confirm(
-        `Remove workspace "${entry.label}"? All clients must be moved out and all admins unassigned first.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Remove workspace "${entry.label}"?`,
+      description: "All clients must be moved out and all admins unassigned first.",
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
     await request(`/api/admin/admins/workspaces?value=${encodeURIComponent(entry.value)}`, {
       method: "DELETE",
     });
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative mt-16 w-full max-w-lg rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Workspaces</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+    <>
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto overscroll-contain sm:max-w-lg">
+          <DialogHeader className="pr-10">
+            <DialogTitle>Workspaces</DialogTitle>
+            <DialogDescription>
               Separate Client Directory / Team books for outside teams.
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="p-5 space-y-4">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="grid gap-2">
+              {[0, 1].map((i) => (
+                <Skeleton key={i} className="h-14 w-full" />
+              ))}
+            </div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="grid gap-2">
               {registry.map((w) => (
-                <li
-                  key={w.value}
-                  className="flex items-center gap-3 rounded-xl border border-border/50 px-3 py-2.5"
-                >
+                <li key={w.value} className="flex min-h-14 items-center gap-2 rounded-2xl border px-3 py-2">
                   {editing === w.value ? (
                     <>
-                      <input
+                      <Input
                         value={editLabel}
                         onChange={(e) => setEditLabel(e.target.value)}
-                        className="flex-1 rounded-lg bg-muted/40 dark:bg-white/5 px-2.5 py-1.5 text-sm text-foreground focus:outline-none"
+                        aria-label={`Rename ${w.label}`}
+                        className="flex-1"
                         autoFocus
                       />
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => handleRename(w.value)}
                         disabled={busy}
-                        className="p-1.5 rounded-lg hover:bg-muted text-emerald-600"
                         title="Save"
+                        aria-label="Save name"
                       >
-                        <Check className="h-4 w-4" />
-                      </button>
+                        <Check />
+                      </Button>
                     </>
                   ) : (
                     <>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {w.label}
-                          {w.builtIn && (
-                            <span className="ml-2 text-[11px] font-medium text-muted-foreground">
-                              main book
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                          <span className="truncate">{w.label}</span>
+                          {w.builtIn && <Badge variant="secondary">main book</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground tabular-nums">
                           {w.clientCount} client{w.clientCount === 1 ? "" : "s"} ·{" "}
                           {w.adminCount} admin{w.adminCount === 1 ? "" : "s"}
                         </p>
                       </div>
                       {!w.builtIn && (
                         <>
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => {
                               setEditing(w.value);
                               setEditLabel(w.label);
                             }}
-                            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
                             title="Rename"
+                            aria-label={`Rename ${w.label}`}
                           >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
+                            <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => handleDelete(w)}
                             disabled={busy}
-                            className="p-1.5 rounded-lg hover:bg-muted text-destructive"
                             title="Remove"
+                            aria-label={`Remove ${w.label}`}
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         </>
                       )}
                     </>
@@ -189,30 +197,27 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
           )}
 
           <div className="flex items-center gap-2">
-            <input
+            <Input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               placeholder="New workspace name (e.g. Team North)"
-              className="flex-1 rounded-xl bg-muted/40 dark:bg-white/5 border-2 border-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+              aria-label="New workspace name"
+              className="flex-1"
             />
-            <button
-              onClick={handleAdd}
-              disabled={busy || !newLabel.trim()}
-              className="flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white ac-gradient hover:opacity-90 disabled:opacity-40 transition-all"
-            >
-              <Plus className="h-4 w-4" />
+            <Button onClick={handleAdd} disabled={busy || !newLabel.trim()}>
+              <Plus />
               Add
-            </button>
+            </Button>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
-              <p className="text-sm text-destructive">{error}</p>
+            <div role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
             </div>
           )}
 
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Assign admins to a workspace in Add/Edit Admin. Clients are assigned
             on create (Add Client) or moved from their Settings tab. An admin
             whose workspaces don&apos;t include the main book is an external
@@ -220,8 +225,9 @@ export function WorkspaceManagerModal({ onClose }: { onClose: () => void }) {
             support threads and team members — the Payout DB, Welcome Kit and
             SOPs stay hidden.
           </p>
-        </div>
-      </div>
-    </div>
+        </DialogContent>
+      </Dialog>
+      {dialog}
+    </>
   );
 }

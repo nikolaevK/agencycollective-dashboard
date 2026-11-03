@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pdf } from "@react-pdf/renderer";
 import {
   Download,
   Eye,
@@ -28,10 +27,29 @@ import {
   exportAsXml,
   downloadBlob,
 } from "@/lib/invoice/validation";
-import { InvoicePdfDocument } from "./InvoicePdfTemplate";
 import { AttachmentPicker, useEmailAttachments } from "../AttachmentPicker";
+import { INVOICE_NOTICE, InvoiceField, NativeSelect } from "../InvoiceField";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isValidEmail } from "@/lib/invoice/email";
+
+// react-pdf + the PDF template (~500 kB) load on first use — not with the
+// Invoice page. Hovering/focusing the PDF buttons starts the download, so a
+// click rarely waits on it. Memoized: one fetch per page load.
+let pdfKit: Promise<[typeof import("@react-pdf/renderer"), typeof import("./InvoicePdfTemplate")]> | null = null;
+function loadPdfKit() {
+  if (!pdfKit) {
+    pdfKit = Promise.all([import("@react-pdf/renderer"), import("./InvoicePdfTemplate")]);
+    // A failed chunk load must not poison every later attempt.
+    pdfKit.catch(() => {
+      pdfKit = null;
+    });
+  }
+  return pdfKit;
+}
 
 interface Props {
   data: InvoiceData;
@@ -57,6 +75,7 @@ function friendlyIssue(path: (string | number)[], message: string): string {
 }
 
 export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }: Props) {
+  const id = useId();
   const [generating, setGenerating] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -104,6 +123,7 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }
     if (!validate()) return null;
     setGenerating(true);
     try {
+      const [{ pdf }, { InvoicePdfDocument }] = await loadPdfKit();
       const blob = await pdf(<InvoicePdfDocument data={data} />).toBlob();
       return blob;
     } catch (err) {
@@ -232,212 +252,184 @@ export function InvoicePdfActions({ data, onNewInvoice, onOpenSaved, onPreview }
     }
   };
 
+  const sendDisabled = sending || generating || sendResult === "success" || !email.trim();
+
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-        Actions
-      </h3>
+    <Card>
+      <CardHeader className="pb-4 md:pb-4">
+        <CardTitle>Actions</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Validation errors */}
+        {validationErrors.length > 0 && (
+          <div role="alert" className={cn(INVOICE_NOTICE, "space-y-1 font-normal", badgeTone.danger)}>
+            {validationErrors.map((err, i) => (
+              <p key={i}>{err}</p>
+            ))}
+          </div>
+        )}
 
-      {/* Validation errors */}
-      {validationErrors.length > 0 && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1">
-          {validationErrors.map((err, i) => (
-            <p key={i} className="text-xs text-destructive">{err}</p>
-          ))}
-        </div>
-      )}
-
-      {saveMsg && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-          <p className="text-xs text-emerald-600 font-medium">{saveMsg}</p>
-        </div>
-      )}
-
-      {/* File operations */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={onNewInvoice}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-        >
-          <FilePlus className="h-3.5 w-3.5" />
-          New
-        </button>
-        <button
-          onClick={onOpenSaved}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-          Load
-        </button>
-        <button
-          onClick={handleSave}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-        >
-          <Save className="h-3.5 w-3.5" />
-          Save
-        </button>
-        <button
-          onClick={() => setExportOpen(!exportOpen)}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-        >
-          <FileJson className="h-3.5 w-3.5" />
-          Export
-        </button>
-      </div>
-
-      {/* Export panel */}
-      {exportOpen && (
-        <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            Export format
+        {saveMsg && (
+          <p role="status" className={cn(INVOICE_NOTICE, badgeTone.success)}>
+            {saveMsg}
           </p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => handleExport("json")}
-              className="flex flex-col items-center gap-1 rounded-md border border-border py-2 text-xs hover:bg-accent transition-colors"
-            >
-              <FileJson className="h-4 w-4 text-amber-500" />
-              JSON
-            </button>
-            <button
-              onClick={() => handleExport("csv")}
-              className="flex flex-col items-center gap-1 rounded-md border border-border py-2 text-xs hover:bg-accent transition-colors"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
-              CSV
-            </button>
-            <button
-              onClick={() => handleExport("xml")}
-              className="flex flex-col items-center gap-1 rounded-md border border-border py-2 text-xs hover:bg-accent transition-colors"
-            >
-              <FileCode className="h-4 w-4 text-blue-500" />
-              XML
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* PDF actions */}
-      <div className="border-t border-border/50 pt-4">
-        <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Generate PDF
-        </p>
+        {/* File operations */}
         <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={handleDownload}
-            disabled={generating}
-            className={cn(
-              "flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all col-span-2",
-              "ac-gradient shadow-lg shadow-primary/20",
-              generating && "opacity-60 cursor-not-allowed"
-            )}
-          >
-            {generating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {generating ? "Generating..." : "Download PDF"}
-          </button>
-          <button
-            onClick={handlePreview}
-            disabled={generating}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Preview
-          </button>
-          <button
-            onClick={handlePrint}
-            disabled={generating}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print
-          </button>
-          <button
-            onClick={() => {
-              setEmailOpen(true);
-              setSendResult(null);
-            }}
-            disabled={generating}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60 col-span-2"
-          >
-            <Mail className="h-3.5 w-3.5" />
-            Send via Email
-          </button>
-        </div>
-      </div>
-
-      {/* Email dialog */}
-      {emailOpen && (
-        <div className="rounded-lg border border-border bg-background p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-foreground">Send Invoice</span>
-            <button
-              type="button"
-              onClick={() => { setEmailOpen(false); setSendResult(null); setSendError(null); attach.clear(); }}
-              disabled={sending}
-              aria-label="Close send panel"
-              className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {emailAccounts.length > 0 && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Send from</label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => setFromAccount(e.target.value)}
-                className="flex h-9 w-full appearance-none rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
-              >
-                {emailAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label && a.label !== a.email ? `${a.label} (${a.email})` : a.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <input
-            type="email"
-            aria-label="Recipient email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (sendError) setSendError(null);
-            }}
-            placeholder="recipient@example.com"
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
-          />
-
-          {/* Attachments (optional) — included with the email alongside the
-              invoice PDF. */}
-          <AttachmentPicker state={attach} />
-
-          {sendResult === "success" && (
-            <p className="text-xs text-emerald-600">Invoice sent!</p>
-          )}
-          {sendResult === "error" && (
-            <p className="text-xs text-destructive">
-              {sendError ?? "Failed to send. Check server SMTP configuration."}
-            </p>
-          )}
-          <button
+          <Button type="button" variant="outline" size="sm" onClick={onNewInvoice}>
+            <FilePlus />
+            New
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onOpenSaved}>
+            <FolderOpen />
+            Load
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleSave}>
+            <Save />
+            Save
+          </Button>
+          <Button
             type="button"
-            onClick={handleSendEmail}
-            disabled={sending || generating || sendResult === "success" || !email.trim()}
-            className={cn(
-              "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all ac-gradient",
-              (sending || generating || sendResult === "success" || !email.trim()) && "opacity-60 cursor-not-allowed"
-            )}
+            variant="outline"
+            size="sm"
+            onClick={() => setExportOpen(!exportOpen)}
+            aria-expanded={exportOpen}
           >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-            {sending ? "Sending..." : "Send"}
-          </button>
+            <FileJson />
+            Export
+          </Button>
         </div>
-      )}
-    </div>
+
+        {/* Export panel */}
+        {exportOpen && (
+          <div className="space-y-2 rounded-2xl bg-muted/50 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Export format</p>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { format: "json", label: "JSON", icon: FileJson },
+                  { format: "csv", label: "CSV", icon: FileSpreadsheet },
+                  { format: "xml", label: "XML", icon: FileCode },
+                ] as const
+              ).map((o) => (
+                <Button
+                  key={o.format}
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleExport(o.format)}
+                  className="h-auto flex-col gap-1 rounded-2xl py-2 text-xs"
+                >
+                  <o.icon className="text-muted-foreground" />
+                  {o.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* PDF actions */}
+        <div
+          className="space-y-2 border-t pt-4"
+          // Warm the PDF renderer before the click lands.
+          onPointerEnter={() => void loadPdfKit()}
+          onFocus={() => void loadPdfKit()}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Generate PDF</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" onClick={handleDownload} disabled={generating} className="col-span-2">
+              {generating ? <Loader2 className="animate-spin" /> : <Download />}
+              {generating ? "Generating..." : "Download PDF"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handlePreview} disabled={generating}>
+              <Eye />
+              Preview
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handlePrint} disabled={generating}>
+              <Printer />
+              Print
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEmailOpen(true);
+                setSendResult(null);
+              }}
+              disabled={generating}
+              className="col-span-2"
+            >
+              <Mail />
+              Send via Email
+            </Button>
+          </div>
+        </div>
+
+        {/* Email panel */}
+        {emailOpen && (
+          <div className="space-y-3 rounded-2xl bg-muted/50 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-foreground">Send Invoice</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => { setEmailOpen(false); setSendResult(null); setSendError(null); attach.clear(); }}
+                disabled={sending}
+                aria-label="Close send panel"
+                className="text-muted-foreground"
+              >
+                <X />
+              </Button>
+            </div>
+            {emailAccounts.length > 0 && (
+              <InvoiceField label="Send from" htmlFor={`${id}-from`}>
+                <NativeSelect
+                  id={`${id}-from`}
+                  value={selectedAccount}
+                  onChange={(e) => setFromAccount(e.target.value)}
+                >
+                  {emailAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label && a.label !== a.email ? `${a.label} (${a.email})` : a.email}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </InvoiceField>
+            )}
+            <Input
+              type="email"
+              aria-label="Recipient email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (sendError) setSendError(null);
+              }}
+              placeholder="recipient@example.com"
+            />
+
+            {/* Attachments (optional) — included with the email alongside the
+                invoice PDF. */}
+            <AttachmentPicker state={attach} />
+
+            {sendResult === "success" && (
+              <p role="status" className={cn(INVOICE_NOTICE, badgeTone.success)}>
+                Invoice sent!
+              </p>
+            )}
+            {sendResult === "error" && (
+              <p role="alert" className={cn(INVOICE_NOTICE, badgeTone.danger)}>
+                {sendError ?? "Failed to send. Check server SMTP configuration."}
+              </p>
+            )}
+            <Button type="button" onClick={handleSendEmail} disabled={sendDisabled} className="w-full">
+              {sending ? <Loader2 className="animate-spin" /> : <Mail />}
+              {sending ? "Sending..." : "Send"}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

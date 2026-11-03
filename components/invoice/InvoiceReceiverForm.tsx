@@ -1,16 +1,35 @@
 "use client";
 
+import { useId } from "react";
 import { Plus, X } from "lucide-react";
 import type { InvoiceReceiver } from "@/types/invoice";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { INPUT_CLS } from "./styles";
+import { InvoiceField } from "./InvoiceField";
 
 interface Props {
   receiver: InvoiceReceiver;
   onChange: (receiver: InvoiceReceiver) => void;
 }
 
+type TextField = Exclude<keyof InvoiceReceiver, "customInputs">;
+
+// Two columns: City + Zip share a row, everything else is full width.
+const FIELDS: { key: TextField; label: string; type: string; placeholder: string; half?: boolean }[] = [
+  { key: "name", label: "Name", type: "text", placeholder: "Client / business name" },
+  { key: "email", label: "Email", type: "email", placeholder: "client@example.com" },
+  { key: "phone", label: "Phone", type: "tel", placeholder: "+1 (555) 000-0000" },
+  { key: "address", label: "Address", type: "text", placeholder: "Street address" },
+  { key: "city", label: "City", type: "text", placeholder: "City", half: true },
+  { key: "zipCode", label: "Zip Code", type: "text", placeholder: "Zip", half: true },
+  { key: "country", label: "Country", type: "text", placeholder: "Country" },
+];
+
 export function InvoiceReceiverForm({ receiver, onChange }: Props) {
+  const id = useId();
+
   const update = (field: keyof InvoiceReceiver, value: string) => {
     onChange({ ...receiver, [field]: value });
   };
@@ -41,148 +60,71 @@ export function InvoiceReceiverForm({ receiver, onChange }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-        Bill To
-      </h3>
-
-      <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Name
-          </label>
-          <input
-            type="text"
-            value={receiver.name}
-            onChange={(e) => update("name", e.target.value)}
-            placeholder="Client / business name"
-            className={INPUT_CLS}
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Email
-          </label>
-          <input
-            type="email"
-            value={receiver.email}
-            onChange={(e) => update("email", e.target.value)}
-            placeholder="client@example.com"
-            className={INPUT_CLS}
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Phone
-          </label>
-          <input
-            type="tel"
-            value={receiver.phone}
-            onChange={(e) => update("phone", e.target.value)}
-            placeholder="+1 (555) 000-0000"
-            className={INPUT_CLS}
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Address
-          </label>
-          <input
-            type="text"
-            value={receiver.address}
-            onChange={(e) => update("address", e.target.value)}
-            placeholder="Street address"
-            className={INPUT_CLS}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              City
-            </label>
-            <input
-              type="text"
-              value={receiver.city}
-              onChange={(e) => update("city", e.target.value)}
-              placeholder="City"
-              className={INPUT_CLS}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Zip Code
-            </label>
-            <input
-              type="text"
-              value={receiver.zipCode}
-              onChange={(e) => update("zipCode", e.target.value)}
-              placeholder="Zip"
-              className={INPUT_CLS}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Country
-          </label>
-          <input
-            type="text"
-            value={receiver.country}
-            onChange={(e) => update("country", e.target.value)}
-            placeholder="Country"
-            className={INPUT_CLS}
-          />
-        </div>
-      </div>
-
-      {/* Custom inputs */}
-      {receiver.customInputs.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-border/50">
-          {receiver.customInputs.map((input, index) => (
-            <div key={input.id} className="flex items-start gap-2">
-              <input
-                type="text"
-                value={input.key}
-                onChange={(e) =>
-                  updateCustomInput(index, "key", e.target.value)
-                }
-                placeholder="Label (e.g. Tax ID)"
-                className={cn(INPUT_CLS, "flex-1")}
+    <Card>
+      <CardHeader>
+        <CardTitle>Bill To</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          {FIELDS.map((f) => (
+            <InvoiceField
+              key={f.key}
+              label={f.label}
+              htmlFor={`${id}-${f.key}`}
+              className={cn(!f.half && "col-span-2")}
+            >
+              <Input
+                id={`${id}-${f.key}`}
+                type={f.type}
+                value={receiver[f.key]}
+                onChange={(e) => update(f.key, e.target.value)}
+                placeholder={f.placeholder}
               />
-              <input
-                type="text"
-                value={input.value}
-                onChange={(e) =>
-                  updateCustomInput(index, "value", e.target.value)
-                }
-                placeholder="Value"
-                className={cn(INPUT_CLS, "flex-1")}
-              />
-              <button
-                type="button"
-                onClick={() => removeCustomInput(index)}
-                className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            </InvoiceField>
           ))}
         </div>
-      )}
 
-      <button
-        type="button"
-        onClick={addCustomInput}
-        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add Custom Field
-      </button>
-    </div>
+        {/* Custom inputs */}
+        {receiver.customInputs.length > 0 && (
+          <div className="space-y-2 border-t pt-4">
+            {receiver.customInputs.map((input, index) => (
+              <div key={input.id} className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  aria-label="Custom field label"
+                  value={input.key}
+                  onChange={(e) => updateCustomInput(index, "key", e.target.value)}
+                  placeholder="Label (e.g. Tax ID)"
+                  className="flex-1"
+                />
+                <Input
+                  type="text"
+                  aria-label="Custom field value"
+                  value={input.value}
+                  onChange={(e) => updateCustomInput(index, "value", e.target.value)}
+                  placeholder="Value"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => removeCustomInput(index)}
+                  aria-label="Remove custom field"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <X />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button type="button" variant="ghost" size="sm" onClick={addCustomInput} className="-ml-2 px-2">
+          <Plus />
+          Add Custom Field
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

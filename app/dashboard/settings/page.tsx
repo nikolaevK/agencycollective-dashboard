@@ -29,6 +29,28 @@ import {
   Boxes,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { BadgeDot, badgeTone, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { listOperations } from "@/lib/api/openapi";
+
+// A server component on purpose: ~2,500 lines of static docs ship as HTML
+// with no page JS. Only server-safe kit pieces (Card, Table, Badge — plain
+// components, no Radix) belong here.
 
 /* ------------------------------------------------------------------ */
 /* Layout primitives                                                   */
@@ -46,20 +68,22 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border overflow-hidden">
-      <div className="flex items-start gap-3 border-b border-border bg-muted/40 px-5 py-4">
-        <Icon className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
+    <Card>
+      <CardHeader className="flex-row items-start gap-3 space-y-0 border-b">
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="font-semibold tracking-tight">{title}</CardTitle>
           {subtitle && (
-            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+            <CardDescription className="text-xs [overflow-wrap:anywhere]">
+              {subtitle}
+            </CardDescription>
           )}
         </div>
-      </div>
-      <div className="px-5 py-4 text-sm text-muted-foreground leading-relaxed space-y-3">
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4 leading-relaxed text-muted-foreground md:pt-6">
         {children}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -72,7 +96,7 @@ function SubSection({
 }) {
   return (
     <div className="space-y-2 pt-1">
-      <p className="font-semibold text-foreground text-[13px]">{title}</p>
+      <h4 className="text-[13px] font-semibold text-foreground">{title}</h4>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -81,10 +105,10 @@ function SubSection({
 function Step({ n, children }: { n: number; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary mt-0.5">
+      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-foreground">
         {n}
       </span>
-      <span>{children}</span>
+      <span className="min-w-0">{children}</span>
     </div>
   );
 }
@@ -92,17 +116,34 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 function Bullet({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
-      <span>{children}</span>
+      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+      <span className="min-w-0">{children}</span>
     </li>
   );
 }
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-mono text-foreground">
+    <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground [overflow-wrap:anywhere]">
       {children}
     </code>
+  );
+}
+
+/** Inline status chip (the live UI's outline + dot look) — a span, since it
+ *  sits inside running text. */
+function Chip({
+  tone = "neutral",
+  children,
+}: {
+  tone?: BadgeTone;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className={cn(badgeVariants({ variant: "outline", tone }), "gap-1.5 align-middle")}>
+      <BadgeDot tone={tone} />
+      {children}
+    </span>
   );
 }
 
@@ -113,12 +154,13 @@ function Note({
   tone?: "info" | "warn";
   children: React.ReactNode;
 }) {
-  const cls =
-    tone === "warn"
-      ? "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400"
-      : "border-sky-500/20 bg-sky-500/5 text-sky-700 dark:text-sky-400";
   return (
-    <div className={`rounded-lg border px-3 py-2.5 text-xs ${cls}`}>
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3 text-xs leading-relaxed",
+        tone === "warn" ? badgeTone.warning : badgeTone.info
+      )}
+    >
       {children}
     </div>
   );
@@ -126,29 +168,27 @@ function Note({
 
 function Tabs({ items }: { items: { name: string; what: string }[] }) {
   return (
-    <div className="rounded-lg border border-border bg-background/50">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/30">
-          <tr>
-            <th className="text-left font-semibold text-foreground px-3 py-2 w-1/3">
-              Tab
-            </th>
-            <th className="text-left font-semibold text-foreground px-3 py-2">
-              Purpose
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-2xl ring-1 ring-foreground/10">
+      <Table className="text-xs">
+        <TableHeader>
+          <TableRow className="bg-muted/50 hover:bg-muted/50">
+            <TableHead className="h-9 w-1/3 px-3">Tab</TableHead>
+            <TableHead className="h-9 px-3">Purpose</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((t) => (
-            <tr key={t.name} className="border-t border-border">
-              <td className="px-3 py-2 font-medium text-foreground align-top">
+            <TableRow key={t.name} className="hover:bg-transparent">
+              <TableCell className="whitespace-normal px-3 py-2 align-top font-medium text-foreground">
                 {t.name}
-              </td>
-              <td className="px-3 py-2 align-top">{t.what}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="whitespace-normal px-3 py-2 align-top">
+                {t.what}
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -162,7 +202,7 @@ export default function AdminDocumentationPage() {
     <DashboardShell>
       <div className="space-y-6 max-w-4xl">
         <div>
-          <h1 className="text-2xl font-bold">Admin Documentation</h1>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Admin Documentation</h2>
           <p className="text-sm text-muted-foreground mt-1">
             A page-by-page reference for everything in the admin dashboard.
             Use the section links in the left sidebar to navigate to any
@@ -336,7 +376,7 @@ export default function AdminDocumentationPage() {
           <SubSection title="Severities">
             <ul className="space-y-1.5 list-none pl-0">
               <li className="flex items-start gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                <BadgeDot tone="danger" className="mt-2" />
                 <span>
                   <span className="font-medium text-foreground">Critical</span>{" "}
                   — needs immediate attention (zero spend on an active
@@ -344,7 +384,7 @@ export default function AdminDocumentationPage() {
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <BadgeDot tone="warning" className="mt-2" />
                 <span>
                   <span className="font-medium text-foreground">Warning</span>{" "}
                   — notable but not urgent (CPC unusually high, CTR low,
@@ -441,7 +481,7 @@ export default function AdminDocumentationPage() {
           <Note tone="warn">
             Generated images are not auto-saved to your Meta library — this
             is a brainstorming surface, not a publishing surface. Use the Ad
-            Copy page to draft accompanying copy for the creative you settle on.
+            Copy tab to draft accompanying copy for the creative you settle on.
           </Note>
         </Section>
 
@@ -565,14 +605,20 @@ export default function AdminDocumentationPage() {
         >
           <p>
             Full-screen directory of client portal accounts, cross-referenced
-            with the Payout DB. The page has three tabs:
+            with the Payout DB. The page has these tabs (Welcome Kit and
+            Cross-sell are hidden from partner-book admins):
           </p>
           <Tabs
             items={[
               {
                 name: "Directory",
                 what:
-                  "Full-width table of every client with payout-derived Monthly MRR, total revenue, date joined, last re-bill, and next re-bill status. Summary cards (Total / Active / MRR / Re-bills Due / Invoices Sent), a re-bill alerts banner, a sent-invoices banner, and filters sit above it. Click a row to open the per-client page.",
+                  "Full-width table of every client with payout-derived Monthly MRR, total revenue, date joined, last re-bill, and next re-bill status. Summary cards (Total Clients / Monthly MRR / Re-billed / Re-bills Due / Invoices Sent), a re-bill alerts banner, a sent-invoices banner, and filters sit above it. Click a row to open the per-client page.",
+              },
+              {
+                name: "Ad Accounts",
+                what:
+                  "Optional client ad-account purchases — one row per account with its monthly retainer, ad-spend fee, billing schedule, and invoice history. Send retainer + ad-spend-fee invoices from here; the Guide button explains the billing rules.",
               },
               {
                 name: "Support",
@@ -580,9 +626,19 @@ export default function AdminDocumentationPage() {
                   "Live admin↔client chat across all client conversations. Unread count surfaces as a red badge on the tab. Replies appear in the client portal instantly via polling.",
               },
               {
+                name: "Peptide AI",
+                what:
+                  "Each client's Peptide AI usage against their monthly AI budget (never opened, active, near limit, limit reached, or switched off).",
+              },
+              {
                 name: "Welcome Kit",
                 what:
                   "A builder for the global client onboarding kit — add, edit, reorder, and delete sections and content blocks, with a live preview. Publish a no-login public link anyone can open. Edits update what every client sees in their portal.",
+              },
+              {
+                name: "Cross-sell",
+                what:
+                  "The portal's “More from Agency Collective” page — the requests clients file from it, the service catalog (draft → live → retired), and the page design. Internal admins only.",
               },
             ]}
           />
@@ -660,7 +716,7 @@ export default function AdminDocumentationPage() {
               panel — grouped &ldquo;this month&rdquo; plus &ldquo;earlier — still
               awaiting payment.&rdquo; The status chip flips to{" "}
               <span className="font-medium text-foreground">Invoice sent</span>{" "}
-              (violet). They auto-clear when the payment lands in the Payout DB,
+              (blue). They auto-clear when the payment lands in the Payout DB,
               or you can{" "}
               <span className="font-medium text-foreground">Mark unpaid</span> as
               a historical marker (schedule unaffected; the client returns to
@@ -885,7 +941,7 @@ export default function AdminDocumentationPage() {
               <p>
                 The client immediately enters the{" "}
                 <span className="font-medium text-foreground">Invoice sent</span>{" "}
-                state — a violet banner appears at the top of the Billing tab,
+                state — a blue banner appears at the top of the Billing tab,
                 the status chip flips to{" "}
                 <span className="font-medium text-foreground">Invoice sent</span>
                 , and the client moves out of the Re-bill alerts panel into the
@@ -928,7 +984,7 @@ export default function AdminDocumentationPage() {
                 <span className="font-medium text-foreground">
                   Register existing
                 </span>{" "}
-                text link next to the Send button. Use it for invoices you sent{" "}
+                button next to the Send button. Use it for invoices you sent{" "}
                 <span className="font-medium">outside this UI</span> — before
                 this feature shipped, or via a direct email — so they pick up the
                 same{" "}
@@ -1261,7 +1317,7 @@ export default function AdminDocumentationPage() {
               <Bullet>
                 <span className="font-medium text-foreground">Pills</span> —
                 Deal Linked (green) if a deal references this event;
-                Setter: NAME (sky) if a setter has claimed this event;
+                Setter: NAME if a setter has claimed this event;
                 Tentative / Cancelled if the Google event has that status.
               </Bullet>
               <Bullet>
@@ -1350,20 +1406,16 @@ export default function AdminDocumentationPage() {
           <SubSection title="The sync chip">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                  Synced
-                </span>{" "}
+                <Chip tone="success">Synced</Chip>{" "}
                 — dashboard and GHL agree.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-amber-700 dark:text-amber-400">
-                  Out of sync
-                </span>{" "}
+                <Chip tone="warning">Out of sync</Chip>{" "}
                 — they disagree. The chip shows both observed values and
                 exposes the two recovery buttons.
               </Bullet>
               <Bullet>
-                <span className="font-medium text-foreground">Syncing…</span>{" "}
+                <Chip>Syncing…</Chip>{" "}
                 — spinner while a click is in flight.
               </Bullet>
             </ul>
@@ -2112,7 +2164,7 @@ export default function AdminDocumentationPage() {
               <Bullet>
                 Create folders from the rail&apos;s <Pill>+</Pill> or inline
                 while moving a file; give each one of eight{" "}
-                <FolderTree className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <FolderTree className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 colors in its settings.
               </Bullet>
               <Bullet>
@@ -2125,14 +2177,14 @@ export default function AdminDocumentationPage() {
           <SubSection title="Important flags & acknowledgements">
             <ul className="space-y-2">
               <Bullet>
-                <Star className="inline h-3.5 w-3.5 text-amber-500 align-text-bottom" />{" "}
+                <Star className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 The Head of Paid Media flags key files and folders as{" "}
-                <span className="font-semibold text-amber-600 dark:text-amber-500">important</span>;
+                <span className="font-semibold text-foreground">important</span>;
                 an &ldquo;Important&rdquo; filter shows only those, and important
-                files get an amber border and a prominent prompt.
+                files carry a ★ and an &ldquo;Acknowledge&rdquo; prompt.
               </Bullet>
               <Bullet>
-                <CheckCircle2 className="inline h-3.5 w-3.5 text-emerald-500 align-text-bottom" />{" "}
+                <CheckCircle2 className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 Any media buyer <span className="font-semibold text-foreground">acknowledges</span>{" "}
                 a file (&ldquo;Mark as read&rdquo;), recording them as a reader.
                 Managers see a per-file reader count and a{" "}
@@ -2193,7 +2245,7 @@ export default function AdminDocumentationPage() {
                 A two-pane directory (folder rail + cards/list) modeled on the
                 Media Buyers page. Create folders for each department from the
                 rail&apos;s <Pill>+</Pill> and give each one of eight{" "}
-                <FolderTree className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <FolderTree className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 colors; rename or delete them (empty folders only) from the
                 folder settings.
               </Bullet>
@@ -2206,7 +2258,7 @@ export default function AdminDocumentationPage() {
               </Bullet>
               <Bullet>
                 Per card: <span className="font-semibold text-foreground">Open</span> (builder),{" "}
-                <Printer className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <Printer className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 <span className="font-semibold text-foreground">Export to PDF</span>,{" "}
                 <span className="font-semibold text-foreground">Move</span>,{" "}
                 <span className="font-semibold text-foreground">Edit tags</span>, and{" "}
@@ -2268,7 +2320,7 @@ export default function AdminDocumentationPage() {
           <SubSection title="AI assistant & PDF export">
             <ul className="space-y-2">
               <Bullet>
-                <Sparkles className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <Sparkles className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 The <span className="font-semibold text-foreground">AI Assistant</span> tab uses
                 Claude to draft a new SOP from a description (e.g. &ldquo;an SOP for
                 booking discovery calls&rdquo;) directly in our block format, then opens
@@ -2276,7 +2328,7 @@ export default function AdminDocumentationPage() {
                 <span className="font-semibold text-foreground">only here</span> — uploads never call a model.
               </Bullet>
               <Bullet>
-                <Printer className="inline h-3.5 w-3.5 text-primary align-text-bottom" />{" "}
+                <Printer className="inline size-3.5 align-text-bottom text-muted-foreground" />{" "}
                 <span className="font-semibold text-foreground">Export to PDF</span>{" "}
                 opens a print view of the SOP (styled exactly like the canvas) and
                 uses the browser&apos;s native &ldquo;Save as PDF&rdquo;, so the output always
@@ -2349,7 +2401,7 @@ export default function AdminDocumentationPage() {
           <SubSection title="REST API (/api/v1)">
             <ul className="space-y-1.5 list-none pl-0">
               <Bullet>
-                152 operations documented on the{" "}
+                {listOperations().length} operations documented on the{" "}
                 <span className="font-semibold text-foreground">
                   API Docs
                 </span>{" "}

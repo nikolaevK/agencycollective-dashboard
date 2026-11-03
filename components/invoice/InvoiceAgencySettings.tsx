@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { Save, ChevronDown, Building2, Loader2, Upload, X, Check } from "lucide-react";
-import { THEME_COLORS } from "@/lib/invoice/validation";
+import { Save, ChevronDown, Building2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
+import { INVOICE_NOTICE, LogoField, TextField, ThemeSwatches } from "./InvoiceField";
+import { badgeTone } from "@/components/ui/badge";
 import type { PaymentInfo } from "@/types/invoice";
 import { parsePaymentNoteToPaymentInfo, emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
-import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
+import { isPdfImageType, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 interface AgencyConfigs {
   sender: string;
@@ -23,6 +25,8 @@ interface AgencyConfigs {
 }
 
 type TemplateFields = Omit<PaymentInfo, "paymentType">;
+
+const SUBHEAD = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 
 function emptyTemplate(): TemplateFields {
   const { paymentType: _, ...rest } = emptyPaymentInfo("local");
@@ -136,231 +140,111 @@ export function InvoiceAgencySettings() {
   const updateIntl = (field: string, value: string) => setIntlTemplate((prev) => ({ ...prev, [field]: value }));
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+    <Card>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-accent/50 transition-colors"
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">Agency Settings</span>
-        </div>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <Building2 className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">Agency Settings</span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="border-t border-border/50 px-5 py-4 space-y-5">
+        <div className="space-y-6 border-t p-4 md:px-6">
           {/* Sender Info */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sender (Bill From)</h4>
+          <section className="space-y-3">
+            <h4 className={SUBHEAD}>Sender (Bill From)</h4>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Company Name</label>
-                <input value={senderName} onChange={(e) => setSenderName(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Address</label>
-                <input value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">City</label>
-                <input value={senderCity} onChange={(e) => setSenderCity(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Zip Code</label>
-                <input value={senderZip} onChange={(e) => setSenderZip(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Country</label>
-                <input value={senderCountry} onChange={(e) => setSenderCountry(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Email</label>
-                <input value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Phone</label>
-                <input value={senderPhone} onChange={(e) => setSenderPhone(e.target.value)} className={INPUT_CLS} />
-              </div>
+              <TextField wide label="Company Name" value={senderName} onChange={setSenderName} />
+              <TextField wide label="Address" value={senderAddress} onChange={setSenderAddress} />
+              <TextField label="City" value={senderCity} onChange={setSenderCity} />
+              <TextField label="Zip Code" value={senderZip} onChange={setSenderZip} />
+              <TextField label="Country" value={senderCountry} onChange={setSenderCountry} />
+              <TextField label="Email" value={senderEmail} onChange={setSenderEmail} />
+              <TextField wide label="Phone" value={senderPhone} onChange={setSenderPhone} />
             </div>
-          </div>
+          </section>
 
           {/* Default Logo */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Default Invoice Logo</h4>
-            <div className="flex items-center gap-3">
-              {defaultLogo ? (
-                <div className="relative group">
-                  <img src={defaultLogo} alt="Logo" className="h-16 w-16 rounded-lg border border-border object-contain bg-background" />
-                  <button
-                    type="button"
-                    onClick={() => { setDefaultLogo(""); if (logoRef.current) logoRef.current.value = ""; }}
-                    className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => logoRef.current?.click()}
-                  className="flex h-16 w-16 flex-col items-center justify-center rounded-lg border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                >
-                  <Upload className="h-4 w-4 mb-0.5" />
-                  <span className="text-[9px]">Upload</span>
-                </button>
-              )}
-              <input
-                ref={logoRef}
-                type="file"
-                accept={PDF_IMAGE_ACCEPT}
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (!isPdfImageType(file.type)) {
-                    setMsg(PDF_IMAGE_ERROR);
-                    return;
-                  }
-                  if (file.size > 500 * 1024) {
-                    setMsg("Logo must be under 500 KB");
-                    return;
-                  }
-                  const reader = new FileReader();
-                  reader.onload = () => setDefaultLogo(reader.result as string);
-                  reader.readAsDataURL(file);
-                }}
-              />
-              <p className="text-[10px] text-muted-foreground">Used on all auto-generated invoices. PNG / JPG, max 500 KB.</p>
-            </div>
-          </div>
+          <section className="space-y-3">
+            <h4 className={SUBHEAD}>Default Invoice Logo</h4>
+            <LogoField
+              logo={defaultLogo}
+              inputRef={logoRef}
+              onRemove={() => { setDefaultLogo(""); if (logoRef.current) logoRef.current.value = ""; }}
+              onFile={(file) => {
+                if (!isPdfImageType(file.type)) {
+                  setMsg(PDF_IMAGE_ERROR);
+                  return;
+                }
+                if (file.size > 500 * 1024) {
+                  setMsg("Logo must be under 500 KB");
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => setDefaultLogo(reader.result as string);
+                reader.readAsDataURL(file);
+              }}
+              hint="Used on all auto-generated invoices. PNG / JPG, max 500 KB."
+            />
+          </section>
 
           {/* Default Theme Color */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Default Theme Color</h4>
-            <div className="flex flex-wrap gap-2">
-              {THEME_COLORS.map((t) => (
-                <button
-                  key={t.name}
-                  type="button"
-                  onClick={() => setDefaultThemeColor(t.color)}
-                  title={t.label}
-                  className="relative h-7 w-7 rounded-full transition-all hover:scale-110"
-                  style={{
-                    backgroundColor: t.color,
-                    ...(defaultThemeColor === t.color ? { boxShadow: `0 0 0 2px var(--card), 0 0 0 4px ${t.color}` } : {}),
-                  }}
-                >
-                  {defaultThemeColor === t.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white" />}
-                </button>
-              ))}
-            </div>
-          </div>
+          <section className="space-y-3">
+            <h4 className={SUBHEAD}>Default Theme Color</h4>
+            <ThemeSwatches size="sm" value={defaultThemeColor} onChange={setDefaultThemeColor} />
+          </section>
 
           {/* Payment Template — Local */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Template — Local (Zelle + Wire)</h4>
+          <section className="space-y-3">
+            <h4 className={SUBHEAD}>Payment Template — Local (Zelle + Wire)</h4>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Zelle Contact (Phone / Email)</label>
-                <input value={localTemplate.zelleContact ?? ""} onChange={(e) => updateLocal("zelleContact", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Bank Name</label>
-                <input value={localTemplate.bankName} onChange={(e) => updateLocal("bankName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Account Name</label>
-                <input value={localTemplate.accountName} onChange={(e) => updateLocal("accountName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Account Number</label>
-                <input value={localTemplate.accountNumber} onChange={(e) => updateLocal("accountNumber", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Routing Number</label>
-                <input value={localTemplate.routingNumber ?? ""} onChange={(e) => updateLocal("routingNumber", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Bank Address</label>
-                <textarea value={localTemplate.bankAddress ?? ""} onChange={(e) => updateLocal("bankAddress", e.target.value)} rows={2} className={TEXTAREA_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Name</label>
-                <input value={localTemplate.beneficiaryName ?? ""} onChange={(e) => updateLocal("beneficiaryName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Address</label>
-                <input value={localTemplate.beneficiaryAddress ?? ""} onChange={(e) => updateLocal("beneficiaryAddress", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Memo / Reference</label>
-                <input value={localTemplate.memo ?? ""} onChange={(e) => updateLocal("memo", e.target.value)} className={INPUT_CLS} />
-              </div>
+              <TextField wide label="Zelle Contact (Phone / Email)" value={localTemplate.zelleContact ?? ""} onChange={(v) => updateLocal("zelleContact", v)} />
+              <TextField label="Bank Name" value={localTemplate.bankName} onChange={(v) => updateLocal("bankName", v)} />
+              <TextField label="Account Name" value={localTemplate.accountName} onChange={(v) => updateLocal("accountName", v)} />
+              <TextField label="Account Number" value={localTemplate.accountNumber} onChange={(v) => updateLocal("accountNumber", v)} />
+              <TextField label="Routing Number" value={localTemplate.routingNumber ?? ""} onChange={(v) => updateLocal("routingNumber", v)} />
+              <TextField wide multiline label="Bank Address" value={localTemplate.bankAddress ?? ""} onChange={(v) => updateLocal("bankAddress", v)} />
+              <TextField label="Beneficiary Name" value={localTemplate.beneficiaryName ?? ""} onChange={(v) => updateLocal("beneficiaryName", v)} />
+              <TextField label="Beneficiary Address" value={localTemplate.beneficiaryAddress ?? ""} onChange={(v) => updateLocal("beneficiaryAddress", v)} />
+              <TextField wide label="Memo / Reference" value={localTemplate.memo ?? ""} onChange={(v) => updateLocal("memo", v)} />
             </div>
-          </div>
+          </section>
 
           {/* Payment Template — International */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Template — International (Wire)</h4>
+          <section className="space-y-3">
+            <h4 className={SUBHEAD}>Payment Template — International (Wire)</h4>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">SWIFT / BIC Code</label>
-                <input value={intlTemplate.swiftBic ?? ""} onChange={(e) => updateIntl("swiftBic", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Bank Name</label>
-                <input value={intlTemplate.bankName} onChange={(e) => updateIntl("bankName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Account Name</label>
-                <input value={intlTemplate.accountName} onChange={(e) => updateIntl("accountName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Account Number</label>
-                <input value={intlTemplate.accountNumber} onChange={(e) => updateIntl("accountNumber", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Routing Number</label>
-                <input value={intlTemplate.routingNumber ?? ""} onChange={(e) => updateIntl("routingNumber", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Alternate Routing Number</label>
-                <input value={intlTemplate.alternateRoutingNumber ?? ""} onChange={(e) => updateIntl("alternateRoutingNumber", e.target.value)} placeholder="If sending bank doesn't recognize primary ABA" className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Bank Address</label>
-                <textarea value={intlTemplate.bankAddress ?? ""} onChange={(e) => updateIntl("bankAddress", e.target.value)} rows={2} className={TEXTAREA_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Name</label>
-                <input value={intlTemplate.beneficiaryName ?? ""} onChange={(e) => updateIntl("beneficiaryName", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Beneficiary Address</label>
-                <input value={intlTemplate.beneficiaryAddress ?? ""} onChange={(e) => updateIntl("beneficiaryAddress", e.target.value)} className={INPUT_CLS} />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-muted-foreground">Memo / Reference</label>
-                <input value={intlTemplate.memo ?? ""} onChange={(e) => updateIntl("memo", e.target.value)} className={INPUT_CLS} />
-              </div>
+              <TextField wide label="SWIFT / BIC Code" value={intlTemplate.swiftBic ?? ""} onChange={(v) => updateIntl("swiftBic", v)} />
+              <TextField label="Bank Name" value={intlTemplate.bankName} onChange={(v) => updateIntl("bankName", v)} />
+              <TextField label="Account Name" value={intlTemplate.accountName} onChange={(v) => updateIntl("accountName", v)} />
+              <TextField label="Account Number" value={intlTemplate.accountNumber} onChange={(v) => updateIntl("accountNumber", v)} />
+              <TextField label="Routing Number" value={intlTemplate.routingNumber ?? ""} onChange={(v) => updateIntl("routingNumber", v)} />
+              <TextField wide label="Alternate Routing Number" value={intlTemplate.alternateRoutingNumber ?? ""} onChange={(v) => updateIntl("alternateRoutingNumber", v)} placeholder="If sending bank doesn't recognize primary ABA" />
+              <TextField wide multiline label="Bank Address" value={intlTemplate.bankAddress ?? ""} onChange={(v) => updateIntl("bankAddress", v)} />
+              <TextField label="Beneficiary Name" value={intlTemplate.beneficiaryName ?? ""} onChange={(v) => updateIntl("beneficiaryName", v)} />
+              <TextField label="Beneficiary Address" value={intlTemplate.beneficiaryAddress ?? ""} onChange={(v) => updateIntl("beneficiaryAddress", v)} />
+              <TextField wide label="Memo / Reference" value={intlTemplate.memo ?? ""} onChange={(v) => updateIntl("memo", v)} />
             </div>
-          </div>
+          </section>
 
           {/* Save */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white ac-gradient hover:opacity-90 transition-opacity disabled:opacity-60"
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
               Save Settings
-            </button>
-            {msg && <span className={cn("text-xs font-medium", msg === "Saved!" ? "text-emerald-600" : "text-destructive")}>{msg}</span>}
+            </Button>
+            {msg && (
+              <span role="status" className={cn(INVOICE_NOTICE, msg === "Saved!" ? badgeTone.success : badgeTone.danger)}>
+                {msg}
+              </span>
+            )}
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

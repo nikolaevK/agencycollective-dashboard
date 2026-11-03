@@ -1,15 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, X, Save, ChevronDown, Settings } from "lucide-react";
 import type { InvoiceServiceRecord } from "@/lib/invoiceServices";
 import { SERVICES_PURCHASED } from "@/components/closers/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { cn } from "@/lib/utils";
-import { INPUT_CLS } from "./styles";
+import { InvoiceField, NativeSelect } from "./InvoiceField";
 
 export function InvoiceServiceManager() {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<InvoiceServiceRecord | null>(null);
   const [adding, setAdding] = useState(false);
@@ -28,24 +36,29 @@ export function InvoiceServiceManager() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["invoice-services"] });
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+    <Card>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-accent/50 transition-colors"
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <div className="flex items-center gap-2">
-          <Settings className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">
-            Manage Preset Services
-          </span>
-          <span className="text-xs text-muted-foreground">({services.length})</span>
-        </div>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <Settings className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          Manage Preset Services
+          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">({services.length})</span>
+        </span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="border-t border-border/50 px-5 py-4 space-y-3">
-          {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+        <div className="space-y-3 border-t p-4 md:px-6">
+          {isLoading && (
+            <div className="space-y-2" aria-label="Loading">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )}
 
           {services.map((svc) =>
             editing?.id === svc.id ? (
@@ -64,38 +77,49 @@ export function InvoiceServiceManager() {
                 onCancel={() => setEditing(null)}
               />
             ) : (
-              <div key={svc.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-background p-3">
-                <div className="min-w-0 flex-1">
+              <div key={svc.id} className="flex items-start justify-between gap-3 rounded-2xl border p-3">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <p className="text-sm font-medium text-foreground">{svc.name}</p>
                   {svc.internalLabel && (
-                    <p className="text-xs font-medium text-primary truncate">{svc.internalLabel}</p>
+                    <p className="truncate text-xs font-medium text-muted-foreground">{svc.internalLabel}</p>
                   )}
-                  <p className="text-xs text-muted-foreground line-clamp-1">{svc.description.split("\n")[0]}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-sm font-semibold text-foreground">
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{svc.description.split("\n")[0]}</p>
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
                       ${(svc.rate / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     {svc.dealServiceKey && (
-                      <span className="text-[10px] text-primary bg-primary/5 px-1.5 py-0.5 rounded">
+                      <Badge variant="outline" className="font-normal text-muted-foreground">
                         Maps: {svc.dealServiceKey}
-                      </span>
+                      </Badge>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => setEditing(svc)} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors">
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setEditing(svc)}
+                    aria-label={`Edit ${svc.name}`}
+                    className="text-muted-foreground"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={async () => {
-                      if (!confirm(`Delete "${svc.name}"?`)) return;
+                      if (!(await confirm({ title: `Delete "${svc.name}"?`, destructive: true, confirmText: "Delete" }))) return;
                       await fetch(`/api/admin/invoice-services?id=${svc.id}`, { method: "DELETE" });
                       refresh();
                     }}
-                    className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`Delete ${svc.name}`}
+                    className="text-muted-foreground hover:text-destructive"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
               </div>
             )
@@ -115,17 +139,15 @@ export function InvoiceServiceManager() {
               onCancel={() => setAdding(false)}
             />
           ) : (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)} className="-ml-2 px-2">
+              <Plus />
               Add New Service
-            </button>
+            </Button>
           )}
         </div>
       )}
-    </div>
+      {dialog}
+    </Card>
   );
 }
 
@@ -138,6 +160,7 @@ function ServiceForm({
   onSave: (data: { name: string; description: string; internalLabel: string | null; rate: number; dealServiceKey: string | null }) => Promise<void>;
   onCancel: () => void;
 }) {
+  const id = useId();
   const [name, setName] = useState(initial?.name ?? "");
   const [internalLabel, setInternalLabel] = useState(initial?.internalLabel ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -160,72 +183,71 @@ function ServiceForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Header (shown on invoice)</label>
-          <input
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl bg-muted/50 p-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <InvoiceField label="Header (shown on invoice)" htmlFor={`${id}-name`}>
+          <Input
+            id={`${id}-name`}
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Service name"
-            className={cn(INPUT_CLS, "text-sm font-medium")}
+            className="font-medium"
             required
           />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Internal label (not on invoice)</label>
-          <input
+        </InvoiceField>
+        <InvoiceField label="Internal label (not on invoice)" htmlFor={`${id}-internal`}>
+          <Input
+            id={`${id}-internal`}
             type="text"
             value={internalLabel}
             onChange={(e) => setInternalLabel(e.target.value)}
             placeholder="e.g. (Ads + Creatives + Email)"
-            className={cn(INPUT_CLS, "text-sm")}
           />
-        </div>
+        </InvoiceField>
       </div>
-      <textarea
+      <Textarea
+        aria-label="Description"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Description"
         rows={2}
-        className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow resize-y"
+        className="resize-y"
       />
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Rate ($)</label>
-          <input
+      <div className="grid grid-cols-2 gap-3">
+        <InvoiceField label="Rate ($)" htmlFor={`${id}-rate`}>
+          <Input
+            id={`${id}-rate`}
             type="number"
             min="0"
             step="any"
             value={rate}
             onChange={(e) => setRate(e.target.value)}
             placeholder="0"
-            className={INPUT_CLS}
           />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Deal Service Key</label>
-          <select
+        </InvoiceField>
+        <InvoiceField label="Deal Service Key" htmlFor={`${id}-key`}>
+          <NativeSelect
+            id={`${id}-key`}
             value={dealServiceKey}
             onChange={(e) => setDealServiceKey(e.target.value)}
-            className={cn(INPUT_CLS, "appearance-none")}
           >
             <option value="">None</option>
             {SERVICES_PURCHASED.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </InvoiceField>
       </div>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-          <X className="h-3.5 w-3.5 inline mr-1" />Cancel
-        </button>
-        <button type="submit" disabled={saving || !name.trim()} className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium text-white ac-gradient disabled:opacity-60">
-          <Save className="h-3.5 w-3.5" />
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          <X />
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={saving || !name.trim()}>
+          <Save />
           {saving ? "Saving..." : initial ? "Update" : "Create"}
-        </button>
+        </Button>
       </div>
     </form>
   );

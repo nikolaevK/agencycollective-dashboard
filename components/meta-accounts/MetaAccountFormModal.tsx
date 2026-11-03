@@ -1,10 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useMetaAccountOptions } from "@/hooks/useMetaAccountOptions";
 import type { MetaAccountDirectoryRow, MetaClientOption } from "@/lib/metaAccountDirectory";
+
+// Radix SelectItem can't hold "" — the empty "— None —" / "— Unassigned —"
+// options map to this and back to "" in the form state.
+const NONE = "__none__";
 
 interface FormState {
   fbEmail: string;
@@ -53,6 +77,32 @@ function initial(account?: MetaAccountDirectoryRow): FormState {
     notes: account?.notes ?? "",
   };
 }
+
+type TextKey = {
+  [K in keyof FormState]: FormState[K] extends string ? K : never;
+}[keyof FormState];
+
+const CREDENTIAL_FIELDS: { key: TextKey; label: string; required?: boolean }[] = [
+  { key: "fbEmail", label: "FB email", required: true },
+  { key: "fbPassword", label: "FB password" },
+  { key: "twofaSecret", label: "2FA secret" },
+  { key: "twofaLink", label: "2FA link" },
+  { key: "mailPassword", label: "Mail password" },
+  { key: "recoveryEmail", label: "Recovery email" },
+  { key: "profileName", label: "Profile name" },
+  { key: "profileLink", label: "Profile link" },
+  { key: "bmId", label: "BM ID" },
+];
+
+type CheckKey = "loginOk" | "pageMade" | "adAccountMade" | "bmMade" | "cardAdded";
+
+const CHECKLIST: { key: CheckKey; label: string }[] = [
+  { key: "loginOk", label: "Login OK" },
+  { key: "pageMade", label: "Page made" },
+  { key: "adAccountMade", label: "Ad account made" },
+  { key: "bmMade", label: "BM made" },
+  { key: "cardAdded", label: "Card added" },
+];
 
 /** Add or edit a single Meta account. */
 export function MetaAccountFormModal({
@@ -105,113 +155,110 @@ export function MetaAccountFormModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative my-8 w-full max-w-2xl rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X,
+        // Cancel or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        // The old modal focused nothing on open — on phones focusing the
+        // first input would pop the keyboard over the form.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).focus();
+        }}
+        aria-describedby={undefined}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <h2 className="text-lg font-bold text-foreground">
-            {isEdit ? "Edit account" : "Add account"}
-          </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>{isEdit ? "Edit account" : "Add account"}</DialogTitle>
+        </DialogHeader>
 
-        <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 pb-2">
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
               {error}
             </div>
           )}
 
           <Section title="Credentials">
-            <Field label="FB email" required>
-              <input className={inputCls} value={form.fbEmail} onChange={(e) => set("fbEmail", e.target.value)} />
-            </Field>
-            <Field label="FB password">
-              <input className={inputCls} value={form.fbPassword} onChange={(e) => set("fbPassword", e.target.value)} />
-            </Field>
-            <Field label="2FA secret">
-              <input className={inputCls} value={form.twofaSecret} onChange={(e) => set("twofaSecret", e.target.value)} />
-            </Field>
-            <Field label="2FA link">
-              <input className={inputCls} value={form.twofaLink} onChange={(e) => set("twofaLink", e.target.value)} />
-            </Field>
-            <Field label="Mail password">
-              <input className={inputCls} value={form.mailPassword} onChange={(e) => set("mailPassword", e.target.value)} />
-            </Field>
-            <Field label="Recovery email">
-              <input className={inputCls} value={form.recoveryEmail} onChange={(e) => set("recoveryEmail", e.target.value)} />
-            </Field>
-            <Field label="Profile name">
-              <input className={inputCls} value={form.profileName} onChange={(e) => set("profileName", e.target.value)} />
-            </Field>
-            <Field label="Profile link">
-              <input className={inputCls} value={form.profileLink} onChange={(e) => set("profileLink", e.target.value)} />
-            </Field>
-            <Field label="BM ID">
-              <input className={inputCls} value={form.bmId} onChange={(e) => set("bmId", e.target.value)} />
-            </Field>
+            {CREDENTIAL_FIELDS.map((f) => (
+              <Field key={f.key} id={`meta-account-${f.key}`} label={f.label} required={f.required}>
+                <Input
+                  id={`meta-account-${f.key}`}
+                  value={form[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                />
+              </Field>
+            ))}
           </Section>
 
           <Section title="Setup checklist">
-            <div className="col-span-full flex flex-wrap gap-x-5 gap-y-2">
-              <Check label="Login OK" checked={form.loginOk} onChange={(v) => set("loginOk", v)} />
-              <Check label="Page made" checked={form.pageMade} onChange={(v) => set("pageMade", v)} />
-              <Check label="Ad account made" checked={form.adAccountMade} onChange={(v) => set("adAccountMade", v)} />
-              <Check label="BM made" checked={form.bmMade} onChange={(v) => set("bmMade", v)} />
-              <Check label="Card added" checked={form.cardAdded} onChange={(v) => set("cardAdded", v)} />
+            <div className="col-span-full flex flex-wrap gap-x-5 gap-y-3">
+              {CHECKLIST.map((c) => (
+                <div key={c.key} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`meta-account-${c.key}`}
+                    checked={form[c.key]}
+                    onCheckedChange={(v) => set(c.key, v === true)}
+                  />
+                  <Label htmlFor={`meta-account-${c.key}`} className="cursor-pointer font-normal">
+                    {c.label}
+                  </Label>
+                </div>
+              ))}
             </div>
           </Section>
 
           <Section title="Pipeline & assignment">
-            <Field label="Stage">
-              <select className={inputCls} value={form.stage} onChange={(e) => set("stage", e.target.value)}>
-                <option value="">— None —</option>
-                {stages.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+            <Field id="meta-account-stage" label="Stage">
+              <OptionSelect
+                id="meta-account-stage"
+                value={form.stage}
+                onChange={(v) => set("stage", v)}
+                noneLabel="— None —"
+                options={stages.map((o) => ({ value: o.value, label: o.label }))}
+              />
             </Field>
-            <Field label="Status">
-              <select className={inputCls} value={form.status} onChange={(e) => set("status", e.target.value)}>
-                <option value="">— None —</option>
-                {statuses.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+            <Field id="meta-account-status" label="Status">
+              <OptionSelect
+                id="meta-account-status"
+                value={form.status}
+                onChange={(v) => set("status", v)}
+                noneLabel="— None —"
+                options={statuses.map((o) => ({ value: o.value, label: o.label }))}
+              />
             </Field>
-            <Field label="Client">
-              <select className={inputCls} value={form.clientId} onChange={(e) => set("clientId", e.target.value)}>
-                <option value="">— Unassigned —</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+            <Field id="meta-account-client" label="Client">
+              <OptionSelect
+                id="meta-account-client"
+                value={form.clientId}
+                onChange={(v) => set("clientId", v)}
+                noneLabel="— Unassigned —"
+                options={clients.map((c) => ({ value: c.id, label: c.name }))}
+              />
             </Field>
-            <Field label="Who has access">
-              <input className={inputCls} value={form.assignee} onChange={(e) => set("assignee", e.target.value)} />
+            <Field id="meta-account-assignee" label="Who has access">
+              <Input
+                id="meta-account-assignee"
+                value={form.assignee}
+                onChange={(e) => set("assignee", e.target.value)}
+              />
             </Field>
-            <Field label="Batch">
-              <input className={inputCls} value={form.batch} onChange={(e) => set("batch", e.target.value)} placeholder="e.g. 50 Pcs Old FB 2017" />
+            <Field id="meta-account-batch" label="Batch">
+              <Input
+                id="meta-account-batch"
+                value={form.batch}
+                onChange={(e) => set("batch", e.target.value)}
+                placeholder="e.g. 50 Pcs Old FB 2017"
+              />
             </Field>
           </Section>
 
           <Section title="Notes">
             <div className="col-span-full">
-              <textarea
-                className={cn(inputCls, "min-h-[70px] resize-y")}
+              <Textarea
+                aria-label="Notes"
+                className="min-h-[70px] resize-y"
                 value={form.notes}
                 onChange={(e) => set("notes", e.target.value)}
               />
@@ -219,62 +266,83 @@ export function MetaAccountFormModal({
           </Section>
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-5 border-t border-border/50">
-          <button
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted/50 disabled:opacity-50"
-          >
+        <DialogFooter className="shrink-0 px-6 pt-4 pb-6">
+          <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          </Button>
+          <Button onClick={handleSubmit} disabled={busy}>
+            {busy && <Loader2 className="animate-spin" />}
             {isEdit ? "Save changes" : "Add account"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-
-const inputCls =
-  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{title}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>
+    <fieldset className="min-w-0">
+      <legend className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</legend>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>
+    </fieldset>
+  );
+}
+
+function Field({
+  id,
+  label,
+  required,
+  children,
+}: {
+  id: string;
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={id}>
+        {label}
+        {required && <span className="text-destructive"> *</span>}
+      </Label>
+      {children}
     </div>
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+/** Kit Select over a "" = none string value (mapped through the NONE sentinel). */
+function OptionSelect({
+  id,
+  value,
+  onChange,
+  noneLabel,
+  options,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  noneLabel: string;
+  options: { value: string; label: string }[];
+}) {
+  // A stored value that's no longer in the vocabulary (e.g. a removed option)
+  // shows as its raw value instead of a blank trigger — and, as before, it's
+  // kept on save unless changed.
+  const missing = value && !options.some((o) => o.value === value);
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-input accent-primary"
-      />
-      {label}
-    </label>
+    <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+      <SelectTrigger id={id}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NONE}>{noneLabel}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+        {missing && <SelectItem value={value}>{value}</SelectItem>}
+      </SelectContent>
+    </Select>
   );
 }

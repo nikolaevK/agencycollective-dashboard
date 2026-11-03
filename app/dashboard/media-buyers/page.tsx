@@ -1,13 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { FolderOpen, Sparkles, Activity } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { MediaDocumentsDirectory } from "@/components/media/MediaDocumentsDirectory";
-import { MediaChatInterface } from "@/components/media/MediaChatInterface";
-import { MediaActivityFeed } from "@/components/media/MediaActivityFeed";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// The AI assistant (chat + markdown + PDF export) and the activity feed are
+// their own chunks, fetched the first time their tab opens — the Directory
+// (default tab) doesn't pay for them.
+const MediaChatInterface = dynamic(
+  () => import("@/components/media/MediaChatInterface").then((m) => m.MediaChatInterface),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[calc(100dvh-20rem-env(safe-area-inset-bottom))] min-h-[22rem] w-full rounded-3xl md:h-[calc(100dvh-16rem)] md:min-h-[28rem]" />,
+  }
+);
+const MediaActivityFeed = dynamic(
+  () => import("@/components/media/MediaActivityFeed").then((m) => m.MediaActivityFeed),
+  { ssr: false, loading: () => <Skeleton className="h-96 w-full rounded-3xl" /> }
+);
 
 type TabId = "directory" | "assistant" | "activity";
 
@@ -26,36 +42,32 @@ export default function MediaBuyersPage() {
   return (
     <DashboardShell wide>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-foreground">Media Buyers</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Paid-media documentation, AI drafting assistant, and team activity.
-              {isManager && <span className="ml-1 font-medium text-primary">Head of Paid Media</span>}
-            </p>
+        <div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Media Buyers</h2>
+            {isManager && <Badge variant="outline">Head of Paid Media</Badge>}
           </div>
-          <div className="flex self-start rounded-lg bg-muted p-1">
-            {TABS.map((t) => {
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTab(t.id)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition-colors",
-                    tab === t.id
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Paid-media documentation, AI drafting assistant, and team activity.
+          </p>
+        </div>
+
+        {/* The row scrolls sideways on the narrowest phones instead of
+            widening the page. */}
+        <div className="overflow-x-auto">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+            <TabsList>
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <TabsTrigger key={t.id} value={t.id}>
+                    <Icon className="hidden sm:block" />
+                    {t.label}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
         </div>
 
         {tab === "directory" && <MediaDocumentsDirectory isManager={isManager} />}

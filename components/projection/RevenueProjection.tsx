@@ -1,21 +1,54 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import {
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Database, TrendingUp } from "lucide-react";
-import { cn } from "@/lib/utils";
+  CalendarRange,
+  Coins,
+  Database,
+  DollarSign,
+  Gauge,
+  Info,
+  Lightbulb,
+  Percent,
+  PiggyBank,
+  Sigma,
+  TrendingUp,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import { StatCard } from "@/components/overview/StatCard";
+import { TrendDelta } from "@/components/shared/TrendDelta";
+import { BadgeDot, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useProjectionBaseline } from "@/hooks/useProjectionBaseline";
+import { fmtMoney as fmt, fullMoney as full } from "./format";
+import type { BookDatum, RevenueDatum, ScenarioDatum } from "./ProjectionCharts";
+
+// recharts loads after the page — the levers, KPIs and table don't wait on it.
+const RevenueMixChart = dynamic(() => import("./ProjectionCharts").then((m) => m.RevenueMixChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[300px] w-full" />,
+});
+const BookChart = dynamic(() => import("./ProjectionCharts").then((m) => m.BookChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[280px] w-full" />,
+});
+const ScenarioChart = dynamic(() => import("./ProjectionCharts").then((m) => m.ScenarioChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[280px] w-full" />,
+});
 
 // ── Defaults (illustrative planning seeds; the book + retainer can be pulled
 //    live from the Client Directory below) ─────────────────────────────────
@@ -50,15 +83,6 @@ function buildMonths(year: number, month0: number, count: number): MonthMeta[] {
   }
   return out;
 }
-
-// Data-series colors (fixed across themes — these encode meaning, not chrome).
-const SERIES = {
-  retainer: "hsl(263 70% 60%)", // violet (brand primary)
-  newAcct: "#3b82f6", // blue
-  perf: "#f59e0b", // amber
-  good: "#10b981", // green
-  bad: "#ef4444", // red
-};
 
 interface MonthRow {
   label: string;
@@ -112,114 +136,120 @@ function project(
   return rows;
 }
 
-const fmt = (v: number) => {
-  const sign = v < 0 ? "-" : "";
-  const a = Math.abs(v);
-  if (a >= 1e6) return sign + "$" + (a / 1e6).toFixed(2) + "M";
-  if (a >= 1e3) return sign + "$" + (a / 1e3).toFixed(0) + "K";
-  return sign + "$" + Math.round(a).toLocaleString();
-};
-const full = (v: number) => (v < 0 ? "-$" : "$") + Math.round(Math.abs(v)).toLocaleString();
+// ── Small presentational pieces ──────────────────────────────────────────────
 
-/** Reads structural chart colors from the active theme's CSS variables. */
-function useChartColors() {
-  const [c, setC] = useState({
-    grid: "hsl(240 6% 88%)",
-    axis: "hsl(240 6% 46%)",
-    tooltipBg: "hsl(0 0% 100%)",
-    tooltipText: "hsl(240 15% 9%)",
-  });
-  useEffect(() => {
-    const read = () => {
-      const cs = getComputedStyle(document.documentElement);
-      const v = (n: string, fb: string) => {
-        const raw = cs.getPropertyValue(n).trim();
-        return raw ? `hsl(${raw})` : fb;
-      };
-      setC({
-        grid: v("--border", "hsl(240 6% 88%)"),
-        axis: v("--muted-foreground", "hsl(240 6% 46%)"),
-        tooltipBg: v("--popover", "hsl(0 0% 100%)"),
-        tooltipText: v("--popover-foreground", "hsl(240 15% 9%)"),
-      });
-    };
-    read();
-    const obs = new MutationObserver(read);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
-  return c;
+/** A lever group inside the settings card. */
+function LeverGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-4 rounded-2xl border p-4">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h4>
+      {children}
+    </section>
+  );
 }
 
-// ── Small presentational pieces ──────────────────────────────────────────────
-function Kpi({
+/** A native range slider with its label + live value. */
+function Slider({
   label,
+  ariaLabel,
+  display,
   value,
-  note,
-  accent,
+  min,
+  max,
+  step,
+  onChange,
+  children,
 }: {
   label: string;
-  value: string;
-  note: string;
-  accent: string;
+  ariaLabel: string;
+  display: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  children?: ReactNode;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border bg-card p-4">
-      <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} />
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1.5 text-2xl font-extrabold tracking-tight text-foreground">{value}</div>
-      <div className="mt-0.5 text-[11.5px] text-muted-foreground/70">{note}</div>
-    </div>
-  );
-}
-
-function Out({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: string }) {
-  return (
-    <div className="rounded-xl border bg-muted/40 p-3.5">
-      <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-extrabold tracking-tight" style={tone ? { color: tone } : undefined}>
-        {value}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="font-medium tabular-nums text-foreground">{display}</span>
       </div>
-      <div className="mt-0.5 text-[11.5px] text-muted-foreground/70">{sub}</div>
+      <input
+        type="range"
+        aria-label={ariaLabel}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(+e.target.value)}
+        className="w-full cursor-pointer [accent-color:hsl(var(--primary))]"
+      />
+      {children}
     </div>
   );
 }
 
-const sliderCls =
-  "w-full cursor-pointer accent-primary [accent-color:hsl(var(--primary))]";
-
-function ChartTooltip({
-  active,
-  payload,
+/** Preset buttons in a segmented track. Plain pressed buttons (each its own
+ *  Tab stop, as before) — no ToggleGroup runtime on this page. */
+function Presets<T extends string | number>({
   label,
-  colors,
-  unit,
+  options,
+  value,
+  onChange,
 }: {
-  active?: boolean;
-  payload?: readonly { name?: string | number; value?: number | string; color?: string }[];
-  label?: string | number;
-  colors: { tooltipBg: string; tooltipText: string; grid: string };
-  unit: "money" | "clients";
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
 }) {
-  if (!active || !payload?.length) return null;
   return (
-    <div
-      className="rounded-lg border px-3 py-2 text-xs shadow-lg"
-      style={{ background: colors.tooltipBg, color: colors.tooltipText, borderColor: colors.grid }}
-    >
-      <div className="mb-1 font-semibold">{label}</div>
-      {payload.map((p) => (
-        <div key={String(p.name)} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-muted-foreground">{p.name}:</span>
-          <span className="ml-auto font-medium tabular-nums">
-            {unit === "money" ? full(Number(p.value ?? 0)) : `${p.value ?? 0}`}
-          </span>
-        </div>
+    <div role="group" aria-label={label} className="flex gap-1 rounded-3xl bg-muted p-1">
+      {options.map((o) => (
+        <button
+          key={o.label}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className="h-9 min-w-0 flex-1 truncate rounded-full px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:h-7"
+        >
+          {o.label}
+        </button>
       ))}
     </div>
   );
 }
+
+/** A "pull the live Client Directory value" button under a slider. */
+function LiveButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button type="button" variant="outline" size="xs" disabled={disabled} onClick={onClick}>
+      <Database />
+      {children}
+    </Button>
+  );
+}
+
+/** Compact result tile beside the revenue chart. */
+function Out({ label, value, sub, delta }: { label: string; value: string; sub: string; delta?: ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-2xl bg-muted/50 p-3">
+      <div className="truncate text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="truncate text-xl font-semibold tracking-tight tabular-nums">{value}</span>
+        {delta}
+      </div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>
+    </div>
+  );
+}
+
+// Phones: the decorative KPI icon gives its room to the label.
+const KPI_ICON = "max-sm:hidden";
+
+/** A red "Loss" chip on a profit card that went negative. */
+const lossChip = (v: number) => (v < 0 ? <StatusBadge tone="danger">Loss</StatusBadge> : undefined);
 
 export function RevenueProjection() {
   const [start, setStart] = useState(DEFAULTS.start);
@@ -244,7 +274,6 @@ export function RevenueProjection() {
     [curYear, curMonth, horizon]
   );
 
-  const colors = useChartColors();
   const { data: baseline, isFetching } = useProjectionBaseline();
 
   // Live values can exceed the default slider ceilings — widen as needed.
@@ -268,24 +297,26 @@ export function RevenueProjection() {
   const cumProfit = cumRev - expenses * horizon;
   const endMargin = endRev > 0 ? (endProfit / endRev) * 100 : 0;
 
-  const revData = rows.map((r) => ({
+  const revData: RevenueDatum[] = rows.map((r) => ({
     label: r.label,
-    Retainer: r.retRev,
-    "New accounts": r.newRev,
-    "Performance fees": r.perfRev,
-    "Net profit": r.totRev - expenses,
+    title: `${r.label} ${r.year}`,
+    retainer: r.retRev,
+    newAccounts: r.newRev,
+    perf: r.perfRev,
+    profit: r.totRev - expenses,
   }));
-  const bookData = rows.map((r) => ({ label: r.label, "Active book": r.end }));
+  const bookData: BookDatum[] = rows.map((r) => ({ label: r.label, title: `${r.label} ${r.year}`, book: r.end }));
 
-  const scen = useMemo(() => {
+  const scen = useMemo<ScenarioDatum[]>(() => {
     const s7 = project(start, 0.07, newm, months, 0, retainer, newbill, fee);
     const s65 = project(start, 0.65, newm, months, 0, retainer, newbill, fee);
     const s80 = project(start, 0.8, newm, months, 0, retainer, newbill, fee);
     return rows.map((r, i) => ({
       label: r.label,
-      "80% retention": s80[i].totRev,
-      "65% baseline": s65[i].totRev,
-      "~7% (today)": s7[i].totRev,
+      title: `${r.label} ${r.year}`,
+      s80: s80[i].totRev,
+      s65: s65[i].totRev,
+      s7: s7[i].totRev,
     }));
   }, [start, newm, months, retainer, newbill, fee, rows]);
 
@@ -300,466 +331,333 @@ export function RevenueProjection() {
     takeaway = `At ${ret}% retention with ${newm} new/month, the book shrinks to index ${endIdx} and revenue erodes to ${fmt(endRev)}/mo — a treadmill re-winning what it loses. Lifting retention is the priority.`;
 
   const retPresets = [
-    { v: 7, label: "Today ~7%" },
-    { v: 65, label: "Baseline 65%", base: true },
-    { v: 80, label: "Stretch 80%" },
+    { value: 7, label: "Today ~7%" },
+    { value: 65, label: "Baseline 65%" },
+    { value: 80, label: "Stretch 80%" },
   ];
-  const feePresets = [0, 5000, 7500, 10000];
+  const feePresets = [0, 5000, 7500, 10000].map((f) => ({ value: f, label: f === 0 ? "Off" : "$" + f / 1000 + "K" }));
+  const horizonPresets = [
+    { value: restOfYearCount, label: `Rest of ${curYear}` },
+    { value: 12, label: "Full 12 months" },
+  ];
+  const liveLabel = (live: string) => (baseline ? live : isFetching ? "Loading live…" : "Live data unavailable");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* How revenue is built */}
-      <div className="rounded-xl border-l-4 border-l-emerald-500 bg-emerald-500/5 p-4">
-        <h4 className="text-sm font-semibold text-foreground">How revenue is built</h4>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          Each month: <b>Retainer revenue</b> = retained clients × avg retainer · <b>New-account billings</b> ={" "}
-          new accounts won × avg first billing · <b>Performance fees</b> = rebilling clients × per-client fee. All
-          three averages are editable so you can match real numbers. The <b>Book Index</b> (start = 100) tracks book
-          momentum separately from dollars.
-        </p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2 md:pb-2">
+          <Info className="size-4 shrink-0 text-muted-foreground" />
+          <CardTitle>How revenue is built</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Each month: <b className="font-medium text-foreground">Retainer revenue</b> = retained clients × avg
+            retainer · <b className="font-medium text-foreground">New-account billings</b> = new accounts won × avg
+            first billing · <b className="font-medium text-foreground">Performance fees</b> = rebilling clients ×
+            per-client fee. All three averages are editable so you can match real numbers. The{" "}
+            <b className="font-medium text-foreground">Book Index</b> (start = 100) tracks book momentum separately
+            from dollars.
+          </p>
+        </CardContent>
+      </Card>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Start book" value={`${start}`} note="baseline" accent={SERIES.retainer} />
-        <Kpi
+      {/* KPIs — book / revenue / profit, one row each from sm up */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <StatCard iconClassName={KPI_ICON} label="Start book" icon={Users} value={`${start}`} sub="baseline" />
+        <StatCard
+          iconClassName={KPI_ICON}
           label="End book"
+          icon={UserPlus}
           value={`${endBook}`}
-          note={`by ${endLabel}`}
-          accent={endBook >= start ? SERIES.good : SERIES.perf}
+          delta={<TrendDelta current={endBook} previous={start} />}
+          sub={`by ${endLabel}`}
         />
-        <Kpi label="Book Index" value={`${endIdx}`} note="start = 100" accent={SERIES.newAcct} />
-        <Kpi label="End monthly revenue" value={fmt(endRev)} note="final month" accent={SERIES.good} />
-        <Kpi label="Cumulative revenue" value={fmt(cumRev)} note={`${horizon} months`} accent={SERIES.retainer} />
-        <Kpi label="Annualized run-rate" value={fmt(runRate)} note="end month × 12" accent={SERIES.perf} />
-        <Kpi
+        <StatCard iconClassName={KPI_ICON} label="Book Index" icon={Gauge} value={`${endIdx}`} sub="start = 100" />
+        <StatCard iconClassName={KPI_ICON} label="End monthly revenue" icon={DollarSign} value={fmt(endRev)} sub="final month" />
+        <StatCard iconClassName={KPI_ICON} label="Cumulative revenue" icon={Sigma} value={fmt(cumRev)} sub={`${horizon} months`} />
+        <StatCard iconClassName={KPI_ICON} label="Annualized run-rate" icon={TrendingUp} value={fmt(runRate)} sub="end month × 12" />
+        <StatCard
+          iconClassName={KPI_ICON}
           label="End monthly profit"
+          icon={PiggyBank}
           value={fmt(endProfit)}
-          note="revenue − expenses"
-          accent={endProfit >= 0 ? SERIES.good : SERIES.bad}
+          delta={lossChip(endProfit)}
+          sub="revenue − expenses"
         />
-        <Kpi
+        <StatCard
+          iconClassName={KPI_ICON}
           label="Cumulative profit"
+          icon={Coins}
           value={fmt(cumProfit)}
-          note={`${horizon} months`}
-          accent={cumProfit >= 0 ? SERIES.good : SERIES.bad}
+          delta={lossChip(cumProfit)}
+          sub={`${horizon} months`}
         />
-        <Kpi
+        <StatCard
+          iconClassName={KPI_ICON}
           label="End net margin"
+          icon={Percent}
           value={`${Math.round(endMargin)}%`}
-          note="final month"
-          accent={endMargin >= 0 ? SERIES.newAcct : SERIES.bad}
+          delta={lossChip(endMargin)}
+          sub="final month"
         />
       </div>
 
-      {/* Projection settings */}
-      <div className="rounded-xl border bg-card p-5 md:p-6">
-        <div className="mb-4">
-          <h3 className="text-base font-semibold text-foreground">Projection settings</h3>
-          <p className="text-[12.5px] text-muted-foreground/80">
+      {/* Projection settings — overflow-visible so the results column can stick */}
+      <Card className="overflow-visible">
+        <CardHeader>
+          <CardTitle>Projection settings</CardTitle>
+          <CardDescription>
             Adjust the levers and the revenue averages to project the rest of the year. Pull the active-book and
             retainer baselines straight from the Client Directory.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[340px_1fr]">
-          {/* Controls */}
-          <div className="space-y-4">
-            {/* Growth levers */}
-            <div className="rounded-lg border p-3.5">
-              <div className="mb-3 text-[10.5px] font-bold uppercase tracking-wider text-primary">Growth levers</div>
-
-              <div className="mb-3.5">
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Starting active book</span>
-                  <span className="tabular-nums text-primary">{start}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Starting active book (clients)"
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+            {/* Controls */}
+            <div className="min-w-0 space-y-4">
+              <LeverGroup title="Growth levers">
+                <Slider
+                  label="Starting active book"
+                  ariaLabel="Starting active book (clients)"
+                  display={`${start}`}
+                  value={start}
                   min={0}
                   max={startMax}
                   step={1}
-                  value={start}
-                  onChange={(e) => setStart(+e.target.value)}
-                  className={sliderCls}
-                />
-                <button
-                  type="button"
-                  disabled={!baseline}
-                  onClick={() => baseline && setStart(baseline.activeClientCount)}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  onChange={setStart}
                 >
-                  <Database className="h-3 w-3" />
-                  {baseline
-                    ? `Use live (${baseline.activeClientCount} active)`
-                    : isFetching
-                      ? "Loading live…"
-                      : "Live data unavailable"}
-                </button>
-              </div>
+                  <LiveButton disabled={!baseline} onClick={() => baseline && setStart(baseline.activeClientCount)}>
+                    {liveLabel(`Use live (${baseline?.activeClientCount} active)`)}
+                  </LiveButton>
+                </Slider>
 
-              <div className="mb-3.5">
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Monthly retention</span>
-                  <span className="tabular-nums text-primary">{ret}%</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Monthly retention percentage"
+                <Slider
+                  label="Monthly retention"
+                  ariaLabel="Monthly retention percentage"
+                  display={`${ret}%`}
+                  value={ret}
                   min={0}
                   max={95}
                   step={1}
-                  value={ret}
-                  onChange={(e) => setRet(+e.target.value)}
-                  className={sliderCls}
-                />
-                <div className="mt-2 flex gap-1.5">
-                  {retPresets.map((p) => (
-                    <button
-                      key={p.v}
-                      type="button"
-                      onClick={() => setRet(p.v)}
-                      className={cn(
-                        "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-bold transition-colors",
-                        ret === p.v
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : p.base
-                            ? "border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
-                            : "border-border text-muted-foreground hover:bg-muted"
-                      )}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  onChange={setRet}
+                >
+                  <Presets label="Retention presets" options={retPresets} value={ret} onChange={setRet} />
+                </Slider>
 
-              <div className="mb-3.5">
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>New accounts won / month</span>
-                  <span className="tabular-nums text-primary">{newm}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="New accounts won per month"
+                <Slider
+                  label="New accounts won / month"
+                  ariaLabel="New accounts won per month"
+                  display={`${newm}`}
+                  value={newm}
                   min={0}
                   max={40}
                   step={1}
-                  value={newm}
-                  onChange={(e) => setNewm(+e.target.value)}
-                  className={sliderCls}
+                  onChange={setNewm}
                 />
-              </div>
 
-              <div>
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Retention improves / month</span>
-                  <span className="tabular-nums text-primary">{ramp} pts</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Retention improvement points per month"
+                <Slider
+                  label="Retention improves / month"
+                  ariaLabel="Retention improvement points per month"
+                  display={`${ramp} pts`}
+                  value={ramp}
                   min={0}
                   max={5}
                   step={0.5}
-                  value={ramp}
-                  onChange={(e) => setRamp(+e.target.value)}
-                  className={sliderCls}
+                  onChange={setRamp}
                 />
-              </div>
-            </div>
+              </LeverGroup>
 
-            {/* Horizon */}
-            <div className="rounded-lg border p-3.5">
-              <div className="mb-2.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                Horizon
-              </div>
-              <div className="flex gap-1.5">
-                {[
-                  { h: restOfYearCount, label: `Rest of ${curYear}` },
-                  { h: 12, label: "Full 12 months" },
-                ].map((o) => (
-                  <button
-                    key={o.label}
-                    type="button"
-                    onClick={() => setHorizon(o.h)}
-                    className={cn(
-                      "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-bold transition-colors",
-                      horizon === o.h
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+              <LeverGroup title="Horizon">
+                <Presets label="Horizon" options={horizonPresets} value={horizon} onChange={setHorizon} />
+              </LeverGroup>
 
-            {/* Revenue averages */}
-            <div className="rounded-lg border p-3.5">
-              <div className="mb-3 text-[10.5px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Revenue averages (real numbers)
-              </div>
-
-              <div className="mb-3.5">
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Avg retainer / active client</span>
-                  <span className="tabular-nums text-primary">{full(retainer)}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Average retainer per active client (dollars)"
+              <LeverGroup title="Revenue averages (real numbers)">
+                <Slider
+                  label="Avg retainer / active client"
+                  ariaLabel="Average retainer per active client (dollars)"
+                  display={full(retainer)}
+                  value={retainer}
                   min={0}
                   max={retainerMax}
                   step={100}
-                  value={retainer}
-                  onChange={(e) => setRetainer(+e.target.value)}
-                  className={sliderCls}
-                />
-                <button
-                  type="button"
-                  disabled={!baseline}
-                  onClick={() => baseline && setRetainer(baseline.averageMrr)}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  onChange={setRetainer}
                 >
-                  <Database className="h-3 w-3" />
-                  {baseline
-                    ? `Use live avg MRR (${full(baseline.averageMrr)})`
-                    : isFetching
-                      ? "Loading live…"
-                      : "Live data unavailable"}
-                </button>
-              </div>
+                  <LiveButton disabled={!baseline} onClick={() => baseline && setRetainer(baseline.averageMrr)}>
+                    {liveLabel(`Use live avg MRR (${full(baseline?.averageMrr ?? 0)})`)}
+                  </LiveButton>
+                </Slider>
 
-              <div className="mb-3.5">
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Avg new-account first billing</span>
-                  <span className="tabular-nums text-primary">{full(newbill)}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Average new-account first billing (dollars)"
+                <Slider
+                  label="Avg new-account first billing"
+                  ariaLabel="Average new-account first billing (dollars)"
+                  display={full(newbill)}
+                  value={newbill}
                   min={0}
                   max={15000}
                   step={100}
-                  value={newbill}
-                  onChange={(e) => setNewbill(+e.target.value)}
-                  className={sliderCls}
+                  onChange={setNewbill}
                 />
-              </div>
 
-              <div>
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Performance fee / rebilling client</span>
-                  <span className="tabular-nums text-primary">{fee === 0 ? "Off" : full(fee)}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Performance fee per rebilling client (dollars)"
+                <Slider
+                  label="Performance fee / rebilling client"
+                  ariaLabel="Performance fee per rebilling client (dollars)"
+                  display={fee === 0 ? "Off" : full(fee)}
+                  value={fee}
                   min={0}
                   max={15000}
                   step={250}
-                  value={fee}
-                  onChange={(e) => setFee(+e.target.value)}
-                  className={sliderCls}
-                />
-                <div className="mt-2 flex gap-1.5">
-                  {feePresets.map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setFee(f)}
-                      className={cn(
-                        "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-bold transition-colors",
-                        fee === f
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground hover:bg-muted"
-                      )}
-                    >
-                      {f === 0 ? "Off" : "$" + f / 1000 + "K"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+                  onChange={setFee}
+                >
+                  <Presets label="Performance fee presets" options={feePresets} value={fee} onChange={setFee} />
+                </Slider>
+              </LeverGroup>
 
-            {/* Costs */}
-            <div className="rounded-lg border p-3.5">
-              <div className="mb-3 text-[10.5px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                Costs
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold">
-                  <span>Monthly operating expenses</span>
-                  <span className="tabular-nums text-primary">{full(expenses)}</span>
-                </label>
-                <input
-                  type="range"
-                  aria-label="Fixed monthly operating expenses (dollars)"
+              <LeverGroup title="Costs">
+                <Slider
+                  label="Monthly operating expenses"
+                  ariaLabel="Fixed monthly operating expenses (dollars)"
+                  display={full(expenses)}
+                  value={expenses}
                   min={0}
                   max={EXPENSES_MAX}
                   step={5000}
-                  value={expenses}
-                  onChange={(e) => setExpenses(+e.target.value)}
-                  className={sliderCls}
-                />
-                <p className="mt-1.5 text-[11px] text-muted-foreground/70">
-                  Flat overhead per month — does not scale with the book.
-                </p>
-              </div>
+                  onChange={setExpenses}
+                >
+                  <p className="text-xs text-muted-foreground">Flat overhead per month — does not scale with the book.</p>
+                </Slider>
+              </LeverGroup>
             </div>
-          </div>
 
-          {/* Output + revenue chart */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Out
-                label="End active book"
-                value={`${endBook}`}
-                sub="clients"
-                tone={endBook >= start ? SERIES.good : SERIES.perf}
-              />
-              <Out label="End monthly revenue" value={fmt(endRev)} sub="final month" />
-              <Out label="Cumulative revenue" value={fmt(cumRev)} sub={`over ${horizon} mo`} tone={SERIES.good} />
-            </div>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={revData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={{ stroke: colors.grid }} />
-                  <YAxis tickFormatter={fmt} tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={52} />
-                  <Tooltip content={(p) => (
-                    <ChartTooltip active={p.active} payload={p.payload as never} label={p.label} colors={colors} unit="money" />
-                  )} cursor={{ fill: colors.grid, opacity: 0.25 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                  <Bar dataKey="Retainer" stackId="r" fill={SERIES.retainer} radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="New accounts" stackId="r" fill={SERIES.newAcct} />
-                  <Bar dataKey="Performance fees" stackId="r" fill={SERIES.perf} radius={[3, 3, 0, 0]} />
-                  <Line type="monotone" dataKey="Net profit" stroke={SERIES.good} strokeWidth={2.6} dot={{ r: 2.5 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
+            {/* Output + revenue chart — stays in view while the levers scroll */}
+            <div className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Out
+                  label="End active book"
+                  value={`${endBook}`}
+                  sub="clients"
+                  delta={<TrendDelta current={endBook} previous={start} />}
+                />
+                <Out label="End monthly revenue" value={fmt(endRev)} sub="final month" />
+                <Out label="Cumulative revenue" value={fmt(cumRev)} sub={`over ${horizon} mo`} />
+              </div>
+              <RevenueMixChart data={revData} />
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Book + scenarios */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div className="rounded-xl border bg-card p-5">
-          <h3 className="text-sm font-semibold text-foreground">Active client book</h3>
-          <p className="mb-3 text-[12.5px] text-muted-foreground/70">Retained + newly won, month by month</p>
-          <div className="h-[280px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={bookData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={{ stroke: colors.grid }} />
-                <YAxis tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={36} allowDecimals={false} />
-                <Tooltip content={(p) => (
-                  <ChartTooltip active={p.active} payload={p.payload as never} label={p.label} colors={colors} unit="clients" />
-                )} />
-                <Line type="monotone" dataKey="Active book" stroke={SERIES.retainer} strokeWidth={2.4} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>Active client book</CardTitle>
+            <CardDescription>Retained + newly won, month by month</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BookChart data={bookData} />
+          </CardContent>
+        </Card>
 
-        <div className="rounded-xl border bg-card p-5">
-          <h3 className="text-sm font-semibold text-foreground">Revenue scenarios by retention</h3>
-          <p className="mb-3 text-[12.5px] text-muted-foreground/70">
-            Monthly revenue at 7% / 65% / 80% retention (same averages &amp; new-accounts pace)
-          </p>
-          <div className="h-[280px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={scen} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={{ stroke: colors.grid }} />
-                <YAxis tickFormatter={fmt} tick={{ fill: colors.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={52} />
-                <Tooltip content={(p) => (
-                  <ChartTooltip active={p.active} payload={p.payload as never} label={p.label} colors={colors} unit="money" />
-                )} />
-                <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                <Line type="monotone" dataKey="80% retention" stroke={SERIES.good} strokeWidth={2.4} dot={false} />
-                <Line type="monotone" dataKey="65% baseline" stroke={SERIES.retainer} strokeWidth={2.4} dot={false} />
-                <Line type="monotone" dataKey="~7% (today)" stroke={SERIES.bad} strokeWidth={2} strokeDasharray="5 4" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>Revenue scenarios by retention</CardTitle>
+            <CardDescription>
+              Monthly revenue at 7% / 65% / 80% retention (same averages &amp; new-accounts pace)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScenarioChart data={scen} />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Month-by-month table */}
-      <div className="rounded-xl border bg-card p-5">
-        <h3 className="text-sm font-semibold text-foreground">Month-by-month projection</h3>
-        <p className="mb-3 text-[12.5px] text-muted-foreground/70">
-          Active book = retained + new · Revenue = retainer + new-account billings + performance fees
-        </p>
-        <div className="-mx-2 overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-[12.5px]">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                <th className="border-b-2 px-2 py-2 text-left">Month</th>
-                <th className="border-b-2 px-2 py-2 text-right">Start</th>
-                <th className="border-b-2 px-2 py-2 text-right">Retained</th>
-                <th className="border-b-2 px-2 py-2 text-right">New</th>
-                <th className="border-b-2 px-2 py-2 text-right">End book</th>
-                <th className="border-b-2 px-2 py-2 text-right">Index</th>
-                <th className="border-b-2 px-2 py-2 text-right">Retainer $</th>
-                <th className="border-b-2 px-2 py-2 text-right">New $</th>
-                <th className="border-b-2 px-2 py-2 text-right">Perf $</th>
-                <th className="border-b-2 px-2 py-2 text-right">Total rev</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const idxTone =
-                  r.index >= 100 ? "text-emerald-600 dark:text-emerald-400" : r.index >= 90 ? "text-muted-foreground" : "text-red-500";
-                return (
-                  <tr key={i} className="border-b">
-                    <td className="px-2 py-2">
-                      {r.label} &apos;{String(r.year).slice(2)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">{r.startA}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{r.retained}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">+{r.newWon}</td>
-                    <td className="px-2 py-2 text-right font-bold tabular-nums">{r.end}</td>
-                    <td className={cn("px-2 py-2 text-right font-medium tabular-nums", idxTone)}>{r.index}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-muted-foreground/70">{fmt(r.retRev)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-muted-foreground/70">{fmt(r.newRev)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-muted-foreground/70">{fmt(r.perfRev)}</td>
-                    <td className="px-2 py-2 text-right font-bold tabular-nums">{fmt(r.totRev)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="font-bold">
-                <td className="px-2 py-2">Total</td>
-                <td colSpan={5} />
-                <td className="px-2 py-2 text-right tabular-nums">{fmt(rows.reduce((a, b) => a + b.retRev, 0))}</td>
-                <td className="px-2 py-2 text-right tabular-nums">{fmt(rows.reduce((a, b) => a + b.newRev, 0))}</td>
-                <td className="px-2 py-2 text-right tabular-nums">{fmt(rows.reduce((a, b) => a + b.perfRev, 0))}</td>
-                <td className="px-2 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{fmt(cumRev)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
+            <CardTitle>Month-by-month projection</CardTitle>
+          </div>
+          <CardDescription>
+            Active book = retained + new · Revenue = retainer + new-account billings + performance fees
+          </CardDescription>
+        </CardHeader>
+        <Table className="min-w-[760px] tabular-nums">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="pl-4 md:pl-6">Month</TableHead>
+              <TableHead className="text-right">Start</TableHead>
+              <TableHead className="text-right">Retained</TableHead>
+              <TableHead className="text-right">New</TableHead>
+              <TableHead className="text-right">End book</TableHead>
+              <TableHead className="text-right">Index</TableHead>
+              <TableHead className="text-right">Retainer $</TableHead>
+              <TableHead className="text-right">New $</TableHead>
+              <TableHead className="text-right">Perf $</TableHead>
+              <TableHead className="pr-4 text-right md:pr-6">Total rev</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, i) => {
+              const idxTone: BadgeTone = r.index >= 100 ? "success" : r.index >= 90 ? "neutral" : "danger";
+              return (
+                <TableRow key={i}>
+                  <TableCell className="pl-4 md:pl-6">
+                    {r.label} &apos;{String(r.year).slice(2)}
+                  </TableCell>
+                  <TableCell className="text-right">{r.startA}</TableCell>
+                  <TableCell className="text-right">{r.retained}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">+{r.newWon}</TableCell>
+                  <TableCell className="text-right font-semibold">{r.end}</TableCell>
+                  <TableCell className="text-right">
+                    <span className="inline-flex items-center justify-end gap-1.5">
+                      <BadgeDot tone={idxTone} />
+                      {r.index}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmt(r.retRev)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmt(r.newRev)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmt(r.perfRev)}</TableCell>
+                  <TableCell className="pr-4 text-right font-semibold md:pr-6">{fmt(r.totRev)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+          <TableFooter>
+            <TableRow className="hover:bg-transparent">
+              <TableCell className="pl-4 font-semibold md:pl-6">Total</TableCell>
+              <TableCell colSpan={5} />
+              <TableCell className="text-right font-semibold">{fmt(rows.reduce((a, b) => a + b.retRev, 0))}</TableCell>
+              <TableCell className="text-right font-semibold">{fmt(rows.reduce((a, b) => a + b.newRev, 0))}</TableCell>
+              <TableCell className="text-right font-semibold">{fmt(rows.reduce((a, b) => a + b.perfRev, 0))}</TableCell>
+              <TableCell className="pr-4 text-right font-semibold md:pr-6">{fmt(cumRev)}</TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </Card>
 
       {/* Takeaway */}
-      <div className="rounded-xl border-l-4 border-l-amber-500 bg-amber-500/5 p-4">
-        <h4 className="text-sm font-semibold text-foreground">The takeaway</h4>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-muted-foreground">
-          {takeaway} Cumulative {horizon}-month revenue: <b>{fmt(cumRev)}</b>.
-        </p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2 md:pb-2">
+          <Lightbulb className="size-4 shrink-0 text-muted-foreground" />
+          <CardTitle>The takeaway</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {takeaway} Cumulative {horizon}-month revenue:{" "}
+            <b className="font-semibold text-foreground">{fmt(cumRev)}</b>.
+          </p>
+        </CardContent>
+      </Card>
 
-      <p className="flex items-center gap-1.5 pt-1 text-[11.5px] text-muted-foreground/60">
-        <TrendingUp className="h-3.5 w-3.5" />
-        Projections are illustrative planning figures, not guarantees. Baselines pull from the Client Directory&apos;s
-        active clients{baseline ? ` (${baseline.activeClientCount} active, ${full(baseline.averageMrr)} avg MRR)` : ""}
-        {isFetching ? " · refreshing…" : ""}.
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <TrendingUp className="mt-px size-3.5 shrink-0" />
+        <span>
+          Projections are illustrative planning figures, not guarantees. Baselines pull from the Client Directory&apos;s
+          active clients{baseline ? ` (${baseline.activeClientCount} active, ${full(baseline.averageMrr)} avg MRR)` : ""}
+          {isFetching ? " · refreshing…" : ""}.
+        </span>
       </p>
     </div>
   );

@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { ScopeSelector } from "@/components/api-tokens/ScopeSelector";
 import type { AccessLevel, ResourceKey, TokenScopes } from "@/lib/apiScopes";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { OAuthShell } from "./OAuthShell";
 
 interface OAuthConsentProps {
   clientName: string;
@@ -81,51 +86,57 @@ export function OAuthConsent({
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h1 className="text-lg font-semibold text-foreground">Authorize {clientName}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Signed in as <span className="font-medium text-foreground">{adminName}</span>. Approving
-          creates an API token with the access below — manage or revoke it any time from the
-          dashboard&apos;s API Tokens page.
-        </p>
+    <OAuthShell className="max-w-lg">
+      <Card>
+        <CardHeader>
+          <h1 className="text-lg font-semibold leading-snug break-words">Authorize {clientName}</h1>
+          <CardDescription>
+            Signed in as <span className="font-medium text-foreground">{adminName}</span>. Approving
+            creates an API token with the access below — manage or revoke it any time from the
+            dashboard&apos;s API Tokens page.
+          </CardDescription>
+        </CardHeader>
 
-        <label className="mt-4 block text-sm font-medium text-foreground">
-          Token name
-          <input
-            value={tokenName}
-            onChange={(e) => setTokenName(e.target.value)}
-            maxLength={100}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-          />
-        </label>
+        <CardContent className="space-y-5">
+          <div className="grid gap-2">
+            <label htmlFor="oauth-token-name" className="text-sm font-medium leading-none">
+              Token name
+            </label>
+            <Input
+              id="oauth-token-name"
+              value={tokenName}
+              onChange={(e) => setTokenName(e.target.value)}
+              maxLength={100}
+            />
+          </div>
 
-        <div className="mt-4">
-          <p className="mb-2 text-sm font-medium text-foreground">Access</p>
-          <ScopeSelector scopes={scopes} onChange={handleScopeChange} disabled={submitting} />
-        </div>
+          <div className="grid gap-2">
+            <p className="text-sm font-medium leading-none">Access</p>
+            <ScopeSelector scopes={scopes} onChange={handleScopeChange} disabled={submitting} />
+          </div>
 
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+          {error && (
+            <div role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </CardContent>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={deny}
-            disabled={submitting}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground"
-          >
+        <CardFooter className="flex-col-reverse gap-2 p-4 pt-0 sm:flex-row sm:justify-end md:p-6 md:pt-0">
+          <Button type="button" variant="outline" onClick={deny} disabled={submitting} className="w-full sm:w-auto">
             Deny
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={approve}
             disabled={submitting || !tokenName.trim() || !hasScope}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            className="w-full sm:w-auto"
           >
+            {submitting && <Loader2 className="animate-spin" />}
             {submitting ? "Authorizing…" : "Approve"}
-          </button>
-        </div>
-      </div>
-    </main>
+          </Button>
+        </CardFooter>
+      </Card>
+    </OAuthShell>
   );
 }

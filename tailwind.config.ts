@@ -73,6 +73,17 @@ const config: Config = {
           "outline-variant": "hsl(var(--portal-outline-variant))",
           error: "hsl(var(--portal-error))",
         },
+        // shadcn sidebar tokens (components/ui/sidebar.tsx), read from the
+        // existing --sidebar-* vars the portal sidebars' .ac-sidebar classes
+        // also use — same values as shadcn's neutral sidebar palette.
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-bg))",
+          foreground: "hsl(var(--sidebar-fg))",
+          accent: "hsl(var(--sidebar-active-bg))",
+          "accent-foreground": "hsl(var(--sidebar-active-fg))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--ring))",
+        },
       },
       borderRadius: {
         // shadcn Luma scale (multiples of --radius). sm/md/lg resolve to the

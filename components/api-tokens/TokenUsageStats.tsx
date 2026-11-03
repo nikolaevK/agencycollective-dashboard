@@ -9,6 +9,7 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface TokenUsageStatsProps {
   tokenId: string;
@@ -26,7 +27,7 @@ async function fetchUsage(tokenId: string): Promise<UsageDay[]> {
   return json.data?.usage ?? [];
 }
 
-/** 30-day request volume for one token. */
+/** 30-day request volume for one token. Loaded lazily by TokenCard (recharts). */
 export function TokenUsageStats({ tokenId }: TokenUsageStatsProps) {
   const { data: usage = [], isLoading } = useQuery({
     queryKey: ["api-token-usage", tokenId],
@@ -35,7 +36,7 @@ export function TokenUsageStats({ tokenId }: TokenUsageStatsProps) {
   });
 
   if (isLoading) {
-    return <div className="h-24 animate-pulse rounded-lg bg-muted/40" />;
+    return <Skeleton className="h-24 w-full" />;
   }
   if (usage.length === 0) {
     return (
@@ -51,7 +52,7 @@ export function TokenUsageStats({ tokenId }: TokenUsageStatsProps) {
         <BarChart data={usage} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
           <XAxis
             dataKey="day"
-            tick={{ fontSize: 10 }}
+            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
             tickFormatter={(d: string) => d.slice(5)}
             interval="preserveStartEnd"
             axisLine={false}
@@ -59,16 +60,19 @@ export function TokenUsageStats({ tokenId }: TokenUsageStatsProps) {
           />
           <YAxis hide allowDecimals={false} />
           <Tooltip
-            cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+            cursor={{ fill: "hsl(var(--muted))", opacity: 0.6 }}
             contentStyle={{
-              background: "hsl(var(--card))",
+              background: "hsl(var(--popover))",
+              color: "hsl(var(--popover-foreground))",
               border: "1px solid hsl(var(--border))",
-              borderRadius: 8,
+              borderRadius: 12,
               fontSize: 12,
             }}
+            labelStyle={{ color: "hsl(var(--muted-foreground))" }}
+            itemStyle={{ color: "hsl(var(--popover-foreground))" }}
             formatter={(value: number) => [value, "requests"]}
           />
-          <Bar dataKey="count" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="count" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} maxBarSize={32} />
         </BarChart>
       </ResponsiveContainer>
     </div>

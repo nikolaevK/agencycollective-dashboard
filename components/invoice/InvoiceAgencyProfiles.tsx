@@ -1,17 +1,24 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useId, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, X, Save, ChevronDown, Users, Upload, Check, Download, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Save, ChevronDown, Users, Check, Download, Loader2 } from "lucide-react";
 import type { AgencyProfileRecord } from "@/lib/invoiceAgencyProfiles";
 import type { PaymentInfo, PaymentType } from "@/types/invoice";
 import { emptyPaymentInfo } from "@/lib/invoice/paymentUtils";
-import { THEME_COLORS } from "@/lib/invoice/validation";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { cn } from "@/lib/utils";
-import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
-import { isPdfImageType, PDF_IMAGE_ACCEPT, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
+import { InvoiceField, LogoField, TextField, ThemeSwatches } from "./InvoiceField";
+import { isPdfImageType, PDF_IMAGE_ERROR } from "@/lib/invoice/pdfImage";
 
 const MAX_LOGO_BYTES = 500 * 1024; // 500 KB
+
+const SUBHEAD = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 
 interface Props {
   /** Load a saved profile's sender, logo, theme + payment into the current draft. */
@@ -20,6 +27,7 @@ interface Props {
 
 export function InvoiceAgencyProfiles({ onApply }: Props) {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<AgencyProfileRecord | null>(null);
   const [adding, setAdding] = useState(false);
@@ -45,27 +53,34 @@ export function InvoiceAgencyProfiles({ onApply }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
+    <Card>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-accent/50 transition-colors"
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 md:px-6"
       >
-        <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">Agency Profiles</span>
-          <span className="text-xs text-muted-foreground">({profiles.length})</span>
-        </div>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <Users className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          Agency Profiles
+          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">({profiles.length})</span>
+        </span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="border-t border-border/50 px-5 py-4 space-y-3">
-          <p className="text-[11px] text-muted-foreground">
+        <div className="space-y-3 border-t p-4 md:px-6">
+          <p className="text-xs text-muted-foreground">
             Save multiple agency identities — each with its own logo, sender, theme and payment
             templates — then apply one to the current invoice in a click.
           </p>
 
-          {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+          {isLoading && (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )}
 
           {profiles.map((profile) =>
             editing?.id === profile.id ? (
@@ -84,13 +99,14 @@ export function InvoiceAgencyProfiles({ onApply }: Props) {
                 onCancel={() => setEditing(null)}
               />
             ) : (
-              <div key={profile.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-background p-3">
+              <div key={profile.id} className="flex items-center justify-between gap-2 rounded-2xl border p-3">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   {profile.logo ? (
-                    <img src={profile.logo} alt="" className="h-10 w-10 shrink-0 rounded-md border border-border object-contain bg-background" />
+                    <img src={profile.logo} alt="" className="size-10 shrink-0 rounded-xl border bg-white object-contain" />
                   ) : (
+                    // The profile's own theme color — a preview of how its invoices print.
                     <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border text-xs font-semibold text-white"
+                      className="flex size-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white"
                       style={{ backgroundColor: profile.themeColor }}
                     >
                       {profile.name.slice(0, 1).toUpperCase()}
@@ -103,33 +119,41 @@ export function InvoiceAgencyProfiles({ onApply }: Props) {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
                     onClick={() => handleApply(profile)}
-                    className={cn(
-                      "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                      appliedId === profile.id
-                        ? "text-emerald-600"
-                        : "text-primary hover:bg-primary/10"
-                    )}
                     title="Apply to current invoice"
                   >
-                    {appliedId === profile.id ? <Check className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
+                    {appliedId === profile.id ? <Check /> : <Download />}
                     {appliedId === profile.id ? "Applied" : "Apply"}
-                  </button>
-                  <button onClick={() => setEditing(profile)} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors">
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setEditing(profile)}
+                    aria-label={`Edit ${profile.name}`}
+                    className="text-muted-foreground"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={async () => {
-                      if (!confirm(`Delete profile "${profile.name}"?`)) return;
+                      if (!(await confirm({ title: `Delete profile "${profile.name}"?`, destructive: true, confirmText: "Delete" }))) return;
                       await fetch(`/api/admin/invoice-agency-profiles?id=${profile.id}`, { method: "DELETE" });
                       refresh();
                     }}
-                    className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`Delete ${profile.name}`}
+                    className="text-muted-foreground hover:text-destructive"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
               </div>
             )
@@ -149,17 +173,15 @@ export function InvoiceAgencyProfiles({ onApply }: Props) {
               onCancel={() => setAdding(false)}
             />
           ) : (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)} className="-ml-2 px-2">
+              <Plus />
               Add Agency Profile
-            </button>
+            </Button>
           )}
         </div>
       )}
-    </div>
+      {dialog}
+    </Card>
   );
 }
 
@@ -197,6 +219,7 @@ function ProfileForm({
   const [intlTemplate, setIntlTemplate] = useState<PaymentInfo>(initial?.paymentInternational ?? emptyPaymentInfo("international"));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const id = useId();
   const logoRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -225,134 +248,72 @@ function ProfileForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl bg-muted/50 p-3">
       {/* Profile name */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">Profile Name</label>
-        <input
+      <InvoiceField label="Profile Name" htmlFor={`${id}-name`}>
+        <Input
+          id={`${id}-name`}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Agency Collective, PepAds"
-          className={cn(INPUT_CLS, "font-medium")}
+          className="font-medium"
           required
         />
-      </div>
+      </InvoiceField>
 
       {/* Website — shown in the invoice email when this profile is used as an
           invoice style from the Client Directory / Ad Accounts drawers. */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">Website</label>
-        <input
+      <InvoiceField label="Website" htmlFor={`${id}-website`}>
+        <Input
+          id={`${id}-website`}
           type="text"
           value={website}
           onChange={(e) => setWebsite(e.target.value)}
           placeholder="e.g. https://www.peptiscale.com"
-          className={INPUT_CLS}
+        />
+      </InvoiceField>
+
+      {/* Logo */}
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-logo`}>Logo</Label>
+        <LogoField
+          size="sm"
+          id={`${id}-logo`}
+          logo={logo}
+          inputRef={logoRef}
+          onRemove={() => { setLogo(""); if (logoRef.current) logoRef.current.value = ""; }}
+          onFile={(file) => {
+            if (!isPdfImageType(file.type)) { setErr(PDF_IMAGE_ERROR); return; }
+            if (file.size > MAX_LOGO_BYTES) { setErr("Logo must be under 500 KB"); return; }
+            setErr("");
+            const reader = new FileReader();
+            reader.onload = () => setLogo(reader.result as string);
+            reader.readAsDataURL(file);
+          }}
+          hint="PNG / JPG, max 500 KB."
         />
       </div>
 
-      {/* Logo */}
-      <div className="space-y-1.5">
-        <label className="block text-xs font-medium text-muted-foreground">Logo</label>
-        <div className="flex items-center gap-3">
-          {logo ? (
-            <div className="relative group">
-              <img src={logo} alt="Logo" className="h-14 w-14 rounded-lg border border-border object-contain bg-background" />
-              <button
-                type="button"
-                onClick={() => { setLogo(""); if (logoRef.current) logoRef.current.value = ""; }}
-                className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => logoRef.current?.click()}
-              className="flex h-14 w-14 flex-col items-center justify-center rounded-lg border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-            >
-              <Upload className="h-4 w-4 mb-0.5" />
-              <span className="text-[9px]">Upload</span>
-            </button>
-          )}
-          <input
-            ref={logoRef}
-            type="file"
-            accept={PDF_IMAGE_ACCEPT}
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (!isPdfImageType(file.type)) { setErr(PDF_IMAGE_ERROR); return; }
-              if (file.size > MAX_LOGO_BYTES) { setErr("Logo must be under 500 KB"); return; }
-              setErr("");
-              const reader = new FileReader();
-              reader.onload = () => setLogo(reader.result as string);
-              reader.readAsDataURL(file);
-            }}
-          />
-          <p className="text-[10px] text-muted-foreground">PNG / JPG, max 500 KB.</p>
-        </div>
-      </div>
-
       {/* Theme color */}
-      <div className="space-y-1.5">
-        <label className="block text-xs font-medium text-muted-foreground">Theme Color</label>
-        <div className="flex flex-wrap gap-2">
-          {THEME_COLORS.map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => setThemeColor(t.color)}
-              title={t.label}
-              className="relative h-7 w-7 rounded-full transition-all hover:scale-110"
-              style={{
-                backgroundColor: t.color,
-                ...(themeColor === t.color ? { boxShadow: `0 0 0 2px var(--card), 0 0 0 4px ${t.color}` } : {}),
-              }}
-            >
-              {themeColor === t.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white" />}
-            </button>
-          ))}
-        </div>
+      <div className="grid gap-3">
+        <span className="text-sm font-medium leading-none">Theme Color</span>
+        <ThemeSwatches size="sm" value={themeColor} onChange={setThemeColor} />
       </div>
 
       {/* Sender */}
-      <div className="space-y-2">
-        <h5 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Sender (Bill From)</h5>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Company Name</label>
-            <input value={senderName} onChange={(e) => setSenderName(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Address</label>
-            <input value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">City</label>
-            <input value={senderCity} onChange={(e) => setSenderCity(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Zip Code</label>
-            <input value={senderZip} onChange={(e) => setSenderZip(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Country</label>
-            <input value={senderCountry} onChange={(e) => setSenderCountry(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div>
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Email</label>
-            <input value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} className={INPUT_CLS} />
-          </div>
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Phone</label>
-            <input value={senderPhone} onChange={(e) => setSenderPhone(e.target.value)} className={INPUT_CLS} />
-          </div>
+      <section className="space-y-3">
+        <h5 className={SUBHEAD}>Sender (Bill From)</h5>
+        <div className="grid grid-cols-2 gap-3">
+          <TextField wide label="Company Name" value={senderName} onChange={setSenderName} />
+          <TextField wide label="Address" value={senderAddress} onChange={setSenderAddress} />
+          <TextField label="City" value={senderCity} onChange={setSenderCity} />
+          <TextField label="Zip Code" value={senderZip} onChange={setSenderZip} />
+          <TextField label="Country" value={senderCountry} onChange={setSenderCountry} />
+          <TextField label="Email" value={senderEmail} onChange={setSenderEmail} />
+          <TextField wide label="Phone" value={senderPhone} onChange={setSenderPhone} />
         </div>
-      </div>
+      </section>
 
       {/* Payment — Local */}
       <PaymentTemplateFields
@@ -370,16 +331,17 @@ function ProfileForm({
         onChange={(field, val) => setIntlTemplate((prev) => ({ ...prev, [field]: val }))}
       />
 
-      {err && <p className="text-xs font-medium text-destructive">{err}</p>}
+      {err && <p role="alert" className="text-xs font-medium text-destructive">{err}</p>}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-          <X className="h-3.5 w-3.5 inline mr-1" />Cancel
-        </button>
-        <button type="submit" disabled={saving || !name.trim()} className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium text-white ac-gradient disabled:opacity-60">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          <X />
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={saving || !name.trim()}>
+          {saving ? <Loader2 className="animate-spin" /> : <Save />}
           {saving ? "Saving..." : initial ? "Update" : "Create"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -397,60 +359,27 @@ function PaymentTemplateFields({
   onChange: (field: keyof PaymentInfo, value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <h5 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{title}</h5>
-      <div className="grid grid-cols-2 gap-2">
+    <section className="space-y-3">
+      <h5 className={SUBHEAD}>{title}</h5>
+      <div className="grid grid-cols-2 gap-3">
         {type === "local" && (
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Zelle Contact (Phone / Email)</label>
-            <input value={value.zelleContact ?? ""} onChange={(e) => onChange("zelleContact", e.target.value)} className={INPUT_CLS} />
-          </div>
+          <TextField wide label="Zelle Contact (Phone / Email)" value={value.zelleContact ?? ""} onChange={(v) => onChange("zelleContact", v)} />
         )}
         {type === "international" && (
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">SWIFT / BIC Code</label>
-            <input value={value.swiftBic ?? ""} onChange={(e) => onChange("swiftBic", e.target.value)} className={INPUT_CLS} />
-          </div>
+          <TextField wide label="SWIFT / BIC Code" value={value.swiftBic ?? ""} onChange={(v) => onChange("swiftBic", v)} />
         )}
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Bank Name</label>
-          <input value={value.bankName} onChange={(e) => onChange("bankName", e.target.value)} className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Account Name</label>
-          <input value={value.accountName} onChange={(e) => onChange("accountName", e.target.value)} className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Account Number</label>
-          <input value={value.accountNumber} onChange={(e) => onChange("accountNumber", e.target.value)} className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Routing Number</label>
-          <input value={value.routingNumber ?? ""} onChange={(e) => onChange("routingNumber", e.target.value)} className={INPUT_CLS} />
-        </div>
+        <TextField label="Bank Name" value={value.bankName} onChange={(v) => onChange("bankName", v)} />
+        <TextField label="Account Name" value={value.accountName} onChange={(v) => onChange("accountName", v)} />
+        <TextField label="Account Number" value={value.accountNumber} onChange={(v) => onChange("accountNumber", v)} />
+        <TextField label="Routing Number" value={value.routingNumber ?? ""} onChange={(v) => onChange("routingNumber", v)} />
         {type === "international" && (
-          <div className="col-span-2">
-            <label className="mb-0.5 block text-[10px] text-muted-foreground">Alternate Routing Number</label>
-            <input value={value.alternateRoutingNumber ?? ""} onChange={(e) => onChange("alternateRoutingNumber", e.target.value)} placeholder="If sending bank doesn't recognize primary ABA" className={INPUT_CLS} />
-          </div>
+          <TextField wide label="Alternate Routing Number" value={value.alternateRoutingNumber ?? ""} onChange={(v) => onChange("alternateRoutingNumber", v)} placeholder="If sending bank doesn't recognize primary ABA" />
         )}
-        <div className="col-span-2">
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Bank Address</label>
-          <textarea value={value.bankAddress ?? ""} onChange={(e) => onChange("bankAddress", e.target.value)} rows={2} className={TEXTAREA_CLS} />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Beneficiary Name</label>
-          <input value={value.beneficiaryName ?? ""} onChange={(e) => onChange("beneficiaryName", e.target.value)} className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Beneficiary Address</label>
-          <input value={value.beneficiaryAddress ?? ""} onChange={(e) => onChange("beneficiaryAddress", e.target.value)} className={INPUT_CLS} />
-        </div>
-        <div className="col-span-2">
-          <label className="mb-0.5 block text-[10px] text-muted-foreground">Memo / Reference</label>
-          <input value={value.memo ?? ""} onChange={(e) => onChange("memo", e.target.value)} className={INPUT_CLS} />
-        </div>
+        <TextField wide multiline label="Bank Address" value={value.bankAddress ?? ""} onChange={(v) => onChange("bankAddress", v)} />
+        <TextField label="Beneficiary Name" value={value.beneficiaryName ?? ""} onChange={(v) => onChange("beneficiaryName", v)} />
+        <TextField label="Beneficiary Address" value={value.beneficiaryAddress ?? ""} onChange={(v) => onChange("beneficiaryAddress", v)} />
+        <TextField wide label="Memo / Reference" value={value.memo ?? ""} onChange={(v) => onChange("memo", v)} />
       </div>
-    </div>
+    </section>
   );
 }

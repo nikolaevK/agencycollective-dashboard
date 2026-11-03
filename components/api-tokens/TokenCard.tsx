@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import {
   BarChart3,
   ChevronDown,
@@ -12,8 +13,17 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/users/format";
 import { SCOPE_MODULES } from "@/lib/apiScopes";
+import { Badge, StatusBadge, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { ApiTokenPublic } from "./types";
-import { TokenUsageStats } from "./TokenUsageStats";
+
+// Lazy: recharts only loads when a usage panel is opened.
+const TokenUsageStats = dynamic(() => import("./TokenUsageStats").then((m) => m.TokenUsageStats), {
+  ssr: false,
+  loading: () => <Skeleton className="h-24 w-full" />,
+});
 
 interface TokenCardProps {
   token: ApiTokenPublic;
@@ -34,10 +44,17 @@ function tokenStatus(token: ApiTokenPublic): "active" | "revoked" | "expired" {
   return "active";
 }
 
-const LEVEL_BADGE: Record<string, string> = {
-  read: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  write: "bg-primary/10 text-primary",
-  delete: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+const STATUS_META: Record<ReturnType<typeof tokenStatus>, { label: string; tone: BadgeTone }> = {
+  active: { label: "Active", tone: "success" },
+  revoked: { label: "Revoked", tone: "danger" },
+  expired: { label: "Expired", tone: "neutral" },
+};
+
+// Stronger level, stronger color: read plain, write blue, delete amber.
+const LEVEL_TONE: Record<string, BadgeTone> = {
+  read: "neutral",
+  write: "info",
+  delete: "warning",
 };
 
 export function TokenCard({
@@ -64,21 +81,12 @@ export function TokenCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+    <Card className="flex flex-col gap-3 p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-sm font-semibold truncate">{token.name}</h3>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                status === "active" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                status === "revoked" && "bg-red-500/10 text-red-600 dark:text-red-400",
-                status === "expired" && "bg-muted text-muted-foreground"
-              )}
-            >
-              {status === "active" ? "Active" : status === "revoked" ? "Revoked" : "Expired"}
-            </span>
+            <h3 className="text-sm font-semibold break-all">{token.name}</h3>
+            <StatusBadge tone={STATUS_META[status].tone}>{STATUS_META[status].label}</StatusBadge>
           </div>
           <p className="mt-0.5 font-mono text-xs text-muted-foreground">
             {token.prefix}_••••••••
@@ -86,36 +94,45 @@ export function TokenCard({
         </div>
         {canMutate && (
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onEdit(token)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
               title="Edit scopes & access"
+              aria-label={`Edit scopes & access for ${token.name}`}
             >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <Pencil />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onRotate(token)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
               title="Rotate secret"
+              aria-label={`Rotate secret for ${token.name}`}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
+              <RefreshCw />
+            </Button>
             {status !== "revoked" && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => onRevoke(token)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-amber-500 transition-colors"
                 title="Revoke token"
+                aria-label={`Revoke ${token.name}`}
               >
-                <ShieldOff className="h-3.5 w-3.5" />
-              </button>
+                <ShieldOff />
+              </Button>
             )}
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onDelete(token)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-red-500 transition-colors"
               title="Delete token permanently"
+              aria-label={`Delete ${token.name} permanently`}
+              className="hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+              <Trash2 />
+            </Button>
           </div>
         )}
       </div>
@@ -126,26 +143,20 @@ export function TokenCard({
           const level = token.scopes[mod.key];
           if (!level || level === "none") return null;
           return (
-            <span
-              key={mod.key}
-              className={cn(
-                "rounded-md px-2 py-0.5 text-[11px] font-medium",
-                LEVEL_BADGE[level] ?? "bg-muted text-muted-foreground"
-              )}
-            >
+            <Badge key={mod.key} variant="outline" tone={LEVEL_TONE[level] ?? "neutral"}>
               {mod.label}: {level}
-            </span>
+            </Badge>
           );
         })}
         {restrictions.length > 0 && (
-          <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <Badge variant="secondary" className="h-auto whitespace-normal text-muted-foreground">
             Limited to {restrictions.join(" + ")}
-          </span>
+          </Badge>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>
+        <span className="tabular-nums">
           {token.requestCount.toLocaleString()} request{token.requestCount === 1 ? "" : "s"}
         </span>
         <span>Last used: {token.lastUsedAt ? formatDate(token.lastUsedAt) : "never"}</span>
@@ -153,17 +164,20 @@ export function TokenCard({
           {token.expiresAt ? `Expires ${formatDate(token.expiresAt)}` : "No expiry"}
         </span>
         {token.createdByName && <span>Created by {token.createdByName}</span>}
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => setShowUsage((v) => !v)}
-          className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+          aria-expanded={showUsage}
+          className="ml-auto text-muted-foreground"
         >
-          <BarChart3 className="h-3.5 w-3.5" />
+          <BarChart3 />
           Usage
-          <ChevronDown className={cn("h-3 w-3 transition-transform", showUsage && "rotate-180")} />
-        </button>
+          <ChevronDown className={cn("transition-transform", showUsage && "rotate-180")} />
+        </Button>
       </div>
 
       {showUsage && <TokenUsageStats tokenId={token.id} />}
-    </div>
+    </Card>
   );
 }

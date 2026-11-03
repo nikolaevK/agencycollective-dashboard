@@ -2,86 +2,83 @@
 
 import * as React from "react";
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { isTableSeparator, parseInline, parseListLine, pdfSafe, splitTableCells, type ListLine, type Run } from "@/lib/mediaChat/pdfText";
 
 // Branded markdown → PDF renderer for documents the AI assistant produces.
 // Handles the structured markdown it generates: headings, paragraphs, bold /
-// italic / inline code, bullet / numbered / task lists, tables, blockquotes,
-// fenced code, and horizontal rules.
+// italic / inline code, links (text + URL), nested bullet / numbered / task
+// lists, GFM tables (with or without outer pipes), blockquotes, fenced code
+// and horizontal rules. Inline parsing + the font-safe character mapping live
+// in lib/mediaChat/pdfText (tested). Colors match the report PDF
+// (components/chat/tool-renderers/reportPdfGenerator) so both kinds of saved
+// document look like one brand.
 
-const ACCENT = "#2563eb";
-const LIGHT_BG = "#EBF4FF";
+const ACCENT = "#7c3aed";
+const TEXT = "#203044";
+const MUTED = "#68788f";
+const SURFACE = "#f4f6ff";
+const BORDER = "#e2e8f0";
 
 const st = StyleSheet.create({
-  page: { paddingTop: 40, paddingBottom: 50, paddingHorizontal: 44, fontFamily: "Helvetica", fontSize: 10, color: "#1a1a1a", lineHeight: 1.45 },
+  page: { paddingTop: 40, paddingBottom: 50, paddingHorizontal: 44, fontFamily: "Helvetica", fontSize: 10, color: TEXT, lineHeight: 1.45 },
   topbar: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 },
-  brand: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#333", letterSpacing: 1 },
-  topMeta: { fontSize: 8, color: "#999" },
+  brand: { fontSize: 8, fontFamily: "Helvetica-Bold", color: TEXT, letterSpacing: 1 },
+  topMeta: { fontSize: 8, color: MUTED },
   docTitle: { fontSize: 19, fontFamily: "Helvetica-Bold", color: ACCENT, marginTop: 8 },
   rule: { height: 2, backgroundColor: ACCENT, marginTop: 10, marginBottom: 12 },
 
-  h1: { fontSize: 15, fontFamily: "Helvetica-Bold", color: "#111", marginTop: 10, marginBottom: 4 },
+  h1: { fontSize: 15, fontFamily: "Helvetica-Bold", color: TEXT, marginTop: 10, marginBottom: 4 },
   h2: { fontSize: 12.5, fontFamily: "Helvetica-Bold", color: ACCENT, marginTop: 10, marginBottom: 3 },
-  h3: { fontSize: 11, fontFamily: "Helvetica-Bold", color: "#1a1a1a", marginTop: 8, marginBottom: 2 },
-  h4: { fontSize: 10, fontFamily: "Helvetica-Bold", color: "#444", marginTop: 6, marginBottom: 2 },
-  p: { fontSize: 10, color: "#333", marginBottom: 5 },
+  h3: { fontSize: 11, fontFamily: "Helvetica-Bold", color: TEXT, marginTop: 8, marginBottom: 2 },
+  h4: { fontSize: 10, fontFamily: "Helvetica-Bold", color: MUTED, marginTop: 6, marginBottom: 2 },
+  p: { fontSize: 10, color: TEXT, marginBottom: 5 },
 
   list: { marginBottom: 6, marginTop: 1 },
   li: { flexDirection: "row", marginBottom: 2.5, paddingRight: 6 },
   bullet: { width: 12, fontSize: 10, color: ACCENT },
-  num: { width: 16, fontSize: 10, color: ACCENT, fontFamily: "Helvetica-Bold" },
-  checkbox: { width: 22, fontSize: 9, fontFamily: "Courier", color: "#16a34a" },
-  liText: { flex: 1, fontSize: 10, color: "#333" },
+  num: { width: 18, fontSize: 10, color: ACCENT, fontFamily: "Helvetica-Bold" },
+  checkbox: { width: 22, fontSize: 9, fontFamily: "Courier", color: "#059669" },
+  liText: { flex: 1, fontSize: 10, color: TEXT },
 
-  quote: { borderLeftWidth: 3, borderLeftColor: ACCENT, backgroundColor: LIGHT_BG, paddingVertical: 5, paddingHorizontal: 8, marginBottom: 6, borderRadius: 2 },
-  quoteText: { fontSize: 9.5, color: "#334155" },
+  quote: { borderLeftWidth: 3, borderLeftColor: ACCENT, backgroundColor: SURFACE, paddingVertical: 5, paddingHorizontal: 8, marginBottom: 6, borderRadius: 2 },
+  quoteText: { fontSize: 9.5, color: TEXT },
 
   codeblock: { backgroundColor: "#f3f4f6", borderRadius: 3, padding: 7, marginBottom: 6 },
   codeText: { fontFamily: "Courier", fontSize: 8.5, color: "#1f2937", lineHeight: 1.35 },
 
-  hr: { height: 1, backgroundColor: "#e5e7eb", marginVertical: 8 },
+  hr: { height: 1, backgroundColor: BORDER, marginVertical: 8 },
 
-  table: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 4, marginBottom: 8 },
-  tHead: { flexDirection: "row", backgroundColor: LIGHT_BG },
-  tRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#eee" },
+  table: { borderWidth: 1, borderColor: BORDER, borderRadius: 4, marginBottom: 8 },
+  tHead: { flexDirection: "row", backgroundColor: SURFACE },
+  tRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: BORDER },
   tCell: { paddingVertical: 4, paddingHorizontal: 6, borderRightWidth: 1, borderRightColor: "#f0f0f0" },
   tHeadText: { fontSize: 8, fontFamily: "Helvetica-Bold", color: ACCENT },
-  tCellText: { fontSize: 8.5, color: "#333" },
+  tCellText: { fontSize: 8.5, color: TEXT },
 
-  b: { fontFamily: "Helvetica-Bold", color: "#111" },
+  b: { fontFamily: "Helvetica-Bold" },
   i: { fontFamily: "Helvetica-Oblique" },
+  bi: { fontFamily: "Helvetica-BoldOblique" },
   code: { fontFamily: "Courier", color: ACCENT, fontSize: 9 },
 
-  footer: { position: "absolute", bottom: 24, left: 44, right: 44, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#eee", paddingTop: 6 },
-  footerText: { fontSize: 7.5, color: "#aaa" },
+  footer: { position: "absolute", bottom: 24, left: 44, right: 44, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: BORDER, paddingTop: 6 },
+  footerText: { fontSize: 7.5, color: MUTED },
 });
 
 type RStyle = (typeof st)[keyof typeof st];
 
-type Run = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
-
-function parseInline(input: string): Run[] {
-  // Drop markdown links, keeping the visible text.
-  const src = input.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
-  const runs: Run[] = [];
-  const re = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|`([^`]+)`)/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    if (m.index > last) runs.push({ text: src.slice(last, m.index) });
-    if (m[2] !== undefined || m[3] !== undefined) runs.push({ text: (m[2] ?? m[3])!, bold: true });
-    else if (m[4] !== undefined || m[5] !== undefined) runs.push({ text: (m[4] ?? m[5])!, italic: true });
-    else if (m[6] !== undefined) runs.push({ text: m[6], code: true });
-    last = m.index + m[0].length;
-  }
-  if (last < src.length) runs.push({ text: src.slice(last) });
-  return runs.length ? runs : [{ text: src }];
+function runStyle(r: Run): RStyle | undefined {
+  if (r.code) return st.code;
+  if (r.bold && r.italic) return st.bi;
+  if (r.bold) return st.b;
+  if (r.italic) return st.i;
+  return undefined;
 }
 
-function Inline({ runs, base }: { runs: Run[]; base?: RStyle }) {
+function Inline({ text, base }: { text: string; base?: RStyle }) {
   return (
     <Text style={base}>
-      {runs.map((r, i) => (
-        <Text key={i} style={[r.bold && st.b, r.italic && st.i, r.code && st.code].filter(Boolean) as RStyle[]}>
+      {parseInline(text).map((r, i) => (
+        <Text key={i} style={runStyle(r)}>
           {r.text}
         </Text>
       ))}
@@ -89,17 +86,11 @@ function Inline({ runs, base }: { runs: Run[]; base?: RStyle }) {
   );
 }
 
-const SPLIT_RE = /^(#{1,6}\s|>\s?|```|\s*[-*+]\s+|\s*\d+\.\s+|\s*\|)/;
-
-function splitCells(row: string): string[] {
-  return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
-}
-
 function Table({ rows }: { rows: string[] }) {
-  const parsed = rows.map(splitCells);
+  const parsed = rows.map(splitTableCells);
   let header: string[] | null = null;
   let body = parsed;
-  if (parsed.length >= 2 && parsed[1].every((c) => /^:?-{1,}:?$/.test(c.replace(/\s/g, "")) && c.length > 0)) {
+  if (rows.length >= 2 && isTableSeparator(rows[1])) {
     header = parsed[0];
     body = parsed.slice(2);
   }
@@ -111,7 +102,7 @@ function Table({ rows }: { rows: string[] }) {
         <View style={st.tHead} wrap={false}>
           {Array.from({ length: cols }).map((_, c) => (
             <View key={c} style={[st.tCell, { width: w }]}>
-              <Inline runs={parseInline(header![c] ?? "")} base={st.tHeadText} />
+              <Inline text={header![c] ?? ""} base={st.tHeadText} />
             </View>
           ))}
         </View>
@@ -120,7 +111,7 @@ function Table({ rows }: { rows: string[] }) {
         <View key={ri} style={st.tRow} wrap={false}>
           {Array.from({ length: cols }).map((_, c) => (
             <View key={c} style={[st.tCell, { width: w }]}>
-              <Inline runs={parseInline(row[c] ?? "")} base={st.tCellText} />
+              <Inline text={row[c] ?? ""} base={st.tCellText} />
             </View>
           ))}
         </View>
@@ -129,8 +120,32 @@ function Table({ rows }: { rows: string[] }) {
   );
 }
 
+function ListItem({ item }: { item: ListLine }) {
+  const marker =
+    item.task !== null ? (
+      <Text style={st.checkbox}>{item.task === "x" ? "[x]" : "[ ]"}</Text>
+    ) : item.ordered ? (
+      <Text style={st.num}>{item.n}.</Text>
+    ) : (
+      <Text style={st.bullet}>•</Text>
+    );
+  return (
+    <View style={[st.li, { marginLeft: item.depth * 14 }]} wrap={false}>
+      {marker}
+      <Inline text={item.text} base={st.liText} />
+    </View>
+  );
+}
+
+const FENCE_RE = /^\s*(```|~~~)/;
+const HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+const HR_RE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const PIPE_ROW_RE = /^\s*\|.*\|\s*$/;
+/** Lines that end a paragraph. */
+const SPLIT_RE = /^(#{1,6}\s|>\s?|\s*```|\s*~~~|\s*[-*+]\s+|\s*\d{1,9}[.)]\s+|\s*\|)/;
+
 function renderBlocks(md: string): React.ReactNode[] {
-  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
   const out: React.ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -139,86 +154,97 @@ function renderBlocks(md: string): React.ReactNode[] {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code
-    if (/^```/.test(line.trim())) {
+    // Fenced code (a long block may break across pages)
+    if (FENCE_RE.test(line)) {
+      const fence = FENCE_RE.exec(line)![1];
       const buf: string[] = [];
       i++;
-      while (i < lines.length && !/^```/.test(lines[i].trim())) { buf.push(lines[i]); i++; }
-      i++;
-      out.push(<View key={k()} style={st.codeblock} wrap={false}><Text style={st.codeText}>{buf.join("\n")}</Text></View>);
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push(<View key={k()} style={st.hr} />); i++; continue; }
-
-    // Blank
-    if (line.trim() === "") { out.push(<View key={k()} style={{ height: 4 }} />); i++; continue; }
-
-    // Heading
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) {
-      const lvl = h[1].length;
-      const style = lvl === 1 ? st.h1 : lvl === 2 ? st.h2 : lvl === 3 ? st.h3 : st.h4;
-      out.push(<View key={k()} wrap={false}><Inline runs={parseInline(h[2])} base={style} /></View>);
-      i++; continue;
-    }
-
-    // Blockquote
-    if (/^>\s?/.test(line)) {
-      const buf: string[] = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, "")); i++; }
-      out.push(<View key={k()} style={st.quote} wrap={false}><Inline runs={parseInline(buf.join(" "))} base={st.quoteText} /></View>);
-      continue;
-    }
-
-    // Table
-    if (/^\s*\|.*\|\s*$/.test(line)) {
-      const rows: string[] = [];
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
-      out.push(<Table key={k()} rows={rows} />);
-      continue;
-    }
-
-    // Unordered / task list
-    if (/^\s*[-*+]\s+/.test(line)) {
-      const items: { text: string; task: "x" | " " | null }[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-        let content = lines[i].replace(/^\s*[-*+]\s+/, "");
-        let task: "x" | " " | null = null;
-        const tm = /^\[([ xX])\]\s+(.*)$/.exec(content);
-        if (tm) { task = tm[1].toLowerCase() === "x" ? "x" : " "; content = tm[2]; }
-        items.push({ text: content, task });
+      while (i < lines.length && !lines[i].trim().startsWith(fence)) {
+        buf.push(lines[i]);
         i++;
       }
+      i++;
       out.push(
-        <View key={k()} style={st.list}>
-          {items.map((it, idx) => (
-            <View key={idx} style={st.li} wrap={false}>
-              {it.task !== null ? <Text style={st.checkbox}>{it.task === "x" ? "[x]" : "[ ]"}</Text> : <Text style={st.bullet}>•</Text>}
-              <Inline runs={parseInline(it.text)} base={st.liText} />
-            </View>
-          ))}
+        <View key={k()} style={st.codeblock} wrap={buf.length > 25}>
+          <Text style={st.codeText}>{pdfSafe(buf.join("\n"))}</Text>
         </View>
       );
       continue;
     }
 
-    // Ordered list
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: { n: number; text: string }[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        const mm = /^\s*(\d+)\.\s+(.*)$/.exec(lines[i])!;
-        items.push({ n: Number(mm[1]), text: mm[2] });
+    // Horizontal rule
+    if (HR_RE.test(line)) {
+      out.push(<View key={k()} style={st.hr} />);
+      i++;
+      continue;
+    }
+
+    // Blank
+    if (line.trim() === "") {
+      out.push(<View key={k()} style={{ height: 4 }} />);
+      i++;
+      continue;
+    }
+
+    // Heading
+    const h = HEADING_RE.exec(line);
+    if (h) {
+      const lvl = h[1].length;
+      const style = lvl === 1 ? st.h1 : lvl === 2 ? st.h2 : lvl === 3 ? st.h3 : st.h4;
+      out.push(
+        <View key={k()} wrap={false}>
+          <Inline text={h[2]} base={style} />
+        </View>
+      );
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (/^\s*>/.test(line)) {
+      const buf: string[] = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        buf.push(lines[i].replace(/^\s*(>\s?)+/, ""));
+        i++;
+      }
+      out.push(
+        <View key={k()} style={st.quote} wrap={false}>
+          <Inline text={buf.join(" ")} base={st.quoteText} />
+        </View>
+      );
+      continue;
+    }
+
+    // Table: pipe rows, or a header line followed by a separator row (outer pipes optional)
+    const nextIsSeparator = i + 1 < lines.length && line.includes("|") && isTableSeparator(lines[i + 1]);
+    if (PIPE_ROW_RE.test(line) || nextIsSeparator) {
+      const rows: string[] = [];
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+        rows.push(lines[i]);
+        i++;
+      }
+      out.push(<Table key={k()} rows={rows} />);
+      continue;
+    }
+
+    // Lists (bullet / numbered / task, nested by indentation; indented lines continue an item)
+    if (parseListLine(line)) {
+      const items: ListLine[] = [];
+      while (i < lines.length) {
+        const item = parseListLine(lines[i]);
+        if (item) {
+          items.push(item);
+        } else if (items.length > 0 && /^\s{2,}\S/.test(lines[i]) && !SPLIT_RE.test(lines[i].trimStart())) {
+          items[items.length - 1] = { ...items[items.length - 1], text: `${items[items.length - 1].text} ${lines[i].trim()}` };
+        } else {
+          break;
+        }
         i++;
       }
       out.push(
         <View key={k()} style={st.list}>
           {items.map((it, idx) => (
-            <View key={idx} style={st.li} wrap={false}>
-              <Text style={st.num}>{it.n}.</Text>
-              <Inline runs={parseInline(it.text)} base={st.liText} />
-            </View>
+            <ListItem key={idx} item={it} />
           ))}
         </View>
       );
@@ -227,8 +253,15 @@ function renderBlocks(md: string): React.ReactNode[] {
 
     // Paragraph
     const buf: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !SPLIT_RE.test(lines[i])) { buf.push(lines[i]); i++; }
-    out.push(<View key={k()}><Inline runs={parseInline(buf.join(" "))} base={st.p} /></View>);
+    while (i < lines.length && lines[i].trim() !== "" && (buf.length === 0 || !SPLIT_RE.test(lines[i])) && !HR_RE.test(lines[i])) {
+      buf.push(lines[i].trim());
+      i++;
+    }
+    out.push(
+      <View key={k()}>
+        <Inline text={buf.join(" ")} base={st.p} />
+      </View>
+    );
   }
   return out;
 }
@@ -236,10 +269,10 @@ function renderBlocks(md: string): React.ReactNode[] {
 /** Drop a leading "# Title" from the body when it just repeats the doc title
  *  (the branded header already shows it). */
 function stripRedundantTitle(md: string, title: string): string {
-  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
-  const m = i < lines.length ? /^#\s+(.*)$/.exec(lines[i]) : null;
+  const m = i < lines.length ? /^#\s+(.*?)\s*#*\s*$/.exec(lines[i]) : null;
   if (m && m[1].trim().toLowerCase() === title.trim().toLowerCase()) {
     return lines.slice(i + 1).join("\n").replace(/^\n+/, "");
   }
@@ -263,7 +296,7 @@ export function MarkdownPdf({
           <Text style={st.brand}>AGENCY COLLECTIVE</Text>
           <Text style={st.topMeta}>Media Buyers</Text>
         </View>
-        <Text style={st.docTitle}>{title}</Text>
+        <Text style={st.docTitle}>{pdfSafe(title)}</Text>
         <View style={st.rule} />
 
         {renderBlocks(body)}

@@ -2,6 +2,17 @@
 
 import { useState } from "react";
 import { Check, Copy, KeyRound, TriangleAlert } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface TokenSecretRevealProps {
   open: boolean;
@@ -10,7 +21,9 @@ interface TokenSecretRevealProps {
   onClose: () => void;
 }
 
-/** Shown-once plaintext secret after create/rotate. Not re-fetchable. */
+/** Shown-once plaintext secret after create/rotate. Not re-fetchable.
+ *  Only the explicit "I've saved my token" button closes it — no X, no
+ *  Escape, no outside click — so the secret can't be dismissed by accident. */
 export function TokenSecretReveal({ open, tokenName, secret, onClose }: TokenSecretRevealProps) {
   const [copied, setCopied] = useState(false);
 
@@ -27,51 +40,59 @@ export function TokenSecretReveal({ open, tokenName, secret, onClose }: TokenSec
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" />
-      <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <KeyRound className="h-5 w-5 text-primary" />
+    <Dialog open>
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        className="sm:max-w-lg"
+      >
+        <DialogHeader className="flex-row items-center gap-3 space-y-0">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
+            <KeyRound className="size-5 text-muted-foreground" />
+          </span>
+          <div className="grid min-w-0 gap-1.5">
+            <DialogTitle>Token created</DialogTitle>
+            <DialogDescription className="break-all">{tokenName}</DialogDescription>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold">Token created</h2>
-            <p className="text-sm text-muted-foreground">{tokenName}</p>
-          </div>
-        </div>
+        </DialogHeader>
 
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 flex items-start gap-2">
-          <TriangleAlert className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-600 dark:text-amber-400">
+        <div
+          role="note"
+          className={cn("flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs", badgeTone.warning)}
+        >
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <p>
             Copy this token now — it is shown only once and cannot be retrieved
             again. If you lose it, rotate the token to mint a new secret.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-sm">
+          <code className="min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap rounded-2xl bg-muted px-3 py-2.5 font-mono text-sm text-foreground">
             {secret}
           </code>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-lg"
             onClick={handleCopy}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border hover:bg-accent transition-colors"
             title="Copy token"
+            aria-label={copied ? "Token copied" : "Copy token"}
           >
-            {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-          </button>
+            {copied ? <Check /> : <Copy />}
+          </Button>
         </div>
+        <p aria-live="polite" className="sr-only">
+          {copied ? "Token copied to clipboard" : ""}
+        </p>
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
+        <DialogFooter>
+          <Button type="button" onClick={onClose}>
             I&apos;ve saved my token
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

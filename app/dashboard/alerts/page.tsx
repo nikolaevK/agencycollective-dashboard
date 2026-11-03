@@ -8,6 +8,7 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import AlertsLoading from "./loading";
 import { AlertFeed } from "@/components/alerts/AlertFeed";
 import { StatCard } from "@/components/overview/StatCard";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RefreshCw, Bell, AlertTriangle, AlertCircle, Layers } from "lucide-react";
@@ -83,39 +84,41 @@ function AlertsContent() {
         )}
 
         {/* Alert feed */}
-        <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0">
-            <CardTitle>
-              All Alerts
-              {alerts && severityFilter !== "all" && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({alerts.filter((a) => a.severity === severityFilter).length})
-                </span>
-              )}
-            </CardTitle>
-            {/* Plain pressed buttons: a ToggleGroup's roving-focus runtime
-                would be most of this page's JS. */}
-            <div role="group" aria-label="Severity" className="flex items-center gap-1">
-              {SEVERITY_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  size="sm"
-                  variant="outline"
-                  aria-pressed={severityFilter === opt.value}
-                  onClick={() => setSeverityFilter(opt.value)}
-                  className="aria-pressed:bg-muted aria-pressed:text-foreground"
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {error ? (
-              <div className="text-sm text-red-700 dark:text-red-400">
-                Failed to load alerts: {(error as Error).message}
+        {error ? (
+          <QueryErrorState
+            title="Couldn't load alerts"
+            message={`Failed to load alerts: ${(error as Error).message}`}
+            onRetry={handleRefresh}
+          />
+        ) : (
+          <Card>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between space-y-0">
+              <CardTitle>
+                All Alerts
+                {alerts && severityFilter !== "all" && (
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    ({alerts.filter((a) => a.severity === severityFilter).length})
+                  </span>
+                )}
+              </CardTitle>
+              {/* Plain pressed buttons: a ToggleGroup's roving-focus runtime
+                  would be most of this page's JS. */}
+              <div role="group" aria-label="Severity" className="flex items-center gap-1">
+                {SEVERITY_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    size="sm"
+                    variant="outline"
+                    aria-pressed={severityFilter === opt.value}
+                    onClick={() => setSeverityFilter(opt.value)}
+                    className="aria-pressed:bg-muted aria-pressed:text-foreground"
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
               </div>
-            ) : (
+            </CardHeader>
+            <CardContent>
               <AlertFeed
                 alerts={severityFilter === "all" ? alerts : alerts?.filter((a) => a.severity === severityFilter)}
                 isLoading={isLoading}
@@ -123,9 +126,9 @@ function AlertsContent() {
                 compact={false}
                 dateQuery={dateQuery}
               />
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardShell>
   );
@@ -134,11 +137,7 @@ function AlertsContent() {
 export default function AlertsPage() {
   return (
     <Suspense
-      fallback={
-        <DashboardShell>
-          <div className="animate-pulse text-muted-foreground">Loading alerts...</div>
-        </DashboardShell>
-      }
+      fallback={<AlertsLoading />}
     >
       <AlertsContent />
     </Suspense>

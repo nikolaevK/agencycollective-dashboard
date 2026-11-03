@@ -2,6 +2,7 @@
 
 import { Handshake, Users, Megaphone, BookOpen, ScrollText, UsersRound, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
 import {
   SCOPE_MODULES,
   type AccessLevel,
@@ -35,10 +36,13 @@ interface ScopeSelectorProps {
  * Per-resource access-level selector — the token analogue of the Admins
  * page's PermissionToggleList, but tri-state+none instead of a boolean
  * switch. Levels are ordinal: delete ⇒ write ⇒ read.
+ *
+ * Plain buttons on purpose (no Radix): the public OAuth consent page renders
+ * this too and stays light.
  */
 export function ScopeSelector({ scopes, onChange, disabled }: ScopeSelectorProps) {
   return (
-    <div className="space-y-2">
+    <div className="flex min-w-0 flex-col gap-2">
       {SCOPE_MODULES.map((mod) => {
         const Icon = ICON_MAP[mod.icon] ?? LayoutDashboard;
         const level: AccessLevel = scopes[mod.key] ?? "none";
@@ -51,39 +55,47 @@ export function ScopeSelector({ scopes, onChange, disabled }: ScopeSelectorProps
           <div
             key={mod.key}
             className={cn(
-              "flex flex-col gap-2 rounded-lg border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between",
-              active ? "border-primary/30 bg-primary/5" : "border-border bg-background",
+              "flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between",
+              active ? "bg-muted/60" : "bg-transparent",
               disabled && "opacity-50 pointer-events-none"
             )}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+              <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted-foreground")} />
               <div className="min-w-0">
                 <p className="text-sm font-medium">{mod.label}</p>
-                <p className="text-xs text-muted-foreground truncate">{mod.description}</p>
+                <p className="text-xs text-muted-foreground">{mod.description}</p>
               </div>
             </div>
-            <div className="flex shrink-0 rounded-lg border border-border bg-background p-0.5">
-              {levels.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onChange(mod.key, opt.value)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                    level === opt.value
-                      ? opt.value === "none"
-                        ? "bg-muted text-foreground"
-                        : opt.value === "delete"
-                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                          : "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div
+              role="group"
+              aria-label={`${mod.label} access`}
+              className="flex shrink-0 self-start rounded-3xl bg-muted p-0.5 sm:self-auto"
+            >
+              {levels.map((opt) => {
+                const selected = level === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={disabled}
+                    onClick={() => onChange(mod.key, opt.value)}
+                    className={cn(
+                      "rounded-3xl border border-transparent px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                      selected
+                        ? opt.value === "none"
+                          ? "bg-background text-foreground shadow-sm"
+                          : opt.value === "delete"
+                            ? badgeTone.warning
+                            : "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         );

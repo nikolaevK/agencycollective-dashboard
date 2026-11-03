@@ -1,16 +1,41 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, FileText, Handshake, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2, Boxes, UsersRound } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, X, Sparkles, FileText, Handshake, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2, Boxes, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
+import { NavUserButton } from "@/components/layout/NavUserButton";
 import { useAdmin } from "@/components/providers/AdminProvider";
+import { Button } from "@/components/ui/button";
+import { badgeTone, type BadgeTone } from "@/components/ui/badge";
+import {
+  Sidebar as SidebarRoot,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 import type { PermissionKey } from "@/lib/permissions";
 import { CREATIVE_PATH, CREATIVE_PERMS } from "@/components/creative/creativeTabs";
+
+// The account menu (a Radix dropdown) is its own chunk, fetched after
+// hydration; the static button stands in until then and on the server.
+const NavUser = dynamic(() => import("@/components/layout/NavUser").then((m) => m.NavUser), {
+  ssr: false,
+  loading: () => <NavUserButton />,
+});
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -18,30 +43,62 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; anyPerm?: PermissionKey[]; superOnly?: boolean; alwaysShow?: boolean }[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true, perm: "dashboard" },
-  { href: "/dashboard/alerts", label: "Alerts", icon: Bell, perm: "dashboard" },
-  // AI Analyst, Image Generator, JSON Editor + Ad Copy — tabs of one page.
-  { href: CREATIVE_PATH, label: "Creative Studio", icon: Sparkles, perm: "analyst", anyPerm: CREATIVE_PERMS },
-  { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
-  { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
-  // Team hub is visible to EVERY admin (overview + own hub); full access is
-  // enforced in-route by the `admin` permission — same pattern as SOPs.
-  { href: "/dashboard/team", label: "Team", icon: UsersRound, perm: "dashboard", alwaysShow: true },
-  { href: "/dashboard/meta-accounts", label: "Meta Accounts", icon: Boxes, perm: "meta_accounts" },
-  { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
-  { href: "/dashboard/media-buyers", label: "Media Buyers", icon: Megaphone, perm: "media" },
-  { href: "/dashboard/sops", label: "SOPs", icon: ClipboardList, perm: "dashboard", alwaysShow: true },
-  { href: "/dashboard/projection", label: "Revenue Projection", icon: TrendingUp, perm: "dashboard" },
-  { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
-  { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
-  { href: "/dashboard/api-tokens", label: "API Tokens", icon: KeyRound, perm: "apitokens" },
-  { href: "/dashboard/api-docs", label: "API Docs", icon: Code2, perm: "apitokens" },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; anyPerm?: PermissionKey[]; superOnly?: boolean; alwaysShow?: boolean };
+
+// A group only renders when the admin can see at least one of its items.
+const navGroups: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Dashboard",
+    items: [
+      { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true, perm: "dashboard" },
+      { href: "/dashboard/alerts", label: "Alerts", icon: Bell, perm: "dashboard" },
+    ],
+  },
+  {
+    label: "Sales",
+    items: [
+      { href: "/dashboard/closers", label: "Closers", icon: Handshake, perm: "closers" },
+      { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
+      { href: "/dashboard/projection", label: "Revenue Projection", icon: TrendingUp, perm: "dashboard" },
+    ],
+  },
+  {
+    label: "Clients",
+    items: [
+      { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
+      // Team hub is visible to EVERY admin (overview + own hub); full access is
+      // enforced in-route by the `admin` permission — same pattern as SOPs.
+      { href: "/dashboard/team", label: "Team", icon: UsersRound, perm: "dashboard", alwaysShow: true },
+    ],
+  },
+  {
+    label: "Media",
+    items: [
+      // AI Analyst, Image Generator, JSON Editor + Ad Copy — tabs of one page.
+      { href: CREATIVE_PATH, label: "Creative Studio", icon: Sparkles, perm: "analyst", anyPerm: CREATIVE_PERMS },
+      { href: "/dashboard/media-buyers", label: "Media Buyers", icon: Megaphone, perm: "media" },
+      { href: "/dashboard/meta-accounts", label: "Meta Accounts", icon: Boxes, perm: "meta_accounts" },
+    ],
+  },
+  {
+    label: "Resources",
+    items: [
+      { href: "/dashboard/sops", label: "SOPs", icon: ClipboardList, perm: "dashboard", alwaysShow: true },
+      { href: "/dashboard/settings", label: "Documentation", icon: BookOpen, perm: "dashboard" },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/dashboard/admins", label: "Admins", icon: UserCog, perm: "admin" },
+      { href: "/dashboard/api-tokens", label: "API Tokens", icon: KeyRound, perm: "apitokens" },
+      { href: "/dashboard/api-docs", label: "API Docs", icon: Code2, perm: "apitokens" },
+    ],
+  },
 ];
 
 export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const admin = useAdmin();
   const { dateRange } = useDateRange();
   const { data: alerts } = useAlerts(dateRange);
@@ -67,130 +124,107 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
     refetchIntervalInBackground: false,
   });
 
+  // Mobile drawer: Escape closes it; focus moves in on open and back to the
+  // button that opened it on close.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEscapeKey(() => onClose?.(), isOpen);
+  useEffect(() => {
+    if (!isOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
+    return () => opener?.focus({ preventScroll: true });
+  }, [isOpen]);
+
   // Filter nav items by permissions (superOnly items only visible to super admins).
   // External partner admins (workspace scope without the main book) also lose
   // the internal-only alwaysShow entries (SOPs) — Team stays (scoped in-route).
-  const visibleItems = navItems.filter(
-    (item) => {
-      if (admin.isExternal && item.href === "/dashboard/sops") return false;
-      return item.alwaysShow
-        ? true
-        : item.superOnly
-          ? admin.isSuper
-          : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage) || (item.anyPerm?.some((p) => admin.permissions[p]) ?? false));
-    }
-  );
+  const canSee = (item: NavItem) => {
+    if (admin.isExternal && item.href === "/dashboard/sops") return false;
+    return item.alwaysShow
+      ? true
+      : item.superOnly
+        ? admin.isSuper
+        : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage) || (item.anyPerm?.some((p) => admin.permissions[p]) ?? false));
+  };
+  const visibleGroups = navGroups
+    .map((group) => ({ ...group, items: group.items.filter(canSee) }))
+    .filter((group) => group.items.length > 0);
 
-  async function handleLogout() {
-    await fetch("/api/auth/admin/logout", { method: "POST" });
-    // Creative Studio keeps generated images in this browser — don't leave them for the next admin.
-    void import("@/components/generate/imageStore").then((m) => m.clearStoredImages()).catch(() => {});
-    router.push("/?portal=admin");
+  function badgeFor(href: string): { text: string; tone: BadgeTone; label: string } | null {
+    if (href === "/dashboard/alerts" && totalCount > 0) {
+      return {
+        text: String(totalCount),
+        tone: criticalCount > 0 ? "danger" : "warning",
+        label: `${totalCount} alert${totalCount === 1 ? "" : "s"}${criticalCount > 0 ? `, ${criticalCount} critical` : ""}`,
+      };
+    }
+    if (href === "/dashboard/users" && unreadSupport > 0) {
+      return {
+        text: unreadSupport > 99 ? "99+" : String(unreadSupport),
+        tone: "danger",
+        label: `${unreadSupport} unread support message${unreadSupport === 1 ? "" : "s"}`,
+      };
+    }
+    return null;
   }
 
   return (
-    <aside
-      className={cn(
-        "ac-sidebar flex h-full shrink-0 flex-col border-r transition-all duration-200 ease-in-out",
-        "fixed inset-y-0 left-0 z-50",
-        "md:relative md:translate-x-0",
-        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-        collapsed ? "md:w-16 w-64" : "w-64"
-      )}
-    >
-      {/* Logo row — close button on mobile */}
-      <div
-        className={cn(
-          "flex h-16 items-center border-b",
-          collapsed ? "md:justify-center md:px-2 px-5 justify-between" : "justify-between px-5"
-        )}
-        style={{ borderColor: "hsl(var(--sidebar-border))" }}
-      >
-        <div className={cn(collapsed && "md:hidden")}>
-          <AgencyLogo />
-        </div>
-        {collapsed && (
-          <div className="hidden md:flex items-center justify-center">
-            <img src="/ac-icon.png" alt="AC" className="h-8 w-8 dark:invert" />
-          </div>
-        )}
-        <button
-          onClick={onClose}
-          className="md:hidden rounded-lg p-1.5 text-current opacity-60 hover:opacity-100 transition-opacity"
-          aria-label="Close menu"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+    <SidebarRoot collapsed={collapsed} open={isOpen}>
+      {/* Logo row — full logo (mark on the collapsed rail); close button on mobile */}
+      <SidebarHeader className="h-16 shrink-0 flex-row items-center justify-between px-4 md:group-data-[collapsible=icon]/sidebar:justify-center md:group-data-[collapsible=icon]/sidebar:px-2">
+        <AgencyLogo className="md:group-data-[collapsible=icon]/sidebar:hidden" />
+        <AgencyLogo variant="mark" className="hidden md:group-data-[collapsible=icon]/sidebar:block" />
+        {/* transition-colors, not the kit's transition-all: that would also
+            animate the visibility it inherits from the drawer, leaving it
+            unfocusable at the moment the drawer opens. */}
+        <Button ref={closeRef} variant="ghost" size="icon-sm" onClick={onClose} className="transition-colors md:hidden" aria-label="Close menu">
+          <X />
+        </Button>
+      </SidebarHeader>
 
-      {/* Navigation */}
-      <nav className={cn("flex-1 overflow-y-auto overscroll-contain space-y-0.5 py-4", collapsed ? "md:px-2 px-3" : "px-3")}>
-        <p className={cn(
-          "mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-40",
-          collapsed && "md:hidden"
-        )}>
-          Admin
-        </p>
-        {visibleItems.map((item) => {
-          const isActive = item.exact
-            ? pathname === item.href
-            : pathname.startsWith(item.href);
+      <SidebarContent role="navigation" aria-label="Main" className="gap-0">
+        {/* py-1 (not the kit's 8px): the full nav fits a 900px-tall window.
+            The icon rail has room, so it keeps the wider gaps between groups. */}
+        {visibleGroups.map((group) => (
+          <SidebarGroup key={group.label} className="py-1 md:group-data-[collapsible=icon]/sidebar:py-2">
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => {
+                const isActive = item.exact
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href);
+                const badge = badgeFor(item.href);
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                "ac-sidebar-link flex items-center rounded-lg text-sm font-medium",
-                collapsed ? "md:justify-center md:px-0 md:py-2.5 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5",
-                isActive && "active"
-              )}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              <span className={cn(collapsed && "md:hidden")}>{item.label}</span>
-              {item.label === "Alerts" && totalCount > 0 && (
-                <span
-                  className={cn(
-                    "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
-                    collapsed ? "md:absolute md:top-0 md:right-0 md:h-4 md:min-w-4 md:text-[9px] md:px-1" : "ml-auto",
-                    criticalCount > 0 ? "bg-red-500 text-white" : "bg-amber-400 text-amber-900"
-                  )}
-                >
-                  {totalCount}
-                </span>
-              )}
-              {item.label === "Clients" && unreadSupport > 0 && (
-                <span
-                  className={cn(
-                    "flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white px-1.5 text-xs font-semibold",
-                    collapsed ? "md:absolute md:top-0 md:right-0 md:h-4 md:min-w-4 md:text-[9px] md:px-1" : "ml-auto"
-                  )}
-                  aria-label={`${unreadSupport} unread support message${unreadSupport === 1 ? "" : "s"}`}
-                >
-                  {unreadSupport > 99 ? "99+" : unreadSupport}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label} className={cn(badge && "pr-10")}>
+                      <Link href={item.href} onClick={onClose} aria-current={isActive ? "page" : undefined}>
+                        <item.icon />
+                        <span className="truncate">{item.label}</span>
+                        {badge && <span className="sr-only">, {badge.label}</span>}
+                      </Link>
+                    </SidebarMenuButton>
+                    {badge && (
+                      <SidebarMenuBadge aria-hidden className={cn("border", badgeTone[badge.tone])}>
+                        {badge.text}
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
 
-      {/* Footer — logout */}
-      <div className={cn("border-t", collapsed ? "md:p-2 p-3" : "p-3")} style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-        <button
-          onClick={handleLogout}
-          title={collapsed ? "Log out" : undefined}
-          className={cn(
-            "ac-sidebar-link flex w-full items-center rounded-lg text-sm font-medium",
-            collapsed ? "md:justify-center md:px-0 md:py-2.5 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5"
-          )}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Log out</span>
-        </button>
-      </div>
-    </aside>
+      {/* Account menu — the one place for account actions (Log out) */}
+      <SidebarFooter className="pb-[calc(0.5rem+env(safe-area-inset-bottom))] md:pb-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <NavUser side={collapsed && !isOpen ? "right" : "top"} />
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </SidebarRoot>
   );
 }

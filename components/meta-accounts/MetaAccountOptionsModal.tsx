@@ -1,10 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { X, Plus, Pencil, Trash2, Check, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { useMetaAccountOptions } from "@/hooks/useMetaAccountOptions";
-import { OPTION_COLOR_TOKENS, type MetaOptionKind, type MetaAccountOption } from "@/lib/metaAccountOptions";
+import { OPTION_COLOR_TOKENS } from "@/lib/metaAccountOptionRules";
+import type { MetaOptionKind, MetaAccountOption } from "@/lib/metaAccountOptions";
 import { swatchClass } from "./presentation";
 
 const KIND_COPY: Record<MetaOptionKind, { title: string; placeholder: string; blurb: string }> = {
@@ -72,59 +85,48 @@ export function MetaAccountOptionsModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative mt-16 w-full max-w-md rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click (Escape in a rename field cancels the
+        // rename only).
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">{copy.title}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{copy.blurb}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.blurb}</DialogDescription>
+        </DialogHeader>
 
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pb-6">
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
               {error}
             </div>
           )}
 
           {/* Add */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <ColorPicker value={draftColor} onChange={setDraftColor} disabled={busy} />
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAdd();
-                  }
-                }}
-                placeholder={copy.placeholder}
-                maxLength={40}
-                disabled={busy}
-                className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
-              />
-              <button
-                type="button"
-                onClick={handleAdd}
-                disabled={busy || !draft.trim()}
-                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
-              >
-                <Plus className="h-4 w-4" />
-                Add
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
+            <ColorPicker value={draftColor} onChange={setDraftColor} disabled={busy} label="New option color" />
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAdd();
+                }
+              }}
+              placeholder={copy.placeholder}
+              aria-label={copy.placeholder}
+              maxLength={40}
+              disabled={busy}
+              className="min-w-0 flex-1"
+            />
+            <Button type="button" onClick={handleAdd} disabled={busy || !draft.trim()}>
+              <Plus />
+              Add
+            </Button>
           </div>
 
           {/* List */}
@@ -150,10 +152,14 @@ export function MetaAccountOptionsModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
+
+// Compact stacked reorder arrows (two fit in one row's height).
+const MOVE_BTN =
+  "flex h-4 w-6 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30";
 
 function OptionRow({
   option,
@@ -178,6 +184,7 @@ function OptionRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(option.label);
+  const { confirm, dialog } = useConfirm();
 
   async function save() {
     const next = label.trim();
@@ -190,32 +197,34 @@ function OptionRow({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-background px-2.5 py-2">
-      <div className="flex flex-col -my-1">
+    <div className="flex items-center gap-2 rounded-xl px-2 py-1.5 ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <div className="flex flex-col">
         <button
           type="button"
           onClick={onMoveUp}
           disabled={busy || isFirst}
-          className="p-0.5 rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
+          className={MOVE_BTN}
           aria-label="Move up"
+          title="Move up"
         >
-          <ChevronUp className="h-3.5 w-3.5" />
+          <ChevronUp className="size-3.5" />
         </button>
         <button
           type="button"
           onClick={onMoveDown}
           disabled={busy || isLast}
-          className="p-0.5 rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
+          className={MOVE_BTN}
           aria-label="Move down"
+          title="Move down"
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          <ChevronDown className="size-3.5" />
         </button>
       </div>
 
-      <ColorPicker value={option.color} onChange={onRecolor} disabled={busy} />
+      <ColorPicker value={option.color} onChange={onRecolor} disabled={busy} label={`${option.label} color`} />
 
       {editing ? (
-        <input
+        <Input
           autoFocus
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -231,49 +240,64 @@ function OptionRow({
           }}
           maxLength={40}
           disabled={busy}
-          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-primary disabled:opacity-50"
+          aria-label="Option name"
+          className="h-8 min-w-0 flex-1"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-          {option.label}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{option.label}</span>
       )}
 
       <div className="flex shrink-0 items-center gap-1">
         {editing ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={save}
             disabled={busy}
-            className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40"
             aria-label="Save name"
+            title="Save name"
           >
-            <Check className="h-4 w-4" />
-          </button>
+            <Check />
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setEditing(true)}
             disabled={busy}
-            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
             aria-label="Rename option"
+            title="Rename option"
+            className="text-muted-foreground"
           >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+            <Pencil />
+          </Button>
         )}
-        <button
+        <Button
           type="button"
-          onClick={() => {
-            if (confirm(`Remove "${option.label}"? Accounts already tagged with it keep the tag.`))
+          variant="ghost"
+          size="icon-sm"
+          onClick={async () => {
+            if (
+              await confirm({
+                title: `Remove "${option.label}"?`,
+                description: "Accounts already tagged with it keep the tag.",
+                confirmText: "Remove",
+                destructive: true,
+              })
+            )
               onRemove();
           }}
           disabled={busy}
-          className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-40"
           aria-label="Remove option"
+          title="Remove option"
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+          <Trash2 />
+        </Button>
       </div>
+      {dialog}
     </div>
   );
 }
@@ -282,44 +306,49 @@ function ColorPicker({
   value,
   onChange,
   disabled,
+  label,
 }: {
   value: string;
   onChange: (color: string) => void;
   disabled?: boolean;
+  label: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="relative shrink-0">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className={cn("h-5 w-5 rounded-full ring-2 ring-offset-1 ring-offset-background ring-transparent hover:ring-border disabled:opacity-50", swatchClass(value))}
-        aria-label="Pick color"
-      />
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-7 z-20 grid grid-cols-6 gap-1.5 rounded-lg border border-border bg-popover p-2 shadow-lg">
-            {OPTION_COLOR_TOKENS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => {
-                  onChange(c);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "h-5 w-5 rounded-full transition-transform hover:scale-110",
-                  swatchClass(c),
-                  value === c && "ring-2 ring-offset-1 ring-offset-popover ring-foreground"
-                )}
-                aria-label={c}
-              />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    // Radix Popover (portaled), so the palette isn't clipped by the dialog's
+    // scrolling body.
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "size-5 shrink-0 rounded-full outline-none ring-2 ring-transparent ring-offset-2 ring-offset-popover transition-shadow hover:ring-border focus-visible:ring-ring/50 disabled:opacity-50",
+            swatchClass(value)
+          )}
+          aria-label={`Pick color — ${label}`}
+          title="Pick color"
+        />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="grid w-auto grid-cols-6 gap-2 p-3">
+        {OPTION_COLOR_TOKENS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => {
+              onChange(c);
+              setOpen(false);
+            }}
+            className={cn(
+              "size-6 rounded-full outline-none ring-offset-2 ring-offset-popover transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring/50",
+              swatchClass(c),
+              value === c && "ring-2 ring-foreground"
+            )}
+            aria-label={c}
+            aria-pressed={value === c}
+          />
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }

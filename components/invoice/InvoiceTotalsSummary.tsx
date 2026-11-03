@@ -44,7 +44,7 @@ export function InvoiceTotalsSummary({ details }: { details: InvoiceDetails }) {
                 Discount
                 {pct(details.discountDetails && { ...details.discountDetails, amount: Math.min(100, details.discountDetails.amount) })}
               </span>
-              <span className="tabular-nums text-red-600 dark:text-red-400">-{fmt(discount)}</span>
+              <span className="tabular-nums text-destructive">-{fmt(discount)}</span>
             </div>
           )}
           {tax > 0 && (

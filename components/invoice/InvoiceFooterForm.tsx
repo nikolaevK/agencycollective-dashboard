@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type {
   PaymentInfo,
   PaymentType,
@@ -16,8 +17,16 @@ import {
 } from "@/lib/invoice/validation";
 import { numberToWords } from "@/lib/invoice/numberToWords";
 import { emptyPaymentInfo, loadPaymentInfoFromConfig } from "@/lib/invoice/paymentUtils";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import { InvoiceSignature } from "./InvoiceSignature";
-import { INPUT_CLS, TEXTAREA_CLS } from "./styles";
+import { InvoiceField, SEGMENT_ITEM, SEGMENT_TRACK } from "./InvoiceField";
 
 interface Props {
   paymentInfo: PaymentInfo | null;
@@ -62,6 +71,7 @@ export function InvoiceFooterForm({
   onSignatureChange,
   onTotalInWordsChange,
 }: Props) {
+  const id = useId();
   const discountAmount = discountValueOf(subTotal, discount);
   const taxAmount = taxValueOf(subTotal, tax);
   const shippingAmount = shippingValueOf(subTotal, shipping);
@@ -88,328 +98,314 @@ export function InvoiceFooterForm({
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
-        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-          Summary
-        </h3>
+      <Card>
+        <CardHeader>
+          <CardTitle>Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Subtotal</span>
+              <span className="tabular-nums">{formatCurrencyValue(subTotal, currency)}</span>
+            </div>
 
-        <div className="space-y-1.5 text-sm">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{formatCurrencyValue(subTotal, currency)}</span>
+            {discount && discountAmount > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>
+                  Discount
+                  {discount.amountType === "percentage" && ` (${discount.amount}%)`}
+                </span>
+                <span className="tabular-nums text-destructive">
+                  -{formatCurrencyValue(discountAmount, currency)}
+                </span>
+              </div>
+            )}
+
+            {tax && taxAmount > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>
+                  Tax
+                  {tax.amountType === "percentage" && ` (${tax.amount}%)`}
+                  {tax.taxId && ` — ${tax.taxId}`}
+                </span>
+                <span className="tabular-nums">+{formatCurrencyValue(taxAmount, currency)}</span>
+              </div>
+            )}
+
+            {shipping && shippingAmount > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>
+                  Shipping
+                  {shipping.costType === "percentage" && ` (${shipping.cost}%)`}
+                </span>
+                <span className="tabular-nums">+{formatCurrencyValue(shippingAmount, currency)}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between border-t pt-3 text-foreground">
+              <span className="font-medium">Total</span>
+              <span className="text-lg font-semibold tracking-tight tabular-nums">
+                {formatCurrencyValue(totalAmount, currency)}
+              </span>
+            </div>
+
+            {totalInWords && totalAmount > 0 && (
+              <p className="pt-1 text-xs italic text-muted-foreground">
+                {numberToWords(totalAmount, currency)}
+              </p>
+            )}
           </div>
 
-          {discount && discountAmount > 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>
-                Discount
-                {discount.amountType === "percentage" && ` (${discount.amount}%)`}
-              </span>
-              <span className="text-destructive">
-                -{formatCurrencyValue(discountAmount, currency)}
-              </span>
-            </div>
-          )}
-
-          {tax && taxAmount > 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>
-                Tax
-                {tax.amountType === "percentage" && ` (${tax.amount}%)`}
-                {tax.taxId && ` — ${tax.taxId}`}
-              </span>
-              <span>+{formatCurrencyValue(taxAmount, currency)}</span>
-            </div>
-          )}
-
-          {shipping && shippingAmount > 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>
-                Shipping
-                {shipping.costType === "percentage" && ` (${shipping.cost}%)`}
-              </span>
-              <span>+{formatCurrencyValue(shippingAmount, currency)}</span>
-            </div>
-          )}
-
-          <div className="border-t border-border pt-2 flex justify-between font-semibold text-foreground text-base">
-            <span>Total</span>
-            <span>{formatCurrencyValue(totalAmount, currency)}</span>
-          </div>
-
-          {totalInWords && totalAmount > 0 && (
-            <p className="text-xs text-muted-foreground italic pt-1">
-              {numberToWords(totalAmount, currency)}
-            </p>
-          )}
-        </div>
-
-        <label className="flex items-center gap-2 cursor-pointer pt-1">
-          <input
-            type="checkbox"
-            checked={totalInWords}
-            onChange={(e) => onTotalInWordsChange(e.target.checked)}
-            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-          />
-          <span className="text-xs text-muted-foreground">
+          <Label className="cursor-pointer font-normal text-muted-foreground">
+            <Checkbox
+              checked={totalInWords}
+              onCheckedChange={(checked) => onTotalInWordsChange(checked === true)}
+            />
             Show total in words
-          </span>
-        </label>
-      </div>
+          </Label>
+        </CardContent>
+      </Card>
 
       {/* Payment Information */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={paymentInfo !== null}
-            onChange={(e) =>
-              onPaymentInfoChange(
-                e.target.checked ? emptyPaymentInfo("local") : null
-              )
-            }
-            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-          />
-          <span className="text-sm font-semibold text-foreground uppercase tracking-wide">
+      <Card>
+        <CardHeader>
+          <Label className="cursor-pointer text-base leading-snug">
+            <Checkbox
+              checked={paymentInfo !== null}
+              onCheckedChange={(checked) =>
+                onPaymentInfoChange(checked === true ? emptyPaymentInfo("local") : null)
+              }
+            />
             Payment Information
-          </span>
-        </label>
+          </Label>
+        </CardHeader>
 
         {paymentInfo && (
-          <div className="space-y-4 pl-6">
+          <CardContent className="space-y-4">
             {/* Payment Type Toggle */}
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Payment Type
-              </label>
-              <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
-                <button
-                  type="button"
-                  onClick={() => handlePaymentTypeChange("local")}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "local" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
+            <div className="grid gap-2">
+              <span className="text-sm font-medium leading-none">Payment Type</span>
+              <ToggleGroup
+                type="single"
+                // Each option stays its own Tab stop, as the old buttons were.
+                rovingFocus={false}
+                value={paymentType}
+                // Radix reports "" when the pressed option is clicked again;
+                // the old buttons re-applied that type then, so keep doing that.
+                onValueChange={(v) => handlePaymentTypeChange((v || paymentType) as PaymentType)}
+                aria-label="Payment Type"
+                className={cn("w-full", SEGMENT_TRACK)}
+              >
+                <ToggleGroupItem value="local" className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2")}>
                   Local (Zelle + Wire)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePaymentTypeChange("international")}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentType === "international" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
+                </ToggleGroupItem>
+                <ToggleGroupItem value="international" className={cn(SEGMENT_ITEM, "min-w-0 flex-1 px-2")}>
                   International (Wire)
-                </button>
-              </div>
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
 
             {/* Load from template */}
             {agencyConfig && (
-              <button
-                type="button"
-                onClick={handleLoadTemplate}
-                className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-              >
+              <Button type="button" variant="link" size="xs" onClick={handleLoadTemplate} className="px-0">
                 Load from agency template
-              </button>
+              </Button>
             )}
 
-            {/* Zelle Contact — Local only */}
-            {paymentType === "local" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Zelle Contact (Phone / Email)
-                </label>
-                <input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Zelle Contact — Local only */}
+              {paymentType === "local" && (
+                <InvoiceField label="Zelle Contact (Phone / Email)" htmlFor={`${id}-zelle`} className="sm:col-span-2">
+                  <Input
+                    id={`${id}-zelle`}
+                    type="text"
+                    value={paymentInfo.zelleContact ?? ""}
+                    onChange={(e) => updateField("zelleContact", e.target.value)}
+                    placeholder="Phone number or email for Zelle"
+                  />
+                </InvoiceField>
+              )}
+
+              {/* SWIFT/BIC — International only */}
+              {paymentType === "international" && (
+                <InvoiceField label="SWIFT / BIC Code" htmlFor={`${id}-swift`} className="sm:col-span-2">
+                  <Input
+                    id={`${id}-swift`}
+                    type="text"
+                    value={paymentInfo.swiftBic ?? ""}
+                    onChange={(e) => updateField("swiftBic", e.target.value)}
+                    placeholder="e.g. CLNOUS66MER"
+                  />
+                </InvoiceField>
+              )}
+
+              {/* Common fields */}
+              <InvoiceField label="Bank Name" htmlFor={`${id}-bank`}>
+                <Input
+                  id={`${id}-bank`}
                   type="text"
-                  value={paymentInfo.zelleContact ?? ""}
-                  onChange={(e) => updateField("zelleContact", e.target.value)}
-                  placeholder="Phone number or email for Zelle"
-                  className={INPUT_CLS}
+                  value={paymentInfo.bankName}
+                  onChange={(e) => updateField("bankName", e.target.value)}
+                  placeholder="Bank name"
                 />
-              </div>
-            )}
-
-            {/* SWIFT/BIC — International only */}
-            {paymentType === "international" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  SWIFT / BIC Code
-                </label>
-                <input
+              </InvoiceField>
+              <InvoiceField label="Account Name" htmlFor={`${id}-acct-name`}>
+                <Input
+                  id={`${id}-acct-name`}
                   type="text"
-                  value={paymentInfo.swiftBic ?? ""}
-                  onChange={(e) => updateField("swiftBic", e.target.value)}
-                  placeholder="e.g. CLNOUS66MER"
-                  className={INPUT_CLS}
+                  value={paymentInfo.accountName}
+                  onChange={(e) => updateField("accountName", e.target.value)}
+                  placeholder="Account holder name"
                 />
-              </div>
-            )}
-
-            {/* Common fields */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Bank Name
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.bankName}
-                onChange={(e) => updateField("bankName", e.target.value)}
-                placeholder="Bank name"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Account Name
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.accountName}
-                onChange={(e) => updateField("accountName", e.target.value)}
-                placeholder="Account holder name"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Account Number
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.accountNumber}
-                onChange={(e) => updateField("accountNumber", e.target.value)}
-                placeholder="Account number / IBAN"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Routing Number
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.routingNumber ?? ""}
-                onChange={(e) => updateField("routingNumber", e.target.value)}
-                placeholder="ABA routing number"
-                className={INPUT_CLS}
-              />
-            </div>
-
-            {/* Alternate Routing — International only */}
-            {paymentType === "international" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Alternate Routing Number
-                </label>
-                <input
+              </InvoiceField>
+              <InvoiceField label="Account Number" htmlFor={`${id}-acct-number`}>
+                <Input
+                  id={`${id}-acct-number`}
                   type="text"
-                  value={paymentInfo.alternateRoutingNumber ?? ""}
-                  onChange={(e) => updateField("alternateRoutingNumber", e.target.value)}
-                  placeholder="If sending bank doesn't recognize primary ABA"
-                  className={INPUT_CLS}
+                  value={paymentInfo.accountNumber}
+                  onChange={(e) => updateField("accountNumber", e.target.value)}
+                  placeholder="Account number / IBAN"
                 />
-              </div>
-            )}
+              </InvoiceField>
+              <InvoiceField label="Routing Number" htmlFor={`${id}-routing`}>
+                <Input
+                  id={`${id}-routing`}
+                  type="text"
+                  value={paymentInfo.routingNumber ?? ""}
+                  onChange={(e) => updateField("routingNumber", e.target.value)}
+                  placeholder="ABA routing number"
+                />
+              </InvoiceField>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Bank Address
-              </label>
-              <textarea
-                value={paymentInfo.bankAddress ?? ""}
-                onChange={(e) => updateField("bankAddress", e.target.value)}
-                placeholder="Bank address"
-                rows={2}
-                className={TEXTAREA_CLS}
-              />
+              {/* Alternate Routing — International only */}
+              {paymentType === "international" && (
+                <InvoiceField label="Alternate Routing Number" htmlFor={`${id}-alt-routing`} className="sm:col-span-2">
+                  <Input
+                    id={`${id}-alt-routing`}
+                    type="text"
+                    value={paymentInfo.alternateRoutingNumber ?? ""}
+                    onChange={(e) => updateField("alternateRoutingNumber", e.target.value)}
+                    placeholder="If sending bank doesn't recognize primary ABA"
+                  />
+                </InvoiceField>
+              )}
+
+              <InvoiceField label="Bank Address" htmlFor={`${id}-bank-address`} className="sm:col-span-2">
+                <Textarea
+                  id={`${id}-bank-address`}
+                  value={paymentInfo.bankAddress ?? ""}
+                  onChange={(e) => updateField("bankAddress", e.target.value)}
+                  placeholder="Bank address"
+                  rows={2}
+                  className="resize-y"
+                />
+              </InvoiceField>
+              <InvoiceField label="Beneficiary Name" htmlFor={`${id}-beneficiary`} className="sm:col-span-2">
+                <Input
+                  id={`${id}-beneficiary`}
+                  type="text"
+                  value={paymentInfo.beneficiaryName ?? ""}
+                  onChange={(e) => updateField("beneficiaryName", e.target.value)}
+                  placeholder="Beneficiary name"
+                />
+              </InvoiceField>
+              <InvoiceField label="Beneficiary Address" htmlFor={`${id}-beneficiary-address`} className="sm:col-span-2">
+                <Textarea
+                  id={`${id}-beneficiary-address`}
+                  value={paymentInfo.beneficiaryAddress ?? ""}
+                  onChange={(e) => updateField("beneficiaryAddress", e.target.value)}
+                  placeholder="Beneficiary address"
+                  rows={2}
+                  className="resize-y"
+                />
+              </InvoiceField>
+              <InvoiceField label="Memo / Reference" htmlFor={`${id}-memo`} className="sm:col-span-2">
+                <Input
+                  id={`${id}-memo`}
+                  type="text"
+                  value={paymentInfo.memo ?? ""}
+                  onChange={(e) => updateField("memo", e.target.value)}
+                  placeholder="e.g. Digital Service/Work - Non Refundable"
+                />
+              </InvoiceField>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Beneficiary Name
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.beneficiaryName ?? ""}
-                onChange={(e) => updateField("beneficiaryName", e.target.value)}
-                placeholder="Beneficiary name"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Beneficiary Address
-              </label>
-              <textarea
-                value={paymentInfo.beneficiaryAddress ?? ""}
-                onChange={(e) => updateField("beneficiaryAddress", e.target.value)}
-                placeholder="Beneficiary address"
-                rows={2}
-                className={TEXTAREA_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Memo / Reference
-              </label>
-              <input
-                type="text"
-                value={paymentInfo.memo ?? ""}
-                onChange={(e) => updateField("memo", e.target.value)}
-                placeholder="e.g. Digital Service/Work - Non Refundable"
-                className={INPUT_CLS}
-              />
-            </div>
-          </div>
+          </CardContent>
         )}
-      </div>
+      </Card>
 
       {/* Payment terms */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
-        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-          Payment Terms
-        </h3>
-        <textarea
-          value={paymentTerms}
-          onChange={(e) => onPaymentTermsChange(e.target.value)}
-          placeholder="e.g. Net 30, due upon receipt..."
-          rows={2}
-          className={TEXTAREA_CLS}
-        />
-      </div>
+      <TextCard
+        id={`${id}-terms`}
+        title="Payment Terms"
+        value={paymentTerms}
+        onChange={onPaymentTermsChange}
+        placeholder="e.g. Net 30, due upon receipt..."
+        rows={2}
+      />
 
       {/* Notes */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
-        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-          Additional Notes
-        </h3>
-        <textarea
-          value={additionalNotes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          placeholder="Thank you for your business..."
-          rows={3}
-          className={TEXTAREA_CLS}
-        />
-      </div>
+      <TextCard
+        id={`${id}-notes`}
+        title="Additional Notes"
+        value={additionalNotes}
+        onChange={onNotesChange}
+        placeholder="Thank you for your business..."
+        rows={3}
+      />
 
       {/* Note to Customer */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-3">
-        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-          Note to Customer
-        </h3>
-        <textarea
-          value={noteToCustomer}
-          onChange={(e) => onNoteToCustomerChange(e.target.value)}
-          placeholder="Any special instructions or notes for the customer..."
-          rows={4}
-          className={TEXTAREA_CLS}
-        />
-      </div>
+      <TextCard
+        id={`${id}-note-to-customer`}
+        title="Note to Customer"
+        value={noteToCustomer}
+        onChange={onNoteToCustomerChange}
+        placeholder="Any special instructions or notes for the customer..."
+        rows={4}
+      />
 
       {/* Signature */}
-      <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5">
-        <InvoiceSignature
-          signature={signature}
-          onChange={onSignatureChange}
-        />
-      </div>
+      <Card>
+        <CardContent className="pt-4 md:pt-6">
+          <InvoiceSignature signature={signature} onChange={onSignatureChange} />
+        </CardContent>
+      </Card>
     </div>
+  );
+}
+
+/** A titled card holding one free-text field (its title is the field's label). */
+function TextCard({
+  id,
+  title,
+  value,
+  onChange,
+  placeholder,
+  rows,
+}: {
+  id: string;
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  rows: number;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <label htmlFor={id}>{title}</label>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Textarea
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          className="resize-y"
+        />
+      </CardContent>
+    </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { getDb, ensureMigrated } from "./db";
 import { getAgencyConfig, updateAgencyConfig } from "./agencyConfig";
+import { OPTION_COLOR_TOKENS, type OptionColor } from "./metaAccountOptionRules";
 
 // ---------------------------------------------------------------------------
 // Meta Accounts Directory — Stage / Status chip vocabulary. Unlike the roster
@@ -24,27 +25,10 @@ export interface MetaAccountOption {
 const MAX_LABEL_LEN = 40;
 const SEED_MARKER_KEY = "meta_account_options_seeded";
 
-/**
- * Chip color tokens. Kept in lockstep with META_OPTION_CHIP_CLS in
- * components/meta-accounts/presentation.ts — Tailwind can't purge dynamically
- * built class strings, so both sides enumerate a fixed palette.
- */
-export const OPTION_COLOR_TOKENS = [
-  "slate",
-  "gray",
-  "sky",
-  "blue",
-  "indigo",
-  "violet",
-  "teal",
-  "emerald",
-  "amber",
-  "orange",
-  "red",
-  "pink",
-] as const;
-
-export type OptionColor = (typeof OPTION_COLOR_TOKENS)[number];
+// Chip color tokens live in the db-free lib/metaAccountOptionRules.ts (the
+// client color picker imports them); re-exported so server callers are
+// unchanged.
+export { OPTION_COLOR_TOKENS, type OptionColor };
 
 function normalizeColor(raw: unknown): OptionColor {
   const c = String(raw ?? "").trim().toLowerCase();

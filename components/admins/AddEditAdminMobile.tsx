@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { ArrowLeft } from "lucide-react";
 import { AdminAvatarUpload } from "./AdminAvatarUpload";
+import { AdminRoleSelect } from "./AdminRoleSelect";
 import { PermissionToggleList } from "./PermissionToggleList";
-import { ADMIN_ROLE_OPTIONS, type AdminPublic } from "./types";
+import type { AdminPublic } from "./types";
 import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { allPermissionsFalse } from "@/lib/permissions";
 import { getInitials } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface AddEditAdminMobileProps {
   open: boolean;
@@ -27,6 +31,7 @@ interface AddEditAdminMobileProps {
 
 export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: AddEditAdminMobileProps) {
   const isEdit = admin !== null;
+  const uid = useId();
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -81,23 +86,26 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
     });
   }
 
-  const INPUT_CLS =
-    "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow";
+  const titleId = `${uid}-title`;
 
   return (
-    <div className="fixed inset-0 z-[60] md:hidden bg-background overflow-y-auto">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background px-4 py-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <h2 className="text-base font-semibold">{isEdit ? "Edit Admin" : "Add Admin"}</h2>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-[60] flex flex-col bg-background md:hidden"
+    >
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Back">
+            <ArrowLeft className="size-5" />
+          </Button>
+          <h2 id={titleId} className="truncate text-base font-medium">
+            {isEdit ? "Edit Admin" : "Add Admin"}
+          </h2>
         </div>
-        <button
+        <Button
           type="button"
           onClick={() => {
             onSave({
@@ -111,103 +119,98 @@ export function AddEditAdminMobile({ open, admin, onClose, onSave, isPending }: 
             });
           }}
           disabled={isPending || (!isEdit && !username.trim())}
-          className="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {isPending ? "Saving..." : "Save"}
-        </button>
+        </Button>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 pb-24 space-y-6">
-        {/* Avatar */}
-        <AdminAvatarUpload
-          currentPath={admin?.avatarPath ?? null}
-          initials={getInitials(displayName, username)}
-          onFileSelect={handleFileSelect}
-          previewUrl={avatarPreview}
-        />
-
-        {/* Username (create only) */}
-        {!isEdit && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. john"
-              required
-              className={INPUT_CLS}
-            />
-            <p className="text-xs text-muted-foreground">
-              Used for login. Cannot be changed after creation.
-            </p>
-          </div>
-        )}
-
-        {/* Display Name */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Display Name</label>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="John Doe"
-            className={INPUT_CLS}
+      {/* Scrollable content */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6 px-4 pt-5 pb-[calc(2rem+env(safe-area-inset-bottom))]"
+        >
+          {/* Avatar */}
+          <AdminAvatarUpload
+            currentPath={admin?.avatarPath ?? null}
+            initials={getInitials(displayName, username)}
+            onFileSelect={handleFileSelect}
+            previewUrl={avatarPreview}
           />
-        </div>
 
-        {/* Email */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="john@example.com"
-            className={INPUT_CLS}
-          />
-        </div>
-
-        {/* Role — a label, not a permission preset: CSM/Media Buyer keep
-            whatever module toggles are set below. */}
-        {!admin?.isSuper && (
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className={INPUT_CLS}
-            >
-              {ADMIN_ROLE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-              {!ADMIN_ROLE_OPTIONS.some((o) => o.value === role) && (
-                <option value={role}>{role}</option>
-              )}
-            </select>
-            <p className="text-xs text-muted-foreground">
-              A label shown across the dashboard — module permissions are set below.
-            </p>
-          </div>
-        )}
-
-        {/* Permissions */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Module Permissions</label>
-          <PermissionToggleList
-            permissions={permissions}
-            onChange={handlePermChange}
-            disabled={admin?.isSuper}
-          />
-          {admin?.isSuper && (
-            <p className="text-xs text-muted-foreground">
-              Super admins always have full access to all modules.
-            </p>
+          {/* Username (create only) */}
+          {!isEdit && (
+            <div className="grid gap-2">
+              <Label htmlFor={`${uid}-username`}>Username</Label>
+              <Input
+                id={`${uid}-username`}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. john"
+                required
+                className="h-11"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used for login. Cannot be changed after creation.
+              </p>
+            </div>
           )}
-        </div>
-      </form>
+
+          {/* Display Name */}
+          <div className="grid gap-2">
+            <Label htmlFor={`${uid}-display`}>Display Name</Label>
+            <Input
+              id={`${uid}-display`}
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="John Doe"
+              className="h-11"
+            />
+          </div>
+
+          {/* Email */}
+          <div className="grid gap-2">
+            <Label htmlFor={`${uid}-email`}>Email</Label>
+            <Input
+              id={`${uid}-email`}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john@example.com"
+              className="h-11"
+            />
+          </div>
+
+          {/* Role — a label, not a permission preset: CSM/Media Buyer keep
+              whatever module toggles are set below. */}
+          {!admin?.isSuper && (
+            <div className="grid gap-2">
+              <Label htmlFor={`${uid}-role`}>Role</Label>
+              <AdminRoleSelect id={`${uid}-role`} value={role} onChange={setRole} className="h-11" />
+              <p className="text-xs text-muted-foreground">
+                A label shown across the dashboard — module permissions are set below.
+              </p>
+            </div>
+          )}
+
+          {/* Permissions */}
+          <fieldset className="grid min-w-0 gap-2">
+            <legend className="mb-2 text-sm font-medium leading-none">Module Permissions</legend>
+            <PermissionToggleList
+              permissions={permissions}
+              onChange={handlePermChange}
+              disabled={admin?.isSuper}
+            />
+            {admin?.isSuper && (
+              <p className="text-xs text-muted-foreground">
+                Super admins always have full access to all modules.
+              </p>
+            )}
+          </fieldset>
+        </form>
+      </div>
     </div>
   );
 }

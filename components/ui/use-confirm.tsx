@@ -31,10 +31,14 @@ export interface ConfirmOptions {
 export function useConfirm() {
   const [options, setOptions] = React.useState<ConfirmOptions | null>(null)
   const resolver = React.useRef<((ok: boolean) => void) | null>(null)
+  // Opened imperatively (no Radix trigger), so Radix has nowhere to return
+  // focus on close — remember what had it and hand it back.
+  const returnFocus = React.useRef<HTMLElement | null>(null)
 
   const confirm = React.useCallback((opts: ConfirmOptions) => {
     // A still-pending earlier prompt counts as cancelled.
     resolver.current?.(false)
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setOptions(opts)
     return new Promise<boolean>((resolve) => {
       resolver.current = resolve
@@ -47,7 +51,7 @@ export function useConfirm() {
     setOptions(null)
   }, [])
 
-  const dialog = <ConfirmDialog options={options} onSettle={settle} />
+  const dialog = <ConfirmDialog options={options} onSettle={settle} returnFocus={returnFocus} />
 
   return { confirm, dialog }
 }

@@ -38,6 +38,18 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, BadgeDot, badgeTone, badgeVariants, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { resolveIcon } from "@/components/welcome-kit/icons";
 import { IconPicker, Select, StringListEditor, TextArea, TextInput, Toggle } from "@/components/welcome-kit/builder/fields";
 import { PreviewFrame } from "@/components/welcome-kit/builder/PreviewFrame";
@@ -76,41 +88,34 @@ type SaveError = Error & { conflict?: SopRecord };
 /* ------------------------------------------------------------------ */
 
 function AddBlockMenu({ onAdd }: { onAdd: (type: SopBlockType) => void }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add block
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute z-20 mt-1 w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-border bg-popover p-1 shadow-xl">
-            {SOP_BLOCK_TYPES.map((b) => (
-              <button
-                key={b.type}
-                type="button"
-                onClick={() => {
-                  onAdd(b.type);
-                  setOpen(false);
-                }}
-                className="block w-full rounded-md px-3 py-2 text-left hover:bg-accent transition-colors"
-              >
-                <span className="block text-sm font-semibold text-foreground">{b.label}</span>
-                <span className="block text-[11px] text-muted-foreground">{b.hint}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="border-dashed text-muted-foreground">
+          <Plus />
+          Add block
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[min(16rem,calc(100vw-2rem))]">
+        {SOP_BLOCK_TYPES.map((b) => (
+          <DropdownMenuItem key={b.type} onSelect={() => onAdd(b.type)} className="flex-col items-start gap-0.5">
+            <span className="block text-sm font-medium text-foreground">{b.label}</span>
+            <span className="block text-xs font-normal text-muted-foreground">{b.hint}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
+/** Ghost icon button tinted red on hover — the remove control. */
+const removeBtnCls = "shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20";
+/** The drag handle (dnd-kit listeners + keyboard attributes go on it). */
+const gripCls =
+  "flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-xl text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30 active:cursor-grabbing";
+/** The collapse toggle that fills the header row. */
+const toggleCls =
+  "flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30";
 
 /* ------------------------------------------------------------------ */
 /*  Sortable block                                                     */
@@ -132,38 +137,27 @@ function SortableBlock({
     <div
       ref={setNodeRef}
       style={style}
-      className={cn("rounded-xl border border-border/70 bg-muted/30", isDragging && "opacity-50 z-10")}
+      className={cn("relative rounded-2xl bg-muted/50", isDragging && "z-10 opacity-50")}
     >
-      <div className="flex items-center gap-2 p-2.5">
-        <button
-          type="button"
-          className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
-          aria-label="Drag block"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
+      <div className="flex items-center gap-1.5 p-2">
+        <button type="button" className={gripCls} aria-label="Drag block" {...attributes} {...listeners}>
+          <GripVertical className="size-4" />
         </button>
-        <button type="button" onClick={() => setOpen((o) => !o)} className="flex flex-1 items-center gap-2 min-w-0 text-left">
-          <span className="text-muted-foreground shrink-0">
-            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={toggleCls}>
+          <span className="shrink-0 text-muted-foreground">
+            {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </span>
-          <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+          <span className={cn(badgeVariants({ variant: "outline" }), "shrink-0")}>
             {SOP_BLOCK_TYPE_LABEL[block.type]}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{sopBlockSummary(block)}</span>
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
-          aria-label="Delete block"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onRemove} className={removeBtnCls} aria-label="Delete block" title="Delete block">
+          <Trash2 />
+        </Button>
       </div>
       {open && (
-        <div className="border-t border-border/60 p-3">
+        <div className="space-y-3 border-t border-foreground/5 p-3 dark:border-foreground/10">
           <SopBlockEditor block={block} onChange={onChange} />
         </div>
       )}
@@ -208,50 +202,39 @@ function SortableSection({
   }
 
   return (
-    <div
+    <Card
       ref={setNodeRef}
       style={style}
-      className={cn("rounded-xl border border-border/70 bg-card", isDragging && "opacity-60 z-10")}
+      className={cn("relative", isDragging && "z-10 opacity-60")}
     >
-      <div className="flex items-center gap-2 p-3">
-        <button
-          type="button"
-          className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
-          aria-label="Drag section"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
+      <div className="flex items-center gap-1.5 p-3">
+        <button type="button" className={gripCls} aria-label="Drag section" {...attributes} {...listeners}>
+          <GripVertical className="size-4" />
         </button>
-        <button type="button" onClick={() => setOpen((o) => !o)} className="flex flex-1 items-center gap-2 min-w-0 text-left">
-          <span className="text-muted-foreground shrink-0">
-            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={toggleCls}>
+          <span className="shrink-0 text-muted-foreground">
+            {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </span>
-          <Icon className="h-4 w-4 shrink-0 text-primary" />
+          <Icon className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0">
-            <span className="block text-sm font-semibold text-foreground truncate">
+            <span className="block truncate text-sm font-medium text-foreground">
               {section.title || "Untitled section"}
             </span>
-            <span className="block text-[11px] text-muted-foreground truncate">
+            <span className="block truncate text-xs text-muted-foreground">
               {section.num || `${blocks.length} block${blocks.length === 1 ? "" : "s"}`}
             </span>
           </span>
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
-          aria-label="Delete section"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onRemove} className={removeBtnCls} aria-label="Delete section" title="Delete section">
+          <Trash2 />
+        </Button>
       </div>
 
       {open && (
-        <div className="border-t border-border/60 p-3 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-[8rem_1fr] gap-3">
+        <div className="space-y-3 border-t p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[8rem_1fr]">
             <IconPicker label="Icon" value={section.icon} onChange={(icon) => onChange({ ...section, icon })} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TextInput
                 label="Eyebrow"
                 value={section.num}
@@ -284,14 +267,14 @@ function SortableSection({
             </DndContext>
 
             {blocks.length === 0 && (
-              <p className="text-xs text-muted-foreground italic px-1">No blocks yet — add one below.</p>
+              <p className="px-1 text-xs italic text-muted-foreground">No blocks yet — add one below.</p>
             )}
 
             <AddBlockMenu onAdd={(type) => onChange({ ...section, blocks: [...blocks, newSopBlock(type)] })} />
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -450,23 +433,25 @@ export function SopBuilder({
     setDraft({ ...draft, sections: arrayMove(draft.sections, oldI, newI) });
   }
 
-  if (isLoading || draft === null) {
+  // A failed first load must surface (the skeleton below waits for a draft).
+  if (isError && draft === null) {
     return (
-      <div className="rounded-xl border border-border/50 bg-card p-8">
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-12 w-full animate-pulse rounded-lg bg-muted/60" />
-          ))}
-        </div>
-      </div>
+      <QueryErrorState
+        title="Failed to load this SOP."
+        message="Please go back and try again."
+      />
     );
   }
 
-  if (isError) {
+  if (isLoading || draft === null) {
     return (
-      <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-6 text-sm text-red-600">
-        Failed to load this SOP. Please go back and try again.
-      </div>
+      <Card className="p-6 md:p-8">
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      </Card>
     );
   }
 
@@ -479,110 +464,87 @@ export function SopBuilder({
       : dirty
         ? "Unsaved changes"
         : "All changes saved";
+  const statusTone: BadgeTone = saveMutation.isPending ? "neutral" : justSaved ? "success" : dirty ? "warning" : "neutral";
 
   return (
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
+        <div className="flex min-w-0 items-center gap-3">
+          <Button type="button" variant="outline" onClick={onBack}>
+            <ArrowLeft />
             Library
-          </button>
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 text-sm font-medium",
-              saveMutation.isPending ? "text-muted-foreground" : justSaved ? "text-emerald-600" : dirty ? "text-amber-600" : "text-muted-foreground"
-            )}
+          </Button>
+          <Badge
+            variant="outline"
+            tone={statusTone}
+            role="status"
+            className={cn("gap-1.5", statusTone === "neutral" && "text-muted-foreground")}
           >
             {saveMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : justSaved ? (
-              <Check className="h-3.5 w-3.5" />
+              <Check />
             ) : (
-              <span className={cn("h-2 w-2 rounded-full", dirty ? "bg-amber-500" : "bg-emerald-500")} />
+              <BadgeDot tone={dirty ? "warning" : "success"} />
             )}
             {statusText}
-          </span>
+          </Badge>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Mobile edit/preview switch */}
-          <div className="flex bg-muted rounded-lg p-1 xl:hidden">
-            <button
-              type="button"
-              onClick={() => setMode("edit")}
-              className={cn("flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-colors", mode === "edit" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("preview")}
-              className={cn("flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-colors", mode === "preview" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Preview
-            </button>
-          </div>
+          <Tabs value={mode} onValueChange={(v) => setMode(v as "edit" | "preview")} className="xl:hidden">
+            <TabsList>
+              <TabsTrigger value="edit">
+                <Pencil />
+                Edit
+              </TabsTrigger>
+              <TabsTrigger value="preview">
+                <Eye />
+                Preview
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={openPrint}
             disabled={downloading}
             title="Export to PDF (matches this preview)"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-accent transition-colors disabled:opacity-50"
           >
-            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+            {downloading ? <Loader2 className="animate-spin" /> : <Printer />}
             PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => save()}
-            disabled={!dirty || saveMutation.isPending}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:active:scale-100"
-          >
-            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          </Button>
+          <Button type="button" onClick={() => save()} disabled={!dirty || saveMutation.isPending}>
+            {saveMutation.isPending ? <Loader2 className="animate-spin" /> : <Save />}
             Save
-          </button>
+          </Button>
         </div>
       </div>
 
       {pdfMsg && <p className="text-xs text-muted-foreground">{pdfMsg}</p>}
-      {saveErr && <p className="text-xs text-destructive">{saveErr}</p>}
+      {saveErr && <p role="alert" className="text-xs text-destructive">{saveErr}</p>}
 
       {/* Conflict banner */}
       {conflict && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.warning)}>
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Someone else saved changes</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="font-medium">Someone else saved changes</p>
+              <p className="mt-0.5 text-xs opacity-90">
                 This SOP was updated after you opened it. Load their version, or overwrite it with yours.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={loadTheirVersion}
-                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent transition-colors"
-                >
+                <Button type="button" variant="outline" size="sm" onClick={loadTheirVersion} className="text-foreground">
                   Load their version
-                </button>
-                <button
-                  type="button"
-                  onClick={() => save(conflict.updatedAt)}
-                  disabled={saveMutation.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white ac-gradient hover:opacity-90 transition-all disabled:opacity-40"
-                >
-                  {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                </Button>
+                <Button type="button" size="sm" onClick={() => save(conflict.updatedAt)} disabled={saveMutation.isPending}>
+                  {saveMutation.isPending && <Loader2 className="animate-spin" />}
                   Overwrite with mine
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -594,7 +556,7 @@ export function SopBuilder({
         {/* Editor */}
         <div className={cn("min-w-0 space-y-3", mode === "preview" && "hidden xl:block")}>
           {/* SOP settings */}
-          <div className="rounded-xl border border-border/70 bg-card p-3 space-y-3">
+          <Card className="space-y-3 p-4">
             <TextInput
               label="Title"
               value={draft.title}
@@ -608,7 +570,7 @@ export function SopBuilder({
               placeholder="One or two sentences describing this SOP."
               rows={2}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Select label="Folder / Department" value={folder} onChange={setFolder} options={folderOptions} />
               <div className="flex items-end">
                 <Toggle
@@ -619,13 +581,13 @@ export function SopBuilder({
               </div>
             </div>
             <StringListEditor label="Tags" items={tags} onChange={setTags} placeholder="tag" addLabel="Add tag" />
-          </div>
+          </Card>
 
           {/* Sections */}
           <div className="space-y-2">
             <div className="px-1">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sections</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
+              <p className="text-sm font-medium text-foreground">Sections</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Each text box has formatting buttons — bold, heading, lists, links — or type Markdown directly.
               </p>
             </div>
@@ -644,14 +606,16 @@ export function SopBuilder({
                 </div>
               </SortableContext>
             </DndContext>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setDraft({ ...draft, sections: [...sections, newSopSection(sections.length)] })}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+              className="border-dashed text-muted-foreground"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus />
               Add section
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -659,33 +623,27 @@ export function SopBuilder({
         <div className={cn("min-w-0", mode === "edit" && "hidden xl:block")}>
           <div className="xl:sticky xl:top-6">
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Live canvas</p>
-              <div className="flex bg-muted rounded-lg p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setDevice("desktop")}
-                  aria-label="Desktop preview"
-                  className={cn("flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors", device === "desktop" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
-                >
-                  <Monitor className="h-3.5 w-3.5" />
-                  Desktop
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDevice("mobile")}
-                  aria-label="Mobile preview"
-                  className={cn("flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors", device === "mobile" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
-                >
-                  <Smartphone className="h-3.5 w-3.5" />
-                  Mobile
-                </button>
-              </div>
+              <p className="text-sm font-medium text-foreground">Live canvas</p>
+              <Tabs value={device} onValueChange={(v) => setDevice(v as "desktop" | "mobile")}>
+                <TabsList className="h-8">
+                  <TabsTrigger value="desktop" aria-label="Desktop preview" className="px-2.5 text-xs">
+                    <Monitor className="size-3.5" />
+                    Desktop
+                  </TabsTrigger>
+                  <TabsTrigger value="mobile" aria-label="Mobile preview" className="px-2.5 text-xs">
+                    <Smartphone className="size-3.5" />
+                    Mobile
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
             {device === "mobile" ? (
-              <div className="rounded-xl border border-border/60 bg-muted/30 p-3 md:p-4 max-h-[calc(100vh-9rem)] overflow-auto">
-                <div className="mx-auto w-fit overflow-hidden rounded-[2rem] border-4 border-foreground/10 bg-background shadow-lg">
-                  <div className="h-[680px] w-[390px]">
+              <div className="max-h-[calc(100vh-9rem)] overflow-auto rounded-3xl bg-muted/50 p-3 ring-1 ring-foreground/5 md:p-4 dark:ring-foreground/10">
+                {/* iframe gives the preview a true 390px viewport so the
+                    renderer's responsive breakpoints reflect a real phone. */}
+                <div className="mx-auto w-fit max-w-full overflow-hidden rounded-[2rem] border-4 border-foreground/10 bg-background shadow-lg">
+                  <div className="h-[min(680px,70dvh)] w-[390px] max-w-[calc(100vw-4.5rem)]">
                     <PreviewFrame width={390}>
                       <div className="bg-background p-3">
                         <SopRenderer doc={draft} />
@@ -695,7 +653,9 @@ export function SopBuilder({
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-border/60 bg-background p-3 md:p-4 max-h-[calc(100vh-9rem)] overflow-y-auto">
+              <div className="max-h-[calc(100vh-9rem)] overflow-y-auto rounded-3xl bg-background p-3 shadow ring-1 ring-foreground/5 md:p-4 dark:ring-foreground/10">
+                {/* pointer-events-none so preview links don't navigate the
+                    dashboard; the container still scrolls. */}
                 <div className="pointer-events-none">
                   <SopRenderer doc={draft} />
                 </div>

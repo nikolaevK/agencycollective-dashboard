@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Printer, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { SopRenderer } from "@/components/sop/SopRenderer";
 import type { SopDoc } from "@/lib/sop";
 
@@ -16,11 +17,22 @@ export default function SopPrintPage({ params }: { params: { id: string } }) {
   const [err, setErr] = useState("");
 
   // Force light theme for a clean printable page (root <html> defaults to dark).
+  // The root ThemeProvider re-applies the stored theme in its own mount effect,
+  // which runs AFTER this one (parents' effects follow their children's), so
+  // keep `dark` off for as long as the page is mounted, not just once.
   useEffect(() => {
     const html = document.documentElement;
     const wasDark = html.classList.contains("dark");
-    html.classList.remove("dark");
-    return () => { if (wasDark) html.classList.add("dark"); };
+    const stripDark = () => {
+      if (html.classList.contains("dark")) html.classList.remove("dark");
+    };
+    stripDark();
+    const observer = new MutationObserver(stripDark);
+    observer.observe(html, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+      observer.disconnect();
+      if (wasDark) html.classList.add("dark");
+    };
   }, []);
 
   useEffect(() => {
@@ -38,7 +50,7 @@ export default function SopPrintPage({ params }: { params: { id: string } }) {
   }, [doc]);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background text-foreground">
       <style>{`
         @page { size: A4; margin: 14mm; }
         @media print {
@@ -48,25 +60,20 @@ export default function SopPrintPage({ params }: { params: { id: string } }) {
       `}</style>
 
       {/* Screen-only toolbar */}
-      <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-white px-4 py-3">
-        <span className="text-sm font-semibold text-foreground">SOP → PDF</span>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          disabled={!doc}
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white ac-gradient hover:opacity-90 disabled:opacity-40"
-        >
-          <Printer className="h-4 w-4" />
+      <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur">
+        <span className="text-sm font-medium text-foreground">SOP → PDF</span>
+        <Button type="button" onClick={() => window.print()} disabled={!doc}>
+          <Printer />
           Print / Save as PDF
-        </button>
+        </Button>
       </div>
 
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
         {err ? (
           <p className="py-20 text-center text-sm text-muted-foreground">{err}</p>
         ) : !doc ? (
           <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Preparing PDF…
+            <Loader2 className="size-4 animate-spin" /> Preparing PDF…
           </div>
         ) : (
           <SopRenderer doc={doc} />

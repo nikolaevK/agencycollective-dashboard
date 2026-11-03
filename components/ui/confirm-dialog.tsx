@@ -1,5 +1,6 @@
 "use client"
 
+import type { RefObject } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,13 +18,26 @@ import type { ConfirmOptions } from "@/components/ui/use-confirm"
 export function ConfirmDialog({
   options,
   onSettle,
+  returnFocus,
 }: {
   options: ConfirmOptions | null
   onSettle: (ok: boolean) => void
+  /** The element that had focus when confirm() was called. */
+  returnFocus?: RefObject<HTMLElement | null>
 }) {
   return (
     <AlertDialog open={options !== null} onOpenChange={(open) => !open && onSettle(false)}>
-      <AlertDialogContent>
+      <AlertDialogContent
+        onCloseAutoFocus={(e) => {
+          // Back to the button that asked (a deleted row's button is gone —
+          // then Radix's default applies).
+          const el = returnFocus?.current
+          if (el?.isConnected) {
+            e.preventDefault()
+            el.focus({ preventScroll: true })
+          }
+        }}
+      >
         <AlertDialogHeader>
           {/* Confirm titles quote user text (file names, titles) — an unbroken
               string must wrap, not widen the dialog's grid track. */}

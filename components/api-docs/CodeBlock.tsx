@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface CodeBlockProps {
   code: string;
@@ -10,7 +11,8 @@ interface CodeBlockProps {
   className?: string;
 }
 
-/** Lightweight monospace block + copy button — no highlighter dependency. */
+/** Lightweight monospace block + copy button — no highlighter dependency.
+ *  Tokens only (muted surface, foreground text), so it reads in both themes. */
 export function CodeBlock({ code, language, className }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
 
@@ -25,21 +27,25 @@ export function CodeBlock({ code, language, className }: CodeBlockProps) {
   }
 
   return (
-    <div className={cn("group relative rounded-lg border border-border bg-muted/30", className)}>
-      {language && (
-        <span className="absolute left-3 top-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {language}
+    <div className={cn("min-w-0 overflow-hidden rounded-2xl border bg-muted/50", className)}>
+      <div className="flex h-9 items-center justify-between gap-2 border-b pl-4 pr-1.5">
+        <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+          {language ?? ""}
         </span>
-      )}
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-60 transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:text-foreground"
-        title="Copy"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-      <pre className={cn("overflow-x-auto p-3 text-xs leading-relaxed", language && "pt-7")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          onClick={handleCopy}
+          title="Copy"
+          aria-label={copied ? "Copied" : "Copy code"}
+          className="text-muted-foreground"
+        >
+          {copied ? <Check /> : <Copy />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto p-4 text-xs leading-relaxed text-foreground">
         <code className="font-mono">{code}</code>
       </pre>
     </div>

@@ -3,6 +3,7 @@
 import { Bell, BellOff, BellRing, Loader2 } from "lucide-react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 
 export function NotificationBell() {
@@ -17,13 +18,9 @@ export function NotificationBell() {
   // Render disabled placeholder while loading to prevent layout shift
   if (isLoading) {
     return (
-      <button
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground opacity-50"
-        disabled
-        aria-label="Push notifications"
-      >
-        <Bell className="h-4 w-4" />
-      </button>
+      <Button variant="outline" size="icon" disabled aria-label="Push notifications">
+        <Bell />
+      </Button>
     );
   }
 
@@ -50,19 +47,12 @@ export function NotificationBell() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors relative"
-          aria-label="Push notifications"
-        >
-          {isSubscribed ? (
-            <BellRing className="h-4 w-4 text-primary" />
-          ) : (
-            <Bell className="h-4 w-4" />
-          )}
+        <Button variant="outline" size="icon" className="relative" aria-label="Push notifications">
+          {isSubscribed ? <BellRing className="text-primary" /> : <Bell />}
           {isSubscribed && (
-            <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
+            <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-primary" />
           )}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-3">
         {showInstallHint ? (
@@ -76,9 +66,9 @@ export function NotificationBell() {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               {isSubscribed ? (
-                <BellRing className="h-4 w-4 text-primary" />
+                <BellRing className="size-4 text-primary" />
               ) : (
-                <BellOff className="h-4 w-4 text-muted-foreground" />
+                <BellOff className="size-4 text-muted-foreground" />
               )}
               <p className="text-sm font-medium">
                 {isSubscribed ? "Notifications enabled" : "Notifications off"}
@@ -89,19 +79,15 @@ export function NotificationBell() {
                 ? "You'll be notified when new deals need review."
                 : "Get notified when closers create new deals."}
             </p>
-            <button
-              onClick={handleToggle}
-              disabled={busy}
-              className="w-full flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
+            <Button onClick={handleToggle} disabled={busy} className="w-full">
               {busy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : isSubscribed ? (
                 "Disable notifications"
               ) : (
                 "Enable notifications"
               )}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-2">

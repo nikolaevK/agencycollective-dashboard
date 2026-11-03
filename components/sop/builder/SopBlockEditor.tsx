@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { SopBlock, SopStepsBlock, SopStep } from "@/lib/sop";
 import type { WkBlock, WkVariant } from "@/lib/welcomeKit";
 import { BlockEditor } from "@/components/welcome-kit/builder/BlockEditor";
@@ -9,7 +10,7 @@ import { MarkdownTextArea } from "./MarkdownTextArea";
 import { move, removeAt, replaceAt, uid } from "./sopBlocks";
 
 const VARIANT_OPTIONS: { value: WkVariant; label: string }[] = [
-  { value: "info", label: "Info (violet)" },
+  { value: "info", label: "Info (blue)" },
   { value: "success", label: "Success (green)" },
   { value: "warning", label: "Warning (amber)" },
   { value: "danger", label: "Danger (red)" },
@@ -48,38 +49,44 @@ function StepsEditor({
       <Labeled label="Steps">
         <div className="space-y-2">
           {steps.map((step, i) => (
-            <div key={step.id} className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+            <div key={step.id} className="space-y-2 rounded-2xl bg-card p-3 ring-1 ring-foreground/5 dark:ring-foreground/10">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   Step {i + 1}
                 </span>
                 <div className="flex items-center gap-0.5">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => onChange({ ...block, steps: move(steps, i, -1) })}
                     disabled={i === 0}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+                    className="text-muted-foreground"
                     aria-label="Move up"
                   >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
+                    <ArrowUp />
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => onChange({ ...block, steps: move(steps, i, 1) })}
                     disabled={i === steps.length - 1}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-30"
+                    className="text-muted-foreground"
                     aria-label="Move down"
                   >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
+                    <ArrowDown />
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => onChange({ ...block, steps: removeAt(steps, i) })}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Remove step"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
               <MarkdownTextArea
@@ -96,16 +103,18 @@ function StepsEditor({
               />
             </div>
           ))}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={() =>
               onChange({ ...block, steps: [...steps, { id: uid("step"), text: "", detail: "" }] })
             }
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            className="text-muted-foreground"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus />
             Add step
-          </button>
+          </Button>
         </div>
       </Labeled>
     </div>

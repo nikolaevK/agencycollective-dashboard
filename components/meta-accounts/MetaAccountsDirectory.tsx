@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -14,17 +15,30 @@ import {
   EyeOff,
   Copy,
   Check,
+  ChevronDown,
   ExternalLink,
   SlidersHorizontal,
+  StickyNote,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ChipPopover } from "@/components/users/ChipPopover";
+import { BadgeDot, badgeTone, badgeToneHover, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { useMetaAccountOptions } from "@/hooks/useMetaAccountOptions";
-import { MetaAccountFormModal } from "./MetaAccountFormModal";
-import { MetaAccountOptionsModal } from "./MetaAccountOptionsModal";
-import { MetaAccountImportModal } from "./MetaAccountImportModal";
-import { CHIP_BASE, chipClass } from "./presentation";
+import { chipClass, swatchClass } from "./presentation";
 import type {
   MetaAccountDirectoryRow,
   MetaAccountSummary,
@@ -34,8 +48,28 @@ import { summarizeMetaAccounts } from "@/lib/metaAccountSummary";
 import type { MetaAccount, MetaAccountInput } from "@/lib/metaAccounts";
 import type { MetaOptionKind } from "@/lib/metaAccountOptions";
 
+// Click-to-open UI stays out of the page chunk: the three modals and the
+// stage/status chip menu (a Radix Popover) load on first open.
+const MetaAccountFormModal = dynamic(
+  () => import("./MetaAccountFormModal").then((m) => m.MetaAccountFormModal),
+  { ssr: false }
+);
+const MetaAccountOptionsModal = dynamic(
+  () => import("./MetaAccountOptionsModal").then((m) => m.MetaAccountOptionsModal),
+  { ssr: false }
+);
+const MetaAccountImportModal = dynamic(
+  () => import("./MetaAccountImportModal").then((m) => m.MetaAccountImportModal),
+  { ssr: false }
+);
+const ChipPopover = dynamic(
+  () => import("@/components/users/ChipPopover").then((m) => m.ChipPopover),
+  { ssr: false }
+);
+
 const PAGE_SIZE = 25;
 const QUERY_KEY = ["admin-meta-accounts"];
+const COL_COUNT = 12;
 
 interface DirectoryResponse {
   rows: MetaAccountDirectoryRow[];
@@ -52,6 +86,7 @@ async function fetchDirectory(): Promise<DirectoryResponse> {
 
 export function MetaAccountsDirectory() {
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<Set<string>>(new Set());
@@ -138,7 +173,15 @@ export function MetaAccountsDirectory() {
   }
 
   async function handleDelete(row: MetaAccountDirectoryRow) {
-    if (!confirm(`Remove account "${row.fbEmail}"? This cannot be undone.`)) return;
+    if (
+      !(await confirm({
+        title: `Remove account "${row.fbEmail}"?`,
+        description: "This cannot be undone.",
+        confirmText: "Remove",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       const res = await fetch(`/api/admin/meta-accounts/${row.id}`, { method: "DELETE" });
       if (!res.ok) {
@@ -193,6 +236,10 @@ export function MetaAccountsDirectory() {
   }
 
   const anyFilter = stageFilter.size > 0 || statusFilter.size > 0 || batchFilter !== "" || search !== "";
+  const emptyText =
+    rows.length === 0
+      ? "No accounts yet. Import a sheet or click “Add account”."
+      : "No accounts match your filters.";
 
   return (
     <div className="space-y-6">
@@ -204,7 +251,6 @@ export function MetaAccountsDirectory() {
           label="Setup complete"
           value={String(summary?.setupComplete ?? 0)}
           sub="all 5 steps done"
-          color="text-emerald-600 dark:text-emerald-400"
           loading={isLoading}
         />
         <SummaryCard
@@ -212,7 +258,6 @@ export function MetaAccountsDirectory() {
           label={finalStage?.label ?? "Final stage"}
           value={String((finalStage && summary?.byStage?.[finalStage.value]) ?? 0)}
           sub="final warm-up stage"
-          color="text-emerald-600 dark:text-emerald-400"
           loading={isLoading}
         />
         <SummaryCard
@@ -254,24 +299,26 @@ export function MetaAccountsDirectory() {
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-1 items-center gap-2">
-          <input
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <Input
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
             placeholder="Search email, profile, access, BM ID…"
-            className="w-full sm:max-w-xs rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            aria-label="Search accounts"
+            className="min-w-0 flex-1 basis-56 sm:max-w-xs"
           />
           {batches.length > 0 && (
-            <select
+            <NativeSelect
               value={batchFilter}
               onChange={(e) => {
                 setBatchFilter(e.target.value);
                 setPage(1);
               }}
-              className="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              aria-label="Filter by batch"
+              className="max-w-full"
             >
               <option value="">All batches</option>
               {batches.map((b) => (
@@ -279,10 +326,11 @@ export function MetaAccountsDirectory() {
                   {b.label} ({b.count})
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           )}
           {anyFilter && (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 setSearch("");
                 setStageFilter(new Set());
@@ -290,163 +338,39 @@ export function MetaAccountsDirectory() {
                 setBatchFilter("");
                 setPage(1);
               }}
-              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              className="text-muted-foreground"
             >
-              <X className="h-3.5 w-3.5" /> Clear
-            </button>
+              <X />
+              Clear
+            </Button>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowImport(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Upload className="h-4 w-4" />
-            <span className="whitespace-nowrap">Import</span>
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg shadow-primary/20 ac-gradient hover:opacity-90 active:scale-95 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="whitespace-nowrap">Add account</span>
-          </button>
+          <Button variant="outline" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
+            <Upload />
+            Import
+          </Button>
+          <Button onClick={() => setShowAdd(true)} className="flex-1 sm:flex-none">
+            <Plus />
+            Add account
+          </Button>
         </div>
       </div>
 
       {isError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
           Failed to load accounts. Refresh the page to try again.
         </div>
       )}
 
-      {/* Mobile card list — the 1500px table is unusable on a phone */}
-      <div className="md:hidden space-y-3">
-        {isLoading ? (
-          [1, 2, 3].map((i) => (
-            <div key={i} className="h-40 animate-pulse rounded-xl border border-border/50 bg-muted/40" />
-          ))
-        ) : paginated.length === 0 ? (
-          <div className="rounded-xl border border-border/50 bg-card px-4 py-12 text-center text-sm text-muted-foreground">
-            {rows.length === 0
-              ? "No accounts yet. Import a sheet or click “Add account”."
-              : "No accounts match your filters."}
-          </div>
-        ) : (
-          paginated.map((row) => (
-            <div key={row.id} className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-3.5 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-semibold text-foreground break-all">{row.fbEmail}</p>
-                    {row.profileLink && (
-                      <a
-                        href={row.profileLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 text-muted-foreground hover:text-primary"
-                        aria-label="Open FB profile"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-                  </div>
-                  {row.profileName && (
-                    <p className="text-xs text-foreground/80">{row.profileName}</p>
-                  )}
-                  {row.recoveryEmail && (
-                    <p className="text-xs text-muted-foreground break-all">↳ {row.recoveryEmail}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <IconBtn title="Edit" onClick={() => setEditing(row)}>
-                    <Pencil className="h-4 w-4" />
-                  </IconBtn>
-                  <IconBtn title="Remove" danger onClick={() => handleDelete(row)}>
-                    <Trash2 className="h-4 w-4" />
-                  </IconBtn>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <InlineChipSelect
-                  value={row.stage}
-                  options={stages}
-                  labels={stageLabels}
-                  colors={stageColors}
-                  placeholder="Set stage"
-                  onChange={(v) => patchAccount(row.id, { stage: v })}
-                />
-                <InlineChipSelect
-                  value={row.status}
-                  options={statuses}
-                  labels={statusLabels}
-                  colors={statusColors}
-                  placeholder="Set status"
-                  onChange={(v) => patchAccount(row.id, { status: v })}
-                />
-              </div>
-
-              <SetupToggles row={row} onPatch={(c) => patchAccount(row.id, c)} expanded />
-
-              <div className="grid grid-cols-1 gap-1.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Password</span>
-                  <Secret value={row.fbPassword} />
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">2FA secret</span>
-                  <Secret value={row.twofaSecret} link={row.twofaLink} />
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Mail pw</span>
-                  <Secret value={row.mailPassword} />
-                </div>
-                {row.bmId && (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">BM ID</span>
-                    <CopyText value={row.bmId} className="text-xs font-mono text-foreground" />
-                  </div>
-                )}
-                {row.assignee && (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Access</span>
-                    <span className="text-foreground">{row.assignee}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
-                <span className="text-xs text-muted-foreground">Client</span>
-                <select
-                  value={row.clientId ?? ""}
-                  onChange={(e) => patchAccount(row.id, { clientId: e.target.value || null })}
-                  className="min-w-0 max-w-[60%] rounded-md border border-border bg-background px-1.5 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
-                >
-                  <option value="">— Unassigned —</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {row.notes && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400">{row.notes}</p>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="hidden md:block rounded-xl border border-border/50 dark:border-white/[0.06] bg-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[1600px]">
-            <thead>
-              <tr className="bg-muted/30 dark:bg-white/[0.03] border-b border-border/50">
-                <Th className="pl-4 sticky left-0 z-20 bg-muted/30 dark:bg-white/[0.03]">Account</Th>
+      <Card>
+        {/* Desktop table — wide (12 columns), scrolls inside its own wrapper
+            with the account column pinned. */}
+        <div className="hidden md:block">
+          <Table className="min-w-[1600px] text-left">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <Th className="sticky left-0 z-20 border-r bg-card">Account</Th>
                 <Th>Profile name</Th>
                 <Th>Password</Th>
                 <Th>2FA secret</Th>
@@ -457,166 +381,229 @@ export function MetaAccountsDirectory() {
                 <Th>Status</Th>
                 <Th>Client</Th>
                 <Th>Access</Th>
-                <Th className="text-right pr-4">Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
+                <Th className="text-right">Actions</Th>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {isLoading ? (
                 [1, 2, 3, 4, 5].map((i) => (
-                  <tr key={i} className="border-b border-border/50">
-                    <td colSpan={12} className="px-4 py-3">
-                      <div className="h-8 w-full animate-pulse rounded-lg bg-muted/60" />
-                    </td>
-                  </tr>
+                  <TableRow key={i} className="hover:bg-transparent">
+                    <TableCell colSpan={COL_COUNT} className="px-4">
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
                 ))
               ) : paginated.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    {rows.length === 0
-                      ? "No accounts yet. Import a sheet or click “Add account”."
-                      : "No accounts match your filters."}
-                  </td>
-                </tr>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={COL_COUNT} className="px-4 py-12 text-center text-muted-foreground">
+                    {emptyText}
+                  </TableCell>
+                </TableRow>
               ) : (
                 paginated.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border/50 dark:border-white/[0.06] hover:bg-muted/20 transition-colors align-top"
-                  >
-                    <td className="px-4 py-3 sticky left-0 z-10 bg-card">
+                  <TableRow key={row.id}>
+                    <Td className="sticky left-0 z-10 border-r bg-card">
                       <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-semibold text-foreground truncate max-w-[220px]">{row.fbEmail}</p>
-                        {row.profileLink && (
-                          <a
-                            href={row.profileLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-muted-foreground hover:text-primary"
-                            title="Open FB profile"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
+                        <p className="max-w-[220px] truncate font-medium">{row.fbEmail}</p>
+                        {row.profileLink && <ProfileLink href={row.profileLink} />}
                       </div>
                       {row.recoveryEmail && (
-                        <p className="text-xs text-muted-foreground truncate max-w-[220px]">↳ {row.recoveryEmail}</p>
+                        <p className="max-w-[220px] truncate text-xs text-muted-foreground">↳ {row.recoveryEmail}</p>
                       )}
                       {row.notes && (
-                        <p className="text-[11px] text-amber-600 dark:text-amber-400 truncate max-w-[220px]" title={row.notes}>
-                          {row.notes}
+                        <p
+                          className="mt-0.5 flex max-w-[220px] items-center gap-1 text-xs text-muted-foreground"
+                          title={row.notes}
+                        >
+                          <StickyNote className="size-3 shrink-0" />
+                          <span className="truncate">{row.notes}</span>
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </Td>
+                    <Td>
                       {row.profileName ? (
-                        <span className="text-sm text-foreground whitespace-nowrap">{row.profileName}</span>
+                        <span className="whitespace-nowrap">{row.profileName}</span>
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <Dash />
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Secret value={row.fbPassword} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <Secret value={row.twofaSecret} link={row.twofaLink} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <Secret value={row.mailPassword} />
-                    </td>
-                    <td className="px-4 py-3">
+                    </Td>
+                    <Td>
+                      <Secret value={row.fbPassword} label="FB password" />
+                    </Td>
+                    <Td>
+                      <Secret value={row.twofaSecret} link={row.twofaLink} label="2FA secret" />
+                    </Td>
+                    <Td>
+                      <Secret value={row.mailPassword} label="Mail password" />
+                    </Td>
+                    <Td>
                       <SetupToggles row={row} onPatch={(c) => patchAccount(row.id, c)} />
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.bmId ? (
-                        <CopyText value={row.bmId} className="text-xs font-mono text-foreground" />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </Td>
+                    <Td>
+                      {row.bmId ? <CopyText value={row.bmId} label="BM ID" /> : <Dash />}
+                    </Td>
+                    <Td>
                       <InlineChipSelect
                         value={row.stage}
                         options={stages}
                         labels={stageLabels}
                         colors={stageColors}
                         placeholder="Set stage"
+                        kindLabel="Stage"
                         onChange={(v) => patchAccount(row.id, { stage: v })}
                       />
-                    </td>
-                    <td className="px-4 py-3">
+                    </Td>
+                    <Td>
                       <InlineChipSelect
                         value={row.status}
                         options={statuses}
                         labels={statusLabels}
                         colors={statusColors}
                         placeholder="Set status"
+                        kindLabel="Status"
                         onChange={(v) => patchAccount(row.id, { status: v })}
                       />
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={row.clientId ?? ""}
-                        onChange={(e) => patchAccount(row.id, { clientId: e.target.value || null })}
-                        className="max-w-[150px] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-foreground hover:border-border focus:border-primary focus:outline-none"
-                      >
-                        <option value="">— Unassigned —</option>
-                        {clients.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-foreground">{row.assignee || "—"}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <IconBtn title="Edit" onClick={() => setEditing(row)}>
-                          <Pencil className="h-4 w-4" />
-                        </IconBtn>
-                        <IconBtn title="Remove" danger onClick={() => handleDelete(row)}>
-                          <Trash2 className="h-4 w-4" />
-                        </IconBtn>
-                      </div>
-                    </td>
-                  </tr>
+                    </Td>
+                    <Td>
+                      <ClientSelect
+                        value={row.clientId}
+                        clients={clients}
+                        account={row.fbEmail}
+                        ghost
+                        className="w-[170px]"
+                        onChange={(clientId) => patchAccount(row.id, { clientId })}
+                      />
+                    </Td>
+                    <Td>
+                      <span className="text-xs">{row.assignee || "—"}</span>
+                    </Td>
+                    <Td>
+                      <RowActions
+                        onEdit={() => setEditing(row)}
+                        onRemove={() => handleDelete(row)}
+                        className="justify-end"
+                      />
+                    </Td>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
 
-      {/* Pagination — shared by the mobile cards and the desktop table */}
-      {totalPages > 1 && (
-        <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card">
-          <div className="flex items-center justify-between px-4 py-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              Showing {paginated.length} of {filtered.length}
-            </p>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => setPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
-              >
-                &lsaquo;
-              </button>
-              <span className="px-2 flex items-center text-sm font-semibold text-foreground">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 text-sm hover:bg-muted/50 disabled:opacity-30 transition-colors"
-              >
-                &rsaquo;
-              </button>
+        {/* Mobile cards — the 1600px table is unusable on a phone */}
+        <div className="md:hidden">
+          {isLoading ? (
+            <div className="space-y-3 p-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-40 w-full" />
+              ))}
             </div>
-          </div>
+          ) : paginated.length === 0 ? (
+            <p className="px-4 py-12 text-center text-sm text-muted-foreground">{emptyText}</p>
+          ) : (
+            <div className="divide-y">
+              {paginated.map((row) => (
+                <div key={row.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="break-all text-sm font-medium">{row.fbEmail}</p>
+                        {row.profileLink && <ProfileLink href={row.profileLink} />}
+                      </div>
+                      {row.profileName && <p className="text-xs">{row.profileName}</p>}
+                      {row.recoveryEmail && (
+                        <p className="break-all text-xs text-muted-foreground">↳ {row.recoveryEmail}</p>
+                      )}
+                    </div>
+                    <RowActions
+                      onEdit={() => setEditing(row)}
+                      onRemove={() => handleDelete(row)}
+                      className="shrink-0"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <InlineChipSelect
+                      value={row.stage}
+                      options={stages}
+                      labels={stageLabels}
+                      colors={stageColors}
+                      placeholder="Set stage"
+                      kindLabel="Stage"
+                      onChange={(v) => patchAccount(row.id, { stage: v })}
+                    />
+                    <InlineChipSelect
+                      value={row.status}
+                      options={statuses}
+                      labels={statusLabels}
+                      colors={statusColors}
+                      placeholder="Set status"
+                      kindLabel="Status"
+                      onChange={(v) => patchAccount(row.id, { status: v })}
+                    />
+                  </div>
+
+                  <SetupToggles row={row} onPatch={(c) => patchAccount(row.id, c)} expanded />
+
+                  <div className="grid grid-cols-1 gap-1.5 text-xs">
+                    <MobileField label="Password">
+                      <Secret value={row.fbPassword} label="FB password" />
+                    </MobileField>
+                    <MobileField label="2FA secret">
+                      <Secret value={row.twofaSecret} link={row.twofaLink} label="2FA secret" />
+                    </MobileField>
+                    <MobileField label="Mail pw">
+                      <Secret value={row.mailPassword} label="Mail password" />
+                    </MobileField>
+                    {row.bmId && (
+                      <MobileField label="BM ID">
+                        <CopyText value={row.bmId} label="BM ID" />
+                      </MobileField>
+                    )}
+                    {row.assignee && (
+                      <MobileField label="Access">
+                        <span className="min-w-0 truncate">{row.assignee}</span>
+                      </MobileField>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 border-t pt-3">
+                    <span className="text-xs text-muted-foreground">Client</span>
+                    <ClientSelect
+                      value={row.clientId}
+                      clients={clients}
+                      account={row.fbEmail}
+                      className="w-[60%]"
+                      onChange={(clientId) => patchAccount(row.id, { clientId })}
+                    />
+                  </div>
+
+                  {row.notes && (
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <StickyNote className="mt-0.5 size-3 shrink-0" />
+                      <span className="min-w-0">{row.notes}</span>
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Pagination — shared by the mobile cards and the desktop table */}
+        {totalPages > 1 && (
+          <div className="border-t px-4 pb-3">
+            <Pagination
+              page={currentPage}
+              pageSize={PAGE_SIZE}
+              totalItems={filtered.length}
+              onPageChange={setPage}
+              itemLabel={`Showing ${paginated.length} of ${filtered.length}`}
+            />
+          </div>
+        )}
+      </Card>
 
       {/* Modals */}
       {showAdd && (
@@ -636,6 +623,7 @@ export function MetaAccountsDirectory() {
       {showImport && (
         <MetaAccountImportModal onClose={() => setShowImport(false)} onImported={refresh} />
       )}
+      {dialog}
     </div>
   );
 }
@@ -643,36 +631,75 @@ export function MetaAccountsDirectory() {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <TableHead className={cn("px-4 text-muted-foreground", className)}>{children}</TableHead>;
+}
+
+/** Body cell with the directory's padding; content may wrap (revealed secrets, chips). */
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <TableCell className={cn("px-4 py-3 align-top whitespace-normal", className)}>{children}</TableCell>;
+}
+
+function Dash() {
+  return <span className="text-xs text-muted-foreground">—</span>;
+}
+
+function MobileField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <th className={cn("px-4 py-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider", className)}>
+    <div className="flex min-w-0 items-center justify-between gap-2">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
       {children}
-    </th>
+    </div>
   );
 }
 
-function IconBtn({
-  children,
-  title,
-  onClick,
-  danger,
+function ProfileLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="shrink-0 rounded-full p-1 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      title="Open FB profile"
+      aria-label="Open FB profile"
+    >
+      <ExternalLink className="size-3.5" />
+    </a>
+  );
+}
+
+/** Edit + Remove — 40px touch targets on phones, dense on desktop. */
+function RowActions({
+  onEdit,
+  onRemove,
+  className,
 }: {
-  children: React.ReactNode;
-  title: string;
-  onClick: () => void;
-  danger?: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+  className?: string;
 }) {
   return (
-    <button
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      className={cn(
-        "p-1.5 rounded-md text-muted-foreground transition-colors",
-        danger ? "hover:bg-destructive/10 hover:text-destructive" : "hover:bg-muted hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
+    <div className={cn("flex items-center gap-1", className)}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onEdit}
+        title="Edit"
+        aria-label="Edit"
+        className="size-10 text-muted-foreground md:size-8"
+      >
+        <Pencil />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onRemove}
+        title="Remove"
+        aria-label="Remove"
+        className="size-10 text-muted-foreground hover:bg-destructive/10 hover:text-destructive md:size-8"
+      >
+        <Trash2 />
+      </Button>
+    </div>
   );
 }
 
@@ -681,34 +708,37 @@ function SummaryCard({
   label,
   value,
   sub,
-  color,
   loading,
 }: {
   icon: typeof Boxes;
   label: string;
   value: string;
   sub?: string;
-  color?: string;
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4">
-      <div className="flex items-center gap-2 mb-1">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      </div>
-      {loading ? (
-        <div className="h-8 w-20 rounded bg-muted/50 animate-pulse mt-1" />
-      ) : (
-        <>
-          <p className={cn("text-2xl font-bold mt-1", color ?? "text-foreground")}>{value}</p>
-          {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-        </>
-      )}
-    </div>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2 md:pb-2">
+        <CardDescription className="truncate">{label}</CardDescription>
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-1">
+        {loading ? (
+          <Skeleton className="h-8 w-20" />
+        ) : (
+          <>
+            <div className="truncate text-2xl font-semibold tracking-tight tabular-nums" title={value}>
+              {value}
+            </div>
+            {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
+/** Stage / Status count card — each pill is a one-click filter. */
 function FilterGroup({
   title,
   pills,
@@ -721,36 +751,48 @@ function FilterGroup({
   onManage: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{title}</p>
-        <button
+    <Card>
+      <CardHeader className="flex-row items-center gap-2 space-y-0 px-4 pb-1 pt-3 md:px-4 md:pb-1 md:pt-3">
+        <span className="text-xs text-muted-foreground">{title}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
           onClick={onManage}
-          className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          className="-my-1 -mr-1.5 ml-auto text-muted-foreground"
+          title={`Manage ${title.toLowerCase()} options`}
         >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
+          <SlidersHorizontal />
           Manage
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {pills.length === 0 && <p className="text-xs text-muted-foreground">No options yet — click Manage.</p>}
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-end gap-1 px-2 pb-2 pt-0 md:px-2 md:pb-2 md:pt-0">
+        {pills.length === 0 && (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">No options yet — click Manage.</p>
+        )}
         {pills.map((p) => (
           <button
             key={p.value}
+            type="button"
             onClick={() => onToggle(p.value)}
+            aria-pressed={p.active}
+            title={p.active ? "Click to clear this filter" : "Click to filter"}
             className={cn(
-              CHIP_BASE,
-              chipClass(p.color),
-              "transition-all",
-              p.active ? "ring-2 ring-primary ring-offset-1 ring-offset-card" : "opacity-90 hover:opacity-100"
+              "rounded-xl px-2 py-1.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/30",
+              p.active && "bg-muted ring-1 ring-foreground/10 hover:bg-muted"
             )}
           >
-            {p.label}
-            <span className="ml-0.5 opacity-70">{p.count}</span>
+            <span className="block text-xl font-semibold leading-none tracking-tight tabular-nums">
+              {p.count}
+            </span>
+            <span className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+              <BadgeDot className={swatchClass(p.color)} />
+              {p.label}
+            </span>
           </button>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -761,6 +803,7 @@ function InlineChipSelect({
   labels,
   colors,
   placeholder,
+  kindLabel,
   onChange,
 }: {
   value: string | null;
@@ -768,6 +811,7 @@ function InlineChipSelect({
   labels: Record<string, string>;
   colors: Record<string, string>;
   placeholder: string;
+  kindLabel: string;
   onChange: (value: string | null) => void;
 }) {
   // Rendered through the portal-based ChipPopover so the menu isn't clipped
@@ -779,44 +823,60 @@ function InlineChipSelect({
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        aria-haspopup="dialog"
+        aria-expanded={!!anchor}
+        aria-label={`${kindLabel}: ${label ?? "not set"} — change`}
         className={cn(
-          value ? cn(CHIP_BASE, chipClass(color)) : "text-xs text-muted-foreground italic px-2 py-0.5",
-          "hover:opacity-80"
+          value
+            ? chipClass(color, true)
+            : cn(
+                badgeVariants({ variant: "outline" }),
+                "border-dashed font-normal text-muted-foreground",
+                badgeToneHover.neutral
+              ),
+          "cursor-pointer"
         )}
       >
+        {value && <BadgeDot className={swatchClass(color)} />}
         {label ?? placeholder}
       </button>
       {anchor && (
         <ChipPopover anchor={anchor} onClose={() => setAnchor(null)} width={200}>
-          <div className="p-1">
-            {options.map((o) => (
-              <button
-                key={o.value}
-                onClick={() => {
-                  onChange(o.value === value ? null : o.value);
-                  setAnchor(null);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-                  o.value === value && "bg-muted/60"
-                )}
-              >
-                <span className={cn(CHIP_BASE, chipClass(o.color))}>{o.label}</span>
-              </button>
-            ))}
-            {value && (
-              <button
-                onClick={() => {
-                  onChange(null);
-                  setAnchor(null);
-                }}
-                className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                onChange(o.value === value ? null : o.value);
+                setAnchor(null);
+              }}
+              aria-pressed={o.value === value}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-2xl px-2.5 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+                o.value === value && "bg-muted"
+              )}
+            >
+              <span className={chipClass(o.color)}>
+                <BadgeDot className={swatchClass(o.color)} />
+                {o.label}
+              </span>
+              {o.value === value && <Check className="ml-auto size-3.5 shrink-0 text-muted-foreground" />}
+            </button>
+          ))}
+          {value && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setAnchor(null);
+              }}
+              className="mt-1 flex w-full items-center gap-2 border-t px-2.5 pb-1 pt-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
+            >
+              Clear
+            </button>
+          )}
         </ChipPopover>
       )}
     </div>
@@ -849,14 +909,17 @@ function SetupToggles({
       {steps.map((s) => (
         <button
           key={s.key}
+          type="button"
           title={`${s.title}: ${s.on ? "yes" : "no"}`}
+          aria-label={s.title}
+          aria-pressed={s.on}
           onClick={() => onPatch({ [s.key]: !s.on } as MetaAccountInput)}
           className={cn(
-            "rounded-md font-bold flex items-center justify-center transition-colors",
-            expanded ? "h-8 px-2.5 text-[11px]" : "h-8 w-8 text-[11px]",
+            "flex h-8 items-center justify-center rounded-full border text-[11px] font-semibold outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+            expanded ? "px-3" : "w-8",
             s.on
-              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-              : "bg-muted text-muted-foreground/50 hover:text-muted-foreground"
+              ? cn(badgeTone.success, badgeToneHover.success)
+              : "border-transparent bg-muted text-muted-foreground/60 hover:text-foreground"
           )}
         >
           {expanded ? s.title : s.letter}
@@ -866,58 +929,64 @@ function SetupToggles({
   );
 }
 
-/** Masked secret with reveal + copy. */
-function Secret({ value, link }: { value: string | null; link?: string | null }) {
+/** Masked secret with reveal + copy. Plaintext by product decision — never log it. */
+function Secret({ value, link, label }: { value: string | null; link?: string | null; label: string }) {
   const [shown, setShown] = useState(false);
-  if (!value) return <span className="text-xs text-muted-foreground">—</span>;
+  if (!value) return <Dash />;
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 items-center gap-0.5">
       <span
         className={cn(
-          "text-xs font-mono text-foreground",
+          "mr-0.5 font-mono text-xs",
           shown ? "max-w-[220px] break-all" : "max-w-[130px] truncate"
         )}
       >
         {shown ? value : "••••••••"}
       </span>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={() => setShown((s) => !s)}
-        className="p-2 -m-0.5 rounded text-muted-foreground hover:text-foreground"
         title={shown ? "Hide" : "Reveal"}
+        aria-label={`${shown ? "Hide" : "Reveal"} ${label}`}
+        className="size-8 shrink-0 text-muted-foreground md:size-6"
       >
-        {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-      </button>
-      <CopyBtn value={value} />
+        {shown ? <EyeOff /> : <Eye />}
+      </Button>
+      <CopyBtn value={value} label={label} />
       {link && (
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-1 rounded text-muted-foreground hover:text-primary"
-          title="Open 2FA link"
+        <Button
+          asChild
+          variant="ghost"
+          size="icon-xs"
+          className="size-8 shrink-0 text-muted-foreground md:size-6"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+          <a href={link} target="_blank" rel="noopener noreferrer" title="Open 2FA link" aria-label="Open 2FA link">
+            <ExternalLink />
+          </a>
+        </Button>
       )}
     </div>
   );
 }
 
-function CopyText({ value, className }: { value: string; className?: string }) {
+function CopyText({ value, label }: { value: string; label: string }) {
   return (
-    <div className="flex items-center gap-1">
-      <span className={cn("max-w-[110px] truncate", className)} title={value}>
+    <div className="flex min-w-0 items-center gap-0.5">
+      <span className="mr-0.5 max-w-[110px] truncate font-mono text-xs" title={value}>
         {value}
       </span>
-      <CopyBtn value={value} />
+      <CopyBtn value={value} label={label} />
     </div>
   );
 }
 
-function CopyBtn({ value }: { value: string }) {
+function CopyBtn({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="icon-xs"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);
@@ -927,10 +996,70 @@ function CopyBtn({ value }: { value: string }) {
           /* clipboard unavailable */
         }
       }}
-      className="p-1 rounded text-muted-foreground hover:text-foreground"
       title="Copy"
+      aria-label={`Copy ${label}`}
+      className="size-8 shrink-0 text-muted-foreground md:size-6"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
+      {copied ? <Check className="text-foreground" /> : <Copy />}
+    </Button>
+  );
+}
+
+/** Client link picker — "" = unassigned (sent as null). */
+function ClientSelect({
+  value,
+  clients,
+  account,
+  ghost,
+  className,
+  onChange,
+}: {
+  value: string | null;
+  clients: MetaClientOption[];
+  account: string;
+  ghost?: boolean;
+  className?: string;
+  onChange: (clientId: string | null) => void;
+}) {
+  return (
+    <NativeSelect
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      aria-label={`Client for ${account}`}
+      ghost={ghost}
+      className={className}
+    >
+      <option value="">— Unassigned —</option>
+      {clients.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </NativeSelect>
+  );
+}
+
+/**
+ * Native <select> dressed as the kit SelectTrigger. Kept native on purpose:
+ * one per table row (25 a page) plus the batch filter — no Radix Select in
+ * the page chunk, and phones get their own picker. `ghost` = the borderless
+ * in-table look that fills on hover. `className` sizes the wrapper.
+ */
+function NativeSelect({
+  className,
+  ghost,
+  ...props
+}: React.ComponentProps<"select"> & { ghost?: boolean }) {
+  return (
+    <div className={cn("relative min-w-0", className)}>
+      <select
+        {...props}
+        className={cn(
+          "flex w-full cursor-pointer appearance-none truncate rounded-3xl border border-transparent pl-3 pr-8 text-sm outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 dark:[color-scheme:dark] [&_option]:bg-popover [&_option]:text-popover-foreground",
+          ghost ? "h-8 bg-transparent hover:bg-muted" : "h-9 bg-input/50"
+        )}
+      />
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
   );
 }

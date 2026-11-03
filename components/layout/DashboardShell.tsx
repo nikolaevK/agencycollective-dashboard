@@ -13,7 +13,7 @@ export function DashboardShell({ children, className, wide }: DashboardShellProp
     // wrapper. Without this, overflow-y-auto computes overflow-x to `auto`,
     // and any too-wide child turns the whole page into a sideways scroller.
     <main className={cn("flex-1 overflow-y-auto overflow-x-hidden bg-background", className)}>
-      <div className={cn("container mx-auto p-4 pb-24 md:p-6 md:pb-6", wide ? "max-w-[120rem]" : "max-w-7xl")}>{children}</div>
+      <div className={cn("container mx-auto p-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:p-6 md:pb-6", wide ? "max-w-[120rem]" : "max-w-7xl")}>{children}</div>
     </main>
   );
 }

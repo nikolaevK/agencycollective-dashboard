@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, RotateCcw } from "lucide-react";
 import type {
@@ -36,8 +37,22 @@ import { InvoiceChargesForm } from "./InvoiceChargesForm";
 import { InvoiceFooterForm } from "./InvoiceFooterForm";
 import { InvoicePdfActions } from "./pdf/InvoicePdfActions";
 import { InvoiceLivePreview } from "./InvoiceLivePreview";
-import { InvoicePreviewDialog } from "./InvoicePreviewDialog";
-import { InvoiceSavedList } from "./InvoiceSavedList";
+import { INVOICE_NOTICE } from "./InvoiceField";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+// Click-to-open: the preview dialog pulls in react-pdf (~500 kB) and the saved
+// list a Radix Dialog — neither belongs in the page's first load.
+const InvoicePreviewDialog = dynamic(
+  () => import("./InvoicePreviewDialog").then((m) => m.InvoicePreviewDialog),
+  { ssr: false }
+);
+const InvoiceSavedList = dynamic(() => import("./InvoiceSavedList").then((m) => m.InvoiceSavedList), {
+  ssr: false,
+});
 
 export function InvoicePage() {
   const [data, setData] = useState<InvoiceData>(INITIAL_INVOICE_DATA);
@@ -248,11 +263,7 @@ export function InvoicePage() {
   };
 
   if (!loaded) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <InvoicePageSkeleton />;
   }
 
   return (
@@ -267,9 +278,9 @@ export function InvoicePage() {
         <InvoiceAgencyProfiles onApply={applyProfile} />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         {/* Left column: Form */}
-        <div className="xl:col-span-3 space-y-6">
+        <div className="min-w-0 space-y-6 xl:col-span-3">
           <InvoiceDetailsForm
             logo={data.details.invoiceLogo}
             invoiceNumber={data.details.invoiceNumber}
@@ -281,36 +292,37 @@ export function InvoicePage() {
             onChange={updateDetails}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <InvoiceSenderForm sender={data.sender} onChange={updateSender} />
             <InvoiceReceiverForm receiver={data.receiver} onChange={updateReceiver} />
           </div>
 
-          <div className="rounded-xl border border-border/50 dark:border-white/[0.06] bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-                Line Items
-              </h3>
-              <span className="text-xs text-muted-foreground">
+          {/* overflow-visible: the preset-service picker opens below the editor. */}
+          <Card className="overflow-visible">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle>Line Items</CardTitle>
+              <CardDescription className="text-xs tabular-nums">
                 {data.details.items.length} line{data.details.items.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <LineItemsEditor
-              items={data.details.items}
-              currency={data.details.currency}
-              onChange={updateItems}
-              allowSavePreset
-              onNotice={setItemsNotice}
-            />
-            {itemsNotice && (
-              <p
-                role="status"
-                className={itemsNotice.type === "success" ? "text-xs text-emerald-600" : "text-xs text-destructive"}
-              >
-                {itemsNotice.text}
-              </p>
-            )}
-          </div>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <LineItemsEditor
+                items={data.details.items}
+                currency={data.details.currency}
+                onChange={updateItems}
+                allowSavePreset
+                onNotice={setItemsNotice}
+              />
+              {itemsNotice && (
+                <p
+                  role="status"
+                  className={cn(INVOICE_NOTICE, itemsNotice.type === "success" ? badgeTone.success : badgeTone.danger)}
+                >
+                  {itemsNotice.text}
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           <InvoiceChargesForm
             discount={data.details.discountDetails}
@@ -349,9 +361,10 @@ export function InvoicePage() {
             tall on desktop — the preview scrolls inside, so a long invoice
             is never cut off below the fold. A definite height (not just
             max-h) so the actions block's 55% cap resolves. */}
-        <div className="xl:col-span-2">
-          <div className="space-y-4 xl:sticky xl:top-6 xl:flex xl:h-[calc(100vh-3rem)] xl:flex-col xl:space-y-0 xl:gap-4">
-            <div className="shrink-0 space-y-3 xl:max-h-[55%] xl:overflow-y-auto">
+        <div className="min-w-0 xl:col-span-2">
+          <div className="space-y-4 xl:sticky xl:top-6 xl:flex xl:h-[calc(100vh-3rem)] xl:flex-col xl:gap-4 xl:space-y-0">
+            {/* -m-1 p-1: the scroll box must not clip the card's ring. */}
+            <div className="shrink-0 space-y-3 xl:-m-1 xl:max-h-[55%] xl:overflow-y-auto xl:p-1">
               <InvoicePdfActions
                 data={data}
                 onNewInvoice={handleNewInvoice}
@@ -360,37 +373,32 @@ export function InvoicePage() {
               />
 
               {confirmReset && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  <p className="text-xs text-amber-600 font-medium">
-                    Click &quot;New&quot; again to confirm. Unsaved changes will be lost.
-                  </p>
-                </div>
+                <p role="status" className={cn(INVOICE_NOTICE, badgeTone.warning)}>
+                  Click &quot;New&quot; again to confirm. Unsaved changes will be lost.
+                </p>
               )}
 
-              <button
+              <Button
                 type="button"
+                variant={confirmReset ? "destructive" : "outline"}
                 onClick={handleNewInvoice}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                className="w-full"
               >
-                <RotateCcw className="h-4 w-4" />
+                <RotateCcw />
                 {confirmReset ? "Confirm Reset" : "Reset Invoice"}
-              </button>
+              </Button>
             </div>
 
             {/* Live Preview */}
-            <div className="flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-border/50 dark:border-white/[0.06] bg-card xl:min-h-0 xl:flex-1">
-              <div className="flex shrink-0 items-center justify-between border-b border-border/50 px-4 py-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <Card className="flex min-h-[320px] flex-col xl:min-h-0 xl:flex-1">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Live Preview
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setPreviewMode("live")}
-                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                >
-                  <Maximize2 className="h-3 w-3" />
+                <Button type="button" variant="ghost" size="xs" onClick={() => setPreviewMode("live")}>
+                  <Maximize2 />
                   Full screen
-                </button>
+                </Button>
               </div>
               {/* Stable gutter: a toggling scrollbar would change the width the
                   preview scales to and loop (see InvoiceLivePreview). */}
@@ -399,7 +407,7 @@ export function InvoicePage() {
                   <InvoiceLivePreview data={data} />
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       </div>
@@ -408,13 +416,42 @@ export function InvoicePage() {
         <InvoicePreviewDialog data={data} initialMode={previewMode} onClose={() => setPreviewMode(null)} />
       )}
 
-      {/* Saved invoices modal */}
-      <InvoiceSavedList
-        open={savedOpen}
-        onClose={() => setSavedOpen(false)}
-        onLoad={handleLoadInvoice}
-        onImport={handleLoadInvoice}
-      />
+      {/* Saved invoices modal — mounted only while open (lazy chunk). */}
+      {savedOpen && (
+        <InvoiceSavedList
+          open={savedOpen}
+          onClose={() => setSavedOpen(false)}
+          onLoad={handleLoadInvoice}
+          onImport={handleLoadInvoice}
+        />
+      )}
     </>
+  );
+}
+
+/** Mirrors the page while the agency settings (and the draft) load. */
+function InvoicePageSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading invoice">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-3xl" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="space-y-6 xl:col-span-3">
+          <Skeleton className="h-64 w-full rounded-3xl" />
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <Skeleton className="h-96 w-full rounded-3xl" />
+            <Skeleton className="h-96 w-full rounded-3xl" />
+          </div>
+          <Skeleton className="h-48 w-full rounded-3xl" />
+        </div>
+        <div className="space-y-4 xl:col-span-2">
+          <Skeleton className="h-72 w-full rounded-3xl" />
+          <Skeleton className="h-[420px] w-full rounded-3xl" />
+        </div>
+      </div>
+    </div>
   );
 }

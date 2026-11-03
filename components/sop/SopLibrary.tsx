@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -23,46 +24,50 @@ import {
   Printer,
   Pencil,
   Trash2,
-  Trash,
   Check,
-  X,
   Loader2,
   LayoutGrid,
   List as ListIcon,
   FolderInput,
   GripVertical,
-  Palette,
+  Settings2,
   Plus,
   Tag,
   Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusBadge, badgeVariants } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfirm } from "@/components/ui/use-confirm";
+import { QueryErrorState } from "@/components/shared/QueryErrorState";
 import { createSopRequest, deleteSopRequest, newSopDoc } from "@/hooks/useSops";
-import { ImportSopDialog } from "@/components/sop/ImportSopDialog";
+import { colorOf } from "@/components/sop/sopFolderColors";
 import type { SopListItem } from "@/lib/sop";
 import type { SopFolder } from "@/lib/sopFolders";
 
-// ── Folder color palette (full class strings so Tailwind keeps them) ──────────
-const FOLDER_COLOR_KEYS = ["gray", "red", "amber", "green", "teal", "blue", "violet", "pink"] as const;
-type FolderColor = (typeof FOLDER_COLOR_KEYS)[number];
-
-const FOLDER_COLORS: Record<FolderColor, { icon: string; active: string; swatch: string }> = {
-  gray: { icon: "text-slate-500", active: "bg-slate-500/10 text-slate-700 dark:text-slate-300", swatch: "bg-slate-400" },
-  red: { icon: "text-red-500", active: "bg-red-500/10 text-red-600 dark:text-red-400", swatch: "bg-red-500" },
-  amber: { icon: "text-amber-500", active: "bg-amber-500/10 text-amber-600 dark:text-amber-400", swatch: "bg-amber-500" },
-  green: { icon: "text-green-500", active: "bg-green-500/10 text-green-600 dark:text-green-400", swatch: "bg-green-500" },
-  teal: { icon: "text-teal-500", active: "bg-teal-500/10 text-teal-600 dark:text-teal-400", swatch: "bg-teal-500" },
-  blue: { icon: "text-blue-500", active: "bg-blue-500/10 text-blue-600 dark:text-blue-400", swatch: "bg-blue-500" },
-  violet: { icon: "text-violet-500", active: "bg-violet-500/10 text-violet-600 dark:text-violet-400", swatch: "bg-violet-500" },
-  pink: { icon: "text-pink-500", active: "bg-pink-500/10 text-pink-600 dark:text-pink-400", swatch: "bg-pink-500" },
-};
-
-function colorOf(c: string | undefined) {
-  return FOLDER_COLORS[(c as FolderColor) in FOLDER_COLORS ? (c as FolderColor) : "gray"];
-}
-
-const MAX_TAGS = 12;
-const MAX_TAG_LEN = 40;
+// Click-to-open dialogs + the tag filter's Radix Select load on demand.
+const FolderSettingsDialog = dynamic(
+  () => import("@/components/sop/SopLibraryDialogs").then((m) => m.FolderSettingsDialog),
+  { ssr: false }
+);
+const MoveSopDialog = dynamic(() => import("@/components/sop/SopLibraryDialogs").then((m) => m.MoveSopDialog), {
+  ssr: false,
+});
+const SopTagsDialog = dynamic(() => import("@/components/sop/SopLibraryDialogs").then((m) => m.SopTagsDialog), {
+  ssr: false,
+});
+const ImportSopDialog = dynamic(
+  () => import("@/components/sop/ImportSopDialog").then((m) => m.ImportSopDialog),
+  { ssr: false }
+);
+const SopTagFilter = dynamic(() => import("@/components/sop/SopTagFilter").then((m) => m.SopTagFilter), {
+  ssr: false,
+  loading: () => <Skeleton className="h-8 w-[8.5rem] rounded-3xl" />,
+});
 
 const LIB_KEY = ["sops", null, null] as const;
 
@@ -72,6 +77,8 @@ interface LibraryData {
   tags: string[];
 }
 
+type StatusFilter = "" | "draft" | "published";
+
 function formatDate(raw: string): string {
   if (!raw) return "";
   const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : raw.replace(" ", "T") + "Z";
@@ -79,61 +86,13 @@ function formatDate(raw: string): string {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** Close a modal on Escape while open. */
-function useEscape(active: boolean, onClose: () => void) {
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, onClose]);
-}
+// Columns follow the files pane, not the viewport: from md up the app sidebar
+// and the folder rail sit beside it, so it's ~250px wide at md.
+const FILE_GRID = "grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4";
 
-/** Chips + free-text input for editing tags. */
-function TagInput({ tags, onChange, placeholder = "Add tags…", autoFocus }: {
-  tags: string[];
-  onChange: (next: string[]) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-}) {
-  const [draft, setDraft] = useState("");
-  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  function commit(raw: string) {
-    const parts = raw.split(",").map((s) => s.trim().replace(/\s+/g, " ")).filter(Boolean);
-    const next = [...tags];
-    for (const p of parts) {
-      const tag = p.slice(0, MAX_TAG_LEN);
-      if (tag && next.length < MAX_TAGS && !next.some((t) => t.toLowerCase() === tag.toLowerCase())) next.push(tag);
-    }
-    onChange(next);
-    setDraft("");
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-input bg-background px-1.5 py-1">
-      {tags.map((t) => (
-        <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-          {t}
-          <button type="button" onMouseDown={stop} onClick={() => onChange(tags.filter((x) => x !== t))} className="text-primary/70 hover:text-destructive" aria-label={`Remove ${t}`}>
-            <X className="h-3 w-3" />
-          </button>
-        </span>
-      ))}
-      <input
-        autoFocus={autoFocus}
-        value={draft}
-        onMouseDown={stop}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(draft); }
-          else if (e.key === "Backspace" && !draft && tags.length) onChange(tags.slice(0, -1));
-        }}
-        onBlur={() => { if (draft.trim()) commit(draft); }}
-        placeholder={tags.length === 0 ? placeholder : ""}
-        className="min-w-[70px] flex-1 bg-transparent px-1 py-0.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-      />
-    </div>
-  );
-}
+/** Neutral file glyph tile (no colored icon tiles in the kit). */
+const ICON_TILE =
+  "flex shrink-0 items-center justify-center rounded-2xl bg-background text-muted-foreground ring-1 ring-foreground/5 dark:bg-muted/60 dark:ring-foreground/10";
 
 // ── Droppable folder chip ─────────────────────────────────────────────────────
 function FolderChip({ id, label, count, active, droppable, color, isAll, onSelect }: {
@@ -147,267 +106,190 @@ function FolderChip({ id, label, count, active, droppable, color, isAll, onSelec
   onSelect: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable });
-  const c = colorOf(color);
   return (
     <button
       ref={setNodeRef}
+      type="button"
       onClick={onSelect}
+      aria-pressed={active}
       className={cn(
-        "group flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
-        active ? (isAll ? "bg-primary/10 text-primary" : c.active) : "text-foreground hover:bg-accent",
-        isOver && "ring-2 ring-primary ring-offset-1 ring-offset-card bg-primary/15"
+        "group flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30 md:w-full",
+        active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        isOver && "bg-muted text-foreground ring-2 ring-ring"
       )}
     >
-      <span className={cn("shrink-0", isAll ? (active ? "text-primary" : "text-muted-foreground") : c.icon)}>
-        {isAll ? <Files className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+      <span className={cn("shrink-0", isAll ? (active ? "text-foreground" : "text-muted-foreground") : colorOf(color).icon)}>
+        {isAll ? <Files className="size-4" /> : <Folder className="size-4" />}
       </span>
-      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-      <span className={cn("shrink-0 rounded-full px-1.5 text-[11px] font-semibold tabular-nums", active ? "bg-foreground/10" : "bg-muted text-muted-foreground")}>
-        {count}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{count}</span>
     </button>
-  );
-}
-
-// ── Folder settings (rename / color / delete) ─────────────────────────────────
-function FolderSettingsModal({ folder, count, onClose, onRename, onRecolor, onDelete }: {
-  folder: SopFolder;
-  count: number;
-  onClose: () => void;
-  onRename: (newName: string) => void;
-  onRecolor: (color: FolderColor) => void;
-  onDelete: () => void;
-}) {
-  const [name, setName] = useState(folder.name);
-  const [color, setColor] = useState<string>(folder.color);
-  useEscape(true, onClose);
-
-  function save() {
-    const next = name.trim();
-    if (next && next !== folder.name) onRename(next);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Folder settings</h3>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
-        </div>
-
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
-        <div className="flex items-center gap-2">
-          <Folder className={cn("h-4 w-4 shrink-0", colorOf(color).icon)} />
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") onClose(); }}
-            className="h-9 flex-1 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-
-        <label className="mb-2 mt-4 block text-xs font-medium text-muted-foreground">Color</label>
-        <div className="flex flex-wrap gap-2">
-          {FOLDER_COLOR_KEYS.map((k) => (
-            <button
-              key={k}
-              onClick={() => { setColor(k); onRecolor(k); }}
-              className={cn("h-7 w-7 rounded-full ring-offset-2 ring-offset-card transition-transform hover:scale-110", FOLDER_COLORS[k].swatch, color === k && "ring-2 ring-foreground")}
-              title={k}
-              aria-label={`Color ${k}`}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 flex items-center justify-between gap-2">
-          <button
-            onClick={() => { if (count === 0) onDelete(); }}
-            disabled={count > 0}
-            title={count > 0 ? "Folder must be empty to delete" : "Delete folder"}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Trash className="h-3.5 w-3.5" /> Delete
-          </button>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-accent">Cancel</button>
-            <button onClick={save} className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Save</button>
-          </div>
-        </div>
-        {count > 0 && (
-          <p className="mt-2 text-[11px] text-muted-foreground">This folder has {count} SOP{count === 1 ? "" : "s"}. Move them out to delete it.</p>
-        )}
-      </div>
-    </div>
   );
 }
 
 // ── Draggable SOP tile ────────────────────────────────────────────────────────
-function SopTile({ sop, view, folders, onOpen, onMove, onDelete, onSaveTags, onTagClick, onDownload, activeTag, deleteConfirm, busy }: {
+function SopTile({ sop, view, onOpen, onMove, onDelete, onEditTags, onTagClick, onDownload, activeTag, busy }: {
   sop: SopListItem;
   view: "grid" | "list";
-  folders: string[];
   onOpen: () => void;
-  onMove: (folder: string) => void;
+  onMove: () => void;
   onDelete: () => void;
-  onSaveTags: (tags: string[]) => void;
+  onEditTags: () => void;
   onTagClick: (tag: string) => void;
   onDownload: () => void;
   activeTag: string;
-  deleteConfirm: boolean;
   busy: boolean;
 }) {
   const { listeners, setNodeRef, isDragging } = useDraggable({ id: sop.id });
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [newFolder, setNewFolder] = useState("");
-  const [tagsOpen, setTagsOpen] = useState(false);
-  const [tagDraft, setTagDraft] = useState<string[]>(sop.tags);
-  useEscape(moveOpen, () => setMoveOpen(false));
-  useEscape(tagsOpen, () => setTagsOpen(false));
 
+  // Controls inside the draggable tile must not start a drag.
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const noDrag = { onMouseDown: stop, onTouchStart: stop, onPointerDown: stop };
-  const moveTargets = folders.filter((f) => f !== sop.folder);
-
-  function moveToNew() {
-    const n = newFolder.trim();
-    if (!n) return;
-    setMoveOpen(false);
-    setNewFolder("");
-    onMove(n);
-  }
 
   const titleNode = (
-    <button {...noDrag} onClick={onOpen} className="truncate text-left text-sm font-medium text-foreground hover:text-primary" title={sop.title}>
+    <button
+      {...noDrag}
+      type="button"
+      onClick={onOpen}
+      className="max-w-full truncate rounded-md text-left text-sm font-medium text-foreground outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      title={sop.title}
+    >
       {sop.title || "Untitled SOP"}
     </button>
   );
 
-  const badges = (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
-      {sop.status === "published" && (
-        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Published</span>
-      )}
-      {sop.tags.map((t) => (
-        <button
-          key={t}
-          {...noDrag}
-          onClick={() => onTagClick(t)}
-          title={`Filter by "${t}"`}
-          className={cn(
-            "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-            activeTag.toLowerCase() === t.toLowerCase() ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
-          )}
-        >
-          <Tag className="h-2.5 w-2.5" /> {t}
-        </button>
-      ))}
+  const badges = (sop.status === "published" || sop.tags.length > 0) && (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      {sop.status === "published" && <StatusBadge tone="success">Published</StatusBadge>}
+      {sop.tags.map((t) => {
+        const active = activeTag.toLowerCase() === t.toLowerCase();
+        return (
+          <button
+            key={t}
+            {...noDrag}
+            type="button"
+            onClick={() => onTagClick(t)}
+            title={`Filter by "${t}"`}
+            aria-pressed={active}
+            className={cn(
+              badgeVariants({ variant: active ? "default" : "outline" }),
+              "max-w-full gap-1 font-normal",
+              !active && "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Tag />
+            <span className="truncate">{t}</span>
+          </button>
+        );
+      })}
     </div>
   );
 
+  const iconBtn = "size-7 text-muted-foreground";
   const actions = (
-    <div className={cn("flex items-center gap-0.5", view === "grid" && "opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100")}>
-      <button {...noDrag} onClick={onOpen} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent" title="Open in builder"><Pencil className="h-3.5 w-3.5" /></button>
-      <button {...noDrag} onClick={onDownload} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent" title="Export to PDF"><Printer className="h-3.5 w-3.5" /></button>
-      <button {...noDrag} onClick={() => setMoveOpen(true)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent" title="Move to folder"><FolderInput className="h-3.5 w-3.5" /></button>
-      <button {...noDrag} onClick={() => { setTagDraft(sop.tags); setTagsOpen(true); }} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent" title="Edit tags"><Tag className="h-3.5 w-3.5" /></button>
-      <button
+    <div
+      className={cn(
+        "flex shrink-0 items-center",
+        view === "grid"
+          ? "opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+          : "max-sm:ml-auto"
+      )}
+    >
+      <Button {...noDrag} type="button" variant="ghost" size="icon-sm" onClick={onOpen} className={iconBtn} title="Open in builder" aria-label="Open in builder">
+        <Pencil className="size-3.5" />
+      </Button>
+      <Button {...noDrag} type="button" variant="ghost" size="icon-sm" onClick={onDownload} className={iconBtn} title="Export to PDF" aria-label="Export to PDF">
+        <Printer className="size-3.5" />
+      </Button>
+      <Button {...noDrag} type="button" variant="ghost" size="icon-sm" onClick={onMove} className={iconBtn} title="Move to folder" aria-label="Move to folder">
+        <FolderInput className="size-3.5" />
+      </Button>
+      <Button {...noDrag} type="button" variant="ghost" size="icon-sm" onClick={onEditTags} className={iconBtn} title="Edit tags" aria-label="Edit tags">
+        <Tag className="size-3.5" />
+      </Button>
+      <Button
         {...noDrag}
+        type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={onDelete}
         disabled={busy}
-        className={cn("flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:opacity-50", deleteConfirm ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:bg-destructive/10 hover:text-destructive")}
-        title={deleteConfirm ? "Click again to confirm" : "Delete"}
+        className={cn(iconBtn, "hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20")}
+        title="Delete"
+        aria-label="Delete"
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-      </button>
-    </div>
-  );
-
-  const moveModal = moveOpen && (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" {...noDrag}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setMoveOpen(false)} />
-      <div className="relative w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-2xl">
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-foreground">Move</h4>
-            <p className="truncate text-xs text-muted-foreground" title={sop.title}>{sop.title}</p>
-          </div>
-          <button onClick={() => setMoveOpen(false)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="mb-2 flex items-center gap-1">
-          <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") moveToNew(); }} placeholder="New folder…" className="h-8 flex-1 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-          <button onClick={moveToNew} disabled={!newFolder.trim()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40" title="Create folder & move"><Plus className="h-4 w-4" /></button>
-        </div>
-        {moveTargets.length > 0 && (
-          <>
-            <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Or move to</p>
-            <div className="max-h-56 space-y-0.5 overflow-y-auto">
-              {moveTargets.map((f) => (
-                <button key={f} onClick={() => { setMoveOpen(false); onMove(f); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-accent">
-                  <Folder className="h-4 w-4 shrink-0 text-muted-foreground" /> <span className="truncate">{f}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-
-  const tagModal = tagsOpen && (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" {...noDrag}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setTagsOpen(false)} />
-      <div className="relative w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-2xl">
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-foreground">Tags</h4>
-            <p className="truncate text-xs text-muted-foreground" title={sop.title}>{sop.title}</p>
-          </div>
-          <button onClick={() => setTagsOpen(false)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
-        </div>
-        <TagInput tags={tagDraft} onChange={setTagDraft} autoFocus />
-        <p className="mt-1.5 text-[11px] text-muted-foreground">Press Enter or comma to add. Up to {MAX_TAGS} tags.</p>
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={() => setTagsOpen(false)} className="rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-accent">Cancel</button>
-          <button onClick={() => { onSaveTags(tagDraft); setTagsOpen(false); }} className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Save</button>
-        </div>
-      </div>
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+      </Button>
     </div>
   );
 
   if (view === "grid") {
     return (
-      <div ref={setNodeRef} {...listeners} className={cn("group relative flex cursor-grab flex-col gap-2 rounded-xl border border-border/60 bg-background p-3 transition-all hover:border-primary/40 hover:shadow-sm active:cursor-grabbing", isDragging && "opacity-40")}>
-        <div className="flex items-start justify-between">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><FileText className="h-5 w-5" /></div>
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        className={cn(
+          "group relative flex cursor-grab flex-col gap-3 rounded-2xl bg-muted/40 p-3 transition-colors hover:bg-muted/70 active:cursor-grabbing",
+          isDragging && "opacity-40"
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className={cn(ICON_TILE, "size-9")}><FileText className="size-4" /></div>
           {actions}
         </div>
         <div className="min-w-0">
           <div className="min-w-0">{titleNode}</div>
-          {sop.description && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{sop.description}</p>}
+          {sop.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{sop.description}</p>}
           {badges}
         </div>
-        <p className="mt-auto pt-1 text-[11px] text-muted-foreground">Updated {formatDate(sop.updatedAt)}</p>
-        {moveModal}
-        {tagModal}
+        <p className="mt-auto text-xs text-muted-foreground">Updated {formatDate(sop.updatedAt)}</p>
       </div>
     );
   }
 
   return (
-    <div ref={setNodeRef} {...listeners} className={cn("group flex cursor-grab items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-accent active:cursor-grabbing", isDragging && "opacity-40")}>
-      <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-      <FileText className="h-5 w-5 shrink-0 text-primary" />
-      <div className="min-w-0 flex-1">
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      className={cn(
+        "group flex cursor-grab flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-2 py-2 transition-colors hover:bg-muted/60 active:cursor-grabbing sm:flex-nowrap sm:px-3",
+        isDragging && "opacity-40"
+      )}
+    >
+      <GripVertical className="hidden size-4 shrink-0 text-muted-foreground/50 sm:block" />
+      <div className={cn(ICON_TILE, "size-8")}><FileText className="size-4" /></div>
+      {/* Phones: the text takes the row, the actions wrap below it. */}
+      <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-2.75rem)]">
         <div className="min-w-0">{titleNode}</div>
         <p className="truncate text-xs text-muted-foreground">{sop.folder} · Updated {formatDate(sop.updatedAt)}</p>
         {badges}
       </div>
       {actions}
-      {moveModal}
-      {tagModal}
+    </div>
+  );
+}
+
+function FilesSkeleton({ view }: { view: "grid" | "list" }) {
+  if (view === "list") {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex items-center gap-3 px-2 py-2 sm:px-3">
+            <Skeleton className="size-8 rounded-2xl" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-48 max-w-full rounded-full" />
+              <Skeleton className="h-3 w-32 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className={cn("grid gap-3", FILE_GRID)}>
+      {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        <Skeleton key={i} className="h-36 rounded-2xl" />
+      ))}
     </div>
   );
 }
@@ -415,21 +297,26 @@ function SopTile({ sop, view, folders, onOpen, onMove, onDelete, onSaveTags, onT
 // ── Main library ──────────────────────────────────────────────────────────────
 export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
   const queryClient = useQueryClient();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [tagFilter, setTagFilter] = useState("");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [settingsFolderName, setSettingsFolderName] = useState<string | null>(null);
+  const [moveFor, setMoveFor] = useState<SopListItem | null>(null);
+  const [tagsFor, setTagsFor] = useState<SopListItem | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  // Mounted from the first open on (closed = renders nothing), so a picked
+  // file survives close + reopen like before the dialog was lazy-loaded.
+  const [importUsed, setImportUsed] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const { data, isLoading } = useQuery<LibraryData>({
+  const { data, isLoading, isError, refetch } = useQuery<LibraryData>({
     queryKey: LIB_KEY,
     queryFn: async () => {
       const res = await fetch("/api/admin/sops");
@@ -483,16 +370,22 @@ export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
     } catch { setError("Could not update tags"); refresh(); }
   }, [patchCache, refresh]);
 
-  const removeSop = useCallback(async (id: string) => {
-    if (deleteConfirm !== id) { setDeleteConfirm(id); return; }
-    setDeleteConfirm(null);
+  const removeSop = useCallback(async (sop: SopListItem) => {
+    const ok = await confirm({
+      title: `Delete “${sop.title || "Untitled SOP"}”?`,
+      description: "This SOP will be deleted. This can't be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
+    const id = sop.id;
     setBusyId(id);
     setError("");
     try {
       await deleteSopRequest(id);
       refresh();
     } catch { setError("Delete failed"); } finally { setBusyId(null); }
-  }, [deleteConfirm, refresh]);
+  }, [confirm, refresh]);
 
   // Export to PDF via the browser print view (matches the dashboard exactly).
   const downloadSop = useCallback((id: string) => {
@@ -577,114 +470,159 @@ export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
   }
   const activeDrag = activeDragId ? sops.find((s) => s.id === activeDragId) ?? null : null;
 
+  const tileProps = (s: SopListItem) => ({
+    sop: s,
+    onOpen: () => onOpenSop(s.id),
+    onMove: () => setMoveFor(s),
+    onDelete: () => removeSop(s),
+    onEditTags: () => setTagsFor(s),
+    onTagClick: (t: string) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t)),
+    onDownload: () => downloadSop(s.id),
+    activeTag: tagFilter,
+    busy: busyId === s.id,
+  });
+
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card md:h-[calc(100vh-19rem)] md:min-h-[30rem] md:flex-row">
+      <Card className="flex flex-col md:h-[calc(100vh-17rem)] md:min-h-[30rem] md:flex-row">
         {/* Folder rail */}
-        <aside className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3 md:w-60 md:border-b-0 md:border-r">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Folders</span>
-            <button onClick={() => setNewFolderOpen((v) => !v)} className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="New folder">
-              <FolderPlus className="h-4 w-4" />
-            </button>
+        <aside className="flex shrink-0 flex-col gap-2 border-b p-3 md:w-52 md:border-b-0 md:border-r lg:w-60">
+          <div className="flex items-center justify-between pl-2">
+            <span className="text-xs font-medium text-muted-foreground">Folders</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setNewFolderOpen((v) => !v)}
+              aria-expanded={newFolderOpen}
+              className="size-7 text-muted-foreground"
+              title="New folder"
+              aria-label="New folder"
+            >
+              <FolderPlus className="size-4" />
+            </Button>
           </div>
           {newFolderOpen && (
-            <div className="flex items-center gap-1 px-1">
-              <input
+            <div className="flex items-center gap-1.5">
+              <Input
                 autoFocus
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") createFolder(); if (e.key === "Escape") { setNewFolderOpen(false); setNewFolderName(""); } }}
                 placeholder="Folder name"
-                className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                aria-label="Folder name"
+                className="h-8"
               />
-              <button onClick={createFolder} className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground" title="Create"><Check className="h-3.5 w-3.5" /></button>
+              <Button type="button" size="icon-sm" onClick={createFolder} title="Create" aria-label="Create folder">
+                <Check />
+              </Button>
             </div>
           )}
-          <div className="flex gap-1 overflow-x-auto pb-1 md:flex-col md:overflow-x-visible md:overflow-y-auto">
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:mx-0 md:min-h-0 md:flex-1 md:flex-col md:overflow-x-visible md:overflow-y-auto md:px-0">
             <FolderChip id="all" label="All SOPs" count={sops.length} active={activeFolder === null} droppable={false} isAll onSelect={() => setActiveFolder(null)} />
             {folders.map((f) => (
               <FolderChip key={f.name} id={`folder:${f.name}`} label={f.name} count={f.count} active={activeFolder === f.name} droppable color={f.color} onSelect={() => setActiveFolder(f.name)} />
             ))}
           </div>
-          <p className="hidden px-1 text-[11px] leading-snug text-muted-foreground md:block">Tip: drag a SOP onto a folder to move it.</p>
+          <p className="hidden px-2 text-xs leading-snug text-muted-foreground md:block">Tip: drag a SOP onto a folder to move it.</p>
         </aside>
 
         {/* Files pane */}
-        <section className="flex min-h-0 flex-1 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
             <div className="flex min-w-0 items-center gap-2">
-              {activeFolder === null ? <Files className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Folder className={cn("h-4 w-4 shrink-0", colorOf(activeFolderObj?.color).icon)} />}
-              <h3 className="truncate text-sm font-semibold text-foreground">{activeFolder ?? "All SOPs"}</h3>
-              <span className="shrink-0 text-xs text-muted-foreground">{visible.length} item{visible.length === 1 ? "" : "s"}</span>
+              {activeFolder === null ? <Files className="size-4 shrink-0 text-muted-foreground" /> : <Folder className={cn("size-4 shrink-0", colorOf(activeFolderObj?.color).icon)} />}
+              <h3 className="truncate text-sm font-medium text-foreground">{activeFolder ?? "All SOPs"}</h3>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{visible.length} item{visible.length === 1 ? "" : "s"}</span>
               {activeFolder !== null && (
-                <button onClick={() => setSettingsFolderName(activeFolder)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="Folder settings (rename, color, delete)">
-                  <Palette className="h-4 w-4" />
-                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setSettingsFolderName(activeFolder)}
+                  className="size-7 shrink-0 text-muted-foreground"
+                  title="Folder settings (rename, color, delete)"
+                  aria-label="Folder settings"
+                >
+                  <Settings2 className="size-4" />
+                </Button>
               )}
             </div>
-            <div className="ml-auto flex items-center gap-2">
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "" | "draft" | "published")} className="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground">
-                <option value="">All statuses</option>
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
-              </select>
-              {allTags.length > 0 && (
-                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className={cn("h-8 rounded-lg border bg-background px-2 text-xs", tagFilter ? "border-primary text-primary" : "border-input text-foreground")} title="Filter by tag">
-                  <option value="">All tags</option>
-                  {allTags.map((t) => <option key={t} value={t}>#{t}</option>)}
-                </select>
-              )}
-              <div className="flex rounded-lg border border-border p-0.5">
-                <button onClick={() => setView("grid")} className={cn("flex h-7 w-7 items-center justify-center rounded-md", view === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")} title="Grid view"><LayoutGrid className="h-4 w-4" /></button>
-                <button onClick={() => setView("list")} className={cn("flex h-7 w-7 items-center justify-center rounded-md", view === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")} title="List view"><ListIcon className="h-4 w-4" /></button>
-              </div>
+            {/* Phones: layout toggle beside the title, filters on their own row. */}
+            <div className="flex w-full flex-wrap items-center gap-2 max-sm:order-1 sm:ml-auto sm:w-auto">
+              <Tabs value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : (v as StatusFilter))}>
+                <TabsList className="h-8" aria-label="Filter by status">
+                  <TabsTrigger value="all" className="px-2.5 text-xs">All</TabsTrigger>
+                  <TabsTrigger value="draft" className="px-2.5 text-xs">Draft</TabsTrigger>
+                  <TabsTrigger value="published" className="px-2.5 text-xs">Published</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {allTags.length > 0 && <SopTagFilter tags={allTags} value={tagFilter} onChange={setTagFilter} />}
             </div>
+            <Tabs value={view} onValueChange={(v) => setView(v as "grid" | "list")} className="ml-auto sm:ml-0">
+              <TabsList className="h-8" aria-label="Layout">
+                <TabsTrigger value="grid" className="px-2" title="Grid view" aria-label="Grid view">
+                  <LayoutGrid className="size-3.5" />
+                </TabsTrigger>
+                <TabsTrigger value="list" className="px-2" title="List view" aria-label="List view">
+                  <ListIcon className="size-3.5" />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* Action bar */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2">
-            <button onClick={handleNew} disabled={creating} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-              {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} New SOP
-            </button>
-            <button onClick={() => setImportOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent">
-              <Upload className="h-3.5 w-3.5" /> Import
-            </button>
-            <span className="text-[11px] text-muted-foreground">New SOPs land in <span className="font-medium text-foreground">{activeFolder ?? "General"}</span></span>
-            {error && <span className="w-full text-[11px] text-destructive">{error}</span>}
+          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
+            <Button type="button" size="sm" onClick={handleNew} disabled={creating}>
+              {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+              New SOP
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => { setImportUsed(true); setImportOpen(true); }}>
+              <Upload />
+              Import
+            </Button>
+            <span className="text-xs text-muted-foreground">New SOPs land in <span className="font-medium text-foreground">{activeFolder ?? "General"}</span></span>
+            {error && <span role="alert" className="w-full text-xs text-destructive">{error}</span>}
           </div>
 
           {/* Files */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
             {isLoading ? (
-              <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              <FilesSkeleton view={view} />
+            ) : isError && !data ? (
+              <QueryErrorState
+                title="Couldn't load SOPs"
+                message="Something went wrong while loading the library. Your session may have expired."
+                onRetry={() => void refetch()}
+                className="bg-transparent shadow-none ring-0 dark:ring-0"
+              />
             ) : visible.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                <FileText className="h-9 w-9 text-muted-foreground/40" />
+              <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
+                <FileText className="size-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
                   {sops.length === 0 ? "No SOPs yet. Create one, import a document, or ask the AI Assistant." : `No SOPs in “${activeFolder ?? "this view"}”.`}
                 </p>
               </div>
             ) : view === "grid" ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className={cn("grid gap-3", FILE_GRID)}>
                 {visible.map((s) => (
-                  <SopTile key={s.id} sop={s} view="grid" folders={folderNames} onOpen={() => onOpenSop(s.id)} onMove={(f) => moveSop(s.id, f)} onDelete={() => removeSop(s.id)} onSaveTags={(t) => saveTags(s.id, t)} onTagClick={(t) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t))} onDownload={() => downloadSop(s.id)}activeTag={tagFilter} deleteConfirm={deleteConfirm === s.id} busy={busyId === s.id} />
+                  <SopTile key={s.id} view="grid" {...tileProps(s)} />
                 ))}
               </div>
             ) : (
               <div className="space-y-0.5">
                 {visible.map((s) => (
-                  <SopTile key={s.id} sop={s} view="list" folders={folderNames} onOpen={() => onOpenSop(s.id)} onMove={(f) => moveSop(s.id, f)} onDelete={() => removeSop(s.id)} onSaveTags={(t) => saveTags(s.id, t)} onTagClick={(t) => setTagFilter((cur) => (cur.toLowerCase() === t.toLowerCase() ? "" : t))} onDownload={() => downloadSop(s.id)}activeTag={tagFilter} deleteConfirm={deleteConfirm === s.id} busy={busyId === s.id} />
+                  <SopTile key={s.id} view="list" {...tileProps(s)} />
                 ))}
               </div>
             )}
           </div>
         </section>
-      </div>
+      </Card>
 
       {settingsFolder && (
-        <FolderSettingsModal
+        <FolderSettingsDialog
           folder={settingsFolder}
           count={settingsFolder.count}
           onClose={() => setSettingsFolderName(null)}
@@ -693,13 +631,33 @@ export function SopLibrary({ onOpenSop }: { onOpenSop: (id: string) => void }) {
           onDelete={() => { deleteFolder(settingsFolder.name); setSettingsFolderName(null); }}
         />
       )}
+      {moveFor && (
+        <MoveSopDialog
+          key={moveFor.id}
+          sop={moveFor}
+          folders={folderNames}
+          onClose={() => setMoveFor(null)}
+          onMove={(f) => moveSop(moveFor.id, f)}
+        />
+      )}
+      {tagsFor && (
+        <SopTagsDialog
+          key={tagsFor.id}
+          sop={tagsFor}
+          onClose={() => setTagsFor(null)}
+          onSave={(t) => saveTags(tagsFor.id, t)}
+        />
+      )}
 
-      <ImportSopDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(id) => { setImportOpen(false); onOpenSop(id); }} />
+      {importUsed && (
+        <ImportSopDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(id) => { setImportOpen(false); onOpenSop(id); }} />
+      )}
+      {confirmDialog}
 
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
-          <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-xl">
-            <FileText className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2 rounded-2xl bg-popover px-3 py-2 shadow-lg ring-1 ring-foreground/10">
+            <FileText className="size-4 text-muted-foreground" />
             <span className="max-w-[200px] truncate text-sm font-medium text-foreground">{activeDrag.title || "Untitled SOP"}</span>
           </div>
         )}

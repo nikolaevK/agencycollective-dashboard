@@ -1,6 +1,9 @@
 import { getAdminSession } from "@/lib/adminSession";
 import { findOAuthClient } from "@/lib/oauth";
 import { OAuthConsent } from "@/components/oauth/OAuthConsent";
+import { OAuthShell } from "@/components/oauth/OAuthShell";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardDescription, CardFooter, CardHeader } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +17,14 @@ export const dynamic = "force-dynamic";
 
 function ErrorCard({ title, body }: { title: string; body: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h1 className="text-lg font-semibold text-foreground">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{body}</p>
-      </div>
-    </main>
+    <OAuthShell>
+      <Card>
+        <CardHeader>
+          <h1 className="text-lg font-semibold leading-snug">{title}</h1>
+          <CardDescription>{body}</CardDescription>
+        </CardHeader>
+      </Card>
+    </OAuthShell>
   );
 }
 
@@ -79,32 +84,31 @@ export default async function OAuthAuthorizePage({
   const session = getAdminSession();
   if (!session) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h1 className="text-lg font-semibold text-foreground">Sign in required</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{client.clientName ?? "An MCP client"}</span>{" "}
-            wants to connect to the Agency Collective API. Sign in to the admin dashboard in
-            another tab, then reload this page to continue.
-          </p>
-          <div className="mt-4 flex gap-2">
+      <OAuthShell>
+        <Card>
+          <CardHeader>
+            <h1 className="text-lg font-semibold leading-snug">Sign in required</h1>
+            <CardDescription>
+              <span className="font-medium text-foreground">{client.clientName ?? "An MCP client"}</span>{" "}
+              wants to connect to the Agency Collective API. Sign in to the admin dashboard in
+              another tab, then reload this page to continue.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex-wrap gap-2 p-4 pt-0 md:p-6 md:pt-0">
             <a
               href="/?portal=admin"
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+              className={buttonVariants()}
             >
               Open admin login
             </a>
-            <a
-              href=""
-              className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground"
-            >
+            <a href="" className={buttonVariants({ variant: "outline" })}>
               Reload
             </a>
-          </div>
-        </div>
-      </main>
+          </CardFooter>
+        </Card>
+      </OAuthShell>
     );
   }
   if (!session.isSuper && !session.permissions.apitokens) {

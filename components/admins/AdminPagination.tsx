@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface AdminPaginationProps {
   currentPage: number;
@@ -13,41 +13,37 @@ export function AdminPagination({ currentPage, totalPages, onPageChange }: Admin
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-center gap-1">
-      <button
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-center gap-1">
+      <Button
+        variant="outline"
+        size="icon-sm"
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage <= 1}
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors",
-          currentPage <= 1 ? "opacity-40 cursor-not-allowed" : "hover:bg-accent hover:text-foreground"
-        )}
+        aria-label="Previous page"
       >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
+        <ChevronLeft />
+      </Button>
       {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-        <button
+        <Button
           key={page}
+          variant={page === currentPage ? "default" : "ghost"}
+          size="icon-sm"
           onClick={() => onPageChange(page)}
-          className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-lg text-sm font-medium transition-colors",
-            page === currentPage
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground"
-          )}
+          aria-current={page === currentPage ? "page" : undefined}
+          className="tabular-nums"
         >
           {page}
-        </button>
+        </Button>
       ))}
-      <button
+      <Button
+        variant="outline"
+        size="icon-sm"
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage >= totalPages}
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors",
-          currentPage >= totalPages ? "opacity-40 cursor-not-allowed" : "hover:bg-accent hover:text-foreground"
-        )}
+        aria-label="Next page"
       >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
+        <ChevronRight />
+      </Button>
+    </nav>
   );
 }

@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle, Menu } from "lucide-react";
-import Image from "next/image";
+import { cn } from "@/lib/utils";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
+import { UserAvatar } from "@/components/layout/NavUserButton";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAdmin } from "@/components/providers/AdminProvider";
-import { getInitials } from "@/lib/utils";
 import { CREATIVE_PATH, resolveCreativeTab } from "@/components/creative/creativeTabs";
 
 const DATE_PICKER_ROUTES = ["/dashboard"];
@@ -19,6 +20,7 @@ interface MobileHeaderProps {
   onMenuClick?: () => void;
 }
 
+// Account actions (Log out) are in the menu drawer's footer.
 export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -32,46 +34,25 @@ export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
       route === "/dashboard" ? pathname === route : pathname.startsWith(route)
     ) || (pathname === CREATIVE_PATH && resolveCreativeTab(admin, searchParams.get("tab")) === "analyst");
 
-  const initials = getInitials(admin.displayName, admin.username);
-
   return (
     <header className="md:hidden space-y-2 bg-background px-4 pt-3 pb-2">
       {/* Top row: hamburger + logo + actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onMenuClick}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            aria-label="Open menu"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button variant="outline" size="icon" onClick={onMenuClick} aria-label="Open menu">
+            <Menu />
+          </Button>
           <AgencyLogo />
         </div>
         <div className="flex items-center gap-1.5">
           <NotificationBell />
-          <ThemeToggle />
-          <Link
-            href="/dashboard/alerts"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            aria-label="Alerts"
-          >
-            <AlertTriangle className="h-4 w-4" />
-          </Link>
-          {/* Admin avatar */}
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-semibold overflow-hidden">
-            {admin.avatarPath ? (
-              <Image
-                src={admin.avatarPath}
-                alt=""
-                width={28}
-                height={28}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              initials
-            )}
-          </div>
+          <ThemeToggle className={cn(buttonVariants({ variant: "outline", size: "icon" }), "text-foreground")} />
+          <Button asChild variant="outline" size="icon">
+            <Link href="/dashboard/alerts" aria-label="Alerts">
+              <AlertTriangle />
+            </Link>
+          </Button>
+          <UserAvatar className="size-7 text-[10px]" />
         </div>
       </div>
       {/* Date picker — only on dashboard & AI analyst */}

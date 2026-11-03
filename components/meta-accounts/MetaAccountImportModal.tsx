@@ -1,7 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { X, Upload, Loader2, FileSpreadsheet, CheckCircle2 } from "lucide-react";
+import { Upload, Loader2, FileSpreadsheet, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface ImportSummary {
   imported: number;
@@ -59,43 +71,39 @@ export function MetaAccountImportModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="relative mt-16 w-full max-w-md rounded-2xl bg-card shadow-xl border border-border/50"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        // The old modal had no Escape handler — it closes only via the X
+        // button or a backdrop click.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Import accounts</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Upload an .xlsx or .csv sheet. Columns are matched by header name.
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle>Import accounts</DialogTitle>
+          <DialogDescription>
+            Upload an .xlsx or .csv sheet. Columns are matched by header name.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pb-6">
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className={cn("rounded-2xl border px-4 py-3 text-sm", badgeTone.danger)}>
               {error}
             </div>
           )}
 
           {result ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="h-5 w-5" />
-                <p className="text-sm font-bold">
+            <div className="space-y-4">
+              <div className={cn("flex items-center gap-2 rounded-2xl border px-4 py-3", badgeTone.success)}>
+                <CheckCircle2 className="size-4 shrink-0" />
+                <p className="text-sm font-medium">
                   Imported {result.imported} account{result.imported === 1 ? "" : "s"}
                 </p>
               </div>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>Batch: <span className="font-medium text-foreground">{result.batch}</span></li>
+              <ul className="space-y-1 text-sm text-muted-foreground">
+                <li>
+                  Batch: <span className="font-medium text-foreground">{result.batch}</span>
+                </li>
                 <li>Rows read: {result.totalRows}</li>
                 {result.skippedDuplicate > 0 && <li>Skipped (already exist): {result.skippedDuplicate}</li>}
                 {result.skippedEmpty > 0 && <li>Skipped (no email): {result.skippedEmpty}</li>}
@@ -103,20 +111,17 @@ export function MetaAccountImportModal({
                   <li>Unmatched columns: {result.unmatchedHeaders.join(", ")}</li>
                 )}
               </ul>
-              <button
-                onClick={onClose}
-                className="w-full rounded-lg px-4 py-2 text-sm font-bold text-white ac-gradient hover:opacity-90"
-              >
+              <Button onClick={onClose} className="w-full">
                 Done
-              </button>
+              </Button>
             </div>
           ) : (
             <>
-              <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border px-4 py-8 text-center cursor-pointer hover:border-primary/40 hover:bg-muted/30 transition-colors">
+              <label className="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed px-4 py-8 text-center transition-colors hover:bg-muted/50 has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/30">
                 <input
                   type="file"
                   accept=".xlsx,.csv,.tsv,text/csv"
-                  className="hidden"
+                  className="sr-only"
                   onChange={(e) => {
                     const f = e.target.files?.[0] ?? null;
                     setFile(f);
@@ -125,41 +130,37 @@ export function MetaAccountImportModal({
                 />
                 {file ? (
                   <>
-                    <FileSpreadsheet className="h-8 w-8 text-primary" />
-                    <span className="text-sm font-semibold text-foreground">{file.name}</span>
+                    <FileSpreadsheet className="size-8 text-foreground" />
+                    <span className="break-all text-sm font-medium">{file.name}</span>
                     <span className="text-xs text-muted-foreground">Click to choose a different file</span>
                   </>
                 ) : (
                   <>
-                    <Upload className="h-8 w-8 text-muted-foreground" />
-                    <span className="text-sm font-semibold text-foreground">Choose a file</span>
+                    <Upload className="size-8 text-muted-foreground" />
+                    <span className="text-sm font-medium">Choose a file</span>
                     <span className="text-xs text-muted-foreground">.xlsx or .csv, up to 4 MB</span>
                   </>
                 )}
               </label>
 
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Batch label</span>
-                <input
+              <div className="grid gap-2">
+                <Label htmlFor="meta-import-batch">Batch label</Label>
+                <Input
+                  id="meta-import-batch"
                   value={batch}
                   onChange={(e) => setBatch(e.target.value)}
                   placeholder="e.g. 3rd Round – Aug 2026"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 />
-              </label>
+              </div>
 
-              <button
-                onClick={handleUpload}
-                disabled={busy || !file}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white ac-gradient hover:opacity-90 active:scale-95 transition-all disabled:opacity-40"
-              >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <Button onClick={handleUpload} disabled={busy || !file} className="w-full">
+                {busy ? <Loader2 className="animate-spin" /> : <Upload />}
                 Import
-              </button>
+              </Button>
             </>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -4,11 +4,13 @@
  *
  * Shared by the AI Analyst, the client-portal analyst, Media Buyers chat and
  * SOP chat. The original five events (text_delta, tool_use, tool_result,
- * done, error) keep their exact shapes; the AI Analyst-only events (status,
+ * done, error) keep their exact shapes; the newer events (status,
  * turn_start, progress_delta, tool_start, fallback, refusal) and the optional
- * extra fields are only ever sent by /api/chat, so other UIs never see them.
+ * extra fields are sent by /api/chat, /api/media-chat and /api/sop-chat
+ * (lib/docChat/route.ts) — never by the client-portal analyst.
  * Unknown event types are skipped, and so are frames without an event —
- * e.g. the `: ping` comment /api/chat sends to keep a quiet stream alive.
+ * e.g. the `: ping` comment the admin chat routes send to keep a quiet
+ * stream alive.
  */
 
 import type { SSEEvent } from "@/types/chat";

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin, getEffectivePermissions } from "@/lib/admins";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissions";
 import { workspaceScopeOf, isExternalScope } from "@/lib/workspaces";
 import { DashboardClientShell } from "@/components/layout/DashboardClientShell";
+import { SIDEBAR_COOKIE, SIDEBAR_COLLAPSED } from "@/components/layout/sidebarCookie";
 
 export default async function DashboardLayout({
   children,
@@ -49,7 +51,11 @@ export default async function DashboardLayout({
   };
 
   return (
-    <DashboardClientShell adminData={adminData} needsSessionRefresh={needsRefresh}>
+    <DashboardClientShell
+      adminData={adminData}
+      needsSessionRefresh={needsRefresh}
+      initialSidebarCollapsed={cookies().get(SIDEBAR_COOKIE)?.value === SIDEBAR_COLLAPSED}
+    >
       {children}
     </DashboardClientShell>
   );

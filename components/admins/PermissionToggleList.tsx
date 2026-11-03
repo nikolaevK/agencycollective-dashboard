@@ -1,7 +1,10 @@
 "use client";
 
+import { useId } from "react";
 import { LayoutDashboard, Sparkles, ImageIcon, Braces, PenTool, FileText, Users, Handshake, Megaphone, ClipboardCheck, ShieldCheck, KeyRound, Boxes } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { badgeVariants } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import type { AdminPermissions, PermissionKey } from "@/lib/permissions";
 import { PERMISSION_MODULES } from "@/lib/permissions";
 
@@ -28,54 +31,49 @@ interface PermissionToggleListProps {
 }
 
 export function PermissionToggleList({ permissions, onChange, disabled }: PermissionToggleListProps) {
+  // The desktop modal and the mobile form are mounted together (one hidden
+  // by CSS), so ids must be unique per instance or a label would toggle the
+  // other form's switch.
+  const idPrefix = useId();
+
   return (
-    <div className="space-y-2">
+    <div className="flex min-w-0 flex-col gap-2">
       {PERMISSION_MODULES.map((mod) => {
         const Icon = ICON_MAP[mod.icon] ?? LayoutDashboard;
         const checked = permissions[mod.key];
+        const id = `${idPrefix}-${mod.key}`;
 
         return (
-          <div
+          <label
             key={mod.key}
-            role="button"
-            tabIndex={disabled ? -1 : 0}
-            onClick={() => !disabled && onChange(mod.key, !checked)}
-            onKeyDown={(e) => {
-              if (!disabled && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                onChange(mod.key, !checked);
-              }
-            }}
+            htmlFor={id}
             className={cn(
-              "flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors cursor-pointer",
-              checked ? "border-primary/30 bg-primary/5" : "border-border bg-background",
-              mod.elevated && "ring-1 ring-amber-500/20",
-              disabled && "opacity-50 pointer-events-none"
+              "flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+              checked ? "bg-muted/60" : "bg-transparent",
+              disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/40"
             )}
           >
-            <div className="flex items-center gap-3">
-              <Icon className={cn("h-4 w-4", checked ? "text-primary" : "text-muted-foreground")} />
-              <div>
-                <p className="text-sm font-medium">{mod.label}</p>
-                <p className="text-xs text-muted-foreground">{mod.description}</p>
-              </div>
-            </div>
-            <div
-              role="switch"
-              aria-checked={checked}
-              className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors",
-                checked ? "bg-primary" : "bg-muted"
-              )}
-            >
-              <span
-                className={cn(
-                  "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform mt-0.5",
-                  checked ? "translate-x-4 ml-0.5" : "translate-x-0.5"
-                )}
-              />
-            </div>
-          </div>
+            <span className="flex min-w-0 items-center gap-3">
+              <Icon className={cn("size-4 shrink-0", checked ? "text-foreground" : "text-muted-foreground")} />
+              <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                  {mod.label}
+                  {mod.elevated && (
+                    <span className={cn(badgeVariants({ variant: "outline", tone: "warning" }), "h-4 px-1.5 text-[10px]")}>
+                      Elevated
+                    </span>
+                  )}
+                </span>
+                <span className="block text-xs text-muted-foreground">{mod.description}</span>
+              </span>
+            </span>
+            <Switch
+              id={id}
+              checked={checked}
+              onCheckedChange={(value) => onChange(mod.key, value)}
+              disabled={disabled}
+            />
+          </label>
         );
       })}
     </div>

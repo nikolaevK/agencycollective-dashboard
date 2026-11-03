@@ -1,32 +1,37 @@
-"use client";
-
 import type { AdminPermissions } from "@/lib/permissions";
 import { PERMISSION_MODULES } from "@/lib/permissions";
+import { badgeTone } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface AdminPermissionGridProps {
   permissions: AdminPermissions;
   isSuper: boolean;
 }
 
+/** One letter tile per module: filled = granted, toned = granted elevated
+ *  module, faint = not granted. Hover shows the module name. */
 export function AdminPermissionGrid({ permissions, isSuper }: AdminPermissionGridProps) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5">
       {PERMISSION_MODULES.map((mod) => {
         const active = isSuper || permissions[mod.key];
         return (
-          <div
+          <span
             key={mod.key}
+            role="img"
             title={mod.label}
-            className={`h-5 w-5 rounded text-[8px] font-bold flex items-center justify-center ${
+            aria-label={`${mod.label}: ${active ? "granted" : "not granted"}`}
+            className={cn(
+              "flex size-[18px] items-center justify-center rounded-[5px] border border-transparent text-[9px] font-semibold",
               active
                 ? mod.elevated
-                  ? "bg-amber-500/20 text-amber-500"
-                  : "bg-primary/20 text-primary"
-                : "bg-muted text-muted-foreground/40"
-            }`}
+                  ? badgeTone.warning
+                  : "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground/50"
+            )}
           >
             {mod.label[0]}
-          </div>
+          </span>
         );
       })}
     </div>

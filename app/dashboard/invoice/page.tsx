@@ -8,9 +8,7 @@ export default function InvoicePageRoute() {
     <DashboardShell wide>
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl lg:text-3xl font-black text-foreground">
-            Invoice Generator
-          </h2>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight">Invoice Generator</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Create and download professional invoices
           </p>
