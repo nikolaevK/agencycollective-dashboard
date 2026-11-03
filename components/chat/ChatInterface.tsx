@@ -1,35 +1,51 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
-  Send,
-  Square,
-  Sparkles,
-  ChevronDown,
-  TrendingUp,
   AlertTriangle,
-  Lightbulb,
+  ArrowDown,
   BarChart3,
-  Bot,
-  Wallet,
-  ChevronRight,
-  X,
+  Download,
+  Lightbulb,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+  Square,
+  SquarePen,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAccounts } from "@/hooks/useAccounts";
-import { ChatMessage } from "./ChatMessage";
-import { ContextSelector } from "./ContextSelector";
-import { CHAT_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useConfirm } from "@/components/ui/use-confirm";
+import { useToast } from "@/components/providers/ToastProvider";
+import { CHAT_MODELS, DEFAULT_MODEL } from "@/lib/chatModels";
 import { parseSSEStream } from "@/lib/chatStreamParser";
+import { buildApiHistory } from "@/lib/analyst/history";
+import { DEFAULT_ANALYSIS_DEPTH, type AnalysisDepth } from "@/lib/analyst/request";
+import { dateRangeLabel } from "@/lib/analyst/reportPeriod";
+import { conversationToMarkdown } from "@/lib/analyst/exportMarkdown";
+import {
+  finishStreamLocally,
+  initialStreamState,
+  reduceStreamEvent,
+  type PendingTool,
+  type StreamState,
+} from "@/lib/analyst/streamReducer";
 import type { AccountSummary } from "@/types/dashboard";
-import type {
-  ChatMessage as ChatMessageType,
-  ApiContentBlock,
-  ReportResult,
-} from "@/types/chat";
+import type { ChatMessage as ChatMessageType } from "@/types/chat";
+import { ChatMessage, preloadChatRenderers } from "./ChatMessage";
+import { ContextSelector } from "./ContextSelector";
 
-// ─── Suggestion cards ────────────────────────────────────────────────────────
+// Radix Dialog only loads when the picker is opened below the xl breakpoint.
+const ContextSheet = dynamic(() => import("./ContextSheet"), { ssr: false });
+
+// ─── Suggestions ─────────────────────────────────────────────────────────────
 
 interface SuggestionCard {
   icon: typeof TrendingUp;
@@ -71,8 +87,8 @@ function getAccountSuggestions(accounts: AccountSummary[]): SuggestionCard[] {
     return [
       { icon: Sparkles, title: `Full analysis of ${name}`, description: "Complete audit with benchmarks and strategy.", prompt: `Run a full analysis of ${name}. Include performance audit with benchmark scoring, creative fatigue check, Andromeda strategy assessment, campaign structure evaluation with recommended structure, audience and placement breakdown, and prioritized action items. Use display tools for all data.` },
       { icon: TrendingUp, title: `What's driving ${name}'s performance?`, description: "Deep dive into performance drivers.", prompt: `What's driving ${name}'s performance this period?` },
-      { icon: BarChart3, title: `Scale or pause campaigns`, description: `Optimize ${name}'s campaign mix.`, prompt: `Which campaigns in ${name} should I scale or pause?` },
-      { icon: AlertTriangle, title: `Conversion funnel audit`, description: "Where users are dropping off.", prompt: `Show ${name}'s full conversion funnel — where are users dropping off?` },
+      { icon: BarChart3, title: "Scale or pause campaigns", description: `Optimize ${name}'s campaign mix.`, prompt: `Which campaigns in ${name} should I scale or pause?` },
+      { icon: AlertTriangle, title: "Conversion funnel audit", description: "Where users are dropping off.", prompt: `Show ${name}'s full conversion funnel — where are users dropping off?` },
     ];
   }
   if (accounts.length <= 3) {
@@ -92,169 +108,45 @@ function getAccountSuggestions(accounts: AccountSummary[]): SuggestionCard[] {
   ];
 }
 
-// ─── Model picker ────────────────────────────────────────────────────────────
+const DEPTH_OPTIONS: { value: AnalysisDepth; label: string; hint: string }[] = [
+  { value: "quick", label: "Quick", hint: "Fastest replies for simple lookups" },
+  { value: "balanced", label: "Balanced", hint: "Good depth, faster than Thorough" },
+  { value: "thorough", label: "Thorough", hint: "Deepest analysis (default) — slower" },
+];
 
-function ModelPicker({
-  model,
-  onChange,
-  disabled,
-}: {
-  model: ChatModelId;
-  onChange: (id: ChatModelId) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = CHAT_MODELS.find((m) => m.id === model) ?? CHAT_MODELS[0];
-
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  // With a single model, a dropdown is pointless — show a static badge.
-  if (CHAT_MODELS.length <= 1) {
-    return (
-      <span className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-        <current.icon className="h-3 w-3" />
-        {current.label}
-      </span>
-    );
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => !disabled && setOpen((v) => !v)}
-        disabled={disabled}
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-          open
-            ? "border-primary/50 bg-primary/10 text-primary"
-            : "border-border bg-muted/40 text-muted-foreground hover:border-border hover:text-foreground",
-          disabled && "cursor-not-allowed opacity-40"
-        )}
-      >
-        <current.icon className="h-3 w-3" />
-        {current.label}
-        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border border-border bg-popover shadow-lg">
-          <p className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Model
-          </p>
-          {CHAT_MODELS.map((m) => {
-            const Icon = m.icon;
-            const isActive = m.id === model;
-            return (
-              <button
-                key={m.id}
-                onClick={() => {
-                  onChange(m.id);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors last:rounded-b-xl hover:bg-muted",
-                  isActive && "bg-primary/5"
-                )}
-              >
-                <Icon
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0",
-                    isActive ? "text-primary" : "text-muted-foreground"
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className={cn("text-xs font-medium", isActive ? "text-primary" : "text-foreground")}>
-                    {m.label}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{m.description}</p>
-                </div>
-                {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-function EmptyState({
-  onPrompt,
-  selectedAccounts,
-}: {
-  onPrompt: (text: string) => void;
-  selectedAccounts: AccountSummary[];
-}) {
+function EmptyState({ onPrompt, selectedAccounts }: { onPrompt: (text: string) => void; selectedAccounts: AccountSummary[] }) {
   const hasSelection = selectedAccounts.length > 0;
   const suggestions = hasSelection ? getAccountSuggestions(selectedAccounts) : DEFAULT_SUGGESTIONS;
-
   const subtitle = hasSelection
     ? selectedAccounts.length === 1
-      ? `Focused on ${selectedAccounts[0].name}`
-      : `Focused on ${selectedAccounts.length} selected accounts`
-    : "I can analyze performance, identify scaling opportunities, and audit your account in seconds.";
+      ? `Focused on ${selectedAccounts[0].name}.`
+      : `Focused on ${selectedAccounts.length} selected accounts.`
+    : "Analyze performance, find scaling opportunities and audit accounts — with charts, tables and client-ready reports.";
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 px-4 md:px-8 text-center">
-      {/* Icon */}
-      <div className="h-16 w-16 md:h-20 md:w-20 rounded-2xl md:rounded-3xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground shadow-2xl">
-        <Sparkles className="h-8 w-8 md:h-10 md:w-10" />
+    <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 py-6 text-center md:py-10">
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <Sparkles className="size-5 text-muted-foreground" />
       </div>
-
-      {/* Title */}
-      <div>
-        <h3 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
-          Meta Ads Analyst
-        </h3>
-        <p className={cn(
-          "mt-2 text-sm max-w-md",
-          hasSelection ? "font-medium text-primary" : "text-muted-foreground"
-        )}>
-          {subtitle}
-        </p>
+      <div className="min-w-0">
+        <h3 className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">Ask about your Meta ads</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
       </div>
-
-      {/* Suggestion pills — horizontal scroll on mobile */}
-      <div className="w-full max-w-2xl flex gap-3 overflow-x-auto pb-2 md:hidden" style={{ scrollbarWidth: "none" }}>
-        {suggestions.map((card) => (
-          <button
-            key={card.prompt}
-            onClick={() => onPrompt(card.prompt)}
-            className="whitespace-nowrap shrink-0 px-4 py-2.5 bg-card border border-border/50 rounded-full text-xs font-semibold text-muted-foreground hover:text-primary hover:border-primary/40 transition-all active:scale-95"
-          >
-            {card.title}
-          </button>
-        ))}
-      </div>
-
-      {/* Suggestion cards — 2x2 grid on desktop */}
-      <div className="hidden md:grid w-full max-w-2xl grid-cols-2 gap-3">
+      <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
         {suggestions.map((card) => {
           const Icon = card.icon;
           return (
             <button
               key={card.prompt}
+              type="button"
               onClick={() => onPrompt(card.prompt)}
-              className="p-6 bg-card border border-border/50 rounded-2xl text-left hover:border-primary/40 hover:bg-primary/5 transition-all group"
+              className="flex min-w-0 items-start gap-3 rounded-3xl border bg-background p-3.5 text-left outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 dark:bg-transparent dark:hover:bg-input/30"
             >
-              <Icon className="h-5 w-5 text-primary mb-3" />
-              <p className="text-sm font-semibold text-foreground group-hover:text-primary">
-                {card.title}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {card.description}
-              </p>
+              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{card.title}</span>
+                <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{card.description}</span>
+              </span>
             </button>
           );
         })}
@@ -263,480 +155,500 @@ function EmptyState({
   );
 }
 
-// ─── Mobile context banner ───────────────────────────────────────────────────
-
-function MobileContextBanner({
-  accountCount,
-  selectedCount,
-  onChange,
-}: {
-  accountCount: number;
-  selectedCount: number;
-  onChange: () => void;
-}) {
-  return (
-    <div className="md:hidden mx-6 mb-6 p-4 rounded-xl bg-card shadow-[0_4px_24px_rgba(32,48,68,0.04)] border border-border/30 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
-          <Wallet className="h-4 w-4 text-primary" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-foreground">
-            {selectedCount > 0 ? `${selectedCount} Selected` : "All Accounts"}
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            {accountCount} Connected Account{accountCount !== 1 ? "s" : ""}
-          </p>
-        </div>
-      </div>
-      <button
-        onClick={onChange}
-        className="text-primary text-xs font-bold px-3 py-2 rounded-full hover:bg-primary/5 transition-all"
-      >
-        CHANGE
-      </button>
-    </div>
-  );
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Convert a ChatMessageType to API-friendly message(s).
- *
- * Anthropic API requires tool_result blocks in a separate user message
- * immediately after the assistant message containing tool_use blocks.
- * So an assistant message with [text, tool_use, tool_result, text] becomes:
- *   1. { role: "assistant", content: [text, tool_use] }
- *   2. { role: "user", content: [tool_result] }
- * Any text after tool results is dropped from history (it was streamed to UI already).
- */
-function messagesToApi(msgs: ChatMessageType[]): Array<{ role: "user" | "assistant"; content: string | ApiContentBlock[] }> {
-  const result: Array<{ role: "user" | "assistant"; content: string | ApiContentBlock[] }> = [];
-
-  for (const msg of msgs) {
-    if (msg.role === "user") {
-      result.push({ role: "user", content: msg.content });
-      continue;
-    }
-
-    // Assistant message
-    if (!msg.blocks || msg.blocks.length === 0) {
-      if (msg.content) {
-        result.push({ role: "assistant", content: msg.content });
-      }
-      continue;
-    }
-
-    // Split blocks into the Anthropic-required structure:
-    //   assistant: [text, tool_use, ...]
-    //   user:      [tool_result, ...]
-    //   assistant: [text (continuation after tool results)]
-    const assistantBlocks: ApiContentBlock[] = [];
-    const toolResultBlocks: ApiContentBlock[] = [];
-    const continuationBlocks: ApiContentBlock[] = [];
-    let seenToolResult = false;
-
-    for (const b of msg.blocks) {
-      if (b.type === "text" && b.text) {
-        if (seenToolResult) {
-          continuationBlocks.push({ type: "text", text: b.text });
-        } else {
-          assistantBlocks.push({ type: "text", text: b.text });
-        }
-      } else if (b.type === "tool_use") {
-        assistantBlocks.push({
-          type: "tool_use",
-          id: b.id,
-          name: b.name,
-          input: b.input as unknown as Record<string, unknown>,
-        });
-      } else if (b.type === "tool_result") {
-        seenToolResult = true;
-        toolResultBlocks.push({
-          type: "tool_result",
-          tool_use_id: b.tool_use_id,
-          content: typeof b.content === "string" ? b.content : JSON.stringify(b.content),
-        });
-      }
-    }
-
-    if (assistantBlocks.length > 0) {
-      result.push({ role: "assistant", content: assistantBlocks });
-    }
-    if (toolResultBlocks.length > 0) {
-      result.push({ role: "user", content: toolResultBlocks });
-    }
-    if (continuationBlocks.length > 0) {
-      result.push({ role: "assistant", content: continuationBlocks });
-    }
-  }
-
-  return result;
-}
-
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function ChatInterface() {
+const STREAM_FLUSH_MS = 50;
+/** The route rejects a typed message over 8,000 characters. */
+const MAX_INPUT_CHARS = 8_000;
+
+/** `active` = this tool's Creative Studio tab is showing (panels stay mounted while hidden). */
+export function ChatInterface({ active = true }: { active?: boolean } = {}) {
   const { dateRange } = useDateRange();
   const { data: allAccounts } = useAccounts(dateRange);
-  const [model, setModel] = useState<ChatModelId>(DEFAULT_MODEL);
-  const [messages, setMessages] = useState<ChatMessageType[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
-  // Mobile bottom sheet hosting the ContextSelector (desktop shows it in the
-  // aside; without this, phones had no way to scope the chat at all).
-  const [showContextSheet, setShowContextSheet] = useState(false);
+  const { toastError } = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
+  const [live, setLive] = useState<{ pendingTools: PendingTool[]; status: string | null }>({ pendingTools: [], status: null });
+  const [isLoading, setIsLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [depth, setDepth] = useState<AnalysisDepth>(DEFAULT_ANALYSIS_DEPTH);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [selectedCampaigns, setSelectedCampaigns] = useState<Record<string, string>>({}); // campaignId → accountId
+  const [sheet, setSheet] = useState<{ mounted: boolean; open: boolean; side: "bottom" | "right" }>({
+    mounted: false,
+    open: false,
+    side: "right",
+  });
+  const [elapsed, setElapsed] = useState(0);
+  const [pinned, setPinned] = useState(true);
+
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const busyRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
+  const streamRef = useRef<StreamState | null>(null);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startedAtRef = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pinnedRef = useRef(true);
+
+  const selectedCampaignIds = useMemo(() => Object.keys(selectedCampaigns), [selectedCampaigns]);
+  const campaignCountByAccount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const accountId of Object.values(selectedCampaigns)) counts[accountId] = (counts[accountId] ?? 0) + 1;
+    return counts;
+  }, [selectedCampaigns]);
   const selectedAccounts = useMemo(
     () => (allAccounts ?? []).filter((a) => selectedAccountIds.includes(a.id)),
     [allAccounts, selectedAccountIds]
   );
+  const periodLabel = dateRangeLabel(dateRange);
+  const modelLabel = (CHAT_MODELS.find((m) => m.id === DEFAULT_MODEL) ?? CHAT_MODELS[0]).label;
 
-  const abortRef = useRef<AbortController | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  // Only auto-scroll while the user is already near the bottom — during
-  // streaming this effect fires on every token, and unconditional scrolling
-  // made it impossible to scroll up and re-read mid-response.
-  const pinnedToBottomRef = useRef(true);
+  const contextSummary =
+    selectedAccountIds.length > 0
+      ? `${selectedAccountIds.length === 1 ? selectedAccounts[0]?.name ?? "1 account" : `${selectedAccountIds.length} accounts`}${
+          selectedCampaignIds.length > 0 ? ` · ${selectedCampaignIds.length} campaign${selectedCampaignIds.length === 1 ? "" : "s"}` : ""
+        }`
+      : "All active accounts";
 
+  // ── Scrolling: follow the reply only while the reader is at the bottom ──
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
-    pinnedToBottomRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    pinnedRef.current = atBottom;
+    setPinned(atBottom);
   }, []);
 
+  // Scrolls the list itself (scrollIntoView would also scroll the page around it).
   useEffect(() => {
-    if (pinnedToBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = listRef.current;
+    if (!active || !el) return;
+    // The empty state (and a new chat) reads from its heading, not the bottom.
+    if (messages.length === 0) el.scrollTop = 0;
+    else if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, live, active]);
+
+  const scrollToEnd = useCallback(() => {
+    pinnedRef.current = true;
+    setPinned(true);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // ── Panel lifecycle ──
+  useEffect(() => {
+    if (!active) return;
+    preloadChatRenderers();
+    // Focus the composer when the tab opens — not on touch screens (it would pop the keyboard).
+    if (window.matchMedia?.("(pointer: fine)").matches) textareaRef.current?.focus({ preventScroll: true });
+  }, [active]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Elapsed-time counter for the working line — only while a reply streams and the tab is visible.
+  useEffect(() => {
+    if (!isLoading || !active) return;
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isLoading, active]);
+
+  // ── Streaming state → React state, batched (~20 renders/s instead of one per token) ──
+  const flush = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
     }
-  }, [messages]);
-
-  useEffect(() => {
-    return () => { abortRef.current?.abort(); };
+    const state = streamRef.current;
+    if (!state) return;
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === state.message.id);
+      if (idx < 0) return prev;
+      const next = prev.slice();
+      next[idx] = state.message;
+      return next;
+    });
+    setLive({ pendingTools: state.pendingTools, status: state.status });
   }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (!flushTimerRef.current) flushTimerRef.current = setTimeout(flush, STREAM_FLUSH_MS);
+  }, [flush]);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, base?: ChatMessageType[]) => {
       const trimmed = text.trim();
-      if (!trimmed || isLoading) return;
+      if (!trimmed || busyRef.current) return; // ref guard: two quick Enters can't double-send
+      busyRef.current = true;
 
-      const userMessage: ChatMessageType = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: trimmed,
-      };
-      const assistantMessage: ChatMessageType = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "",
-        blocks: [],
-      };
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      const history = base ?? messagesRef.current;
+      const userMessage: ChatMessageType = { id: crypto.randomUUID(), role: "user", content: trimmed };
+      const stream = initialStreamState(crypto.randomUUID());
+      streamRef.current = stream;
+      stoppedRef.current = false;
+      startedAtRef.current = Date.now();
+      setElapsed(0);
+      pinnedRef.current = true;
+      setPinned(true);
+      setMessages([...history, userMessage, stream.message]);
+      setLive({ pendingTools: [], status: null });
       setInput("");
       setIsLoading(true);
-
       if (textareaRef.current) textareaRef.current.style.height = "auto";
 
       const controller = new AbortController();
       abortRef.current = controller;
+      const apply = (s: StreamState) => {
+        streamRef.current = s;
+        scheduleFlush();
+      };
 
       try {
-        const apiMessages = messagesToApi([...messages, userMessage]);
-
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: apiMessages, selectedAccountIds, selectedCampaignIds, dateRange, model }),
+          body: JSON.stringify({
+            messages: buildApiHistory([...history, userMessage]),
+            selectedAccountIds,
+            selectedCampaignIds,
+            dateRange,
+            model: DEFAULT_MODEL,
+            depth,
+          }),
           signal: controller.signal,
         });
 
-        if (!res.ok) {
+        if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `HTTP ${res.status}`);
+          throw new Error(typeof errBody.error === "string" ? errBody.error : `Request failed (HTTP ${res.status})`);
         }
 
-        for await (const event of parseSSEStream(res.body!)) {
+        for await (const event of parseSSEStream(res.body)) {
           if (controller.signal.aborted) break;
-
-          if (event.type === "text_delta") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (!last || last.role !== "assistant") return prev;
-              const blocks = [...(last.blocks ?? [])];
-              const lastBlock = blocks[blocks.length - 1];
-              if (lastBlock?.type === "text") {
-                blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + event.text };
-              } else {
-                blocks.push({ type: "text", text: event.text });
-              }
-              return [...prev.slice(0, -1), { ...last, content: last.content + event.text, blocks }];
-            });
-          } else if (event.type === "tool_use") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (!last || last.role !== "assistant") return prev;
-              const blocks = [...(last.blocks ?? [])];
-              blocks.push({
-                type: "tool_use",
-                id: event.id,
-                name: event.name,
-                input: event.input,
-              });
-              return [...prev.slice(0, -1), { ...last, blocks }];
-            });
-          } else if (event.type === "tool_result") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (!last || last.role !== "assistant") return prev;
-              const blocks = [...(last.blocks ?? [])];
-              blocks.push({
-                type: "tool_result",
-                tool_use_id: event.tool_use_id,
-                content: event.result as string | ReportResult,
-              });
-              return [...prev.slice(0, -1), { ...last, blocks }];
-            });
-          } else if (event.type === "error") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (!last || last.role !== "assistant") return prev;
-              const blocks = [...(last.blocks ?? [])];
-              blocks.push({ type: "text", text: `\n\n*Error: ${event.message}*` });
-              return [...prev.slice(0, -1), { ...last, content: last.content + `\n\n*Error: ${event.message}*`, blocks }];
-            });
-          }
-          // "done" — no action needed
+          apply(reduceStreamEvent(streamRef.current!, event));
+        }
+        if (!controller.signal.aborted && !streamRef.current?.finished) {
+          apply(finishStreamLocally(streamRef.current!, "error", "The connection was interrupted before the reply finished."));
         }
       } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        const errorText = err instanceof Error ? err.message : "Something went wrong";
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (!last || last.role !== "assistant") return prev;
-          const blocks = [...(last.blocks ?? [])];
-          blocks.push({ type: "text", text: `*Error: ${errorText}*` });
-          return [...prev.slice(0, -1), { ...last, content: `*Error: ${errorText}*`, blocks }];
-        });
+        if (controller.signal.aborted) {
+          if (stoppedRef.current && streamRef.current) apply(finishStreamLocally(streamRef.current, "stopped", "Stopped."));
+        } else if (streamRef.current) {
+          const message = err instanceof Error && err.message ? err.message : "Something went wrong.";
+          apply(finishStreamLocally(streamRef.current, "error", message));
+        }
       } finally {
+        flush();
+        streamRef.current = null;
+        if (abortRef.current === controller) abortRef.current = null;
+        busyRef.current = false;
         setIsLoading(false);
-        abortRef.current = null;
       }
     },
-    [messages, isLoading, selectedAccountIds, selectedCampaignIds, dateRange, model]
+    [selectedAccountIds, selectedCampaignIds, dateRange, depth, scheduleFlush, flush]
   );
 
-  function handleStop() {
+  const handleStop = useCallback(() => {
+    stoppedRef.current = true;
     abortRef.current?.abort();
-    setIsLoading(false);
-  }
+  }, []);
 
+  /** Regenerate: drop the last reply and send its question again. */
+  const handleRetry = useCallback(() => {
+    if (busyRef.current) return;
+    const msgs = messagesRef.current;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") {
+        void sendMessage(msgs[i].content, msgs.slice(0, i));
+        return;
+      }
+    }
+  }, [sendMessage]);
+
+  const handleContinue = useCallback(() => {
+    void sendMessage("Continue where you left off.");
+  }, [sendMessage]);
+
+  const handleNewChat = useCallback(async () => {
+    if (messagesRef.current.length === 0) return;
+    const ok = await confirm({
+      title: "Start a new chat?",
+      description: "This conversation will be cleared. Export it first if you want to keep it.",
+      confirmText: "New chat",
+    });
+    if (!ok) return;
+    abortRef.current?.abort();
+    setMessages([]);
+    setLive({ pendingTools: [], status: null });
+    setTimeout(() => textareaRef.current?.focus({ preventScroll: true }), 0);
+  }, [confirm]);
+
+  const handleExport = useCallback(() => {
+    const msgs = messagesRef.current;
+    if (msgs.length === 0) return;
+    try {
+      const md = conversationToMarkdown(msgs, {
+        title: "AI Analyst conversation",
+        subtitle: `${contextSummary} · ${periodLabel}`,
+      });
+      const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ai-analyst-${new Date().toISOString().slice(0, 10)}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      toastError("Couldn't export the conversation.");
+    }
+  }, [contextSummary, periodLabel, toastError]);
+
+  // ── Context selection ──
+  const toggleAccount = useCallback(
+    (id: string) => {
+      if (selectedAccountIds.includes(id)) {
+        setSelectedAccountIds((prev) => prev.filter((x) => x !== id));
+        // Its campaigns go too — they're only read for accounts in context.
+        setSelectedCampaigns((prev) => Object.fromEntries(Object.entries(prev).filter(([, accountId]) => accountId !== id)));
+      } else {
+        setSelectedAccountIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      }
+    },
+    [selectedAccountIds]
+  );
+
+  const toggleCampaign = useCallback(
+    (campaignId: string, accountId: string) => {
+      if (selectedCampaigns[campaignId]) {
+        setSelectedCampaigns((prev) => {
+          const next = { ...prev };
+          delete next[campaignId];
+          return next;
+        });
+      } else {
+        setSelectedCampaigns((prev) => ({ ...prev, [campaignId]: accountId }));
+        setSelectedAccountIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
+      }
+    },
+    [selectedCampaigns]
+  );
+
+  const selectAccounts = useCallback((ids: string[]) => {
+    setSelectedAccountIds((prev) => Array.from(new Set([...prev, ...ids])));
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedAccountIds([]);
+    setSelectedCampaigns({});
+  }, []);
+
+  const openContextSheet = useCallback(() => {
+    const side = window.matchMedia?.("(max-width: 639px)").matches ? "bottom" : "right";
+    setSheet({ mounted: true, open: true, side });
+  }, []);
+
+  const selectorProps = {
+    dateRange,
+    selectedAccountIds,
+    selectedCampaignIds,
+    onAccountToggle: toggleAccount,
+    onCampaignToggle: toggleCampaign,
+    onSelectAll: selectAccounts,
+    onClearAll: clearSelection,
+    campaignCountByAccount,
+  };
+
+  // ── Composer ──
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      sendMessage(input);
+      if (!isLoading) void sendMessage(input);
+    } else if (e.key === "Escape" && isLoading) {
+      e.preventDefault();
+      handleStop();
     }
   }
 
   function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(e.target.value);
     e.target.style.height = "auto";
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   }
 
-  const isStreamingLast = isLoading && messages.length > 0 && messages[messages.length - 1].role === "assistant";
-  const lastMsg = messages[messages.length - 1];
-  const isThinking = isLoading && lastMsg?.role === "assistant" && !lastMsg.content && (!lastMsg.blocks || lastMsg.blocks.length === 0);
+  const lastIndex = messages.length - 1;
+  const lastAssistantIndex = messages[lastIndex]?.role === "assistant" ? lastIndex : -1;
 
   return (
-    <div className="flex h-full w-full">
-      {/* Desktop sidebar — hidden on mobile */}
-      <aside className="hidden md:flex w-80 shrink-0 border-r border-border overflow-hidden flex-col">
-        <ContextSelector
-          dateRange={dateRange}
-          selectedAccountIds={selectedAccountIds}
-          selectedCampaignIds={selectedCampaignIds}
-          onAccountToggle={(id) => setSelectedAccountIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
-          onCampaignToggle={(id) => setSelectedCampaignIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
-          onSelectAll={() => { setSelectedAccountIds((allAccounts ?? []).map((a) => a.id)); setSelectedCampaignIds([]); }}
-          onClearAll={() => { setSelectedAccountIds([]); setSelectedCampaignIds([]); }}
-        />
-      </aside>
+    <div className="flex min-h-0 flex-1 gap-4">
+      {/* Docked context picker (wide screens) */}
+      <Card className="hidden w-80 shrink-0 flex-col xl:flex">
+        <ContextSelector {...selectorProps} className="min-h-0 flex-1" />
+      </Card>
 
-      {/* Main chat panel */}
-      <div className="flex flex-1 flex-col min-w-0">
-        {/* Mobile header */}
-        <div className="flex md:hidden items-center justify-between px-6 py-4 bg-background">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-primary">AI Analyst</p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
-                Active Insight Engine
-              </p>
-            </div>
+      {/* Chat */}
+      <Card className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 md:px-4 md:py-2.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={openContextSheet}
+            className="min-w-0 max-w-full justify-start gap-2 px-2 xl:hidden"
+            aria-label={`Data context: ${contextSummary}, ${periodLabel}. Change`}
+          >
+            <SlidersHorizontal className="text-muted-foreground" />
+            <span className="truncate">{contextSummary}</span>
+            <span className="hidden shrink-0 text-muted-foreground sm:inline">· {periodLabel}</span>
+          </Button>
+          <p className="hidden min-w-0 truncate px-1 text-sm xl:block">
+            <span className="font-medium">{contextSummary}</span>
+            <span className="text-muted-foreground"> · {periodLabel}</span>
+          </p>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Badge variant="outline" className="hidden text-muted-foreground sm:inline-flex" title="Claude model">
+              {modelLabel}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleExport}
+              disabled={messages.length === 0}
+              aria-label="Export conversation as Markdown"
+              title="Export conversation (.md)"
+              className="text-muted-foreground"
+            >
+              <Download />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleNewChat}
+              disabled={messages.length === 0}
+              aria-label="New chat"
+              title="New chat"
+              className="text-muted-foreground"
+            >
+              <SquarePen />
+            </Button>
           </div>
-          <ModelPicker model={model} onChange={setModel} disabled={isLoading} />
         </div>
 
-        {/* Desktop toolbar */}
-        <div className="hidden md:flex h-10 shrink-0 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-medium text-foreground">AI Insights Console</span>
+        {/* The "Latest" button sits over the list's bottom edge, so it never covers the composer. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={listRef}
+            onScroll={handleListScroll}
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5"
+            aria-live="off"
+          >
+            {messages.length === 0 ? (
+              <EmptyState onPrompt={(t) => void sendMessage(t)} selectedAccounts={selectedAccounts} />
+            ) : (
+              <div className="mx-auto w-full max-w-4xl space-y-6">
+                {messages.map((msg, i) => {
+                  const streaming = isLoading && i === lastIndex && msg.role === "assistant";
+                  return (
+                    <ChatMessage
+                      key={msg.id}
+                      role={msg.role}
+                      content={msg.content}
+                      blocks={msg.blocks}
+                      servedBy={msg.servedBy}
+                      isStreaming={streaming}
+                      pendingTools={streaming ? live.pendingTools : undefined}
+                      status={streaming ? live.status : undefined}
+                      elapsedSeconds={streaming ? elapsed : undefined}
+                      onRetry={!isLoading && i === lastAssistantIndex ? handleRetry : undefined}
+                      onContinue={!isLoading && i === lastAssistantIndex ? handleContinue : undefined}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <ModelPicker model={model} onChange={setModel} disabled={isLoading} />
+
+          {!pinned && messages.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={scrollToEnd}
+              className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 shadow-md"
+            >
+              <ArrowDown />
+              Latest
+            </Button>
+          )}
         </div>
 
-        {/* Mobile context banner */}
-        {allAccounts && (
-          <MobileContextBanner
-            accountCount={allAccounts.length}
-            selectedCount={selectedAccountIds.length}
-            onChange={() => setShowContextSheet(true)}
-          />
-        )}
-
-        {/* Messages */}
-        <div
-          ref={listRef}
-          onScroll={handleListScroll}
-          className="flex-1 overflow-y-auto px-6 md:px-8 py-6 space-y-6"
+        <form
+          className="shrink-0 border-t p-2 md:p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!isLoading) void sendMessage(input);
+          }}
         >
-          {messages.length === 0 ? (
-            <EmptyState onPrompt={sendMessage} selectedAccounts={selectedAccounts} />
-          ) : (
-            messages.map((msg, i) => {
-              // Don't render the empty assistant placeholder while thinking
-              if (isThinking && i === messages.length - 1) return null;
-              return (
-                <ChatMessage
-                  key={msg.id}
-                  role={msg.role}
-                  content={msg.content}
-                  blocks={msg.blocks}
-                  isStreaming={isStreamingLast && i === messages.length - 1}
-                />
-              );
-            })
-          )}
-          {isThinking && (
-            <div className="flex items-start gap-3">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
-                <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-              </div>
-              <div className="flex items-center gap-1.5 pt-2">
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:300ms]" />
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input area — in normal flow at the panel bottom on all sizes.
-            (The old mobile branch was position:fixed with hard-coded offsets
-            matched to BottomNav — brittle, and on iOS a fixed bar detaches
-            from the on-screen keyboard.) The mobile bottom padding clears the
-            fixed BottomNav overlay. */}
-        <div className="bg-background/90 backdrop-blur-md px-6 py-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:bg-transparent md:backdrop-blur-none md:border-t md:border-border md:px-8 md:pb-4">
-          <div className="max-w-3xl mx-auto">
-            <div className={cn(
-              "relative flex items-center focus-within:ring-2 focus-within:ring-primary/20 transition-all",
-              "rounded-full bg-muted/50 md:rounded-2xl md:border md:border-border/50 md:bg-card md:px-3 md:py-2 md:shadow-xl md:shadow-primary/5"
-            )}>
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="rounded-3xl border border-transparent bg-input/50 transition-[color,box-shadow,border-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask AI Analyst anything..."
+                onFocus={preloadChatRenderers}
+                placeholder="Ask about performance, budgets, creatives, landing pages…"
+                aria-label="Message the AI Analyst"
+                maxLength={MAX_INPUT_CHARS}
                 rows={1}
-                className="flex-1 resize-none bg-transparent py-3.5 pl-4 pr-12 md:py-1.5 md:pl-0 md:pr-0 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-                style={{ maxHeight: "160px" }}
+                className="block max-h-[200px] w-full resize-none bg-transparent px-4 pb-1 pt-3 text-base outline-none placeholder:text-muted-foreground md:text-sm"
               />
-
-              {/* Send / Stop button — absolute on mobile, flow on desktop */}
-              {isLoading ? (
-                <button
-                  onClick={handleStop}
-                  className="absolute right-2 md:relative md:right-auto flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full md:rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
-                  title="Stop generating"
+              <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  value={depth}
+                  onValueChange={(v) => v && setDepth(v as AnalysisDepth)}
+                  aria-label="Analysis depth"
+                  className="gap-0.5"
                 >
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim()}
-                  className={cn(
-                    "absolute right-2 md:relative md:right-auto flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full md:rounded-xl transition-colors",
-                    input.trim()
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/20"
-                      : "bg-muted text-muted-foreground cursor-not-allowed"
-                  )}
-                  title="Send (Enter)"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                </button>
-              )}
+                  {DEPTH_OPTIONS.map((o) => (
+                    <ToggleGroupItem key={o.value} value={o.value} title={o.hint} className="h-7 px-2.5 text-xs">
+                      {o.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                {isLoading ? (
+                  <Button type="button" size="icon-sm" variant="secondary" onClick={handleStop} aria-label="Stop generating" title="Stop (Esc)">
+                    <Square className="size-3.5 fill-current" />
+                  </Button>
+                ) : (
+                  <Button type="submit" size="icon-sm" disabled={!input.trim()} aria-label="Send" title="Send (Enter)">
+                    <Send />
+                  </Button>
+                )}
+              </div>
             </div>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground">
-              AI can make mistakes. Please verify metrics in Meta Ads Manager.
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground md:mt-2">
+              AI can make mistakes — verify metrics in Meta Ads Manager.
+              <span className="hidden sm:inline"> Meta data refreshes once a day.</span>
             </p>
           </div>
-        </div>
-      </div>
+        </form>
+      </Card>
 
-      {/* Mobile context bottom sheet */}
-      {showContextSheet && (
-        <div className="md:hidden fixed inset-0 z-[70]">
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowContextSheet(false)}
-          />
-          <div className="absolute inset-x-0 bottom-0 flex max-h-[80dvh] flex-col rounded-t-2xl border-t border-border bg-background pb-[env(safe-area-inset-bottom)]">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <p className="text-sm font-semibold text-foreground">Data context</p>
-              <button
-                onClick={() => setShowContextSheet(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent"
-                aria-label="Done"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <ContextSelector
-                dateRange={dateRange}
-                selectedAccountIds={selectedAccountIds}
-                selectedCampaignIds={selectedCampaignIds}
-                onAccountToggle={(id) => setSelectedAccountIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
-                onCampaignToggle={(id) => setSelectedCampaignIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
-                onSelectAll={() => { setSelectedAccountIds((allAccounts ?? []).map((a) => a.id)); setSelectedCampaignIds([]); }}
-                onClearAll={() => { setSelectedAccountIds([]); setSelectedCampaignIds([]); }}
-              />
-            </div>
-            <div className="border-t border-border p-3">
-              <button
-                onClick={() => setShowContextSheet(false)}
-                className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+      {sheet.mounted && (
+        <ContextSheet
+          {...selectorProps}
+          open={sheet.open}
+          side={sheet.side}
+          onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}
+        />
       )}
+      {confirmDialog}
     </div>
   );
 }

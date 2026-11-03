@@ -47,6 +47,17 @@ const nextConfig = {
       },
     ];
   },
+  // The four AI tools moved into one page with tabs (Creative Studio). HTTP
+  // redirects (before middleware/rendering) keep old links + bookmarks working;
+  // the request's query (e.g. the date range) is passed through.
+  async redirects() {
+    return [
+      { source: "/dashboard/chat", destination: "/dashboard/creative?tab=analyst", permanent: false },
+      { source: "/dashboard/generate", destination: "/dashboard/creative?tab=image", permanent: false },
+      { source: "/dashboard/json-editor", destination: "/dashboard/creative?tab=json", permanent: false },
+      { source: "/dashboard/ad-copy", destination: "/dashboard/creative?tab=ad-copy", permanent: false },
+    ];
+  },
 };
 
 module.exports = nextConfig;

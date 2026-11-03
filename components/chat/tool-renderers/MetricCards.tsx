@@ -1,27 +1,41 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import type { DisplayMetricsInput, MetricItem } from "@/types/chat";
 
-const COLOR_MAP: Record<string, string> = {
-  green:  "text-green-600 dark:text-green-400",
-  red:    "text-red-600 dark:text-red-400",
-  blue:   "text-blue-600 dark:text-blue-400",
-  purple: "text-primary",
-  amber:  "text-amber-600 dark:text-amber-400",
+/** The model's emphasis color → a kit tone (purple is the legacy "brand" accent → neutral). */
+const COLOR_TONE: Record<string, BadgeTone> = {
+  green: "success",
+  red: "danger",
+  amber: "warning",
+  blue: "info",
+  purple: "neutral",
 };
 
-const TREND_BG: Record<string, string> = {
-  up:      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  down:    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  neutral: "bg-muted text-muted-foreground",
+const TONE_TEXT: Record<BadgeTone, string> = {
+  neutral: "text-foreground",
+  success: "text-emerald-700 dark:text-emerald-300",
+  warning: "text-amber-700 dark:text-amber-300",
+  danger: "text-red-700 dark:text-red-300",
+  info: "text-sky-700 dark:text-sky-300",
 };
+
+/** Direction tone: an emphasis color wins (a rising CPA is bad); otherwise up = good, down = bad. */
+function trendTone(metric: MetricItem): BadgeTone {
+  const color = metric.color ? COLOR_TONE[metric.color] : undefined;
+  if (color && color !== "neutral" && color !== "info") return color;
+  if (metric.trend === "up") return "success";
+  if (metric.trend === "down") return "danger";
+  return "neutral";
+}
 
 function TrendIcon({ trend }: { trend: MetricItem["trend"] }) {
-  if (trend === "up") return <TrendingUp className="h-3 w-3" />;
-  if (trend === "down") return <TrendingDown className="h-3 w-3" />;
-  return <Minus className="h-3 w-3" />;
+  if (trend === "up") return <TrendingUp />;
+  if (trend === "down") return <TrendingDown />;
+  return <Minus />;
 }
 
 export function MetricCards({ input }: { input: DisplayMetricsInput }) {
@@ -29,45 +43,40 @@ export function MetricCards({ input }: { input: DisplayMetricsInput }) {
   if (!metrics || metrics.length === 0) return null;
 
   return (
-    <div data-print-metrics="" className={cn(
-      "grid gap-3 my-3 grid-cols-2",
-      metrics.length === 2 && "md:grid-cols-2",
-      metrics.length === 3 && "md:grid-cols-3",
-      metrics.length >= 4 && "md:grid-cols-3 lg:grid-cols-4",
-    )}>
-      {metrics.map((metric, i) => (
-        <div
-          key={i}
-          className="p-3 md:p-4 bg-muted/30 rounded-xl border border-border/50"
-        >
-          <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
-            {metric.label}
-          </p>
-          <p className={cn(
-            "text-lg md:text-xl font-bold",
-            metric.color ? COLOR_MAP[metric.color] ?? "text-foreground" : "text-foreground"
-          )}>
-            {metric.value}
-          </p>
-          {(metric.trend || metric.subtitle) && (
-            <div className="flex items-center gap-1.5 mt-1.5">
-              {metric.trend && (
-                <span className={cn(
-                  "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                  TREND_BG[metric.trend ?? "neutral"]
-                )}>
-                  <TrendIcon trend={metric.trend} />
-                </span>
-              )}
-              {metric.subtitle && (
-                <span className="text-[10px] text-muted-foreground">
-                  {metric.subtitle}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+    <div
+      data-print-metrics=""
+      className={cn(
+        "grid grid-cols-2 gap-3",
+        metrics.length === 3 && "md:grid-cols-3",
+        metrics.length >= 4 && "md:grid-cols-3 xl:grid-cols-4"
+      )}
+    >
+      {metrics.map((metric, i) => {
+        const valueTone = metric.color ? COLOR_TONE[metric.color] ?? "neutral" : "neutral";
+        return (
+          <Card key={i} className="min-w-0 p-4 shadow-none">
+            <p className="truncate text-xs text-muted-foreground" title={metric.label}>
+              {metric.label}
+            </p>
+            <p
+              className={cn("mt-1 truncate text-xl font-semibold tracking-tight tabular-nums", TONE_TEXT[valueTone])}
+              title={metric.value}
+            >
+              {metric.value}
+            </p>
+            {(metric.trend || metric.subtitle) && (
+              <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+                {metric.trend && (
+                  <Badge variant="outline" tone={trendTone(metric)} className="px-1.5" aria-label={`Trend ${metric.trend}`}>
+                    <TrendIcon trend={metric.trend} />
+                  </Badge>
+                )}
+                {metric.subtitle && <span className="line-clamp-2 text-xs text-muted-foreground">{metric.subtitle}</span>}
+              </div>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }

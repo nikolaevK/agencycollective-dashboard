@@ -1,224 +1,131 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useEffect, useState } from "react";
-import { AlignLeft, RotateCcw, Copy, Check } from "lucide-react";
+import { forwardRef, useCallback, useId, useMemo, useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/ui/badge";
 
 interface JsonEditorProps {
   value: string;
-  onChange: (value: string) => void;
-  originalValue?: string;
+  onChange?: (value: string) => void;
   readOnly?: boolean;
-  label: string;
+  /** Accessible name of the text area. */
+  ariaLabel: string;
+  /** Parse error of `value` (null = valid, or empty). */
+  error: string | null;
+  /** Cmd/Ctrl+Enter — e.g. generate. */
+  onSubmit?: () => void;
+  placeholder?: string;
   className?: string;
 }
 
-export function JsonEditor({
-  value,
-  onChange,
-  originalValue,
-  readOnly,
-  label,
-  className,
-}: JsonEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
+/**
+ * Plain-text JSON editor with line numbers and a validity bar. Tab indents
+ * (two spaces); press Esc first to Tab out of the editor.
+ */
+export const JsonEditor = forwardRef<HTMLTextAreaElement, JsonEditorProps>(function JsonEditor(
+  { value, onChange, readOnly, ariaLabel, error, onSubmit, placeholder, className },
+  ref
+) {
+  const lineNumbersRef = useRef<HTMLPreElement>(null);
+  const escapedRef = useRef(false);
+  const hintId = useId();
+  const errorId = useId();
+  const describedBy = [readOnly ? null : hintId, error ? errorId : null].filter(Boolean).join(" ") || undefined;
 
-  // ── JSON validation ────────────────────────────────────────────────────
-  const jsonError = useMemo(() => {
-    if (!value.trim()) return null;
-    try {
-      JSON.parse(value);
-      return null;
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }, [value]);
-
-  // ── Line count ─────────────────────────────────────────────────────────
   const lineCount = useMemo(() => value.split("\n").length, [value]);
+  const lineNumbers = useMemo(
+    () => Array.from({ length: lineCount }, (_, i) => i + 1).join("\n"),
+    [lineCount]
+  );
 
-  // ── Sync scroll between textarea and line numbers ──────────────────────
-  const handleScroll = useCallback(() => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
+  const syncScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
   }, []);
 
-  // ── Format ─────────────────────────────────────────────────────────────
-  const handleFormat = useCallback(() => {
-    try {
-      const parsed = JSON.parse(value);
-      onChange(JSON.stringify(parsed, null, 2));
-    } catch {
-      // can't format invalid JSON
-    }
-  }, [value, onChange]);
-
-  // ── Reset ──────────────────────────────────────────────────────────────
-  const handleReset = useCallback(() => {
-    if (originalValue) onChange(originalValue);
-  }, [originalValue, onChange]);
-
-  // ── Copy ───────────────────────────────────────────────────────────────
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Fallback for browsers without clipboard permission
-    }
-  }, [value]);
-
-  // ── Tab key support ────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Tab") {
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const newValue =
-          value.substring(0, start) + "  " + value.substring(end);
-        onChange(newValue);
+        onSubmit?.();
+        return;
+      }
+      if (e.key === "Escape") {
+        // The next Tab leaves the editor instead of indenting.
+        escapedRef.current = true;
+        return;
+      }
+      const escaped = escapedRef.current;
+      escapedRef.current = false;
+      if (e.key !== "Tab" || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || escaped || readOnly) return;
+      e.preventDefault();
+      const el = e.currentTarget;
+      // insertText keeps the browser's undo stack; fall back to a manual splice.
+      if (!document.execCommand?.("insertText", false, "  ")) {
+        const start = el.selectionStart;
+        const next = value.slice(0, start) + "  " + value.slice(el.selectionEnd);
+        onChange?.(next);
         requestAnimationFrame(() => {
-          textarea.selectionStart = textarea.selectionEnd = start + 2;
+          el.selectionStart = el.selectionEnd = start + 2;
         });
       }
     },
-    [value, onChange],
+    [onChange, onSubmit, readOnly, value]
   );
 
-  // ── Change count ───────────────────────────────────────────────────────
-  const changeCount = useMemo(() => {
-    if (!originalValue || !value) return 0;
-    const origLines = originalValue.split("\n");
-    const newLines = value.split("\n");
-    let count = 0;
-    const maxLen = Math.max(origLines.length, newLines.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (origLines[i] !== newLines[i]) count++;
-    }
-    return count;
-  }, [value, originalValue]);
-
-  // Auto-resize height on mount
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "100%";
-    }
-  }, []);
-
   return (
-    <div className={cn("flex flex-col h-full", className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{label}</span>
-          {originalValue && changeCount > 0 && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
-              {changeCount} {changeCount === 1 ? "change" : "changes"}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleCopy}
-            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
-            title="Copy JSON"
-          >
-            {copied ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
-            )}
-          </button>
-          {!readOnly && (
-            <>
-              <button
-                onClick={handleFormat}
-                disabled={!!jsonError}
-                className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
-                title="Format JSON"
-              >
-                <AlignLeft className="h-3.5 w-3.5" />
-              </button>
-              {originalValue && (
-                <button
-                  onClick={handleReset}
-                  className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
-                  title="Reset to original"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Editor */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Line numbers */}
-        <div
+    <div className={cn("flex min-h-0 flex-col", className)}>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-2xl bg-input/30 ring-1 ring-foreground/5 focus-within:ring-[3px] focus-within:ring-ring/30">
+        <pre
           ref={lineNumbersRef}
-          className="flex-none w-10 bg-muted/20 border-r border-border overflow-hidden select-none"
+          aria-hidden
+          className="w-12 shrink-0 select-none overflow-hidden border-r border-border/60 py-3 pr-2 text-right font-mono text-base leading-6 text-muted-foreground/60 md:w-11 md:text-xs md:leading-5"
         >
-          <div className="px-2 py-3 font-mono text-xs leading-5 text-muted-foreground/60 text-right">
-            {Array.from({ length: lineCount }, (_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
-          </div>
-        </div>
-
-        {/* Textarea */}
+          {lineNumbers}
+        </pre>
         <textarea
-          ref={textareaRef}
+          ref={ref}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onScroll={handleScroll}
+          onChange={(e) => onChange?.(e.target.value)}
+          onScroll={syncScroll}
           onKeyDown={handleKeyDown}
           readOnly={readOnly}
           spellCheck={false}
+          autoCapitalize="off"
+          autoComplete="off"
+          autoCorrect="off"
+          wrap="off"
+          aria-label={ariaLabel}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          placeholder={placeholder}
+          // 16px below md: iOS Safari zooms into any field with smaller text on focus.
+          // Same size + line height as the gutter, so the line numbers stay aligned.
           className={cn(
-            "flex-1 resize-none bg-transparent font-mono text-xs leading-5 p-3 outline-none",
-            "placeholder:text-muted-foreground/40",
-            readOnly && "cursor-default",
+            "min-w-0 flex-1 resize-none bg-transparent px-3 py-3 font-mono text-base leading-6 outline-none placeholder:text-muted-foreground/60 md:text-xs md:leading-5",
+            readOnly && "cursor-default text-muted-foreground"
           )}
-          placeholder="JSON will appear here after analysis..."
         />
+        {!readOnly && (
+          <span id={hintId} className="sr-only">
+            Tab inserts two spaces. To move focus out of the editor, press Escape, then Tab.
+          </span>
+        )}
       </div>
-
-      {/* Status bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-t border-border bg-muted/30 text-xs text-muted-foreground">
-        <div className="flex items-center gap-3">
-          <span>{lineCount} lines</span>
-          {value && (
-            <span
-              className={cn(
-                "flex items-center gap-1",
-                jsonError ? "text-destructive" : "text-green-600 dark:text-green-400",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  jsonError ? "bg-destructive" : "bg-green-500",
-                )}
-              />
-              {jsonError ? "Invalid JSON" : "Valid JSON"}
-            </span>
-          )}
-        </div>
-        {jsonError && (
-          <span className="text-destructive truncate max-w-[50%]" title={jsonError}>
-            {jsonError}
+      <div className="flex min-w-0 items-center gap-2 pt-2 text-xs text-muted-foreground">
+        {value.trim() &&
+          (error ? (
+            <StatusBadge tone="danger">Invalid JSON</StatusBadge>
+          ) : (
+            <StatusBadge tone="success">Valid JSON</StatusBadge>
+          ))}
+        <span className="tabular-nums">{lineCount} lines</span>
+        {readOnly && <span>· read-only</span>}
+        {error && (
+          <span id={errorId} className="min-w-0 truncate text-destructive" title={error}>
+            {error}
           </span>
         )}
       </div>
     </div>
   );
-}
+});

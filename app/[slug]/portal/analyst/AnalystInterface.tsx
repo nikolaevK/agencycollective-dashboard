@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { parseSSEStream } from "@/lib/chatStreamParser";
+import { repairToolPairs, trimHistory } from "@/lib/analyst/history";
 import type {
   ChatMessage as ChatMessageType,
   ApiContentBlock,
@@ -243,7 +244,9 @@ export function AnalystInterface({ slug, accounts, initialAccountId }: AnalystIn
       abortRef.current = controller;
 
       try {
-        const apiMessages = messagesToApi([...messages, userMessage]);
+        // Repair + trim: a stopped reply or failed tool leaves an unanswered
+        // tool_use, which otherwise 400s every later message in this chat.
+        const apiMessages = repairToolPairs(trimHistory(repairToolPairs(messagesToApi([...messages, userMessage]))));
         const res = await fetch("/api/portal/analyst", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

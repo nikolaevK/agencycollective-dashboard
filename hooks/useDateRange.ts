@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { DateRangeInput, DatePreset } from "@/types/api";
 import { parseDateRangeFromParams } from "@/lib/utils";
@@ -12,7 +12,14 @@ export function useDateRange() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const dateRange: DateRangeInput = parseDateRangeFromParams(searchParams);
+  // Same range → same object, so memoized consumers (and effects / callbacks
+  // that depend on it) don't re-run on every render of the page.
+  const parsed = parseDateRangeFromParams(searchParams);
+  const dateRange: DateRangeInput = useMemo(
+    () => parsed,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value, not identity
+    [parsed.preset, parsed.since, parsed.until]
+  );
 
   const setDateRange = useCallback(
     (newRange: DateRangeInput) => {

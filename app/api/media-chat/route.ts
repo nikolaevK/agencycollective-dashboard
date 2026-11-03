@@ -1,11 +1,23 @@
 export const dynamic = "force-dynamic";
+/** A long document streams up to 64k tokens; give it the platform maximum. */
+export const maxDuration = 300;
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getAdminSession } from "@/lib/adminSession";
+import { requireAdminRecord } from "@/lib/api/requireAdmin";
 import { MEDIA_CHAT_TOOLS, MEDIA_DISPLAY_TOOLS } from "@/lib/mediaChatTools";
 import { MEDIA_BUYER_SKILLS } from "@/lib/mediaChatSkills";
 import { ALLOWED_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
-import type { ApiContentBlock } from "@/types/chat";
+import type { ApiChatMessage, ApiContentBlock } from "@/types/chat";
+import type {
+  BetaMessageParam,
+  BetaToolResultBlockParam,
+  BetaToolUnion,
+} from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import { runToolLoop } from "@/lib/claude/toolLoop";
+import { describeClaudeError } from "@/lib/claude/errors";
+import { repairToolPairs } from "@/lib/analyst/history";
+import { refusalNoticeText } from "@/lib/analyst/streamReducer";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -15,9 +27,12 @@ const anthropic = new Anthropic({
 const MAX_MESSAGES        = 50;
 const MAX_MESSAGE_CHARS   = 60_000; // pasted documents (for correction) can be long
 const MAX_TOOL_ITERATIONS = 8;
-// Documents are emitted as a tool-call argument; too low a cap truncates the
-// JSON mid-stream and the document card renders empty.
-const MAX_OUTPUT_TOKENS   = 16_000;
+// Thinking counts toward max_tokens (Opus 5.5 always thinks), and documents are
+// emitted as ONE tool-call argument — a call cut off at the cap is dropped
+// whole, so give long documents room. Streamed: no HTTP-timeout pressure.
+const MAX_OUTPUT_TOKENS   = 64_000;
+// Drafting/correcting a document is one-shot writing, not multi-step analysis.
+const EFFORT = "medium" as const;
 
 // ─── Per-session rate limiter (in-memory) ───────────────────────────────────
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -110,7 +125,9 @@ export async function POST(request: Request) {
   if (!session) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
-  if (!session.isSuper && !session.permissions.media && !session.permissions.media_manage) {
+  // Fresh from the DB, not the cookie's permission snapshot (up to 7 days old).
+  const admin = await requireAdminRecord();
+  if (!admin || (!admin.isSuper && !admin.permissions.media && !admin.permissions.media_manage)) {
     return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
   }
 
@@ -148,132 +165,85 @@ export async function POST(request: Request) {
         ? (modelRaw as ChatModelId)
         : DEFAULT_MODEL;
 
+    // Stop / tab close aborts the Claude request instead of letting it run on.
+    const abort = new AbortController();
+    const onClientAbort = () => abort.abort();
+    request.signal.addEventListener("abort", onClientAbort);
+
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
-        try {
-          let messages = [...validMessages];
-          let iterations = 0;
-
-          while (iterations < MAX_TOOL_ITERATIONS) {
-            iterations++;
-
-            const response = await anthropic.messages.create({
-              model,
-              max_tokens: MAX_OUTPUT_TOKENS,
-              system: SYSTEM_PROMPT,
-              messages,
-              tools: MEDIA_CHAT_TOOLS,
-              stream: true,
-            }, { timeout: 120000 });
-
-            let currentToolId = "";
-            let currentToolName = "";
-            let currentToolInput = "";
-            let accumulatedText = "";
-            const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-            let stopReason: string | null = null;
-
-            for await (const event of response) {
-              if (event.type === "content_block_start") {
-                if (event.content_block.type === "tool_use") {
-                  currentToolId = event.content_block.id;
-                  currentToolName = event.content_block.name;
-                  currentToolInput = "";
-                }
-              } else if (event.type === "content_block_delta") {
-                if (event.delta.type === "text_delta") {
-                  accumulatedText += event.delta.text;
-                  controller.enqueue(encoder.encode(sseEvent("text_delta", { text: event.delta.text })));
-                } else if (event.delta.type === "input_json_delta") {
-                  currentToolInput += event.delta.partial_json;
-                }
-              } else if (event.type === "content_block_stop") {
-                if (currentToolId && currentToolName) {
-                  let parsedInput: Record<string, unknown>;
-                  try {
-                    parsedInput = JSON.parse(currentToolInput || "{}");
-                  } catch {
-                    parsedInput = {};
-                  }
-                  toolUseBlocks.push({ id: currentToolId, name: currentToolName, input: parsedInput });
-                  controller.enqueue(encoder.encode(sseEvent("tool_use", {
-                    id: currentToolId, name: currentToolName, input: parsedInput,
-                  })));
-                  currentToolId = "";
-                  currentToolName = "";
-                  currentToolInput = "";
-                }
-              } else if (event.type === "message_delta") {
-                stopReason = event.delta.stop_reason;
-              }
-            }
-
-            // No tool calls → done.
-            if (stopReason !== "tool_use" || toolUseBlocks.length === 0) {
-              break;
-            }
-
-            const assistantBlocks: Anthropic.Messages.ContentBlockParam[] = [];
-            if (accumulatedText) {
-              assistantBlocks.push({ type: "text", text: accumulatedText });
-            }
-            for (const tool of toolUseBlocks) {
-              assistantBlocks.push({
-                type: "tool_use",
-                id: tool.id,
-                name: tool.name,
-                input: tool.input,
-              });
-            }
-
-            // All Media Buyer tools are presentational — auto-acknowledge.
-            const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-            for (const tool of toolUseBlocks) {
-              const ack = MEDIA_DISPLAY_TOOLS.has(tool.name)
-                ? "Displayed to the user."
-                : `Unknown tool: ${tool.name}`;
-              toolResults.push({
-                type: "tool_result",
-                tool_use_id: tool.id,
-                content: ack,
-              });
-              controller.enqueue(encoder.encode(sseEvent("tool_result", {
-                tool_use_id: tool.id,
-                result: ack,
-              })));
-            }
-
-            messages = [
-              ...messages,
-              { role: "assistant" as const, content: assistantBlocks },
-              { role: "user" as const, content: toolResults },
-            ];
-          }
-
-          if (iterations >= MAX_TOOL_ITERATIONS) {
-            controller.enqueue(encoder.encode(sseEvent("text_delta", {
-              text: "\n\n*Reached the maximum number of operations for this response. Send a follow-up if you need more.*",
-            })));
-          }
-          controller.enqueue(encoder.encode(sseEvent("done", {})));
-          controller.close();
-        } catch (err) {
-          // Log the real error server-side; send the client a generic message
-          // (don't leak upstream SDK/error detail into the stream).
-          console.error("[media-chat] stream error:", err);
+        const send = (event: string, data: unknown) => {
           try {
-            const status = (err as { status?: number })?.status;
-            const message =
-              status === 429 ? "The assistant is rate-limited. Please wait a moment and try again."
-              : status === 529 ? "The assistant is busy. Please try again shortly."
-              : "Something went wrong generating a response. Please try again.";
-            controller.enqueue(encoder.encode(sseEvent("error", { message })));
+            controller.enqueue(encoder.encode(sseEvent(event, data)));
           } catch {
-            // controller may already be closed
+            // stream already closed by the client
           }
-          controller.close();
+        };
+        try {
+          // Opus 5.5 tool loop (lib/claude/toolLoop): replays each turn with its
+          // thinking blocks, handles refusals + server-side fallback.
+          const result = await runToolLoop({
+            client: anthropic,
+            model,
+            system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            tools: MEDIA_CHAT_TOOLS as unknown as BetaToolUnion[],
+            // A stopped reply can leave an unanswered tool_use in history — repair it.
+            messages: repairToolPairs(validMessages as unknown as ApiChatMessage[]) as unknown as BetaMessageParam[],
+            effort: EFFORT,
+            maxTokens: MAX_OUTPUT_TOKENS,
+            maxIterations: MAX_TOOL_ITERATIONS,
+            // This UI renders text + document cards only, not progress notes.
+            display: "omitted",
+            signal: abort.signal,
+            requestTimeoutMs: 120_000,
+            // All tools are presentational — auto-acknowledge. Emitted here (not at
+            // content_block_stop) so a declined turn's calls never reach the UI.
+            runTools: async (calls) =>
+              calls.map((tool): BetaToolResultBlockParam => {
+                const known = MEDIA_DISPLAY_TOOLS.has(tool.name);
+                const ack = known ? "Displayed to the user." : `Unknown tool: ${tool.name}`;
+                send("tool_use", { id: tool.id, name: tool.name, input: tool.input });
+                send("tool_result", { tool_use_id: tool.id, result: ack });
+                return { type: "tool_result", tool_use_id: tool.id, content: ack, ...(known ? {} : { is_error: true }) };
+              }),
+            onEvent: (event) => {
+              if (event.type === "text_delta") send("text_delta", { text: event.text });
+              else if (event.type === "refusal") {
+                send("error", { message: refusalNoticeText(event.category, event.explanation ?? undefined) });
+              }
+            },
+          });
+
+          if (result.stopReason === "aborted" || result.stopReason === "refusal") return;
+          if (result.stopReason === "iteration_limit") {
+            send("text_delta", {
+              text: "\n\n*Reached the maximum number of operations for this response. Send a follow-up if you need more.*",
+            });
+          } else if (result.stopReason === "max_tokens") {
+            // A document cut off mid-call is never shown and isn't in the history,
+            // so "continue" has nothing to continue from.
+            send("text_delta", {
+              text: "\n\n*The reply hit its length limit — this document is too long for one reply. Ask for it in parts (for example, a few sections at a time).*",
+            });
+          }
+          send("done", {});
+        } catch (err) {
+          if (abort.signal.aborted) return;
+          // Log the real error server-side; the client gets a safe message.
+          console.error("[media-chat] stream error:", err);
+          send("error", { message: describeClaudeError(err).message });
+        } finally {
+          request.signal.removeEventListener("abort", onClientAbort);
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
         }
+      },
+      cancel() {
+        abort.abort();
       },
     });
 

@@ -1,18 +1,21 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
-import { fetchAccountPages } from "@/lib/meta/endpoints";
+import { requireInternalActor } from "@/lib/api/requireAdmin";
+import { fetchAccountPages, type AccountPagesSource } from "@/lib/meta/endpoints";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
 import type { ApiResponse } from "@/types/api";
 import type { MetaPage } from "@/lib/meta/types";
 
+/** `source` tells the draft dialog whether the list is this account's Pages or every Page the token manages. */
+type AccountPages = { pages: MetaPage[]; source: AccountPagesSource };
+
 export async function GET(request: Request) {
-  const session = getAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Feeds the Meta WRITE path (publish-draft): same gate — partner
+  // (external-workspace) admins get 403, like publish-draft itself.
+  const gate = await requireInternalActor();
+  if (gate.response) return gate.response;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -22,10 +25,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid accountId" }, { status: 400 });
     }
 
-    const cacheKey = CacheKeys.accountPages(accountId);
-    const cached = cache.get<MetaPage[]>(cacheKey);
+    // ":src" — entries now carry the list's source (the old key held bare arrays).
+    const cacheKey = `${CacheKeys.accountPages(accountId)}:src`;
+    const cached = cache.get<AccountPages>(cacheKey);
     if (cached) {
-      const response: ApiResponse<MetaPage[]> = {
+      const response: ApiResponse<AccountPages> = {
         data: cached,
         meta: { cached: true, timestamp: Date.now() },
       };
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
     const pages = await fetchAccountPages(accountId);
     cache.set(cacheKey, pages, TTL.PAGES);
 
-    const response: ApiResponse<MetaPage[]> = {
+    const response: ApiResponse<AccountPages> = {
       data: pages,
       meta: { cached: false, timestamp: Date.now() },
     };

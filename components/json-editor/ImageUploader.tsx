@@ -1,145 +1,172 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Upload, X } from "lucide-react";
+import { useRef, useState, type DragEvent } from "react";
+import { ImagePlus, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { formatBytes, PICKABLE_IMAGE_TYPES } from "@/lib/jsonEditor/images";
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
-
-interface ImageUploaderProps {
-  image: File | null;
-  preview: string | null;
-  onImageChange: (file: File | null, preview: string | null) => void;
-  label: string;
-  required?: boolean;
-  disabled?: boolean;
-  className?: string;
+export interface UploaderImage {
+  previewUrl: string;
+  name: string;
+  width: number;
+  height: number;
+  /** Bytes that will be uploaded. */
+  uploadSize: number;
+  /** Scaled / re-encoded in the browser to fit the upload budget. */
+  optimized: boolean;
 }
 
+interface ImageUploaderProps {
+  label: string;
+  required?: boolean;
+  image: UploaderImage | null;
+  preparing?: boolean;
+  error?: string | null;
+  disabled?: boolean;
+  onPick: (file: File) => void;
+  onRemove: () => void;
+}
+
+/** Drop zone / file picker with a preview once an image is chosen. */
 export function ImageUploader({
-  image,
-  preview,
-  onImageChange,
   label,
   required,
+  image,
+  preparing,
+  error,
   disabled,
-  className,
+  onPick,
+  onRemove,
 }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const blocked = !!(disabled || preparing);
 
-  const handleFile = useCallback(
-    (file: File) => {
-      setError(null);
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        setError("Unsupported file type. Use JPEG, PNG, WebP, or GIF.");
-        return;
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        setError("File exceeds 20 MB limit.");
-        return;
-      }
-      const url = URL.createObjectURL(file);
-      onImageChange(file, url);
+  // Drag handlers stay live while blocked: a file dropped on a target that
+  // doesn't cancel the drop is opened by the browser, replacing the page and
+  // losing all work. While blocked the drop is refused and the file ignored.
+  const dropHandlers = {
+    onDragOver: (e: DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = blocked ? "none" : "copy";
+      if (!blocked) setDragOver(true);
     },
-    [onImageChange],
-  );
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    onDragLeave: () => setDragOver(false),
+    onDrop: (e: DragEvent<HTMLElement>) => {
       e.preventDefault();
       setDragOver(false);
       const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      if (file && !blocked) onPick(file);
     },
-    [handleFile],
+  };
+
+  const heading = (
+    <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+      <span>
+        {label}
+        {required && <span className="sr-only"> (required)</span>}
+      </span>
+      {!required && <span className="font-normal">Optional</span>}
+    </div>
   );
 
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
-      // reset so same file can be re-selected
-      e.target.value = "";
-    },
-    [handleFile],
-  );
-
-  const handleRemove = useCallback(() => {
-    if (preview) URL.revokeObjectURL(preview);
-    onImageChange(null, null);
-    setError(null);
-  }, [preview, onImageChange]);
-
-  if (image && preview) {
+  if (image) {
     return (
-      <div className={cn("relative", className)}>
-        <div className="text-xs font-medium text-muted-foreground mb-1.5">
-          {label}
-          {required && <span className="text-destructive ml-0.5">*</span>}
-        </div>
-        <div className="relative rounded-lg overflow-hidden border border-border bg-muted/30">
+      <div>
+        {heading}
+        {/* Dropping onto the preview replaces the image. */}
+        <div
+          {...dropHandlers}
+          className={cn(
+            "relative overflow-hidden rounded-2xl bg-muted/50 ring-1 transition-shadow",
+            dragOver ? "ring-2 ring-foreground/40" : "ring-foreground/5"
+          )}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={preview}
-            alt={label}
-            className="w-full h-32 object-contain"
-          />
+          <img src={image.previewUrl} alt={label} className="h-36 w-full object-contain" />
           {!disabled && (
-            <button
-              onClick={handleRemove}
-              className="absolute top-1.5 right-1.5 rounded-full bg-background/80 backdrop-blur-sm p-1 hover:bg-background transition-colors"
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon-xs"
+              onClick={onRemove}
+              aria-label={`Remove ${label.toLowerCase()}`}
+              className="absolute right-2 top-2 shadow-sm"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
+              <X />
+            </Button>
           )}
         </div>
-        <div className="text-xs text-muted-foreground mt-1 truncate">
+        <p className="mt-1.5 truncate text-xs text-muted-foreground" title={image.name}>
           {image.name}
-        </div>
+        </p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {image.width}×{image.height} · {formatBytes(image.uploadSize)}
+          {image.optimized && " · resized for upload"}
+        </p>
+        {error && (
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className={className}>
-      <div className="text-xs font-medium text-muted-foreground mb-1.5">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </div>
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
+    <div>
+      {heading}
+      {/* aria-disabled, not disabled: a disabled button gets no drag events. */}
+      <button
+        type="button"
+        aria-disabled={blocked || undefined}
+        aria-label={preparing ? `Preparing ${label.toLowerCase()}` : `Choose ${label.toLowerCase()}`}
+        onClick={() => {
+          if (!blocked) inputRef.current?.click();
         }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => !disabled && inputRef.current?.click()}
+        {...dropHandlers}
         className={cn(
-          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 cursor-pointer transition-colors",
-          dragOver
-            ? "border-primary bg-primary/5"
-            : "border-border hover:border-muted-foreground/50 hover:bg-muted/30",
-          disabled && "opacity-50 cursor-not-allowed",
+          "flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-4 text-center outline-none transition-colors",
+          "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+          blocked
+            ? "cursor-not-allowed border-border opacity-50"
+            : dragOver
+              ? "border-foreground/40 bg-muted"
+              : "border-border hover:bg-muted/50"
         )}
       >
-        <Upload className="h-5 w-5 text-muted-foreground mb-1.5" />
-        <span className="text-xs text-muted-foreground text-center">
-          Drop image or click to browse
-        </span>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          onChange={handleInputChange}
-          className="hidden"
-          disabled={disabled}
-        />
-      </div>
+        {preparing ? (
+          <>
+            <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Preparing image…</span>
+          </>
+        ) : (
+          <>
+            <ImagePlus aria-hidden className="size-5 text-muted-foreground" />
+            <span className="text-xs font-medium">Drop, paste or browse</span>
+            <span className="text-[11px] text-muted-foreground">PNG, JPEG, WebP or GIF</span>
+          </>
+        )}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={PICKABLE_IMAGE_TYPES.join(",")}
+        aria-label={label}
+        className="hidden"
+        disabled={disabled}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Reset so picking the same file again still fires.
+          e.target.value = "";
+          if (file) onPick(file);
+        }}
+      />
       {error && (
-        <div className="text-xs text-destructive mt-1">{error}</div>
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {error}
+        </p>
       )}
     </div>
   );

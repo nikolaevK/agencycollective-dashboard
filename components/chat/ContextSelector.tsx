@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Check, Loader2, Search, X, Sparkles } from "lucide-react";
-import { cn, formatCurrency, formatRoas } from "@/lib/utils";
+import { memo, useMemo, useState } from "react";
+import { ChevronRight, Loader2, Search, X } from "lucide-react";
+import { cn, formatRoas } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCampaigns } from "@/hooks/useCampaigns";
+import { BadgeDot, StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { metaStatusLabel, metaStatusTone } from "@/components/overview/metaStatus";
 import type { DateRangeInput } from "@/types/api";
 import type { AccountSummary } from "@/types/dashboard";
 
@@ -13,10 +21,23 @@ interface ContextSelectorProps {
   selectedAccountIds: string[];
   selectedCampaignIds: string[];
   onAccountToggle: (id: string) => void;
-  onCampaignToggle: (id: string) => void;
-  onSelectAll: () => void;
+  /** Ticking a campaign also puts its account in context (the server only reads campaigns of context accounts). */
+  onCampaignToggle: (campaignId: string, accountId: string) => void;
+  /** Select these accounts (the currently filtered list). */
+  onSelectAll: (accountIds: string[]) => void;
   onClearAll: () => void;
+  /** Selected campaigns per account id (shown on the account row). */
+  campaignCountByAccount?: Record<string, number>;
+  className?: string;
 }
+
+type StatusFilter = "all" | "active" | "inactive";
+
+const SPEND_TIERS = [
+  { label: "Any spend", value: "0" },
+  { label: "$1K+", value: "1000" },
+  { label: "$5K+", value: "5000" },
+] as const;
 
 function AccountCampaigns({
   account,
@@ -27,63 +48,71 @@ function AccountCampaigns({
   account: AccountSummary;
   dateRange: DateRangeInput;
   selectedCampaignIds: string[];
-  onCampaignToggle: (id: string) => void;
+  onCampaignToggle: (campaignId: string, accountId: string) => void;
 }) {
-  const { data: campaigns, isLoading } = useCampaigns(account.id, dateRange);
+  const { data: campaigns, isLoading, isError } = useCampaigns(account.id, dateRange);
+  const [showAll, setShowAll] = useState(false);
+
+  const sorted = useMemo(
+    () => [...(campaigns ?? [])].sort((a, b) => b.insights.spend - a.insights.spend),
+    [campaigns]
+  );
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Loading campaigns...
+      <div className="space-y-2 px-3 pb-3">
+        <Skeleton className="h-8 w-full rounded-2xl" />
+        <Skeleton className="h-8 w-full rounded-2xl" />
       </div>
     );
   }
+  if (isError) return <p className="px-3 pb-3 text-xs text-destructive">Couldn&apos;t load campaigns.</p>;
+  if (sorted.length === 0) return <p className="px-3 pb-3 text-xs text-muted-foreground">No campaigns in this period.</p>;
 
-  if (!campaigns || campaigns.length === 0) {
-    return (
-      <p className="px-3 py-2 text-xs text-muted-foreground">No campaigns found</p>
-    );
-  }
+  const visible = showAll ? sorted : sorted.slice(0, 10);
 
   return (
-    <div className="space-y-0.5">
-      {campaigns.slice(0, 10).map((campaign) => {
-        const isSelected = selectedCampaignIds.includes(campaign.id);
+    <div className="space-y-0.5 px-1.5 pb-2">
+      {visible.map((campaign) => {
+        const checked = selectedCampaignIds.includes(campaign.id);
+        const id = `ctx-c-${campaign.id}`;
         return (
-          <button
-            key={campaign.id}
-            onClick={() => onCampaignToggle(campaign.id)}
-            className={cn(
-              "flex w-full items-start gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-muted/50",
-              isSelected && "bg-primary/10"
-            )}
-          >
-            <div
-              className={cn(
-                "mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors",
-                isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
-              )}
-            >
-              {isSelected && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground/90">{campaign.name}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {formatCurrency(campaign.insights.spend)} · {formatRoas(campaign.insights.roas)} ROAS
-              </p>
-            </div>
-          </button>
+          <div key={campaign.id} className={cn("flex items-start gap-2.5 rounded-2xl px-2 py-1.5 hover:bg-muted/60", checked && "bg-muted/60")}>
+            <Checkbox
+              id={id}
+              checked={checked}
+              onCheckedChange={() => onCampaignToggle(campaign.id, account.id)}
+              className="mt-0.5"
+            />
+            <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
+              <span className="flex items-center gap-1.5">
+                <BadgeDot tone={metaStatusTone(campaign.status)} />
+                <span className="truncate text-xs font-medium" title={campaign.name}>
+                  {campaign.name}
+                </span>
+              </span>
+              <span className="block text-[11px] tabular-nums text-muted-foreground">
+                {formatCurrency(campaign.insights.spend, account.currency)} · {formatRoas(campaign.insights.roas)} ROAS
+                {campaign.status !== "ACTIVE" && ` · ${metaStatusLabel(campaign.status)}`}
+              </span>
+            </label>
+          </div>
         );
       })}
+      {sorted.length > 10 && (
+        <Button variant="ghost" size="xs" className="ml-1 text-muted-foreground" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? "Show top 10" : `Show all ${sorted.length} campaigns`}
+        </Button>
+      )}
     </div>
   );
 }
 
-function AccountCard({
+const AccountRow = memo(function AccountRow({
   account,
   dateRange,
   isSelected,
+  selectedCampaignCount,
   selectedCampaignIds,
   onAccountToggle,
   onCampaignToggle,
@@ -91,95 +120,61 @@ function AccountCard({
   account: AccountSummary;
   dateRange: DateRangeInput;
   isSelected: boolean;
+  selectedCampaignCount: number;
   selectedCampaignIds: string[];
   onAccountToggle: (id: string) => void;
-  onCampaignToggle: (id: string) => void;
+  onCampaignToggle: (campaignId: string, accountId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-
-  const statusColor = account.status === "ACTIVE"
-    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-    : account.status === "PAUSED"
-    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-    : "bg-muted text-muted-foreground";
+  const id = `ctx-a-${account.id}`;
 
   return (
-    <div
-      className={cn(
-        "rounded-xl bg-card shadow-sm hover:shadow-md transition-shadow cursor-pointer border-l-4 overflow-hidden",
-        isSelected ? "border-l-primary" : "border-l-transparent hover:border-l-primary/20"
-      )}
-      onClick={() => onAccountToggle(account.id)}
-    >
-      <div className="p-4">
-        {/* Header: name + status */}
-        <div className="flex justify-between items-start mb-3">
-          <span className="text-xs font-bold text-foreground uppercase tracking-tight truncate pr-2">
-            {account.name}
-          </span>
-          <span className={cn(
-            "text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0",
-            statusColor
-          )}>
-            {account.status}
-          </span>
-        </div>
-
-        {/* Metrics grid */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold">ROAS</p>
-            <p className="text-lg font-bold text-foreground">{formatRoas(account.insights.roas)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold">Spend</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(account.insights.spend)}</p>
-          </div>
-        </div>
-
-        {/* AI badge */}
-        {isSelected && (
-          <div className="flex items-center gap-1 mt-3">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
-              <Sparkles className="h-2.5 w-2.5" />
-              In AI Context
+    <div className={cn("rounded-3xl ring-1 transition-colors", isSelected ? "bg-muted/50 ring-foreground/15" : "ring-foreground/5 hover:bg-muted/30")}>
+      <div className="flex items-start gap-3 p-3">
+        <Checkbox id={id} checked={isSelected} onCheckedChange={() => onAccountToggle(account.id)} className="mt-0.5" />
+        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium" title={account.name}>
+              {account.name}
             </span>
-          </div>
-        )}
+            <StatusBadge tone={metaStatusTone(account.status)} className="shrink-0">
+              {metaStatusLabel(account.status)}
+            </StatusBadge>
+          </span>
+          <span className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
+            {formatCurrency(account.insights.spend, account.currency)} · {formatRoas(account.insights.roas)} ROAS
+            {selectedCampaignCount > 0 && ` · ${selectedCampaignCount} campaign${selectedCampaignCount === 1 ? "" : "s"}`}
+          </span>
+        </label>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="-mr-1 shrink-0 text-muted-foreground"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={expanded ? `Hide campaigns of ${account.name}` : `Show campaigns of ${account.name}`}
+        >
+          <ChevronRight className={cn("transition-transform", expanded && "rotate-90")} />
+        </Button>
       </div>
-
-      {/* Expand campaigns */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-        className="flex w-full items-center justify-center gap-1 border-t border-border/50 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-      >
-        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        Campaigns
-      </button>
-
       {expanded && (
-        <div className="border-t border-border/50 bg-muted/10 py-1" onClick={(e) => e.stopPropagation()}>
-          <AccountCampaigns
-            account={account}
-            dateRange={dateRange}
-            selectedCampaignIds={selectedCampaignIds}
-            onCampaignToggle={onCampaignToggle}
-          />
-        </div>
+        <AccountCampaigns
+          account={account}
+          dateRange={dateRange}
+          selectedCampaignIds={selectedCampaignIds}
+          onCampaignToggle={onCampaignToggle}
+        />
       )}
     </div>
   );
-}
+});
 
-type StatusFilter = "all" | "active" | "inactive";
-
-const SPEND_TIERS = [
-  { label: "Any", value: 0 },
-  { label: "$1K+", value: 1_000 },
-  { label: "$5K+", value: 5_000 },
-] as const;
-
-export function ContextSelector({
+/**
+ * Picks which accounts / campaigns the analyst reads. Nothing selected =
+ * every active account. Fills its container (scrolls internally). Memoized:
+ * the chat re-renders many times a second while a reply streams.
+ */
+export const ContextSelector = memo(function ContextSelector({
   dateRange,
   selectedAccountIds,
   selectedCampaignIds,
@@ -187,138 +182,152 @@ export function ContextSelector({
   onCampaignToggle,
   onSelectAll,
   onClearAll,
+  campaignCountByAccount,
+  className,
 }: ContextSelectorProps) {
-  const { data: accounts, isLoading } = useAccounts(dateRange);
+  const { data: accounts, isLoading, isError } = useAccounts(dateRange);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [minSpend, setMinSpend] = useState(0);
-
-  const totalSelected = selectedAccountIds.length + selectedCampaignIds.length;
+  const [minSpend, setMinSpend] = useState("0");
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
+    const q = search.trim().toLowerCase();
     return accounts.filter((a) => {
-      const matchesSearch = (a.name ?? "").toLowerCase().includes(search.trim().toLowerCase());
       const isActive = a.status === "ACTIVE";
-      const matchesStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && isActive) ||
-        (statusFilter === "inactive" && !isActive);
-      const matchesSpend = a.insights.spend >= minSpend;
-      return matchesSearch && matchesStatus && matchesSpend;
+      return (
+        (a.name ?? "").toLowerCase().includes(q) &&
+        (statusFilter === "all" || (statusFilter === "active" ? isActive : !isActive)) &&
+        a.insights.spend >= Number(minSpend)
+      );
     });
   }, [accounts, search, statusFilter, minSpend]);
 
+  const selectedSet = useMemo(() => new Set(selectedAccountIds), [selectedAccountIds]);
+  const hasSelection = selectedAccountIds.length > 0 || selectedCampaignIds.length > 0;
+  const allVisibleSelected = filteredAccounts.length > 0 && filteredAccounts.every((a) => selectedSet.has(a.id));
+
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Header */}
-      <div className="p-4 pb-3">
-        {totalSelected === 0 ? (
-          <p className="text-xs text-muted-foreground">Analyzing all accounts</p>
-        ) : (
-          <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5">
-            <Sparkles className="h-3 w-3 shrink-0 text-primary" />
-            <p className="text-[11px] font-medium text-primary">
-              {selectedAccountIds.length} account{selectedAccountIds.length !== 1 ? "s" : ""} in AI context
+    <div className={cn("flex min-h-0 flex-col", className)}>
+      <div className="space-y-3 p-4 pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Data context</p>
+            <p className="text-xs text-muted-foreground">
+              {hasSelection
+                ? [
+                    selectedAccountIds.length > 0 && `${selectedAccountIds.length} account${selectedAccountIds.length === 1 ? "" : "s"}`,
+                    selectedCampaignIds.length > 0 && `${selectedCampaignIds.length} campaign${selectedCampaignIds.length === 1 ? "" : "s"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") + " selected"
+                : "All active accounts"}
             </p>
           </div>
-        )}
-      </div>
-
-      {/* Search */}
-      <div className="px-4 pb-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search accounts..."
-            className="w-full pl-9 pr-8 py-2 bg-muted/30 border-none rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="h-3 w-3" />
-            </button>
+          {hasSelection && (
+            <Button variant="ghost" size="xs" onClick={onClearAll} className="-mr-1 shrink-0 text-muted-foreground">
+              Clear
+            </Button>
           )}
         </div>
-      </div>
 
-      {/* Status filter */}
-      <div className="px-4 pb-2">
-        <div className="flex gap-1.5 bg-muted/30 p-1 rounded-lg">
-          {([
-            { label: "All", value: "all" as StatusFilter, dot: "bg-primary" },
-            { label: "Active", value: "active" as StatusFilter, dot: "bg-green-500" },
-            { label: "Inactive", value: "inactive" as StatusFilter, dot: "bg-red-400" },
-          ]).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setStatusFilter(opt.value)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-all",
-                statusFilter === opt.value
-                  ? "bg-card shadow-sm font-semibold text-foreground"
-                  : "text-muted-foreground hover:bg-card/50"
-              )}
+        <div className="relative">
+          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search accounts"
+            aria-label="Search accounts"
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground"
             >
-              {opt.value !== "all" && (
-                <span className={cn("h-1.5 w-1.5 rounded-full", opt.dot)} />
-              )}
-              {opt.label}
-            </button>
-          ))}
+              <X />
+            </Button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={statusFilter}
+            onValueChange={(v) => v && setStatusFilter(v as StatusFilter)}
+            aria-label="Account status"
+          >
+            <ToggleGroupItem value="all" className="text-xs">All</ToggleGroupItem>
+            <ToggleGroupItem value="active" className="gap-1.5 text-xs">
+              <BadgeDot tone="success" />
+              Active
+            </ToggleGroupItem>
+            <ToggleGroupItem value="inactive" className="gap-1.5 text-xs">
+              <BadgeDot tone="neutral" />
+              Inactive
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={minSpend}
+            onValueChange={(v) => v && setMinSpend(v)}
+            aria-label="Minimum spend"
+          >
+            {SPEND_TIERS.map((tier) => (
+              <ToggleGroupItem key={tier.value} value={tier.value} className="text-xs">
+                {tier.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </div>
       </div>
 
-      {/* Spend filter */}
-      <div className="px-4 pb-3">
-        <div className="flex gap-1 bg-muted/30 p-1 rounded-lg">
-          {SPEND_TIERS.map((tier) => (
-            <button
-              key={tier.value}
-              onClick={() => setMinSpend(tier.value)}
-              className={cn(
-                "flex-1 py-1.5 text-xs font-medium rounded-md transition-colors",
-                minSpend === tier.value
-                  ? "bg-card shadow-sm text-primary font-semibold"
-                  : "text-muted-foreground hover:bg-card/50"
-              )}
-            >
-              {tier.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Account list */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 scrollbar-thin">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4">
         {isLoading ? (
-          <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading accounts...
-          </div>
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[66px] w-full rounded-3xl" />)
+        ) : isError ? (
+          <p className="py-6 text-center text-xs text-destructive">Couldn&apos;t load accounts.</p>
         ) : filteredAccounts.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">
-            {accounts?.length === 0 ? "No accounts found" : "No accounts match filters"}
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            {accounts?.length === 0 ? "No ad accounts connected." : "No accounts match these filters."}
           </p>
         ) : (
-          filteredAccounts.map((account) => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              dateRange={dateRange}
-              isSelected={selectedAccountIds.includes(account.id)}
-              selectedCampaignIds={selectedCampaignIds}
-              onAccountToggle={onAccountToggle}
-              onCampaignToggle={onCampaignToggle}
-            />
-          ))
+          <>
+            <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+              <span>
+                {filteredAccounts.length} account{filteredAccounts.length === 1 ? "" : "s"}
+              </span>
+              {!allVisibleSelected && (
+                <Button
+                  variant="link"
+                  size="xs"
+                  className="h-auto px-0 text-xs text-muted-foreground"
+                  onClick={() => onSelectAll(filteredAccounts.map((a) => a.id))}
+                >
+                  Select {filteredAccounts.length === accounts?.length ? "all" : "these"}
+                </Button>
+              )}
+            </div>
+            {filteredAccounts.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                dateRange={dateRange}
+                isSelected={selectedSet.has(account.id)}
+                selectedCampaignCount={campaignCountByAccount?.[account.id] ?? 0}
+                selectedCampaignIds={selectedCampaignIds}
+                onAccountToggle={onAccountToggle}
+                onCampaignToggle={onCampaignToggle}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
   );
-}
+});

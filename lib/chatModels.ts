@@ -2,8 +2,8 @@ import { Brain } from "lucide-react";
 
 export const CHAT_MODELS = [
   {
-    id: "claude-opus-4-6",
-    label: "Opus",
+    id: "claude-opus-5-5",
+    label: "Opus 5.5",
     description: "Most capable",
     icon: Brain,
   },

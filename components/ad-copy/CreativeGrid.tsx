@@ -1,115 +1,140 @@
 "use client";
 
-import { ImageIcon, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { CampaignCreative } from "@/types/dashboard";
+import { memo, useMemo, useState } from "react";
+import { Check, ImageIcon, Video } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { AdCopyCreative } from "@/lib/adCopy/types";
 
 interface CreativeGridProps {
-  creatives: CampaignCreative[];
+  creatives: AdCopyCreative[];
   selectedIds: Set<string>;
   onToggle: (adId: string) => void;
-  onSelectAll: () => void;
+  /** Select the first `maxSelection` creatives in the CURRENT sort order. */
+  onSelectMany: (adIds: string[]) => void;
   onClearAll: () => void;
   maxSelection?: number;
 }
 
-export function CreativeGrid({
+type SortKey = "spend" | "ctr" | "name";
+
+const SORTS: { value: SortKey; label: string }[] = [
+  { value: "spend", label: "Top spend" },
+  { value: "ctr", label: "Top CTR" },
+  { value: "name", label: "Name" },
+];
+
+/** Memoized: up to 200 cards, and the generator re-renders while copy streams in. */
+export const CreativeGrid = memo(function CreativeGrid({
   creatives,
   selectedIds,
   onToggle,
-  onSelectAll,
+  onSelectMany,
   onClearAll,
   maxSelection = 10,
 }: CreativeGridProps) {
+  const [sort, setSort] = useState<SortKey>("spend");
   const atLimit = selectedIds.size >= maxSelection;
+
+  const sorted = useMemo(() => {
+    const list = [...creatives];
+    if (sort === "spend") list.sort((a, b) => b.spend - a.spend);
+    else if (sort === "ctr") list.sort((a, b) => b.ctr - a.ctr);
+    else list.sort((a, b) => a.adName.localeCompare(b.adName));
+    return list;
+  }, [creatives, sort]);
 
   return (
     <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-foreground">
-          {creatives.length} creative{creatives.length !== 1 ? "s" : ""} found
-          {selectedIds.size > 0 && (
-            <span className="ml-1 text-primary">
-              ({selectedIds.size} selected)
-            </span>
-          )}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="mr-auto text-sm text-muted-foreground">
+          <span className="font-medium text-foreground tabular-nums">{selectedIds.size}</span> of {creatives.length} selected
+          {atLimit && <span> · max {maxSelection}</span>}
         </p>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onSelectAll}
-            className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-          >
-            Select all
-          </button>
-          <span className="text-muted-foreground/40">|</span>
-          <button
-            onClick={onClearAll}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Clear
-          </button>
-        </div>
+        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+          <SelectTrigger className="h-8 w-auto min-w-[7.5rem] text-xs" aria-label="Sort creatives">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onSelectMany(sorted.slice(0, maxSelection).map((c) => c.adId))}
+        >
+          Select top {Math.min(maxSelection, creatives.length)}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onClearAll} disabled={selectedIds.size === 0}>
+          Clear
+        </Button>
       </div>
 
-      {atLimit && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Maximum {maxSelection} creatives can be selected for AI generation.
-        </p>
-      )}
-
-      {/* Grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-        {creatives.map((c) => {
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        {sorted.map((c) => {
           const isSelected = selectedIds.has(c.adId);
           const isDisabled = !isSelected && atLimit;
-
+          const image = c.imageUrl ?? c.thumbnailUrl;
           return (
             <button
               key={c.adId}
-              onClick={() => !isDisabled && onToggle(c.adId)}
+              type="button"
+              onClick={() => onToggle(c.adId)}
               disabled={isDisabled}
+              aria-pressed={isSelected}
+              aria-label={`${c.adName}, ${formatCurrency(c.spend)} spend, ${c.ctr.toFixed(2)}% CTR`}
               className={cn(
-                "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
-                isSelected
-                  ? "border-primary ring-1 ring-primary/30"
-                  : "border-border hover:border-muted-foreground/40",
-                isDisabled && "opacity-40 cursor-not-allowed"
+                "group flex flex-col overflow-hidden rounded-2xl bg-card text-left ring-1 ring-foreground/10 outline-none transition-all focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                isSelected ? "ring-2 ring-foreground" : "hover:ring-foreground/25",
+                isDisabled && "cursor-not-allowed opacity-50"
               )}
             >
-              {/* Image */}
-              {c.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={c.imageUrl}
-                  alt={c.adName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-muted">
-                  <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
-                </div>
-              )}
-
-              {/* Check overlay */}
-              {isSelected && (
-                <div className="absolute inset-0 bg-primary/20">
-                  <div className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-primary text-white">
-                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                  </div>
-                </div>
-              )}
-
-              {/* Hover overlay with name */}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-[10px] text-white truncate leading-tight">
+              <span className="relative block aspect-square w-full bg-muted">
+                {image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={image} alt="" loading="lazy" className="size-full object-cover" />
+                ) : (
+                  <span className="flex size-full items-center justify-center">
+                    <ImageIcon className="size-6 text-muted-foreground/50" aria-hidden />
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "absolute right-2 top-2 flex size-5 items-center justify-center rounded-md ring-1 transition-colors",
+                    isSelected
+                      ? "bg-primary text-primary-foreground ring-primary"
+                      : "bg-background/80 text-transparent ring-foreground/20 backdrop-blur-sm"
+                  )}
+                  aria-hidden
+                >
+                  <Check className="size-3.5" strokeWidth={3} />
+                </span>
+                {c.isVideo && (
+                  <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm">
+                    <Video className="size-3" aria-hidden />
+                    Video
+                  </span>
+                )}
+              </span>
+              <span className="block space-y-0.5 px-2.5 py-2">
+                <span className="block truncate text-xs font-medium" title={c.adName}>
                   {c.adName}
-                </p>
-              </div>
+                </span>
+                <span className="block text-[11px] tabular-nums text-muted-foreground">
+                  {formatCurrency(c.spend)} · {c.ctr.toFixed(2)}% CTR
+                </span>
+              </span>
             </button>
           );
         })}
       </div>
     </div>
   );
-}
+});

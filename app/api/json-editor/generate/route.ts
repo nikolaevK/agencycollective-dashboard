@@ -1,17 +1,17 @@
 export const dynamic = "force-dynamic";
+/** A 4K render on a busy image model can take a few minutes. */
+export const maxDuration = 300;
 
-import { GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI, type GenerateContentConfig, type Part } from "@google/genai";
 import { getAdminSession } from "@/lib/adminSession";
-import {
-  getGenerationPrompt,
-  computeJsonDiff,
-  ALLOWED_USE_CASES,
-  type UseCase,
-} from "@/lib/jsonEditorPrompts";
-import {
-  ALLOWED_GEMINI_MODELS,
-  type GeminiImageModelId,
-} from "@/lib/geminiModels";
+import { geminiImageConfig, geminiImageModelInfo, resolveGeminiImageModel } from "@/lib/geminiModels";
+import { isUseCase, metaForUseCase } from "@/lib/jsonEditor/useCases";
+import { generationPrompt } from "@/lib/jsonEditor/prompts";
+import { diffJson, parseJsonObject } from "@/lib/jsonEditor/diff";
+import { imageBlockMessage, type JsonEditorErrorCode } from "@/lib/jsonEditor/errors";
+import { MAX_JSON_BYTES, MAX_UPLOAD_IMAGE_BYTES, nearestAspectRatio, utf8ByteLength } from "@/lib/jsonEditor/images";
+import { fitForResponse, readImageUpload, readUploadForm } from "@/lib/jsonEditor/serverImage";
+import { DEFAULT_RESOLUTION } from "@/lib/jsonEditor/models";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
@@ -40,156 +40,133 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 // ─── Input constraints ─────────────────────────────────────────────────────
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_JSON_CHARS = 500_000;
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const ALLOWED_RESOLUTIONS = new Set(["1K", "2K", "4K"]);
-const VALID_RESPONSE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+/** Two images, three JSON documents and a few short fields; a body over this is refused before it's buffered. */
+const MAX_REQUEST_BYTES = 2 * MAX_UPLOAD_IMAGE_BYTES + 3 * MAX_JSON_BYTES + 256 * 1024;
+const VALID_RESPONSE_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function json(body: Record<string, unknown>, status: number, headers?: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+  });
+}
+
+function fail(status: number, error: string, code?: JsonEditorErrorCode): Response {
+  return json({ error, ...(code ? { code } : {}) }, status);
+}
 
 export async function POST(request: Request) {
   // ── Auth + permission check ──────────────────────────────────────────────
   const session = getAdminSession();
-  if (!session) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-  }
-  if (!session.isSuper && !session.permissions?.jsoneditor) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
-  }
+  if (!session) return fail(401, "Unauthorized");
+  if (!session.isSuper && !session.permissions?.jsoneditor) return fail(403, "Forbidden");
 
   if (!checkRateLimit(session.adminId)) {
-    return new Response(
-      JSON.stringify({ error: "Too many requests. Please wait before sending another request." }),
-      { status: 429, headers: { "Retry-After": "60" } },
+    return json(
+      { error: "Too many requests. Please wait before sending another request." },
+      429,
+      { "Retry-After": "60" }
     );
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Image generation is not configured" }),
-      { status: 500 },
-    );
+  if (!process.env.GEMINI_API_KEY) return fail(500, "Image generation is not configured");
+
+  const read = await readUploadForm(request, MAX_REQUEST_BYTES);
+  if (!read.ok) {
+    return read.status === 413
+      ? fail(413, "The images and JSON are too large to upload.", "too_large")
+      : fail(400, "Expected a multipart form upload");
   }
+  const formData = read.form;
+
+  // ── Use case ───────────────────────────────────────────────────────────
+  const useCase = formData.get("useCase");
+  if (!isUseCase(useCase)) return fail(400, "Invalid use case");
+  const { requiresReference } = metaForUseCase(useCase);
+
+  // ── JSON payloads ──────────────────────────────────────────────────────
+  const originalJson = formData.get("originalJson");
+  const modifiedJson = formData.get("modifiedJson");
+  const referenceJsonRaw = formData.get("referenceJson");
+  if (typeof originalJson !== "string" || typeof modifiedJson !== "string") {
+    return fail(400, "Both originalJson and modifiedJson are required");
+  }
+  if (
+    utf8ByteLength(originalJson) > MAX_JSON_BYTES ||
+    utf8ByteLength(modifiedJson) > MAX_JSON_BYTES ||
+    (typeof referenceJsonRaw === "string" && utf8ByteLength(referenceJsonRaw) > MAX_JSON_BYTES)
+  ) {
+    return fail(413, "JSON payload exceeds size limit", "too_large");
+  }
+  const original = parseJsonObject(originalJson);
+  const modified = parseJsonObject(modifiedJson);
+  if (!original.ok || !modified.ok) {
+    return fail(400, "originalJson and modifiedJson must both be JSON objects");
+  }
+  const changes = diffJson(original.value, modified.value);
+  if (changes.length === 0) {
+    return fail(400, "No changes detected between original and modified JSON");
+  }
+
+  // ── Model + resolution ─────────────────────────────────────────────────
+  // Retired / unknown ids resolve to a live model (lib/geminiModels.ts).
+  const model = resolveGeminiImageModel(formData.get("model"));
+  // Sizes are clamped to what the model takes (e.g. Lite is 1K-only).
+  const resolutionRaw = formData.get("resolution");
+  const resolution = typeof resolutionRaw === "string" ? resolutionRaw : DEFAULT_RESOLUTION;
+
+  // ── Images (type sniffed from bytes, EXIF-rotated upright) ─────────────
+  const source = await readImageUpload(formData.get("image"), "Source image");
+  if (!source.ok) return fail(source.status, source.error, source.status === 413 ? "too_large" : undefined);
+
+  let reference: { buffer: Buffer; type: string } | null = null;
+  const refEntry = formData.get("referenceImage");
+  if (requiresReference && refEntry instanceof File && refEntry.size > 0) {
+    const ref = await readImageUpload(refEntry, "Reference image");
+    if (!ref.ok) return fail(ref.status, ref.error, ref.status === 413 ? "too_large" : undefined);
+    reference = ref;
+  }
+  if (useCase === "object-swap" && !reference) {
+    return fail(400, "Object swap needs a reference image of the new object");
+  }
+
+  let referenceJson: string | null = null;
+  if (reference && typeof referenceJsonRaw === "string" && referenceJsonRaw.trim()) {
+    const parsedRef = parseJsonObject(referenceJsonRaw);
+    if (!parsedRef.ok) return fail(400, "referenceJson must be a JSON object");
+    referenceJson = referenceJsonRaw;
+  }
+
+  // ── Prompt + parts: source image, optional reference, then the text ───
+  const prompt = generationPrompt({
+    useCase,
+    originalJson,
+    modifiedJson,
+    changes,
+    hasReferenceImage: !!reference,
+    referenceJson,
+  });
+  const parts: Part[] = [
+    { inlineData: { mimeType: source.type, data: source.buffer.toString("base64") } },
+  ];
+  if (reference) {
+    parts.push({ inlineData: { mimeType: reference.type, data: reference.buffer.toString("base64") } });
+  }
+  parts.push({ text: prompt });
+
+  const config: GenerateContentConfig = {
+    responseModalities: ["TEXT", "IMAGE"],
+    // The user cancelled → stop waiting on Gemini (client-side only: Google
+    // still finishes and bills the call, but the function is freed).
+    abortSignal: request.signal,
+  };
+  // The output keeps the source's shape (nearest ratio the model takes) —
+  // unset, the model may follow the reference image's shape instead.
+  const aspectRatio = nearestAspectRatio(source.width, source.height, geminiImageModelInfo(model).aspectRatios);
+  const imageConfig = geminiImageConfig(model, { imageSize: resolution, aspectRatio });
+  config.imageConfig = imageConfig;
 
   try {
-    const formData = await request.formData();
-
-    // ── Source image ────────────────────────────────────────────────────────
-    const imageFile = formData.get("image");
-    if (!(imageFile instanceof File) || imageFile.size === 0) {
-      return new Response(JSON.stringify({ error: "Source image is required" }), { status: 400 });
-    }
-    if (!ALLOWED_IMAGE_TYPES.has(imageFile.type)) {
-      return new Response(JSON.stringify({ error: "Unsupported image type" }), { status: 400 });
-    }
-    if (imageFile.size > MAX_IMAGE_BYTES) {
-      return new Response(JSON.stringify({ error: "Source image exceeds 10 MB limit" }), { status: 400 });
-    }
-
-    // ── JSON payloads (with size limit) ────────────────────────────────────
-    const originalJson = formData.get("originalJson");
-    const modifiedJson = formData.get("modifiedJson");
-    if (typeof originalJson !== "string" || typeof modifiedJson !== "string") {
-      return new Response(
-        JSON.stringify({ error: "Both originalJson and modifiedJson are required" }),
-        { status: 400 },
-      );
-    }
-    if (originalJson.length > MAX_JSON_CHARS || modifiedJson.length > MAX_JSON_CHARS) {
-      return new Response(
-        JSON.stringify({ error: "JSON payload exceeds size limit" }),
-        { status: 413 },
-      );
-    }
-
-    let parsedOriginal: Record<string, unknown>;
-    let parsedModified: Record<string, unknown>;
-    try {
-      parsedOriginal = JSON.parse(originalJson);
-      parsedModified = JSON.parse(modifiedJson);
-    } catch {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON in originalJson or modifiedJson" }),
-        { status: 400 },
-      );
-    }
-
-    // ── Use case ───────────────────────────────────────────────────────────
-    const useCaseRaw = formData.get("useCase");
-    if (typeof useCaseRaw !== "string" || !ALLOWED_USE_CASES.includes(useCaseRaw as UseCase)) {
-      return new Response(JSON.stringify({ error: "Invalid use case" }), { status: 400 });
-    }
-    const useCase = useCaseRaw as UseCase;
-
-    // ── Model ──────────────────────────────────────────────────────────────
-    const modelRaw = formData.get("model");
-    const model: GeminiImageModelId =
-      typeof modelRaw === "string" && ALLOWED_GEMINI_MODELS.includes(modelRaw as GeminiImageModelId)
-        ? (modelRaw as GeminiImageModelId)
-        : "gemini-3.1-flash-image-preview";
-
-    // ── Resolution ─────────────────────────────────────────────────────────
-    const resolutionRaw = formData.get("resolution");
-    const isImagenModel = model.startsWith("imagen");
-    const resolution =
-      typeof resolutionRaw === "string" && ALLOWED_RESOLUTIONS.has(resolutionRaw)
-        ? resolutionRaw
-        : undefined;
-    const effectiveResolution = isImagenModel ? undefined : (resolution ?? "4K");
-
-    // ── Compute diff ───────────────────────────────────────────────────────
-    const changes = computeJsonDiff(parsedOriginal, parsedModified);
-    if (changes.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "No changes detected between original and modified JSON" }),
-        { status: 400 },
-      );
-    }
-
-    // ── Build prompt ───────────────────────────────────────────────────────
-    const prompt = getGenerationPrompt(useCase, originalJson, modifiedJson, changes);
-
-    // ── Build parts: source image + optional reference + prompt ────────────
-    type InlinePart = { inlineData: { mimeType: string; data: string } };
-    type TextPart = { text: string };
-    const parts: (InlinePart | TextPart)[] = [];
-
-    const imageBytes = await imageFile.arrayBuffer();
-    parts.push({
-      inlineData: {
-        mimeType: imageFile.type,
-        data: Buffer.from(imageBytes).toString("base64"),
-      },
-    });
-
-    // Optional reference image (for object-swap, camera perspective)
-    const refFile = formData.get("referenceImage");
-    if (refFile instanceof File && refFile.size > 0) {
-      if (!ALLOWED_IMAGE_TYPES.has(refFile.type)) {
-        return new Response(JSON.stringify({ error: "Unsupported reference image type" }), { status: 400 });
-      }
-      if (refFile.size > MAX_IMAGE_BYTES) {
-        return new Response(JSON.stringify({ error: "Reference image exceeds 10 MB limit" }), { status: 400 });
-      }
-      const refBytes = await refFile.arrayBuffer();
-      parts.push({
-        inlineData: {
-          mimeType: refFile.type,
-          data: Buffer.from(refBytes).toString("base64"),
-        },
-      });
-    }
-
-    parts.push({ text: prompt });
-
-    // ── Generate with Gemini (single-turn) ────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const config: Record<string, any> = {
-      responseModalities: ["TEXT", "IMAGE"],
-    };
-    if (effectiveResolution) {
-      config.imageConfig = { imageSize: effectiveResolution };
-    }
-
     const result = await ai.models.generateContent({
       model,
       contents: [{ role: "user", parts }],
@@ -197,37 +174,77 @@ export async function POST(request: Request) {
     });
 
     // ── Parse response ─────────────────────────────────────────────────────
-    let responseText: string | null = null;
-    let responseImageBase64: string | null = null;
-    let responseMimeType: string | null = null;
-
-    for (const part of result.candidates?.[0]?.content?.parts ?? []) {
-      if (part.text) responseText = (responseText ?? "") + part.text;
+    const candidate = result.candidates?.[0];
+    let responseText = "";
+    let imageBase64: string | null = null;
+    let imageMime = "image/png";
+    for (const part of candidate?.content?.parts ?? []) {
+      // Thought parts (interim reasoning text / draft images) aren't the answer.
+      if (part.thought) continue;
+      if (part.text) responseText += part.text;
       if (part.inlineData?.data) {
-        const mime = part.inlineData.mimeType ?? "image/png";
-        responseImageBase64 = part.inlineData.data;
-        responseMimeType = VALID_RESPONSE_MIMES.has(mime) ? mime : "image/png";
+        // The last image part is the final image.
+        imageBase64 = part.inlineData.data;
+        imageMime = part.inlineData.mimeType ?? "image/png";
       }
     }
 
-    if (!responseImageBase64) {
-      if (responseText) console.error("[json-editor/generate] Gemini returned text only:", responseText);
-      return new Response(
-        JSON.stringify({ error: "Image generation failed — no image returned" }),
-        { status: 500, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+    if (!imageBase64) {
+      const blocked =
+        imageBlockMessage(result.promptFeedback?.blockReason) ?? imageBlockMessage(candidate?.finishReason);
+      if (blocked) {
+        console.warn("[json-editor/generate] blocked", {
+          model,
+          blockReason: result.promptFeedback?.blockReason,
+          finishReason: candidate?.finishReason,
+        });
+        return fail(422, blocked, "blocked");
+      }
+      if (responseText) console.error("[json-editor/generate] text only:", responseText.slice(0, 500));
+      const said = responseText.trim().slice(0, 300);
+      return fail(
+        502,
+        said
+          ? `The image model replied without an image: “${said}”`
+          : "The image model didn't return an image. Try again.",
+        "no_image"
       );
     }
 
-    return new Response(
-      JSON.stringify({
-        imageBase64: responseImageBase64,
-        mimeType: responseMimeType,
-        text: responseText,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+    // ── Fit the 4.5 MB response cap (re-encode only when too big) ──────────
+    const fitted = await fitForResponse(
+      Buffer.from(imageBase64, "base64"),
+      VALID_RESPONSE_MIMES.has(imageMime) ? imageMime : "image/png"
+    );
+    if (!fitted) return fail(502, "The generated image was too large to return. Try a lower resolution.", "too_large");
+
+    return json(
+      {
+        imageBase64: fitted.data.toString("base64"),
+        mimeType: fitted.mimeType,
+        text: responseText.trim() || null,
+        compressed: fitted.compressed,
+        model,
+        resolution: imageConfig.imageSize ?? null,
+      },
+      200
     );
   } catch (err) {
+    if (request.signal.aborted) return fail(499, "Cancelled");
+    if (err instanceof ApiError) {
+      console.error("[json-editor/generate] Gemini error:", err.status, err.message);
+      if (err.status === 429) {
+        return fail(429, "The image model is busy right now. Try again in a minute.", "upstream_rate_limited");
+      }
+      if (err.status === 404) {
+        return fail(502, "The selected image model isn't available. Pick another model.", "model_unavailable");
+      }
+      if (err.status >= 500) {
+        return fail(503, "The image model is temporarily unavailable. Try again shortly.", "upstream_unavailable");
+      }
+      return fail(502, "The image model rejected this request. Try a different model or image.");
+    }
     console.error("[json-editor/generate] API error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
+    return fail(500, "Internal server error");
   }
 }

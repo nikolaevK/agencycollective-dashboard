@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle, Menu } from "lucide-react";
 import Image from "next/image";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
@@ -11,8 +11,9 @@ import { DateRangePicker } from "@/components/filters/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import { getInitials } from "@/lib/utils";
+import { CREATIVE_PATH, resolveCreativeTab } from "@/components/creative/creativeTabs";
 
-const DATE_PICKER_ROUTES = ["/dashboard", "/dashboard/chat"];
+const DATE_PICKER_ROUTES = ["/dashboard"];
 
 interface MobileHeaderProps {
   onMenuClick?: () => void;
@@ -20,12 +21,16 @@ interface MobileHeaderProps {
 
 export function MobileHeader({ onMenuClick }: MobileHeaderProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const admin = useAdmin();
   const { dateRange, setDateRange } = useDateRange();
 
-  const showDatePicker = DATE_PICKER_ROUTES.some((route) =>
-    route === "/dashboard" ? pathname === route : pathname.startsWith(route)
-  );
+  // Creative Studio: only its AI Analyst tab reads the range — resolved exactly
+  // like the page resolves the tab it shows.
+  const showDatePicker =
+    DATE_PICKER_ROUTES.some((route) =>
+      route === "/dashboard" ? pathname === route : pathname.startsWith(route)
+    ) || (pathname === CREATIVE_PATH && resolveCreativeTab(admin, searchParams.get("tab")) === "analyst");
 
   const initials = getInitials(admin.displayName, admin.username);
 

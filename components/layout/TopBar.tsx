@@ -48,6 +48,8 @@ export function TopBar({ onMenuClick, sidebarCollapsed, onToggleSidebar }: TopBa
 
   async function handleLogout() {
     await fetch("/api/auth/admin/logout", { method: "POST" });
+    // Creative Studio keeps generated images in this browser — don't leave them for the next admin.
+    void import("@/components/generate/imageStore").then((m) => m.clearStoredImages()).catch(() => {});
     router.push("/?portal=admin");
   }
 

@@ -326,11 +326,18 @@ export async function generateReportPdf(report: ReportResult): Promise<void> {
   const blob = await buildReportPdfBlob(report);
   const url = URL.createObjectURL(blob);
 
+  const slug =
+    report.clientName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "client";
   const a = document.createElement("a");
   a.href = url;
-  a.download = `report-${report.clientName.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.pdf`;
+  a.download = `report-${slug}-${new Date().toISOString().split("T")[0]}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can cancel the download in Safari / Firefox.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

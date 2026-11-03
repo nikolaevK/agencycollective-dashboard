@@ -9,7 +9,6 @@ import {
   MetaCreativeDetailSchema,
   MetaPagesPaginatedSchema,
   MetaAdImageUploadResponseSchema,
-  MetaCreateResponseSchema,
   MetaPixelsPaginatedSchema,
   MetaPixelStatsResponseSchema,
   MetaPixelDaChecksResponseSchema,
@@ -497,7 +496,7 @@ export async function fetchCampaignAdsWithCreatives(
 
   // Fetch creative details for each ad (full-res image + ad copy text + page_id)
   const creativeFields =
-    "id,image_url,image_hash,thumbnail_url,object_story_spec{page_id,link_data{picture,image_url,image_hash,message,name,description},video_data{image_url}}";
+    "id,image_url,image_hash,thumbnail_url,object_story_spec{page_id,link_data{picture,image_url,image_hash,message,name,description,link},video_data{image_url}}";
 
   const concurrency = getConcurrencyLimit();
   await fetchWithConcurrency(
@@ -523,11 +522,21 @@ export async function fetchCampaignAdsWithCreatives(
 }
 
 /**
+ * Where an account's Page list came from: `promote_pages` = Pages eligible
+ * for ads under this account; `managed_pages` = the /me/accounts fallback,
+ * i.e. EVERY Page the token manages (across all clients) — never safe to
+ * preselect from.
+ */
+export type AccountPagesSource = "promote_pages" | "managed_pages";
+
+/**
  * Fetch Facebook Pages available for an ad account.
  * Tries /promote_pages first (works for most ad accounts),
  * falls back to /me/accounts (pages the token user manages).
  */
-export async function fetchAccountPages(accountId: string): Promise<MetaPage[]> {
+export async function fetchAccountPages(
+  accountId: string
+): Promise<{ pages: MetaPage[]; source: AccountPagesSource }> {
   const cleanId = accountId.replace(/^act_/, "");
 
   // Try promote_pages — lists pages eligible for ads under this account
@@ -537,7 +546,7 @@ export async function fetchAccountPages(accountId: string): Promise<MetaPage[]> 
       MetaPagesPaginatedSchema,
       { params: { fields: "id,name", limit: 100 }, retries: 1 }
     );
-    if (page.data.length > 0) return page.data as MetaPage[];
+    if (page.data.length > 0) return { pages: page.data as MetaPage[], source: "promote_pages" };
   } catch {
     // Fall through to fallback
   }
@@ -549,7 +558,7 @@ export async function fetchAccountPages(accountId: string): Promise<MetaPage[]> 
     { params: { fields: "id,name", limit: 100 } }
   );
 
-  return page.data as MetaPage[];
+  return { pages: page.data as MetaPage[], source: "managed_pages" };
 }
 
 /**
@@ -558,10 +567,13 @@ export async function fetchAccountPages(accountId: string): Promise<MetaPage[]> 
  * Two modes:
  * - `source.url` — Meta downloads the image itself (form-encoded POST)
  * - `source.base64` + `source.filename` — we upload the file (multipart POST)
+ *
+ * `options` (retries / per-attempt timeout) pass through to the POST helper.
  */
 export async function uploadAdImage(
   accountId: string,
-  source: { url: string } | { base64: string; filename: string }
+  source: { url: string } | { base64: string; filename: string },
+  options: { retries?: number; timeoutMs?: number } = {}
 ): Promise<string> {
   const cleanId = accountId.replace(/^act_/, "");
   const path = `/act_${cleanId}/adimages`;
@@ -571,7 +583,8 @@ export async function uploadAdImage(
     const result = await metaFetchPost(
       path,
       MetaAdImageUploadResponseSchema,
-      { url: source.url }
+      { url: source.url },
+      options
     );
     const firstEntry = Object.values(result.images)[0];
     if (!firstEntry?.hash) throw new Error("No image hash returned from upload");
@@ -587,71 +600,12 @@ export async function uploadAdImage(
   const result = await metaFetchMultipart(
     path,
     MetaAdImageUploadResponseSchema,
-    formData
+    formData,
+    options
   );
   const firstEntry = Object.values(result.images)[0];
   if (!firstEntry?.hash) throw new Error("No image hash returned from upload");
   return firstEntry.hash;
-}
-
-/**
- * Create an ad creative with an unpublished page post.
- */
-export async function createAdCreative(
-  accountId: string,
-  params: {
-    name: string;
-    pageId: string;
-    imageHash: string;
-    message: string;
-    headline: string;
-    description: string;
-    link?: string;
-  }
-): Promise<string> {
-  const cleanId = accountId.replace(/^act_/, "");
-
-  const objectStorySpec = JSON.stringify({
-    page_id: params.pageId,
-    link_data: {
-      image_hash: params.imageHash,
-      message: params.message,
-      name: params.headline,
-      description: params.description,
-      ...(params.link ? { link: params.link } : {}),
-    },
-  });
-
-  const result = await metaFetchPost(
-    `/act_${cleanId}/adcreatives`,
-    MetaCreateResponseSchema,
-    { name: params.name, object_story_spec: objectStorySpec }
-  );
-
-  return result.id;
-}
-
-/**
- * Create a PAUSED ad under a given ad set.
- */
-export async function createDraftAd(
-  accountId: string,
-  params: { name: string; adsetId: string; creativeId: string }
-): Promise<string> {
-  const cleanId = accountId.replace(/^act_/, "");
-
-  const result = await metaFetchPost(
-    `/act_${cleanId}/ads`,
-    MetaCreateResponseSchema,
-    {
-      name: params.name,
-      adset_id: params.adsetId,
-      creative: JSON.stringify({ creative_id: params.creativeId }),
-      status: "PAUSED",
-    }
-  );
-
-  return result.id;
 }
 
 /**

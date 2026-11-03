@@ -1,641 +1,808 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Send,
-  ImageIcon,
-  Upload,
-  X,
-  Trash2,
-  Download,
-  ChevronDown,
-  Loader2,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from "react";
+import dynamic from "next/dynamic";
+import { CircleAlert, Info, MessageSquarePlus, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GEMINI_IMAGE_MODELS, type GeminiImageModelId, type GenerateMode } from "@/lib/geminiModels";
-import { useImageGeneratorSession } from "@/hooks/useImageGeneratorSession";
+import { clampImageSize, geminiImageModelInfo, isAspectRatioFor, type GenerateMode } from "@/lib/geminiModels";
+import {
+  useImageGeneratorSession,
+  type GenerateMessage,
+  type GenerateSettings,
+  type ImageRef,
+} from "@/hooks/useImageGeneratorSession";
+import type { GenerateResult } from "@/app/api/generate/protocol";
+import { useAdmin } from "@/components/providers/AdminProvider";
+import { useToast } from "@/components/providers/ToastProvider";
+import { StatusBadge, badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/use-confirm";
+import { GenerateSettingsCard } from "./GenerateSettingsCard";
+import { ImageThread, type ImageActions, type PendingTurn } from "./ImageThread";
+import { PromptComposer, type ComposerAttachment } from "./PromptComposer";
+import {
+  GenerateRequestError,
+  base64ToBlob,
+  base64ToBytes,
+  formatBytes,
+  formatLabel,
+  imageFileName,
+  readBlobImageSize,
+  readGenerateResponse,
+} from "./generateClient";
+import { ImagePrepError, MAX_REFERENCE_IMAGES, describeImage, perImageBudget, prepareForUpload, toPng } from "./imagePrep";
+import { deleteImages, getImages, pruneImages, putImage } from "./imageStore";
 
-const MAX_UPLOAD_FILES = 4;
-const ALLOWED_TYPES    = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_FILE_BYTES   = 10 * 1024 * 1024;
+// Lazy: the Dialog only loads the first time an image is opened full size.
+const ImageLightbox = dynamic(() => import("./ImageLightbox").then((m) => m.ImageLightbox), { ssr: false });
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/** Same cap as app/api/generate/route.ts. */
+const MAX_PROMPT_CHARS = 4_000;
+/** Thread length kept (older turns and their images are dropped). */
+const MAX_MESSAGES = 60;
+/** IndexedDB images no open thread references are dropped after this. */
+const IMAGE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+const MAX_STORED_IMAGES = 80;
 
-interface GenerateMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string | null;
-  imageBase64: string | null;
-  mimeType: string | null;
+interface Attachment extends ComposerAttachment {
+  blob: Blob;
 }
 
-// ─── Model picker ─────────────────────────────────────────────────────────────
+/** IndexedDB refused an image this page session — the user was told once. */
+let storageWarned = false;
 
-function ModelPicker({
-  model,
-  onChange,
-  disabled,
-}: {
-  model: GeminiImageModelId;
-  onChange: (id: GeminiImageModelId) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = GEMINI_IMAGE_MODELS.find((m) => m.id === model)!;
+/** Codes where pressing Retry can plausibly work. */
+const RETRYABLE_CODES = new Set([
+  "upstream_unavailable",
+  "upstream_rate_limited",
+  "rate_limited",
+  "conversation_busy",
+  "no_image",
+  "incomplete",
+  "internal",
+  "http",
+]);
 
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+function imageIdsOf(messages: readonly GenerateMessage[]): string[] {
+  const ids: string[] = [];
+  for (const m of messages) {
+    for (const img of m.images ?? []) ids.push(img.id);
+    if (m.baseImageId) ids.push(m.baseImageId);
+  }
+  return ids;
+}
+
+/** What a turn will actually use: size/ratio/search narrowed to the model. */
+function effectiveSettings(s: GenerateSettings): GenerateSettings {
+  return {
+    ...s,
+    resolution: clampImageSize(s.model, s.resolution),
+    aspectRatio: isAspectRatioFor(s.model, s.aspectRatio) ? s.aspectRatio : null,
+    search: geminiImageModelInfo(s.model).search && s.search,
+  };
+}
+
+/**
+ * After this failure the server's history may hold a turn the thread never
+ * showed: the result line was lost (dropped / timed-out stream, a late Stop)
+ * or broke here. Failures the server reported, and local ones before
+ * sending, leave it untouched.
+ */
+function outcomeUnknown(err: unknown, aborted: boolean): boolean {
+  if (aborted) return true;
+  if (err instanceof ImagePrepError) return false;
+  return !(err instanceof GenerateRequestError) || err.code === "incomplete";
+}
+
+function describeFailure(err: unknown): { message: string; retry: boolean } {
+  if (err instanceof GenerateRequestError) return { message: err.message, retry: RETRYABLE_CODES.has(err.code) };
+  if (err instanceof ImagePrepError) return { message: err.message, retry: false };
+  if (err instanceof TypeError) {
+    return { message: "Couldn't reach the server. Check your connection and try again.", retry: true };
+  }
+  return { message: "Something went wrong. Try again.", retry: true };
+}
+
+function hasFiles(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer.types).includes("Files");
+}
+
+/** `active` = this tool's Creative Studio tab is showing (panels stay mounted while hidden). */
+export function ImageGenerator({ active = true }: { active?: boolean } = {}) {
+  const { adminId } = useAdmin();
+  const { messages, setMessages, conversation, setConversation, settings, updateSettings, takeLegacyImages, clearSession } =
+    useImageGeneratorSession(adminId);
+  const { toast } = useToast();
+  const { confirm, dialog } = useConfirm();
+
+  const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /** "Continue from this image": the next multi-turn message branches from it. */
+  const [baseImageId, setBaseImageId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingTurn | null>(null);
+  /** `prompt`: the failed turn, for Retry (the composer may hold something newer). */
+  const [error, setError] = useState<{ message: string; retry: boolean; prompt?: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set());
+  // Kept after closing so the dialog can animate out with its image.
+  const [lightbox, setLightbox] = useState<{ image: ImageRef; prompt: string | null } | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  // Bumped when image bytes arrive outside a messages change (urlFor answers more ids).
+  const [imagesVersion, rerender] = useReducer((n: number) => n + 1, 0);
+
+  // Image bytes by ImageRef.id, and object URLs drawn from them on demand.
+  const blobsRef = useRef(new Map<string, Blob>());
+  const urlsRef = useRef(new Map<string, string>());
+  const abortRef = useRef<AbortController | null>(null);
+  // Desktop: the thread scrolls (scrollRef). Below lg the whole panel scrolls
+  // (rootRef) with the composer stuck to its bottom — a nested thread scroller
+  // left only a sliver for images under the page header on phones.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dragDepth = useRef(0);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  const isPending = pending !== null;
+
+  const urlFor = useCallback((id: string): string | null => {
+    const existing = urlsRef.current.get(id);
+    if (existing) return existing;
+    const blob = blobsRef.current.get(id);
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    urlsRef.current.set(id, url);
+    return url;
+  }, []);
+
+  /** Drop images from memory (revoking their URLs) and from IndexedDB. */
+  const forgetImages = useCallback((ids: readonly string[]) => {
+    if (!ids.length) return;
+    for (const id of ids) {
+      const url = urlsRef.current.get(id);
+      if (url) URL.revokeObjectURL(url);
+      urlsRef.current.delete(id);
+      blobsRef.current.delete(id);
     }
-    if (open) document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+    void deleteImages(ids);
+  }, []);
 
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => !disabled && setOpen((v) => !v)}
-        disabled={disabled}
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-          open
-            ? "border-primary/50 bg-primary/10 text-primary"
-            : "border-border bg-muted/40 text-muted-foreground hover:border-border hover:text-foreground",
-          disabled && "cursor-not-allowed opacity-40"
-        )}
-      >
-        <current.icon className="h-3 w-3" />
-        {current.label}
-        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-xl border border-border bg-popover shadow-lg">
-          <p className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Model
-          </p>
-          {GEMINI_IMAGE_MODELS.map((m) => {
-            const Icon = m.icon;
-            const isActive = m.id === model;
-            return (
-              <button
-                key={m.id}
-                onClick={() => { onChange(m.id); setOpen(false); }}
-                className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors last:rounded-b-xl hover:bg-muted",
-                  isActive && "bg-primary/5"
-                )}
-              >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
-                <div className="min-w-0 flex-1">
-                  <p className={cn("text-xs font-medium", isActive ? "text-primary" : "text-foreground")}>{m.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{m.description}</p>
-                </div>
-                {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Empty state ──────────────────────────────────────────────────────────────
-
-const STARTER_PROMPTS = [
-  "Generate a cinematic sunset over mountain peaks",
-  "Create a minimal product photo on white background",
-  "Design a vibrant abstract gradient artwork",
-  "Make a professional portrait with studio lighting",
-];
-
-function EmptyState({ onPrompt }: { onPrompt: (text: string) => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 px-8 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-        <ImageIcon className="h-6 w-6 text-primary" />
-      </div>
-      <div>
-        <h3 className="text-base font-semibold text-foreground">Image Generator</h3>
-        <p className="mt-1 text-sm text-muted-foreground max-w-xs">
-          Describe what you want to create, or upload images to use as references.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
-        {STARTER_PROMPTS.map((prompt) => (
-          <button
-            key={prompt}
-            onClick={() => onPrompt(prompt)}
-            className="rounded-xl border border-border bg-muted/30 px-4 py-2.5 text-left text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition-colors"
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Message bubble ───────────────────────────────────────────────────────────
-
-function MessageBubble({ msg }: { msg: GenerateMessage }) {
-  const isUser = msg.role === "user";
-  const dataUrl = msg.imageBase64 && msg.mimeType
-    ? `data:${msg.mimeType};base64,${msg.imageBase64}`
-    : null;
-
-  function handleDownload() {
-    if (!dataUrl) return;
-    const ext = (msg.mimeType ?? "image/png").split("/")[1] ?? "png";
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `generated-image-${Date.now()}.${ext}`;
-    a.click();
-  }
-
-  if (isUser) {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-          {msg.text}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[80%] min-w-[200px] rounded-2xl rounded-tl-sm border border-border bg-muted/30 overflow-hidden">
-        {dataUrl && (
-          <div className="relative group">
-            <img
-              src={dataUrl}
-              alt="Generated image"
-              className="block w-full object-contain"
-              style={{ maxHeight: "520px" }}
-            />
-            {/* Hover overlay download */}
-            <div className="absolute inset-0 flex items-end justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/40 to-transparent">
-              <button
-                onClick={handleDownload}
-                title="Download full-quality image"
-                className="flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow hover:bg-white transition-colors"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </button>
-            </div>
-          </div>
-        )}
-        {msg.text && (
-          <p className="px-4 py-3 text-sm text-foreground/80">{msg.text}</p>
-        )}
-        {dataUrl && (
-          <div className="border-t border-border px-4 py-2.5 flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
-              {(msg.mimeType ?? "image/png").split("/")[1]?.toUpperCase()}
-            </span>
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              <Download className="h-3 w-3" />
-              Download full quality
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Loading skeleton ─────────────────────────────────────────────────────────
-
-function AssistantSkeleton() {
-  return (
-    <div className="flex justify-start">
-      <div className="w-64 rounded-2xl rounded-tl-sm border border-border bg-muted/30 overflow-hidden">
-        <div className="h-48 bg-muted animate-pulse" />
-        <div className="px-4 py-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Generating…
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Upload preview grid ──────────────────────────────────────────────────────
-
-function UploadGrid({
-  files,
-  previews,
-  onRemove,
-  onAdd,
-  onDrop,
-  fileInputRef,
-  mode,
-}: {
-  files: File[];
-  previews: string[];
-  onRemove: (idx: number) => void;
-  onAdd: () => void;
-  onDrop: (e: React.DragEvent) => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  mode: GenerateMode;
-}) {
-  const canAdd = files.length < MAX_UPLOAD_FILES;
-  const required = false;
-
-  return (
-    <div className="space-y-2">
-      {/* Thumbnails */}
-      {previews.length > 0 && (
-        <div className="grid grid-cols-2 gap-1.5">
-          {previews.map((url, idx) => (
-            <div key={idx} className="relative rounded-lg overflow-hidden border border-border aspect-square bg-muted">
-              <img src={url} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
-              <button
-                onClick={() => onRemove(idx)}
-                className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
-                title="Remove"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
-          {/* Add more slot */}
-          {canAdd && (
-            <button
-              onClick={onAdd}
-              className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/20 aspect-square text-muted-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
-            >
-              <Upload className="h-4 w-4" />
-              <span className="text-[9px] mt-0.5">Add</span>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Drop zone (shown when empty) */}
-      {previews.length === 0 && (
-        <div
-          onClick={onAdd}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/20 px-3 py-5 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
-        >
-          <Upload className="h-5 w-5 text-muted-foreground" />
-          <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-            {required ? "Upload reference image(s)" : "Optional reference images"}<br />
-            <span className="text-[10px]">Up to {MAX_UPLOAD_FILES} · JPEG PNG WebP GIF · max 10 MB each</span>
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
-
-export function ImageGenerator() {
-  const {
-    messages, setMessages,
-    conversationId, setConversationId,
-    mode, setMode,
-    model, setModel,
-    resolution, setResolution,
-    clearSession,
-  } = useImageGeneratorSession();
-  const [input, setInput]     = useState("");
-  const [uploadedFiles, setUploadedFiles]     = useState<File[]>([]);
-  const [uploadedPreviews, setUploadedPreviews] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef    = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef   = useRef<HTMLInputElement>(null);
-
+  // Object URLs pin their blobs until revoked — release them when the panel
+  // unmounts, and abort a generation still running (the server stops too).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
-
-  // Manage object URLs for all previews
-  useEffect(() => {
-    const urls = uploadedFiles.map((f) => URL.createObjectURL(f));
-    setUploadedPreviews(urls);
-    return () => urls.forEach((u) => URL.revokeObjectURL(u));
-  }, [uploadedFiles]);
-
-  function validateAndAddFiles(incoming: File[]) {
-    const errors: string[] = [];
-    const valid: File[] = [];
-    const remaining = MAX_UPLOAD_FILES - uploadedFiles.length;
-
-    for (const file of incoming.slice(0, remaining)) {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        errors.push(`"${file.name}" is not a supported image type.`);
-        continue;
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        errors.push(`"${file.name}" exceeds 10 MB.`);
-        continue;
-      }
-      valid.push(file);
-    }
-
-    if (errors.length) setError(errors.join(" "));
-    else setError(null);
-
-    if (valid.length) setUploadedFiles((prev) => [...prev, ...valid]);
-  }
-
-  function handleFileDrop(e: React.DragEvent) {
-    e.preventDefault();
-    validateAndAddFiles(Array.from(e.dataTransfer.files));
-  }
-
-  function handleRemoveFile(idx: number) {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function handleModeSwitch(newMode: GenerateMode) {
-    if (newMode === mode) return;
-    if (messages.length > 0) {
-      if (!confirm("Switching modes will clear your conversation. Continue?")) return;
-    }
-    setMode(newMode);
-    setMessages([]);
-    setConversationId(null);
-    setUploadedFiles([]);
-    setError(null);
-  }
-
-  const handleSubmit = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
-    setError(null);
-    setIsLoading(true);
-
-    const userMsg: GenerateMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      text: trimmed,
-      imageBase64: null,
-      mimeType: null,
+    const urls = urlsRef.current;
+    rerender(); // after a StrictMode remount the URLs below were revoked — draw fresh ones
+    return () => {
+      abortRef.current?.abort();
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
+  }, []);
 
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  // Load this thread's images from IndexedDB (moving any from an older
+  // session format there first), then prune what no thread uses any more.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const legacy of takeLegacyImages()) {
+        try {
+          const blob = new Blob([base64ToBytes(legacy.base64)], { type: legacy.mimeType });
+          blobsRef.current.set(legacy.id, blob);
+          await putImage(legacy.id, blob);
+        } catch {
+          /* unreadable legacy image — shown as missing */
+        }
+      }
+      const wanted = imageIdsOf(messagesRef.current).filter((id) => !blobsRef.current.has(id));
+      const found = await getImages(wanted);
+      if (cancelled) return;
+      found.forEach((blob, id) => blobsRef.current.set(id, blob));
+      const gone = wanted.filter((id) => !found.has(id));
+      if (gone.length) setMissing(new Set(gone));
+      rerender();
+      void pruneImages(new Set(imageIdsOf(messagesRef.current)), IMAGE_RETENTION_MS, MAX_STORED_IMAGES);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [takeLegacyImages]);
 
-    try {
-      const formData = new FormData();
-      formData.set("model", model);
-      formData.set("mode", mode);
-      formData.set("prompt", trimmed);
-      formData.set("resolution", resolution);
+  // Keep the thread bounded: drop the oldest turns (and images nothing else uses).
+  useEffect(() => {
+    if (isPending || messages.length <= MAX_MESSAGES) return;
+    let cut = messages.length - MAX_MESSAGES;
+    if (messages[cut]?.role === "assistant") cut++; // never keep a reply without its prompt
+    const kept = messages.slice(cut);
+    const keptIds = new Set(imageIdsOf(kept));
+    forgetImages(imageIdsOf(messages.slice(0, cut)).filter((id) => !keptIds.has(id)));
+    setMessages(kept);
+  }, [messages, isPending, forgetImages, setMessages]);
 
-      // For multi-turn, pass the conversationId so the server can resume
-      // the same chat object (which holds full history + image context internally).
-      if (mode === "multi-turn" && conversationId) {
-        formData.set("conversationId", conversationId);
+  const latestImageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const imgs = messages[i].images;
+      if (messages[i].role === "assistant" && imgs?.length) return imgs[imgs.length - 1].id;
+    }
+    return null;
+  }, [messages]);
+
+  // ── Scrolling, focus (both inert while the tab is hidden) ──────────────────
+  const scrollToBottom = useCallback(() => {
+    for (const el of [scrollRef.current, rootRef.current]) {
+      if (el && el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
+    }
+  }, []);
+
+  const trackStick = useCallback((e: { currentTarget: HTMLElement }) => {
+    const el = e.currentTarget;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    stickToBottom.current = true;
+    // Nothing to follow yet — below lg the whole panel scrolls, and jumping to
+    // its bottom would push the settings out of view on first open.
+    if (messages.length === 0 && !isPending) return;
+    scrollToBottom();
+  }, [messages.length, isPending, active, scrollToBottom]);
+
+  useEffect(() => {
+    if (!active) return;
+    // Desktop only — on touch devices focusing would pop the keyboard open.
+    if (window.matchMedia?.("(pointer: fine)").matches) textareaRef.current?.focus({ preventScroll: true });
+  }, [active]);
+
+  // ── Thread reset ────────────────────────────────────────────────────────────
+  const resetThread = useCallback(() => {
+    forgetImages(imageIdsOf(messagesRef.current));
+    clearSession();
+    setAttachments([]);
+    setBaseImageId(null);
+    setError(null);
+    setNotice(null);
+    setMissing(new Set());
+  }, [clearSession, forgetImages]);
+
+  const handleNewConversation = useCallback(async () => {
+    if (messagesRef.current.length > 0) {
+      const ok = await confirm({
+        title: "Start a new conversation?",
+        description:
+          "This clears the thread and its images from this browser. Download anything you want to keep first.",
+        confirmText: "Clear and start over",
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    resetThread();
+    textareaRef.current?.focus();
+  }, [confirm, resetThread]);
+
+  const handleModeChange = useCallback(
+    async (mode: GenerateMode) => {
+      if (mode === settings.mode) return;
+      if (messagesRef.current.length > 0) {
+        const ok = await confirm({
+          title: `Switch to ${mode === "multi-turn" ? "multi-turn" : "single-turn"}?`,
+          description: "Switching modes clears the current conversation and its images.",
+          confirmText: "Switch and clear",
+          destructive: true,
+        });
+        if (!ok) return;
+      }
+      resetThread();
+      updateSettings({ mode });
+    },
+    [confirm, resetThread, settings.mode, updateSettings]
+  );
+
+  // ── Reference images ────────────────────────────────────────────────────────
+  const addAttachments = useCallback(async (items: { blob: Blob; name: string }[]) => {
+    const room = MAX_REFERENCE_IMAGES - attachmentsRef.current.length;
+    if (room <= 0) {
+      setError({ message: `Up to ${MAX_REFERENCE_IMAGES} reference images per message.`, retry: false });
+      return;
+    }
+    const problems: string[] = [];
+    const added: Attachment[] = [];
+    for (const item of items.slice(0, room)) {
+      try {
+        const d = await describeImage(item.blob, item.name);
+        added.push({ id: newId(), name: item.name, thumb: d.thumb, width: d.width, height: d.height, blob: item.blob });
+      } catch (err) {
+        problems.push(err instanceof ImagePrepError ? err.message : `Couldn't read "${item.name}".`);
+      }
+    }
+    if (items.length > room) {
+      problems.push(`Only ${MAX_REFERENCE_IMAGES} reference images per message — the rest were skipped.`);
+    }
+    if (added.length) setAttachments((prev) => [...prev, ...added].slice(0, MAX_REFERENCE_IMAGES));
+    if (problems.length) setError({ message: problems.join(" "), retry: false });
+  }, []);
+
+  const addFiles = useCallback(
+    (files: File[]) => {
+      const images = files.filter((f) => f.type.startsWith("image/") || f.type === "");
+      if (!images.length) {
+        if (files.length) setError({ message: "Only image files can be attached.", retry: false });
+        return;
+      }
+      void addAttachments(images.map((f) => ({ blob: f, name: f.name || "image" })));
+    },
+    [addAttachments]
+  );
+
+  // ── Generate ────────────────────────────────────────────────────────────────
+  /**
+   * The newest generated image this browser still has (memory, else
+   * IndexedDB) — a turn that restarts continues from it when the latest one
+   * is gone.
+   */
+  const newestStoredImage = useCallback(async (): Promise<string | null> => {
+    const ids: string[] = [];
+    for (const m of messagesRef.current) {
+      if (m.role === "assistant") for (const img of m.images ?? []) ids.push(img.id);
+    }
+    ids.reverse();
+    const absent = ids.filter((id) => !blobsRef.current.has(id));
+    const found = absent.length ? await getImages(absent) : new Map<string, Blob>();
+    found.forEach((blob, id) => blobsRef.current.set(id, blob));
+    if (found.size) rerender();
+    return ids.find((id) => blobsRef.current.has(id)) ?? null;
+  }, []);
+
+  /** `retryPrompt`: re-send a failed turn (the composer is left as it is). */
+  const submit = useCallback(
+    async (retryPrompt?: string) => {
+      const prompt = (retryPrompt ?? input).trim();
+      if (!prompt || isPending || prompt.length > MAX_PROMPT_CHARS) return;
+
+      const turn = effectiveSettings(settings);
+      const sent = attachments;
+      // Multi-turn continuity: an explicit branch, else the live server
+      // conversation (same model), else restart from the latest image.
+      let conversationId: string | null = null;
+      let baseId: string | null = null;
+      if (turn.mode === "multi-turn") {
+        if (baseImageId) baseId = baseImageId;
+        else if (conversation && conversation.model === turn.model) conversationId = conversation.id;
+        else if (latestImageId) baseId = latestImageId;
       }
 
-      // Optional uploaded reference images
-      for (const file of uploadedFiles) {
-        formData.append("image", file);
+      const userMsg: GenerateMessage = {
+        id: newId(),
+        role: "user",
+        text: prompt,
+        createdAt: Date.now(),
+        settings: turn,
+        refThumbs: sent.map((a) => a.thumb),
+        baseImageId: baseId,
+      };
+      setError(null);
+      setNotice(null);
+      setMessages((prev) => [...prev, userMsg]);
+      if (retryPrompt === undefined) {
+        setInput("");
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
       }
 
-      const res  = await fetch("/api/generate", { method: "POST", body: formData });
-      const data = await res.json();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setPending({ startedAt: Date.now(), stage: sent.length || baseId ? "preparing" : "generating", settings: turn });
 
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      let restartNote: string | null = null;
+      const restartFrom = (id: string | null) => {
+        baseId = id;
+        setMessages((prev) => prev.map((m) => (m.id === userMsg.id ? { ...m, baseImageId: id } : m)));
+      };
+      const run = async (convId: string | null, base: string | null): Promise<GenerateResult> => {
+        // All images of one request share Vercel's 4.5 MB body cap.
+        const budget = perImageBudget(sent.length + (base ? 1 : 0));
+        const form = new FormData();
+        form.set("prompt", prompt);
+        form.set("model", turn.model);
+        form.set("mode", turn.mode);
+        form.set("resolution", turn.resolution);
+        if (turn.aspectRatio) form.set("aspectRatio", turn.aspectRatio);
+        form.set("search", turn.search ? "1" : "0");
+        if (convId) form.set("conversationId", convId);
+        if (base) {
+          const blob = blobsRef.current.get(base);
+          if (blob) {
+            const prepared = await prepareForUpload(blob, budget, "image");
+            form.append("baseImage", prepared.blob, "base-image");
+          } else {
+            restartNote = "The image to continue from is no longer stored in this browser, so this started fresh.";
+          }
+        }
+        for (const a of sent) {
+          const prepared = await prepareForUpload(a.blob, budget, a.name);
+          form.append("image", prepared.blob, a.name);
+        }
+        setPending((p) => p && { ...p, stage: "generating" });
+        const res = await fetch("/api/generate", { method: "POST", body: form, signal: controller.signal });
+        return readGenerateResponse(res, (event) => {
+          if (event.type === "status") setPending((p) => p && { ...p, stage: event.stage });
+        });
+      };
 
-      // Store the conversationId returned on the first multi-turn request
-      if (data.conversationId) setConversationId(data.conversationId);
+      try {
+        // Restarting from the latest image, but its bytes are gone: use the
+        // newest one this browser still has (none → run() starts fresh).
+        if (baseId && baseId === latestImageId && !blobsRef.current.has(baseId)) {
+          const id = await newestStoredImage();
+          if (id && id !== baseId) {
+            restartNote = "The latest image is no longer stored in this browser, so this turn continued from the newest one that is.";
+            restartFrom(id);
+          }
+        }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
+        let result: GenerateResult;
+        try {
+          result = await run(conversationId, baseId);
+        } catch (err) {
+          // The server no longer holds the conversation (idle timeout, another
+          // instance, a deploy) or is still finishing a stopped turn on it —
+          // continue once from the latest image instead, as a new conversation.
+          const lost =
+            err instanceof GenerateRequestError &&
+            (err.code === "conversation_expired" || err.code === "conversation_busy");
+          if (!lost || !conversationId || controller.signal.aborted) throw err;
+          setConversation(null);
+          const id = await newestStoredImage();
+          const why =
+            err.code === "conversation_busy"
+              ? "The server was still finishing your previous message"
+              : "The server had closed this conversation";
+          restartNote = id
+            ? `${why}, so this turn continued from ${id === latestImageId ? "your latest image" : "the newest image still stored in this browser"} — earlier turns aren't in its context.`
+            : latestImageId
+              ? `${why} and its images are no longer stored in this browser, so this started fresh.`
+              : null;
+          restartFrom(id);
+          result = await run(null, id);
+        }
+
+        const refs: ImageRef[] = [];
+        for (const img of result.images) {
+          const blob = await base64ToBlob(img.data, img.mimeType);
+          const id = newId();
+          blobsRef.current.set(id, blob);
+          void putImage(id, blob).then((stored) => {
+            if (stored || storageWarned) return;
+            storageWarned = true;
+            toast(
+              "This browser couldn't store the images, so they won't survive a reload. Download anything you want to keep.",
+              "error"
+            );
+          });
+          refs.push({ id, mimeType: img.mimeType, bytes: blob.size, ...((await readBlobImageSize(blob)) ?? {}) });
+        }
+        const applied: GenerateSettings = {
+          ...turn,
+          resolution: (result.imageSize as GenerateSettings["resolution"] | null) ?? turn.resolution,
+          aspectRatio: result.aspectRatio,
+        };
+        const reply: GenerateMessage = {
+          id: newId(),
           role: "assistant",
-          text: data.text ?? null,
-          imageBase64: data.imageBase64 ?? null,
-          mimeType: data.mimeType ?? null,
-        },
-      ]);
+          text: result.text,
+          createdAt: Date.now(),
+          images: refs,
+          notice: [restartNote, result.notice].filter(Boolean).join(" ") || null,
+          sources: result.sources,
+        };
+        setMessages((prev) => [...prev.map((m) => (m.id === userMsg.id ? { ...m, settings: applied } : m)), reply]);
+        if (turn.mode === "multi-turn") {
+          setConversation(result.conversationId ? { id: result.conversationId, model: turn.model } : null);
+        }
+        const sentIds = new Set(sent.map((a) => a.id));
+        setAttachments((prev) => prev.filter((a) => !sentIds.has(a.id)));
+        setBaseImageId((b) => (b === baseImageId ? null : b));
+      } catch (err) {
+        // Put the turn back in the composer — unless something new was typed
+        // meanwhile (Retry still sends the failed prompt).
+        setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+        const current = inputRef.current.trim();
+        const restored = !current || current === prompt;
+        if (restored) setInput(prompt);
+        // Don't continue a conversation that may hold a turn this thread
+        // never showed — the next turn restarts from the latest image.
+        if (outcomeUnknown(err, controller.signal.aborted)) setConversation(null);
+        if (controller.signal.aborted) setNotice(restored ? "Stopped. Your prompt is back in the box." : "Stopped.");
+        else setError({ ...describeFailure(err), prompt });
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        setPending(null);
+      }
+    },
+    [
+      input,
+      isPending,
+      settings,
+      attachments,
+      baseImageId,
+      conversation,
+      latestImageId,
+      setMessages,
+      setConversation,
+      newestStoredImage,
+      toast,
+    ]
+  );
 
-      // Clear uploaded files after every successful turn.
-      // In multi-turn, the chat object on the server already holds full history
-      // (including generated images with thought_signature), so re-sending the
-      // same files on the next turn would inject stale data and corrupt context.
-      // If the user explicitly uploads NEW files before the next turn, those will
-      // be fresh entries in uploadedFiles and will be included correctly.
-      setUploadedFiles([]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
-      setInput(trimmed);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, isLoading, mode, model, resolution, uploadedFiles, conversationId]);
+  const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+  // ── Image actions ───────────────────────────────────────────────────────────
+  const download = useCallback(
+    (image: ImageRef, prompt: string | null, index: number) => {
+      const url = urlFor(image.id);
+      if (!url) return;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = imageFileName(prompt, image.mimeType, new Date(), index);
+      a.click();
+    },
+    [urlFor]
+  );
+
+  const copy = useCallback(
+    async (image: ImageRef) => {
+      const blob = blobsRef.current.get(image.id);
+      if (!blob) return;
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        toast("This browser can't copy images — use Download instead.", "error");
+        return;
+      }
+      try {
+        // A promise keeps Safari's user-gesture check happy while we convert to PNG.
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": toPng(blob) })]);
+        toast("Image copied to the clipboard.", "success");
+      } catch {
+        toast("Couldn't copy the image — use Download instead.", "error");
+      }
+    },
+    // `toast` is stable (toastError/toastSuccess aren't) — keeps `actions`, and the memoized thread, steady.
+    [toast]
+  );
+
+  const actions: ImageActions = useMemo(
+    () => ({
+      urlFor,
+      onOpen: (image, prompt) => {
+        setLightbox({ image, prompt });
+        setLightboxOpen(true);
+      },
+      onDownload: download,
+      onCopy: (image) => void copy(image),
+      onUseAsReference: (image) => {
+        const blob = blobsRef.current.get(image.id);
+        if (!blob) return;
+        const ext = image.mimeType.split("/")[1] ?? "png";
+        void addAttachments([{ blob, name: `generated-image.${ext === "jpeg" ? "jpg" : ext}` }]);
+        textareaRef.current?.focus();
+      },
+      onEditFrom:
+        settings.mode === "multi-turn"
+          ? (image) => {
+              setBaseImageId(image.id);
+              textareaRef.current?.focus();
+            }
+          : null,
+      onImageLoad: () => {
+        if (stickToBottom.current) scrollToBottom();
+      },
+    }),
+    [urlFor, download, copy, addAttachments, settings.mode, scrollToBottom]
+  );
+
+  const handleStarter = useCallback((p: string) => {
+    setInput(p);
+    textareaRef.current?.focus();
+  }, []);
+
+  // ── Drag & drop (on the thread card — no window listeners) ──────────────────
+  const dragHandlers = {
+    onDragEnter: (e: DragEvent<HTMLDivElement>) => {
+      if (!hasFiles(e)) return;
       e.preventDefault();
-      handleSubmit();
-    }
-  }
+      dragDepth.current++;
+      setDragging(true);
+    },
+    onDragOver: (e: DragEvent<HTMLDivElement>) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (e: DragEvent<HTMLDivElement>) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    },
+    onDrop: (e: DragEvent<HTMLDivElement>) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      addFiles(Array.from(e.dataTransfer.files));
+    },
+  };
 
-  function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-  }
+  // ── Header status ───────────────────────────────────────────────────────────
+  const imageCount = useMemo(() => messages.reduce((n, m) => n + (m.images?.length ?? 0), 0), [messages]);
+  const status: { tone: BadgeTone; label: string } = (() => {
+    if (settings.mode === "single-turn") return { tone: "neutral", label: "Single-turn · each prompt stands alone" };
+    if (baseImageId) return { tone: "info", label: "Branching from an earlier image" };
+    if (conversation && conversation.model === settings.model) return { tone: "success", label: "Conversation active" };
+    if (latestImageId && conversation) return { tone: "info", label: "Model changed · continues from the latest image" };
+    if (latestImageId) return { tone: "neutral", label: "Continues from the latest image" };
+    return { tone: "neutral", label: "Multi-turn · ready" };
+  })();
 
-  const canSubmit = !!input.trim() && !isLoading;
+  const placeholder =
+    settings.mode === "multi-turn" && (latestImageId || baseImageId)
+      ? "Describe how to change the image…"
+      : attachments.length
+        ? "Describe what to do with your images…"
+        : "Describe the image to generate…";
+
+  const lightboxImage = lightbox?.image ?? null;
 
   return (
-    <div className="flex h-full w-full flex-col md:flex-row">
-      {/* ── Left panel ──────────────────────────────────────────────────────── */}
-      <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col overflow-y-auto max-h-[40vh] md:max-h-full">
-        {/* Mode toggle */}
-        <div className="p-4 border-b border-border">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Mode</p>
-          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
-            <button
-              onClick={() => handleModeSwitch("multi-turn")}
-              className={cn(
-                "flex-1 py-1.5 transition-colors",
-                mode === "multi-turn"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Multi-turn
-            </button>
-            <button
-              onClick={() => handleModeSwitch("single-turn")}
-              className={cn(
-                "flex-1 py-1.5 border-l border-border transition-colors",
-                mode === "single-turn"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Single-turn
-            </button>
-          </div>
-          <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
-            {mode === "multi-turn"
-              ? "Iteratively refine images through conversation. Each reply edits the last result."
-              : "Upload reference image(s) + describe changes → one-shot result."}
-          </p>
-        </div>
+    <div
+      ref={rootRef}
+      onScroll={trackStick}
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto lg:flex-row lg:gap-4 lg:overflow-visible"
+    >
+      <GenerateSettingsCard
+        settings={settings}
+        onChange={updateSettings}
+        onModeChange={(mode) => void handleModeChange(mode)}
+        pending={isPending}
+      />
 
-        {/* Resolution toggle */}
-        <div className="p-4 border-b border-border">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Resolution</p>
-          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
-            {(["2K", "4K"] as const).map((r, i) => (
-              <button
-                key={r}
-                onClick={() => setResolution(r)}
-                className={cn(
-                  "flex-1 py-1.5 transition-colors",
-                  i > 0 && "border-l border-border",
-                  resolution === r
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
-            Applies to Gemini models only. Imagen 3 uses aspect ratio sizing.
-          </p>
-        </div>
-
-        {/* Image upload */}
-        <div className="p-4 border-b border-border">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Reference Images (optional)
-          </p>
-          <UploadGrid
-            files={uploadedFiles}
-            previews={uploadedPreviews}
-            onRemove={handleRemoveFile}
-            onAdd={() => fileInputRef.current?.click()}
-            onDrop={handleFileDrop}
-            fileInputRef={fileInputRef}
-            mode={mode}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              validateAndAddFiles(Array.from(e.target.files ?? []));
-              e.target.value = "";
-            }}
-          />
-        </div>
-
-        <div className="flex-1" />
-
-        {mode === "multi-turn" && messages.length > 0 && (
-          <div className="p-4 border-t border-border">
-            <button
-              onClick={() => { if (confirm("Clear all messages?")) { clearSession(); setUploadedFiles([]); } }}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2 text-xs text-muted-foreground hover:border-destructive/50 hover:text-destructive transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Clear conversation
-            </button>
-          </div>
-        )}
-      </aside>
-
-      {/* ── Right panel ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-1.5">
-            <ImageIcon className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-medium text-foreground">Image Generator</span>
-          </div>
-          <ModelPicker model={model} onChange={setModel} disabled={isLoading} />
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-          {messages.length === 0 && !isLoading ? (
-            <EmptyState onPrompt={(text) => { setInput(text); textareaRef.current?.focus(); }} />
-          ) : (
-            <>
-              {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
-              {isLoading && <AssistantSkeleton />}
-            </>
+      <Card
+        className="relative flex shrink-0 flex-col overflow-visible lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden"
+        {...dragHandlers}
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-3">
+          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          {imageCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {imageCount} image{imageCount === 1 ? "" : "s"}
+            </span>
           )}
-          <div ref={messagesEndRef} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            aria-label="New conversation"
+            onClick={() => void handleNewConversation()}
+            disabled={isPending || (messages.length === 0 && attachments.length === 0 && !baseImageId)}
+          >
+            <MessageSquarePlus />
+            <span className="hidden sm:inline">New conversation</span>
+            <span className="sm:hidden">New</span>
+          </Button>
         </div>
 
-        {/* Error banner */}
+        <div
+          ref={scrollRef}
+          onScroll={trackStick}
+          className="flex flex-col px-4 py-6 md:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+        >
+          <ImageThread
+            messages={messages}
+            pending={pending}
+            active={active}
+            latestImageId={latestImageId}
+            missing={missing}
+            actions={actions}
+            onStarter={handleStarter}
+            imagesVersion={imagesVersion}
+          />
+        </div>
+
         {error && (
-          <div className="mx-4 mb-2 flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="ml-2 opacity-70 hover:opacity-100">
-              <X className="h-3.5 w-3.5" />
-            </button>
+          <div
+            role="alert"
+            className={cn("mx-3 mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2 text-sm md:mx-4", badgeTone.danger)}
+          >
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+            <p className="min-w-0 flex-1">{error.message}</p>
+            {error.retry && error.prompt && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => void submit(error.prompt)}
+                disabled={isPending}
+              >
+                Retry
+              </Button>
+            )}
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setError(null)}>
+              <X />
+            </Button>
+          </div>
+        )}
+        {notice && !error && (
+          <div
+            role="status"
+            className="mx-3 mt-3 flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm text-muted-foreground md:mx-4"
+          >
+            <Info className="size-4 shrink-0" />
+            <p className="min-w-0 flex-1">{notice}</p>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice(null)}>
+              <X />
+            </Button>
           </div>
         )}
 
-        {/* Input */}
-        <div className="border-t border-border p-4">
-          <div className="flex items-end gap-2 rounded-xl border border-border bg-background px-3 py-2 focus-within:border-primary/50 transition-colors">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                mode === "multi-turn"
-                  ? "Describe what to generate or how to refine the last image… (⌘+Enter)"
-                  : "Describe the changes to apply to your uploaded image(s)… (⌘+Enter)"
-              }
-              rows={1}
-              disabled={isLoading}
-              className="flex-1 resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-              style={{ maxHeight: "160px" }}
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={cn(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
-                canSubmit
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
-              )}
-              title="Send (⌘+Enter)"
-            >
-              {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            </button>
+        <PromptComposer
+          value={input}
+          onChange={setInput}
+          onSubmit={() => void submit()}
+          onStop={stop}
+          pending={isPending}
+          maxChars={MAX_PROMPT_CHARS}
+          placeholder={placeholder}
+          attachments={attachments}
+          onAddFiles={addFiles}
+          onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+          baseImage={
+            baseImageId && settings.mode === "multi-turn"
+              ? { url: urlFor(baseImageId), label: "Continuing from this image" }
+              : null
+          }
+          onClearBaseImage={() => setBaseImageId(null)}
+          textareaRef={textareaRef}
+        />
+
+        {dragging && (
+          <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-foreground/20 bg-background/85 text-sm font-medium backdrop-blur-sm">
+            <Upload className="size-5 text-muted-foreground" />
+            Drop images to use as references
           </div>
-          <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
-            Images generated by Google Gemini. Results may vary.
-          </p>
-        </div>
-      </div>
+        )}
+      </Card>
+
+      {dialog}
+      {lightbox && (
+        <ImageLightbox
+          open={lightboxOpen}
+          onOpenChange={setLightboxOpen}
+          url={lightboxImage ? urlFor(lightboxImage.id) : null}
+          alt={lightbox?.prompt ? lightbox.prompt.slice(0, 160) : "Generated image"}
+          meta={
+            lightboxImage
+              ? [
+                  formatLabel(lightboxImage.mimeType),
+                  lightboxImage.width && lightboxImage.height ? `${lightboxImage.width}×${lightboxImage.height}` : null,
+                  formatBytes(lightboxImage.bytes),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : ""
+          }
+          onDownload={() => lightboxImage && download(lightboxImage, lightbox?.prompt ?? null, 0)}
+          onCopy={() => lightboxImage && void copy(lightboxImage)}
+        />
+      )}
     </div>
   );
 }

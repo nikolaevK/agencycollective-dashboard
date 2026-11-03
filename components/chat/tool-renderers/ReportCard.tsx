@@ -1,13 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { Download, FileText, Loader2, AlertCircle } from "lucide-react";
+import { memo, useState } from "react";
+import dynamic from "next/dynamic";
+import { AlertCircle, Download, FileText, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCards } from "./MetricCards";
-import { InlineChart } from "./InlineChart";
 import { InlineTable } from "./InlineTable";
 import type { ReportResult } from "@/types/chat";
 
-export function ReportCard({ report }: { report: ReportResult }) {
+// recharts only loads once a report section actually has a chart.
+const InlineChart = dynamic(() => import("./InlineChart").then((m) => m.InlineChart), {
+  loading: () => <Skeleton className="h-[300px] w-full rounded-3xl" />,
+});
+
+/** Shared by the AI Analyst and Media Buyers chat — keep the `report` prop contract. Memoized by `report`. */
+export const ReportCard = memo(function ReportCard({ report }: { report: ReportResult }) {
   const [downloading, setDownloading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -25,59 +34,44 @@ export function ReportCard({ report }: { report: ReportResult }) {
     }
   }
 
+  const generated = new Date(report.generatedAt);
+
   return (
-    <div className="my-4 rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-      {/* Report header */}
-      <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-5 py-4 border-b border-border/50">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-foreground">{report.title}</h4>
-              <p className="text-[11px] text-muted-foreground">
-                {report.period} &middot; Generated {new Date(report.generatedAt).toLocaleDateString()}
-              </p>
-            </div>
+    <Card className="min-w-0 shadow-none">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <FileText aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <h4 className="break-words text-sm font-semibold tracking-tight">{report.title}</h4>
+            <p className="text-xs text-muted-foreground">
+              {report.period}
+              {!isNaN(generated.getTime()) && <> · Generated {generated.toLocaleDateString()}</>}
+            </p>
           </div>
-          <button
-            onClick={handleDownloadPdf}
-            disabled={downloading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {downloading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-            PDF
-          </button>
         </div>
+        <Button size="sm" variant="outline" onClick={handleDownloadPdf} disabled={downloading} data-pdf-ignore="">
+          {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+          PDF
+        </Button>
         {pdfError && (
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-destructive">
-            <AlertCircle className="h-3 w-3" />
+          <p role="alert" className="flex w-full items-center gap-1.5 text-xs text-destructive">
+            <AlertCircle className="size-3.5" />
             {pdfError}
-          </div>
+          </p>
         )}
       </div>
 
-      {/* Report sections */}
-      <div className="divide-y divide-border/50">
+      <div className="divide-y">
         {report.sections.map((section, i) => (
-          <div key={i} className="px-5 py-4">
-            <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-              {section.title}
-            </h5>
-            <p className="text-sm text-foreground/85 leading-relaxed mb-3">
-              {section.summary}
-            </p>
-            {section.metrics && <MetricCards input={{ metrics: section.metrics }} />}
+          <section key={i} className="space-y-3 p-4">
+            <h5 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{section.title}</h5>
+            <p className="text-sm leading-relaxed text-foreground/90">{section.summary}</p>
+            {section.metrics && section.metrics.length > 0 && <MetricCards input={{ metrics: section.metrics }} />}
             {section.chartData && <InlineChart input={section.chartData} />}
             {section.tableData && <InlineTable input={section.tableData} />}
-          </div>
+          </section>
         ))}
       </div>
-    </div>
+    </Card>
   );
-}
+});

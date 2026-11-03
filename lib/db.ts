@@ -750,6 +750,25 @@ async function ensureCriticalColumns(db: Client): Promise<void> {
     // can't file the lead twice.
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_portal_offer_requests_open
      ON portal_offer_requests (user_id, offer_id) WHERE status IN ('new', 'contacted')`,
+    // Ad Copy "Create draft ad" attempts (lib/adCopyDraftAttempts.ts): the
+    // cross-instance duplicate guard for Meta writes. Ids land as soon as each
+    // Meta step succeeds; `stage` is set BEFORE each create, so a crash leaves
+    // it behind and a retry asks the person instead of creating twice.
+    // Timestamps are epoch ms. Rows older than ~24h are pruned on use.
+    `CREATE TABLE IF NOT EXISTS ad_copy_draft_attempts (
+      admin_id         TEXT NOT NULL,
+      idempotency_key  TEXT NOT NULL,
+      account_id       TEXT NOT NULL,
+      fingerprint      TEXT NOT NULL,
+      image_hash       TEXT,
+      creative_id      TEXT,
+      ad_id            TEXT,
+      stage            TEXT,
+      stage_started_at INTEGER,
+      created_at       INTEGER NOT NULL,
+      updated_at       INTEGER NOT NULL,
+      PRIMARY KEY (admin_id, idempotency_key)
+    )`,
   ];
 
   const adds: { table: string; column: string; defn: string }[] = [

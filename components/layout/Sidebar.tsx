@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, ImageIcon, PenTool, FileText, Handshake, Braces, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2, Boxes, UsersRound } from "lucide-react";
+import { LayoutDashboard, Bell, BookOpen, Users, UserCog, LogOut, X, Sparkles, FileText, Handshake, TrendingUp, Megaphone, ClipboardList, KeyRound, Code2, Boxes, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useDateRange } from "@/hooks/useDateRange";
 import { AgencyLogo } from "@/components/layout/AgencyLogo";
 import { useAdmin } from "@/components/providers/AdminProvider";
 import type { PermissionKey } from "@/lib/permissions";
+import { CREATIVE_PATH, CREATIVE_PERMS } from "@/components/creative/creativeTabs";
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -17,13 +18,11 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; superOnly?: boolean; alwaysShow?: boolean }[] = [
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; perm: PermissionKey; anyPerm?: PermissionKey[]; superOnly?: boolean; alwaysShow?: boolean }[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true, perm: "dashboard" },
   { href: "/dashboard/alerts", label: "Alerts", icon: Bell, perm: "dashboard" },
-  { href: "/dashboard/chat", label: "AI Analyst", icon: Sparkles, perm: "analyst" },
-  { href: "/dashboard/generate", label: "Image Generator", icon: ImageIcon, perm: "studio" },
-  { href: "/dashboard/json-editor", label: "JSON Editor", icon: Braces, perm: "jsoneditor" },
-  { href: "/dashboard/ad-copy", label: "Ad Copy", icon: PenTool, perm: "adcopy" },
+  // AI Analyst, Image Generator, JSON Editor + Ad Copy — tabs of one page.
+  { href: CREATIVE_PATH, label: "Creative Studio", icon: Sparkles, perm: "analyst", anyPerm: CREATIVE_PERMS },
   { href: "/dashboard/invoice", label: "Invoice", icon: FileText, perm: "invoice" },
   { href: "/dashboard/users", label: "Clients", icon: Users, perm: "users" },
   // Team hub is visible to EVERY admin (overview + own hub); full access is
@@ -78,12 +77,14 @@ export function Sidebar({ isOpen = false, collapsed = false, onClose }: SidebarP
         ? true
         : item.superOnly
           ? admin.isSuper
-          : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage));
+          : (admin.isSuper || admin.permissions[item.perm] || (item.perm === "media" && admin.permissions.media_manage) || (item.anyPerm?.some((p) => admin.permissions[p]) ?? false));
     }
   );
 
   async function handleLogout() {
     await fetch("/api/auth/admin/logout", { method: "POST" });
+    // Creative Studio keeps generated images in this browser — don't leave them for the next admin.
+    void import("@/components/generate/imageStore").then((m) => m.clearStoredImages()).catch(() => {});
     router.push("/?portal=admin");
   }
 

@@ -13,7 +13,9 @@ import {
 import { transformInsight, transformAccount, transformCampaign } from "@/lib/meta/transformers";
 import cache, { CacheKeys, TTL } from "@/lib/cache";
 import { dateRangeCacheKey, formatCurrency, formatRoas, formatPercent, formatNumber, getPreviousPeriod } from "@/lib/utils";
-import { validateExternalUrl, sanitizeUrlForDisplay } from "@/lib/urlValidation";
+import { fetchPublicHtml, MAX_HTML_CHARS, sanitizeUrlForDisplay, scanHtml } from "@/lib/urlValidation";
+import { resolvePresetDates, resolveReportPeriod } from "@/lib/analyst/reportPeriod";
+import { businessTodayYmd } from "@/lib/businessTime";
 import type { DateRangeInput } from "@/types/api";
 import type { AccountSummary, CampaignRow } from "@/types/dashboard";
 import type {
@@ -681,7 +683,8 @@ function buildCampaignStructureSection(
 // ─── Landing page builder ───────────────────────────────────────────────────
 
 async function buildLandingPageSection(
-  url: string | undefined
+  url: string | undefined,
+  signal?: AbortSignal
 ): Promise<ReportSectionResult> {
   if (!url) {
     return {
@@ -693,46 +696,52 @@ async function buildLandingPageSection(
   const safeDisplayUrl = sanitizeUrlForDisplay(url);
 
   try {
-    const safeUrl = await validateExternalUrl(url);
+    // Connect-time SSRF guard, every redirect hop re-validated, body
+    // byte-capped at 2 MB while it streams.
+    const { html } = await fetchPublicHtml(url, signal);
 
-    const pageRes = await fetch(safeUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; AgencyCollective/1.0; +https://agencycollective.com)",
-        "Accept": "text/html,application/xhtml+xml",
+    // Extract key elements in one linear pass (lib/urlValidation scanHtml) —
+    // per-element `[\s\S]*?</tag>` regexes were quadratic on unclosed tags.
+    let pageTitle: string | null = null;
+    const headlines: string[] = [];
+    const ctas: string[] = [];
+    let formCount = 0;
+    let formFieldCount = 0;
+    let copyLength = 0;
+    let inForm = false;
+    const capturing = new Map<string, string>(); // title / h1 / button → text so far
+    scanHtml(html, {
+      text: (t) => {
+        copyLength += t.length;
+        capturing.forEach((sofar, name) => capturing.set(name, sofar + t));
       },
-      signal: AbortSignal.timeout(10000),
+      rawText: (_name, t) => {
+        copyLength += t.length;
+      },
+      tag: (name, attrs, closing) => {
+        if (closing) {
+          const text = capturing.get(name);
+          if (text !== undefined) {
+            capturing.delete(name);
+            if (name === "title") pageTitle ??= text.trim();
+            else if (text.trim()) (name === "h1" ? headlines : ctas).push(text.trim());
+          } else if (name === "form" && inForm) {
+            formCount++;
+            inForm = false;
+          }
+          return;
+        }
+        if (name === "title" || name === "h1" || name === "button") {
+          if (!capturing.has(name)) capturing.set(name, "");
+        } else if (name === "form") {
+          inForm = true;
+        } else if (name === "input" && !new RegExp('type="hidden"', "i").test(attrs)) {
+          formFieldCount++;
+        }
+      },
     });
-
-    if (!pageRes.ok) {
-      return {
-        title: "Landing Page Analysis",
-        summary: `Could not fetch landing page (HTTP ${pageRes.status}). Verify the URL is accessible: ${safeDisplayUrl}`,
-      };
-    }
-
-    let html = await pageRes.text();
-    // Cap raw HTML to 2MB before processing to prevent regex DoS
-    if (html.length > 2_000_000) {
-      html = html.slice(0, 2_000_000);
-    }
-
-    // Extract key elements
-    const titleMatch = html.match(new RegExp("<title[^>]*>([\\s\\S]*?)<\\/title>", "i"));
-    const metaDescMatch = html.match(new RegExp('<meta[^>]*name="description"[^>]*content="([^"]*)"', "i"));
-    const h1Matches = html.match(new RegExp("<h1[^>]*>([\\s\\S]*?)<\\/h1>", "gi")) ?? [];
-    const ctaMatches = html.match(new RegExp("<button[^>]*>([\\s\\S]*?)<\\/button>", "gi")) ?? [];
-    const formMatches = html.match(new RegExp("<form[\\s\\S]*?<\\/form>", "gi")) ?? [];
-    const inputMatches = html.match(new RegExp("<input[^>]*>", "gi")) ?? [];
-    const imgMatches = html.match(new RegExp("<img[^>]*>", "gi")) ?? [];
-    const testimonialHints = (html.match(new RegExp("testimonial|review|rating|stars|customer said", "gi")) ?? []).length;
-
-    const stripTags = (s: string) => s.replace(new RegExp("<[^>]+>", "g"), "").trim();
-    const pageTitle = titleMatch ? stripTags(titleMatch[1]) : "Not found";
-    const metaDesc = metaDescMatch ? metaDescMatch[1] : "Not found";
-    const headlines = h1Matches.map(stripTags).filter(Boolean);
-    const ctas = ctaMatches.map(stripTags).filter(Boolean);
-    const formFieldCount = inputMatches.filter((i) => !new RegExp('type="hidden"', "i").test(i)).length;
-    const formCount = formMatches.length;
+    const head = html.slice(0, MAX_HTML_CHARS);
+    const testimonialHints = (head.match(new RegExp("testimonial|review|rating|stars|customer said", "gi")) ?? []).length;
 
     // Score each category
     const hasHeadline = headlines.length > 0;
@@ -747,12 +756,11 @@ async function buildLandingPageSection(
 
     const aboveFoldScore = hasHeadline && hasCta ? 70 : hasHeadline ? 45 : 20;
 
-    const copyLength = html.replace(new RegExp("<[^>]+>", "g"), "").length;
     const copyScore = copyLength > 2000 ? 65 : copyLength > 500 ? 50 : 30;
 
     const formScore = formCount === 0 ? 80 : formFieldCount <= 3 ? 75 : formFieldCount <= 5 ? 55 : formFieldCount <= 7 ? 35 : 20;
 
-    const hasViewport = new RegExp('name="viewport"', "i").test(html);
+    const hasViewport = new RegExp('name="viewport"', "i").test(head);
     const mobileScore = hasViewport ? 65 : 30;
 
     const htmlSize = html.length;
@@ -798,7 +806,7 @@ async function buildLandingPageSection(
 
     return {
       title: "Landing Page Analysis",
-      summary: `${safeDisplayUrl} — Overall score: ${overall}/100 (${ratingLabel(overall)}). Page title: "${pageTitle}". ${formCount > 0 ? `${formFieldCount} form fields detected.` : "No forms."} ${ctas.length} CTA button(s). ${testimonialHints > 0 ? `${testimonialHints} trust signal(s).` : "No trust signals found."}`,
+      summary: `${safeDisplayUrl} — Overall score: ${overall}/100 (${ratingLabel(overall)}). Page title: "${pageTitle ?? "Not found"}". ${formCount > 0 ? `${formFieldCount} form fields detected.` : "No forms."} ${ctas.length} CTA button(s). ${testimonialHints > 0 ? `${testimonialHints} trust signal(s).` : "No trust signals found."}`,
       metrics,
       tableData,
     };
@@ -812,19 +820,47 @@ async function buildLandingPageSection(
 
 // ─── Main report generator ───────────────────────────────────────────────────
 
-export async function generateReport(input: {
-  clientName: string;
-  accountId: string;
-  period: string;
-  sections: ReportSection[];
-  landingPageUrl?: string;
-}): Promise<ReportResult> {
+export interface GenerateReportOptions {
+  /**
+   * The dashboard's current period. When given, `period` is resolved with
+   * resolveReportPeriod (presets, explicit ranges, month names) and anything
+   * it can't parse uses this range — instead of silently the last 7 days —
+   * and the report's label names the period its data actually covers.
+   * Omitted (client portal): the original parsing, unchanged.
+   */
+  dateRange?: DateRangeInput;
+  /** Stops the report between sections / fetches (the reply was stopped). */
+  signal?: AbortSignal;
+}
+
+export async function generateReport(
+  input: {
+    clientName: string;
+    accountId: string;
+    period: string;
+    sections: ReportSection[];
+    landingPageUrl?: string;
+  },
+  options: GenerateReportOptions = {}
+): Promise<ReportResult> {
   if (!input.clientName?.trim()) throw new Error("clientName is required");
   if (!input.accountId?.trim()) throw new Error("accountId is required");
   if (!input.sections?.length) throw new Error("At least one section is required");
 
-  const dateRange = parsePeriodToDateRange(input.period);
+  let dateRange: DateRangeInput;
+  let periodLabel = input.period;
+  if (options.dateRange) {
+    const todayYmd = businessTodayYmd();
+    const resolved = resolveReportPeriod(input.period, options.dateRange, todayYmd);
+    // Explicit dates, never a relative preset (see resolvePresetDates).
+    dateRange = resolvePresetDates(resolved.dateRange, todayYmd);
+    periodLabel = resolved.label;
+  } else {
+    dateRange = parsePeriodToDateRange(input.period);
+  }
 
+  const { signal } = options;
+  signal?.throwIfAborted();
   const account = await getAccountSummary(input.accountId, dateRange);
   if (!account) {
     throw new Error(`Account ${input.accountId} not found. Verify the account ID is correct.`);
@@ -834,6 +870,7 @@ export async function generateReport(input: {
   const sectionResults: ReportSectionResult[] = [];
 
   for (const section of input.sections) {
+    signal?.throwIfAborted();
     switch (section) {
       case "overview": {
         sectionResults.push(buildOverviewSection(account, currency));
@@ -896,16 +933,17 @@ export async function generateReport(input: {
         break;
       }
       case "landing_page": {
-        sectionResults.push(await buildLandingPageSection(input.landingPageUrl));
+        sectionResults.push(await buildLandingPageSection(input.landingPageUrl, signal));
         break;
       }
     }
   }
 
+  signal?.throwIfAborted();
   return {
     title: `${input.clientName} — Performance Report`,
     clientName: input.clientName,
-    period: input.period,
+    period: periodLabel,
     generatedAt: new Date().toISOString(),
     sections: sectionResults,
   };

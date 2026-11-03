@@ -1,18 +1,37 @@
 export const dynamic = "force-dynamic";
+/** A text-heavy image can keep Claude thinking for a few minutes. */
+export const maxDuration = 300;
 
 import Anthropic from "@anthropic-ai/sdk";
-import sharp from "sharp";
 import { getAdminSession } from "@/lib/adminSession";
-import {
-  getAnalysisPrompt,
-  ALLOWED_USE_CASES,
-  type UseCase,
-  type ImageRole,
-} from "@/lib/jsonEditorPrompts";
+import { DEFAULT_MODEL } from "@/lib/chatModels";
+import { describeClaudeError } from "@/lib/claude/errors";
+import { isImageRole, isUseCase, type ImageRole } from "@/lib/jsonEditor/useCases";
+import { analysisSchema } from "@/lib/jsonEditor/schemas";
+import { analysisSystemPrompt, ANALYSIS_USER_TEXT } from "@/lib/jsonEditor/prompts";
+import { isPlainObject } from "@/lib/jsonEditor/diff";
+import { refusalMessage, type JsonEditorErrorCode } from "@/lib/jsonEditor/errors";
+import { MAX_UPLOAD_IMAGE_BYTES } from "@/lib/jsonEditor/images";
+import { fitForClaude, readImageUpload, readUploadForm } from "@/lib/jsonEditor/serverImage";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// ─── Claude request settings ───────────────────────────────────────────────
+// One-shot image → JSON extraction. `medium` (the Opus 5.5 default, set
+// explicitly): precise colors / materials / text transcription is the whole
+// point, and Opus 5.5 reads images well at this level; `low` is the next
+// thing to try if latency ever matters more than exhaustive object lists.
+const ANALYZE_EFFORT = "medium" as const;
+// Thinking counts toward max_tokens, and a text-heavy image (menus, packaging)
+// makes a long JSON. Streamed (see below), so a large cap can't hit the SDK's
+// non-streaming request timeout.
+const ANALYZE_MAX_TOKENS = 32_000;
+// Policy declines are retried server-side on the provider's default fallback model.
+const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** One image plus two short fields; a body over this is refused before it's buffered. */
+const MAX_REQUEST_BYTES = MAX_UPLOAD_IMAGE_BYTES + 256 * 1024;
 
 // ─── Rate limiter (in-memory, per admin, with periodic cleanup) ────────────
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -39,202 +58,157 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
-// ─── Input constraints ─────────────────────────────────────────────────────
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-// Claude's 5 MB limit is on base64 size; base64 expands ~33%, so raw limit ≈ 3.75 MB
-const CLAUDE_MAX_RAW_BYTES = Math.floor((5 * 1024 * 1024 * 3) / 4);
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-const ALLOWED_ROLES: readonly ImageRole[] = ["source", "reference"];
-
-/** Compress image to fit within Claude's base64 5 MB limit. */
-async function compressForClaude(
-  buffer: Buffer,
-): Promise<{ data: Buffer; mediaType: "image/jpeg" | "image/png" | "image/webp" }> {
-  // If already under the limit, return as-is (convert to JPEG for consistency)
-  if (buffer.length <= CLAUDE_MAX_RAW_BYTES) {
-    // Detect actual format via sharp to avoid trusting client-reported MIME
-    const meta = await sharp(buffer).metadata();
-    const format = meta.format;
-    if (format === "png" || format === "webp") {
-      const mt = format === "png" ? "image/png" : "image/webp";
-      return { data: buffer, mediaType: mt as "image/png" | "image/webp" };
-    }
-    return { data: buffer, mediaType: "image/jpeg" };
-  }
-
-  // Compress as JPEG with decreasing quality until under limit
-  let quality = 85;
-  let result = await sharp(buffer).jpeg({ quality }).toBuffer();
-
-  while (result.length > CLAUDE_MAX_RAW_BYTES && quality > 30) {
-    quality -= 10;
-    result = await sharp(buffer).jpeg({ quality }).toBuffer();
-  }
-
-  // If still too large, resize down progressively
-  if (result.length > CLAUDE_MAX_RAW_BYTES) {
-    const meta = await sharp(buffer).metadata();
-    let width = meta.width ?? 1920;
-    while (result.length > CLAUDE_MAX_RAW_BYTES && width > 400) {
-      width = Math.round(width * 0.7);
-      result = await sharp(buffer)
-        .resize({ width, withoutEnlargement: true })
-        .jpeg({ quality: 70 })
-        .toBuffer();
-    }
-  }
-
-  if (result.length > CLAUDE_MAX_RAW_BYTES) {
-    throw new Error("Image could not be compressed below the 5 MB API limit");
-  }
-
-  return { data: result, mediaType: "image/jpeg" };
+function json(body: Record<string, unknown>, status: number, headers?: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+  });
 }
 
-// ─── JSON extraction helper ────────────────────────────────────────────────
-function extractJsonFromResponse(text: string): string {
-  // Try parsing raw text first
-  try {
-    JSON.parse(text);
-    return text;
-  } catch {
-    // continue
-  }
-
-  // Strip markdown code fences
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-  if (fenceMatch) {
-    try {
-      JSON.parse(fenceMatch[1].trim());
-      return fenceMatch[1].trim();
-    } catch {
-      // continue
-    }
-  }
-
-  // Extract first { ... } block
-  const braceStart = text.indexOf("{");
-  const braceEnd = text.lastIndexOf("}");
-  if (braceStart !== -1 && braceEnd > braceStart) {
-    const candidate = text.slice(braceStart, braceEnd + 1);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // continue
-    }
-  }
-
-  throw new Error("Failed to extract valid JSON from analysis response");
+function fail(status: number, error: string, code?: JsonEditorErrorCode, extra?: Record<string, unknown>): Response {
+  return json({ error, ...(code ? { code } : {}), ...extra }, status);
 }
 
 export async function POST(request: Request) {
   // ── Auth + permission check ──────────────────────────────────────────────
   const session = getAdminSession();
-  if (!session) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-  }
-  if (!session.isSuper && !session.permissions?.jsoneditor) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
-  }
+  if (!session) return fail(401, "Unauthorized");
+  if (!session.isSuper && !session.permissions?.jsoneditor) return fail(403, "Forbidden");
 
   if (!checkRateLimit(session.adminId)) {
-    return new Response(
-      JSON.stringify({ error: "Too many requests. Please wait before sending another request." }),
-      { status: 429, headers: { "Retry-After": "60" } },
+    return json(
+      { error: "Too many requests. Please wait before sending another request." },
+      429,
+      { "Retry-After": "60" }
     );
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Image analysis is not configured" }),
-      { status: 500 },
-    );
+  if (!process.env.ANTHROPIC_API_KEY) return fail(500, "Image analysis is not configured");
+
+  const read = await readUploadForm(request, MAX_REQUEST_BYTES);
+  if (!read.ok) {
+    return read.status === 413
+      ? fail(413, "The image is too large to upload (max 10 MB).", "too_large")
+      : fail(400, "Expected a multipart form upload");
   }
+  const formData = read.form;
+
+  // ── Use case + image role ──────────────────────────────────────────────
+  const useCase = formData.get("useCase");
+  if (!isUseCase(useCase)) return fail(400, "Invalid use case");
+  const roleRaw = formData.get("imageRole");
+  const role: ImageRole = isImageRole(roleRaw) ? roleRaw : "source";
+
+  // ── Image (type sniffed from its bytes, EXIF-rotated upright) ───────────
+  const upload = await readImageUpload(formData.get("image"), "Image");
+  if (!upload.ok) return fail(upload.status, upload.error, upload.status === 413 ? "too_large" : undefined);
 
   try {
-    const formData = await request.formData();
-
-    // ── Image ──────────────────────────────────────────────────────────────
-    const imageFile = formData.get("image");
-    if (!(imageFile instanceof File) || imageFile.size === 0) {
-      return new Response(JSON.stringify({ error: "Image is required" }), { status: 400 });
-    }
-    if (!ALLOWED_IMAGE_TYPES.has(imageFile.type)) {
-      return new Response(JSON.stringify({ error: "Unsupported image type" }), { status: 400 });
-    }
-    if (imageFile.size > MAX_UPLOAD_BYTES) {
-      return new Response(JSON.stringify({ error: "Image exceeds 20 MB upload limit" }), { status: 400 });
-    }
-
-    // ── Use case ───────────────────────────────────────────────────────────
-    const useCaseRaw = formData.get("useCase");
-    if (typeof useCaseRaw !== "string" || !ALLOWED_USE_CASES.includes(useCaseRaw as UseCase)) {
-      return new Response(JSON.stringify({ error: "Invalid use case" }), { status: 400 });
-    }
-    const useCase = useCaseRaw as UseCase;
-
-    // ── Image role ─────────────────────────────────────────────────────────
-    const imageRoleRaw = formData.get("imageRole");
-    const imageRole: ImageRole =
-      typeof imageRoleRaw === "string" && ALLOWED_ROLES.includes(imageRoleRaw as ImageRole)
-        ? (imageRoleRaw as ImageRole)
-        : "source";
-
-    // ── Compress image to fit Claude's base64 5 MB limit ───────────────────
-    const rawBytes = Buffer.from(await imageFile.arrayBuffer());
-    const { data: imageBuffer, mediaType } = await compressForClaude(rawBytes);
-    const base64 = imageBuffer.toString("base64");
+    const fitted = await fitForClaude(upload.buffer, upload.type);
+    if (!fitted) return fail(413, "The image is too large to analyze — try a smaller one.", "too_large");
 
     // ── Call Claude ────────────────────────────────────────────────────────
-    const systemPrompt = getAnalysisPrompt(useCase, imageRole);
-
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: base64 },
-            },
-            {
-              type: "text",
-              text: "Analyze this image and return the structured JSON as specified.",
-            },
-          ],
+    // System prompt first, then the image + instruction. The schema
+    // guarantees parseable JSON. No cache breakpoint: the prompt is far below
+    // the minimum cacheable prefix, and the image differs every call.
+    // Streamed and collected with finalMessage(): same request and result as
+    // create(), but a long thinking + JSON run can't hit the request timeout.
+    const stream = anthropic.beta.messages.stream(
+      {
+        model: DEFAULT_MODEL,
+        max_tokens: ANALYZE_MAX_TOKENS,
+        betas: [FALLBACK_BETA],
+        fallbacks: "default",
+        thinking: { type: "adaptive" },
+        output_config: {
+          effort: ANALYZE_EFFORT,
+          format: { type: "json_schema", schema: analysisSchema(useCase, role) },
         },
-      ],
-    });
+        system: [{ type: "text", text: analysisSystemPrompt(useCase, role) }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: fitted.mediaType, data: fitted.data.toString("base64") },
+              },
+              { type: "text", text: ANALYSIS_USER_TEXT },
+            ],
+          },
+        ],
+      },
+      // The user cancelled (Start over / left) → stop paying for the call.
+      { signal: request.signal }
+    );
+    const response = await stream.finalMessage();
 
-    // ── Extract JSON from response ─────────────────────────────────────────
-    let responseText = "";
-    for (const block of response.content) {
-      if (block.type === "text") responseText += block.text;
+    // ── Stop reason first: a refusal or a cut-off may not match the schema ─
+    if (response.stop_reason === "refusal") {
+      const category = response.stop_details?.category ?? null;
+      console.warn("[json-editor/analyze] refusal", { category, model: response.model });
+      return fail(422, refusalMessage(category), "refusal", { category });
     }
-    if (!responseText) {
-      return new Response(
-        JSON.stringify({ error: "No text in analysis response" }),
-        { status: 500 },
+    if (response.stop_reason === "max_tokens") {
+      return fail(
+        502,
+        "The description got too long to finish. Try a simpler or cropped image.",
+        "truncated"
       );
     }
 
-    const jsonString = extractJsonFromResponse(responseText);
-    const formatted = JSON.stringify(JSON.parse(jsonString), null, 2);
+    // Read by block type — thinking / fallback blocks come first.
+    let text = "";
+    for (const block of response.content) {
+      if (block.type === "text") text += block.text;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    if (!isPlainObject(parsed)) {
+      console.error("[json-editor/analyze] unparseable output", { stop: response.stop_reason, chars: text.length });
+      return fail(502, "The analysis came back malformed. Please try again.", "bad_output");
+    }
 
-    return new Response(JSON.stringify({ json: formatted }), {
-      status: 200,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
+    return json({ json: JSON.stringify(parsed, null, 2), model: response.model }, 200);
   } catch (err) {
-    console.error("[json-editor/analyze] API error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
+    if (request.signal.aborted || err instanceof Anthropic.APIUserAbortError) {
+      return fail(499, "Cancelled");
+    }
+    // Classified by the shared mapper; the copy is this tool's own (its
+    // messages talk about chats). Provider text only goes to the log.
+    const { code } = describeClaudeError(err);
+    if (code !== "rate_limited") {
+      console.error("[json-editor/analyze] failed:", code, err instanceof Anthropic.APIError ? err.message : err);
+    }
+    switch (code) {
+      case "rate_limited":
+        return fail(429, "The AI service is busy right now. Try again in a minute.", "upstream_rate_limited");
+      case "overloaded":
+      case "unavailable":
+        return fail(503, "The AI service is temporarily unavailable. Try again shortly.", "upstream_unavailable");
+      case "too_large":
+        return fail(413, "The image is too large to analyze — try a smaller one.", "too_large");
+      case "auth":
+        return fail(500, "Image analysis isn't set up correctly (AI service key or permissions). Ask an admin to check it.");
+      case "bad_request":
+        // A 400 names the field it rejects; one under the image block is the
+        // image (e.g. a damaged file), anything else is this route's request.
+        return isImageRejection(err)
+          ? fail(422, "The AI service couldn't read this image. Try re-saving it as PNG or JPEG, or use a different image.")
+          : fail(502, "The AI service rejected the analysis request. Try again — if it keeps happening, ask an admin to check the setup.");
+      default:
+        return fail(500, "Internal server error");
+    }
   }
+}
+
+/** A 400 about the image content block (vs. the schema / model / params). */
+function isImageRejection(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError)) return false;
+  const detail = (err.error as { error?: { message?: unknown } } | undefined)?.error?.message;
+  return typeof detail === "string" && /\bimage\b/i.test(detail);
 }

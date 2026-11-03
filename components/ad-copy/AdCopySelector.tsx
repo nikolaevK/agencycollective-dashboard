@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Loader2, Search, X, PenTool } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronRight, Search, X } from "lucide-react";
 import { cn, formatCurrency, formatRoas } from "@/lib/utils";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCampaigns } from "@/hooks/useCampaigns";
+import { Badge, BadgeDot } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DateRangeInput } from "@/types/api";
-import type { AccountSummary, CampaignRow } from "@/types/dashboard";
+import type { AccountSummary } from "@/types/dashboard";
 
 interface AdCopySelectorProps {
   dateRange: DateRangeInput;
@@ -16,7 +22,11 @@ interface AdCopySelectorProps {
   onClear: () => void;
 }
 
-// ─── Campaign list for a single account ─────────────────────────────────────
+function titleCase(status: string): string {
+  return status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+// ─── Campaign list for one account ─────────────────────────────────────────
 function AccountCampaigns({
   account,
   dateRange,
@@ -28,145 +38,58 @@ function AccountCampaigns({
   selectedCampaignId: string | undefined;
   onCampaignSelect: (accountId: string, campaignId: string) => void;
 }) {
-  const { data: campaigns, isLoading } = useCampaigns(account.id, dateRange);
+  const { data: campaigns, isLoading, isError } = useCampaigns(account.id, dateRange);
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Loading campaigns...
+      <div className="space-y-1.5 px-2 py-2">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
       </div>
     );
   }
-
+  if (isError) return <p className="px-3 py-2 text-xs text-destructive">Couldn&apos;t load campaigns.</p>;
   if (!campaigns || campaigns.length === 0) {
-    return (
-      <p className="px-3 py-2 text-xs text-muted-foreground">No campaigns found</p>
-    );
+    return <p className="px-3 py-2 text-xs text-muted-foreground">No campaigns in this period.</p>;
   }
 
-  // Sort by spend desc
   const sorted = [...campaigns].sort((a, b) => b.insights.spend - a.insights.spend);
 
   return (
-    <div className="space-y-0.5">
+    <ul className="space-y-0.5 py-1" role="list">
       {sorted.map((campaign) => {
         const isSelected = selectedCampaignId === campaign.id;
+        const active = campaign.status === "ACTIVE";
         return (
-          <button
-            key={campaign.id}
-            onClick={() => onCampaignSelect(account.id, campaign.id)}
-            className={cn(
-              "flex w-full items-start gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-muted/50",
-              isSelected && "bg-primary/10"
-            )}
-          >
-            {/* Radio dot */}
-            <div
+          <li key={campaign.id}>
+            <button
+              type="button"
+              onClick={() => onCampaignSelect(account.id, campaign.id)}
+              aria-current={isSelected ? "true" : undefined}
               className={cn(
-                "mt-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                isSelected ? "border-primary" : "border-muted-foreground/40"
+                "flex w-full items-start gap-2 rounded-2xl px-3 py-2 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                isSelected && "bg-muted"
               )}
             >
-              {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground/90">{campaign.name}</p>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span
-                  className={cn(
-                    "inline-block h-1.5 w-1.5 rounded-full",
-                    campaign.status === "ACTIVE" ? "bg-green-500" : "bg-muted-foreground/40"
-                  )}
-                />
-                <span>{campaign.status.charAt(0) + campaign.status.slice(1).toLowerCase()}</span>
-                <span>·</span>
-                <span>{formatCurrency(campaign.insights.spend)}</span>
-                <span>·</span>
-                <span>{formatRoas(campaign.insights.roas)} ROAS</span>
-              </div>
-            </div>
-          </button>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium" title={campaign.name}>
+                  {campaign.name}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <BadgeDot tone={active ? "success" : "neutral"} />
+                  {titleCase(campaign.status)}
+                  <span aria-hidden>·</span>
+                  <span className="tabular-nums">{formatCurrency(campaign.insights.spend)}</span>
+                  <span aria-hidden>·</span>
+                  <span className="tabular-nums">{formatRoas(campaign.insights.roas)}</span>
+                </span>
+              </span>
+              {isSelected && <Check className="mt-0.5 size-4 shrink-0" aria-hidden />}
+            </button>
+          </li>
         );
       })}
-    </div>
-  );
-}
-
-// ─── Account row with expandable campaigns ──────────────────────────────────
-function AccountRow({
-  account,
-  dateRange,
-  isExpanded,
-  isAccountSelected,
-  selectedCampaignId,
-  onToggleExpand,
-  onCampaignSelect,
-}: {
-  account: AccountSummary;
-  dateRange: DateRangeInput;
-  isExpanded: boolean;
-  isAccountSelected: boolean;
-  selectedCampaignId: string | undefined;
-  onToggleExpand: () => void;
-  onCampaignSelect: (accountId: string, campaignId: string) => void;
-}) {
-  return (
-    <div className={cn(
-      "rounded-lg border overflow-hidden transition-colors",
-      isAccountSelected ? "border-primary/40" : "border-border/50"
-    )}>
-      <button
-        onClick={onToggleExpand}
-        className={cn(
-          "flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:bg-muted/30",
-          isAccountSelected && "bg-primary/5"
-        )}
-      >
-        {/* Expand icon */}
-        <div className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
-          {isExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-                account.status === "ACTIVE" ? "bg-green-500" : "bg-muted-foreground/40"
-              )}
-            />
-            <p className="truncate text-xs font-semibold text-foreground">{account.name}</p>
-          </div>
-          <div className="flex items-center gap-1.5 pl-3">
-            <p className="text-[10px] text-muted-foreground">
-              {formatCurrency(account.insights.spend)} · {formatRoas(account.insights.roas)} ROAS
-            </p>
-            {isAccountSelected && (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
-                <PenTool className="h-2 w-2" />
-                Selected
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-border/50 bg-muted/20 py-1 max-h-[280px] overflow-y-auto">
-          <AccountCampaigns
-            account={account}
-            dateRange={dateRange}
-            selectedCampaignId={selectedCampaignId}
-            onCampaignSelect={onCampaignSelect}
-          />
-        </div>
-      )}
-    </div>
+    </ul>
   );
 }
 
@@ -174,11 +97,11 @@ function AccountRow({
 type StatusFilter = "all" | "active" | "inactive";
 
 const SPEND_TIERS = [
-  { label: "Any", value: 0 },
-  { label: "$1K+", value: 1_000 },
-  { label: "$5K+", value: 5_000 },
-  { label: "$10K+", value: 10_000 },
-  { label: "$50K+", value: 50_000 },
+  { label: "Any spend", value: "0" },
+  { label: "$1K+", value: "1000" },
+  { label: "$5K+", value: "5000" },
+  { label: "$10K+", value: "10000" },
+  { label: "$50K+", value: "50000" },
 ] as const;
 
 // ─── Main selector ──────────────────────────────────────────────────────────
@@ -189,170 +112,164 @@ export function AdCopySelector({
   onSelect,
   onClear,
 }: AdCopySelectorProps) {
-  const { data: accounts, isLoading } = useAccounts(dateRange);
+  const { data: accounts, isLoading, isError } = useAccounts(dateRange);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [minSpend, setMinSpend] = useState(0);
-  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
+  const [minSpend, setMinSpend] = useState("0");
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(selectedAccountId ?? null);
 
   const selectedAccount = accounts?.find((a) => a.id === selectedAccountId);
-  const selectedCampaign = useCampaigns(selectedAccountId, dateRange).data?.find(
-    (c) => c.id === selectedCampaignId
-  );
+  const selectedCampaign = useCampaigns(selectedAccountId, dateRange).data?.find((c) => c.id === selectedCampaignId);
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
+    const q = search.trim().toLowerCase();
+    const min = Number(minSpend);
     return accounts.filter((a) => {
-      const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase());
       const isActive = a.status === "ACTIVE";
-      const matchesStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && isActive) ||
-        (statusFilter === "inactive" && !isActive);
-      const matchesSpend = a.insights.spend >= minSpend;
-      return matchesSearch && matchesStatus && matchesSpend;
+      return (
+        a.name.toLowerCase().includes(q) &&
+        (statusFilter === "all" || (statusFilter === "active") === isActive) &&
+        a.insights.spend >= min
+      );
     });
   }, [accounts, search, statusFilter, minSpend]);
 
-  function handleCampaignSelect(accountId: string, campaignId: string) {
-    onSelect(accountId, campaignId);
-  }
-
-  function handleToggleExpand(accountId: string) {
-    setExpandedAccountId((prev) => (prev === accountId ? null : accountId));
-  }
+  const filtered = accounts && filteredAccounts.length !== accounts.length;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border p-4">
-        <h2 className="text-sm font-semibold text-foreground">Select Campaign</h2>
-        {!selectedCampaignId ? (
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Choose an account, then pick a campaign
-          </p>
-        ) : (
-          <div className="mt-1.5 space-y-1">
-            <div className="flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1">
-              <PenTool className="h-3 w-3 shrink-0 text-primary" />
-              <p className="text-[11px] font-medium text-primary truncate">
-                {selectedAccount?.name}
-              </p>
-            </div>
-            <div className="flex items-center justify-between rounded-md bg-muted/50 px-2 py-1">
-              <p className="text-[11px] font-medium text-foreground truncate flex-1 mr-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="space-y-3 p-4 pb-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-tight">Campaign</h3>
+          <p className="text-xs text-muted-foreground">Pick an account, then a campaign.</p>
+        </div>
+
+        {selectedCampaignId && (
+          <div className="flex items-start gap-2 rounded-2xl bg-muted/60 px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-muted-foreground">{selectedAccount?.name ?? selectedAccountId}</p>
+              <p className="truncate text-sm font-medium" title={selectedCampaign?.name}>
                 {selectedCampaign?.name ?? selectedCampaignId}
               </p>
-              <button
-                onClick={onClear}
-                className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                title="Clear selection"
-              >
-                <X className="h-3 w-3" />
-              </button>
             </div>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={onClear} aria-label="Clear campaign selection">
+              <X />
+            </Button>
           </div>
         )}
-      </div>
 
-      {/* Search */}
-      <div className="border-b border-border px-3 py-2">
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5">
-          <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search accounts..."
-            className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+            placeholder="Search accounts…"
+            aria-label="Search accounts"
+            className="pl-9"
           />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* Status toggle */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5">
-          {(["all", "active", "inactive"] as StatusFilter[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={cn(
-                "rounded px-2 py-0.5 text-[10px] font-medium capitalize transition-colors",
-                statusFilter === s
-                  ? s === "active"
-                    ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                    : s === "inactive"
-                    ? "bg-muted text-foreground"
-                    : "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {s}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={statusFilter}
+            onValueChange={(v) => v && setStatusFilter(v as StatusFilter)}
+            aria-label="Account status"
+          >
+            <ToggleGroupItem value="all" className="text-xs">All</ToggleGroupItem>
+            <ToggleGroupItem value="active" className="gap-1.5 text-xs">
+              <BadgeDot tone="success" />
+              Active
+            </ToggleGroupItem>
+            <ToggleGroupItem value="inactive" className="gap-1.5 text-xs">
+              <BadgeDot tone="neutral" />
+              Inactive
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Select value={minSpend} onValueChange={setMinSpend}>
+            <SelectTrigger className="h-8 w-auto min-w-[6.5rem] text-xs" aria-label="Minimum spend">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPEND_TIERS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </div>
-
-      {/* Spend filter */}
-      <div className="border-b border-border px-3 py-2">
-        <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Min spend
-        </p>
-        <div className="flex flex-wrap gap-1">
-          {SPEND_TIERS.map((tier) => (
-            <button
-              key={tier.value}
-              onClick={() => setMinSpend(tier.value)}
-              className={cn(
-                "rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors",
-                minSpend === tier.value
-                  ? "border-primary/50 bg-primary/10 text-primary"
-                  : "border-border bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
-              )}
-            >
-              {tier.label}
-            </button>
-          ))}
-        </div>
-        {minSpend > 0 && accounts && (
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {filteredAccounts.length} of {accounts.length} accounts
+        {filtered && (
+          <p className="text-xs text-muted-foreground">
+            {filteredAccounts.length} of {accounts?.length} accounts
           </p>
         )}
       </div>
 
-      {/* Account list */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {isLoading ? (
-          <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading accounts...
+          <div className="space-y-2 px-2">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
           </div>
+        ) : isError ? (
+          <p className="px-3 py-6 text-center text-xs text-destructive">Couldn&apos;t load accounts.</p>
         ) : filteredAccounts.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">
-            {accounts?.length === 0 ? "No accounts found" : "No accounts match filters"}
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {accounts?.length === 0 ? "No accounts found." : "No accounts match the filters."}
           </p>
         ) : (
-          filteredAccounts.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              dateRange={dateRange}
-              isExpanded={expandedAccountId === account.id}
-              isAccountSelected={selectedAccountId === account.id}
-              selectedCampaignId={selectedAccountId === account.id ? selectedCampaignId : undefined}
-              onToggleExpand={() => handleToggleExpand(account.id)}
-              onCampaignSelect={handleCampaignSelect}
-            />
-          ))
+          <ul className="space-y-1" role="list">
+            {filteredAccounts.map((account) => {
+              const expanded = expandedAccountId === account.id;
+              const isSelected = selectedAccountId === account.id;
+              return (
+                <li key={account.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedAccountId(expanded ? null : account.id)}
+                    aria-expanded={expanded}
+                    className="flex w-full items-center gap-2 rounded-2xl px-2 py-2 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                  >
+                    <ChevronRight
+                      className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <BadgeDot tone={account.status === "ACTIVE" ? "success" : "neutral"} />
+                        <span className="truncate text-sm font-medium" title={account.name}>
+                          {account.name}
+                        </span>
+                      </span>
+                      <span className="block pl-3 text-xs tabular-nums text-muted-foreground">
+                        {formatCurrency(account.insights.spend)} · {formatRoas(account.insights.roas)} ROAS
+                      </span>
+                    </span>
+                    {isSelected && (
+                      <Badge variant="secondary" className="shrink-0">
+                        Selected
+                      </Badge>
+                    )}
+                  </button>
+                  {expanded && (
+                    <div className="ml-4 border-l pl-2">
+                      <AccountCampaigns
+                        account={account}
+                        dateRange={dateRange}
+                        selectedCampaignId={isSelected ? selectedCampaignId : undefined}
+                        onCampaignSelect={onSelect}
+                      />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </div>

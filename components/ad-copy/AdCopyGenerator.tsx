@@ -1,965 +1,736 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import {
-  PenTool,
-  Sparkles,
-  Loader2,
-  ChevronDown,
-  X,
-  Plus,
-  Copy,
-  Check,
-  RefreshCw,
-  AlertCircle,
-  Square,
-  Upload,
-  ImageIcon,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { AlertTriangle, Check, Copy, Eye, ListFilter, Loader2, PenTool, Plus } from "lucide-react";
+import { cn, formatCurrency, formatRoas } from "@/lib/utils";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCampaigns } from "@/hooks/useCampaigns";
 import { useCampaignCreatives } from "@/hooks/useCampaignCreatives";
+import { useToast } from "@/components/providers/ToastProvider";
+import { DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
+import { DEFAULT_SETTINGS } from "@/lib/adCopy/settings";
+import { prepareForAnalysis } from "@/lib/adCopy/imageEncode";
+import { normalizeAdCopy } from "@/lib/adCopy/normalize";
+import {
+  EMPTY_LISTS,
+  formatCopyAll,
+  mergeFullResult,
+  newVariantId,
+  pinnedCopy,
+  replaceVariant,
+  undoVariant,
+  variantRequest,
+  type CopyLists,
+} from "@/lib/adCopy/variants";
+import type { DraftAttempt } from "@/lib/adCopy/draft";
+import type { AdCopyCreative, AdCopyResult, CopyField, CopyVariant, GenerationSettings } from "@/lib/adCopy/types";
+import { Badge, StatusBadge, badgeTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { AdCopySelector } from "./AdCopySelector";
 import { CreativeGrid } from "./CreativeGrid";
-import { AdPreview } from "./AdPreview";
-import { CHAT_MODELS, DEFAULT_MODEL, type ChatModelId } from "@/lib/chatModels";
-import type { CampaignCreative, UploadedImage, CopyVariation } from "@/types/dashboard";
-import { CreateDraftModal } from "./CreateDraftModal";
+import { UploadZone, type UploadItem } from "./UploadZone";
+import { BriefCard } from "./BriefCard";
+import { CopyEditor } from "./CopyEditor";
+import { AdPreview, type PreviewImageOption } from "./AdPreview";
+import { useAdCopyStream, type GenState } from "./useAdCopyStream";
+import type { DraftImageOption } from "./CreateDraftModal";
 
-// ─── Industry presets ───────────────────────────────────────────────────────
-const INDUSTRY_PRESETS = [
-  { id: "peptides", label: "Peptides" },
-  { id: "supplements", label: "Supplements" },
-  { id: "skincare", label: "Skincare" },
-  { id: "fitness", label: "Fitness" },
-  { id: "wellness", label: "Health & Wellness" },
-  { id: "custom", label: "Custom..." },
-] as const;
+// Behind a click — kept out of the panel's first chunk.
+const CreateDraftModal = dynamic(() => import("./CreateDraftModal").then((m) => m.CreateDraftModal), { ssr: false });
+const PanelSheet = dynamic(() => import("./PanelSheet").then((m) => m.PanelSheet), { ssr: false });
 
-type IndustryId = (typeof INDUSTRY_PRESETS)[number]["id"];
-
-// ─── Uploaded image helpers ──────────────────────────────────────────────────
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB (Claude limit)
+const MAX_CREATIVES = 10;
 const MAX_UPLOADS = 10;
+const NO_SELECTION: Record<CopyField, string | null> = { primaryText: null, headline: null, description: null };
 
-function fileToUploadedImage(file: File): Promise<UploadedImage> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      // dataUrl = "data:image/jpeg;base64,/9j/..."
-      const base64 = dataUrl.split(",")[1];
-      resolve({
-        id: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        name: file.name,
-        preview: URL.createObjectURL(file),
-        base64,
-        mediaType: file.type as UploadedImage["mediaType"],
-      });
-    };
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
+function hasAnyCopy(lists: CopyLists): boolean {
+  return lists.primaryText.length + lists.headline.length + lists.description.length > 0;
 }
 
-// ─── Parse Claude response into structured fields ──────────────────────────
-function parseGeneratedCopy(text: string): {
-  primaryTexts: CopyVariation[];
-  headlines: string[];
-  descriptions: string[];
-} {
-  const primaryTexts: CopyVariation[] = [];
-  const headlines: string[] = [];
-  const descriptions: string[] = [];
-
-  const primaryMatch = text.match(/## Primary Text Options?\s*\n([\s\S]*?)(?=\n## |$)/i);
-  const headlineMatch = text.match(/## Headlines?\s*\n([\s\S]*?)(?=\n## |$)/i);
-  const descriptionMatch = text.match(/## Descriptions?\s*\n([\s\S]*?)(?=\n## |$)/i);
-
-  if (primaryMatch) {
-    // Split by ### N. headings — each chunk starts with the title line
-    const items = primaryMatch[1].split(/###\s+\d+\.\s*/);
-    for (const item of items) {
-      const trimmedItem = item.trim();
-      if (!trimmedItem) continue;
-
-      // First line is the hook title, rest is the body
-      const newlineIdx = trimmedItem.indexOf("\n");
-      if (newlineIdx === -1) {
-        // Only a title, no body
-        primaryTexts.push({ title: trimmedItem, body: "" });
-      } else {
-        const title = trimmedItem.slice(0, newlineIdx).trim();
-        const body = trimmedItem.slice(newlineIdx + 1).trim();
-        primaryTexts.push({ title, body });
-      }
-    }
-  }
-
-  if (headlineMatch) {
-    const lines = headlineMatch[1].split("\n");
-    for (const line of lines) {
-      const match = line.match(/^\d+\.\s+(.+)/);
-      if (match) headlines.push(match[1].trim());
-    }
-  }
-
-  if (descriptionMatch) {
-    const lines = descriptionMatch[1].split("\n");
-    for (const line of lines) {
-      const match = line.match(/^\d+\.\s+(.+)/);
-      if (match) descriptions.push(match[1].trim());
-    }
-  }
-
-  return { primaryTexts, headlines, descriptions };
+function resultHasContent(r: AdCopyResult | null): r is AdCopyResult {
+  return Boolean(r && (r.primaryTexts.length || r.headlines.length || r.descriptions.length));
 }
 
-// ─── Copyable text field ────────────────────────────────────────────────────
-function CopyableField({
-  value,
-  onChange,
-  onRemove,
-  placeholder,
-  multiline = false,
-  label,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  onRemove?: () => void;
-  placeholder?: string;
-  multiline?: boolean;
-  label?: string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
-  return (
-    <div className="group relative rounded-lg border bg-card transition-colors hover:border-muted-foreground/30">
-      {label && (
-        <span className="absolute -top-2.5 left-2.5 bg-card px-1 text-[10px] font-medium text-muted-foreground">
-          {label}
-        </span>
-      )}
-      <div className="flex items-start">
-        <div className="flex-1 p-3">
-          {multiline ? (
-            <textarea
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={placeholder}
-              rows={4}
-              className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/50"
-            />
-          ) : (
-            <input
-              type="text"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={placeholder}
-              className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/50"
-            />
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5 p-1.5">
-          <button
-            onClick={handleCopy}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="Copy"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-          {onRemove && (
-            <button
-              onClick={onRemove}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              title="Remove"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Component ─────────────────────────────────────────────────────────
-export function AdCopyGenerator() {
+/** `active` = this tool's Creative Studio tab is showing (panels stay mounted while hidden). */
+export function AdCopyGenerator({ active = true }: { active?: boolean } = {}) {
   const { dateRange } = useDateRange();
+  const { toast } = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const gen = useAdCopyStream();
 
-  // Selection state
-  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string | undefined>();
+  // ── Selection ───────────────────────────────────────────────────────────
+  const [accountId, setAccountId] = useState<string | undefined>();
+  const [campaignId, setCampaignId] = useState<string | undefined>();
   const [selectedCreativeIds, setSelectedCreativeIds] = useState<Set<string>>(new Set());
 
-  // Uploaded images
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // ── Uploads (object URLs revoked on remove + unmount) ───────────────────
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [processing, setProcessing] = useState(0);
+  const uploadsRef = useRef(uploads);
+  uploadsRef.current = uploads;
+  useEffect(() => () => uploadsRef.current.forEach((u) => URL.revokeObjectURL(u.previewUrl)), []);
 
-  // Config
+  // ── Brief ───────────────────────────────────────────────────────────────
+  const [settings, setSettings] = useState<GenerationSettings>(DEFAULT_SETTINGS);
   const [model, setModel] = useState<ChatModelId>(DEFAULT_MODEL);
-  const [industry, setIndustry] = useState<IndustryId>("peptides");
-  const [customIndustry, setCustomIndustry] = useState("");
+  const [landingUrl, setLandingUrl] = useState("");
 
-  // Generated content (editable fields)
-  const [primaryTexts, setPrimaryTexts] = useState<CopyVariation[]>([]);
-  const [headlines, setHeadlines] = useState<string[]>([]);
-  const [descriptions, setDescriptions] = useState<string[]>([]);
-
-  // Preview selection indices
-  const [previewPrimaryIdx, setPreviewPrimaryIdx] = useState(0);
-  const [previewHeadlineIdx, setPreviewHeadlineIdx] = useState(0);
-  const [previewDescriptionIdx, setPreviewDescriptionIdx] = useState(0);
-
-  // Generation state
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
+  // ── Generated copy ──────────────────────────────────────────────────────
+  const [lists, setLists] = useState<CopyLists>(EMPTY_LISTS);
+  const [offers, setOffers] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Record<CopyField, string | null>>(NO_SELECTION);
   const [error, setError] = useState<string | null>(null);
-  const [hasGenerated, setHasGenerated] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
-  // Draft modal
-  const [draftModalOpen, setDraftModalOpen] = useState(false);
+  // ── Preview / draft / mobile panels ─────────────────────────────────────
+  const [previewImageKey, setPreviewImageKey] = useState<string | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [attempts, setAttempts] = useState<DraftAttempt[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Data hooks
+  // ── Data ────────────────────────────────────────────────────────────────
   const { data: accounts } = useAccounts(dateRange);
-  const { data: campaigns } = useCampaigns(selectedAccountId, dateRange);
-  const { data: creatives, isLoading: creativesLoading } = useCampaignCreatives(
-    selectedAccountId,
-    selectedCampaignId,
-    dateRange
+  const { data: campaigns } = useCampaigns(accountId, dateRange);
+  const {
+    data: creativesRaw,
+    isLoading: creativesLoading,
+    isError: creativesError,
+  } = useCampaignCreatives(accountId, campaignId, dateRange);
+  const creatives = creativesRaw as AdCopyCreative[] | undefined;
+
+  const account = accounts?.find((a) => a.id === accountId);
+  const campaign = campaigns?.find((c) => c.id === campaignId);
+  const selectedCreatives = useMemo(
+    () => (creatives ?? []).filter((c) => selectedCreativeIds.has(c.adId)),
+    [creatives, selectedCreativeIds]
   );
 
-  const selectedAccount = accounts?.find((a) => a.id === selectedAccountId);
-  const selectedCampaign = campaigns?.find((c) => c.id === selectedCampaignId);
-
-  // Get selected creatives data
-  const selectedCreativesData: CampaignCreative[] =
-    creatives?.filter((c) => selectedCreativeIds.has(c.adId)) ?? [];
-
-  // First selected creative or uploaded image for preview
-  const previewImageUrl =
-    selectedCreativesData[0]?.imageUrl ?? uploadedImages[0]?.preview ?? creatives?.[0]?.imageUrl ?? null;
-
-  // ── Handlers ────────────────────────────────────────────────────────────
-  function handleSelect(accountId: string, campaignId: string) {
-    const accountChanged = accountId !== selectedAccountId;
-    const campaignChanged = campaignId !== selectedCampaignId;
-
-    if (accountChanged || campaignChanged) {
-      setSelectedAccountId(accountId);
-      setSelectedCampaignId(campaignId);
-      setSelectedCreativeIds(new Set());
-      resetGeneration();
+  // Images the preview + draft can use: uploads first, then selected creatives with an image.
+  const imageOptions = useMemo<DraftImageOption[]>(() => {
+    const out: DraftImageOption[] = uploads.map((u) => ({ key: `upload:${u.id}`, label: u.name, src: u.previewUrl, kind: "upload", file: u.file }));
+    for (const c of selectedCreatives) {
+      const src = c.imageUrl ?? c.thumbnailUrl;
+      if (!src && !c.imageHash) continue;
+      out.push({ key: `creative:${c.adId}`, label: c.adName, src: src ?? "", kind: "creative", imageHash: c.imageHash, imageUrl: c.imageUrl });
     }
-  }
+    return out;
+  }, [uploads, selectedCreatives]);
+  const previewImages: PreviewImageOption[] = useMemo(() => {
+    const opts = imageOptions.filter((o) => o.src).map((o) => ({ key: o.key, label: o.label, src: o.src }));
+    // Nothing chosen yet: preview the campaign's top creative so the mock isn't blank.
+    if (opts.length === 0 && creatives?.[0]?.imageUrl) opts.push({ key: `creative:${creatives[0].adId}`, label: creatives[0].adName, src: creatives[0].imageUrl });
+    return opts;
+  }, [imageOptions, creatives]);
 
-  function handleClear() {
-    setSelectedAccountId(undefined);
-    setSelectedCampaignId(undefined);
+  const detectedPageId = useMemo(() => {
+    for (const c of [...selectedCreatives, ...(creatives ?? [])]) if (c.pageId) return c.pageId;
+    return null;
+  }, [selectedCreatives, creatives]);
+  const existingLink = useMemo(() => {
+    for (const c of [...selectedCreatives, ...(creatives ?? [])]) if (c.existingLink) return c.existingLink;
+    return "";
+  }, [selectedCreatives, creatives]);
+
+  // Bumped when the campaign changes/clears: a generation that finishes (or is
+  // stopped) after that must not write the old campaign's copy into the new one.
+  const epochRef = useRef(0);
+
+  const running = gen.state.running;
+  const hasCopy = hasAnyCopy(lists);
+  const pinnedCount = [...lists.primaryText, ...lists.headline, ...lists.description].filter((v) => v.pinned).length;
+  const inputCount = selectedCreatives.length + uploads.length;
+  const disabledReason = !campaign
+    ? "Pick a campaign first"
+    : processing > 0
+      ? "Preparing images…"
+      : inputCount === 0
+        ? "Select creatives or upload images"
+        : settings.industry === "custom" && !settings.customIndustry?.trim()
+          ? "Name the custom industry"
+          : null;
+  const canGenerate = !disabledReason && !running;
+
+  // ── Selection handlers ──────────────────────────────────────────────────
+  const resetCopy = useCallback(() => {
+    setLists(EMPTY_LISTS);
+    setOffers([]);
+    setSelected(NO_SELECTION);
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  async function handleSelect(nextAccount: string, nextCampaign: string) {
+    if (nextAccount === accountId && nextCampaign === campaignId) {
+      setPickerOpen(false);
+      return;
+    }
+    if (hasCopy || running) {
+      const ok = await confirm({
+        title: "Switch campaign?",
+        description: "The generated copy for this campaign will be cleared. Uploaded images stay.",
+        confirmText: "Switch",
+      });
+      if (!ok) return;
+    }
+    epochRef.current++;
+    gen.stop();
+    setAccountId(nextAccount);
+    setCampaignId(nextCampaign);
     setSelectedCreativeIds(new Set());
-    resetGeneration();
+    setPreviewImageKey(null);
+    resetCopy();
+    setPickerOpen(false);
   }
 
-  function toggleCreative(adId: string) {
+  async function handleClear() {
+    if (hasCopy || running) {
+      const ok = await confirm({ title: "Clear the selection?", description: "The generated copy will be cleared too.", confirmText: "Clear" });
+      if (!ok) return;
+    }
+    epochRef.current++;
+    gen.stop();
+    setAccountId(undefined);
+    setCampaignId(undefined);
+    setSelectedCreativeIds(new Set());
+    setPreviewImageKey(null);
+    resetCopy();
+  }
+
+  // Stable handlers: CreativeGrid / CopyEditor / AdPreview are memoized and skip the stream's re-renders.
+  const toggleCreative = useCallback((adId: string) => {
     setSelectedCreativeIds((prev) => {
       const next = new Set(prev);
       if (next.has(adId)) next.delete(adId);
-      else if (next.size < 10) next.add(adId);
+      else if (next.size < MAX_CREATIVES) next.add(adId);
       return next;
     });
-  }
+  }, []);
+  const selectCreatives = useCallback((ids: string[]) => setSelectedCreativeIds(new Set(ids.slice(0, MAX_CREATIVES))), []);
+  const clearCreatives = useCallback(() => setSelectedCreativeIds(new Set()), []);
 
-  function selectAllCreatives() {
-    if (!creatives) return;
-    const ids = creatives.slice(0, 10).map((c) => c.adId);
-    setSelectedCreativeIds(new Set(ids));
-  }
-
-  function clearAllCreatives() {
-    setSelectedCreativeIds(new Set());
-  }
-
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files) return;
-
-    const remaining = MAX_UPLOADS - uploadedImages.length;
-    const toProcess = Array.from(files).slice(0, remaining);
-
-    const results: UploadedImage[] = [];
-    for (const file of toProcess) {
-      if (!ALLOWED_IMAGE_TYPES.has(file.type)) continue;
-      if (file.size > MAX_IMAGE_SIZE) continue;
-      try {
-        results.push(await fileToUploadedImage(file));
-      } catch {
-        // skip failed files
+  // ── Uploads ─────────────────────────────────────────────────────────────
+  const addFiles = useCallback(
+    async (files: File[]) => {
+      const room = MAX_UPLOADS - uploadsRef.current.length;
+      const images = files.filter((f) => f.type.startsWith("image/") || f.type === "");
+      if (images.length === 0) {
+        toast("Only image files can be added.");
+        return;
       }
-    }
+      if (room <= 0) {
+        toast(`Up to ${MAX_UPLOADS} images.`);
+        return;
+      }
+      const batch = images.slice(0, room);
+      if (images.length > room) toast(`Only ${room} more image${room === 1 ? "" : "s"} fit — the rest were skipped.`);
+      setProcessing((n) => n + batch.length);
+      const prepared = await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const analysis = await prepareForAnalysis(file);
+            return {
+              id: newVariantId(),
+              name: file.name || "pasted image",
+              previewUrl: URL.createObjectURL(file),
+              file,
+              analysis: { base64: analysis.base64, mediaType: analysis.mediaType, width: analysis.width, height: analysis.height },
+            } satisfies UploadItem;
+          } catch (err) {
+            toast(err instanceof Error ? err.message : `${file.name} couldn't be added.`);
+            return null;
+          }
+        })
+      );
+      setProcessing((n) => n - batch.length);
+      const ok = prepared.filter((p): p is UploadItem => p !== null);
+      setUploads((prev) => {
+        const next = [...prev, ...ok];
+        next.slice(MAX_UPLOADS).forEach((u) => URL.revokeObjectURL(u.previewUrl));
+        return next.slice(0, MAX_UPLOADS);
+      });
+    },
+    [toast]
+  );
 
-    setUploadedImages((prev) => [...prev, ...results].slice(0, MAX_UPLOADS));
-    // reset input so same file can be re-selected
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function removeUploadedImage(id: string) {
-    setUploadedImages((prev) => {
-      const img = prev.find((i) => i.id === id);
-      if (img) URL.revokeObjectURL(img.preview);
-      return prev.filter((i) => i.id !== id);
+  function removeUpload(id: string) {
+    setUploads((prev) => {
+      const gone = prev.find((u) => u.id === id);
+      if (gone) URL.revokeObjectURL(gone.previewUrl);
+      return prev.filter((u) => u.id !== id);
     });
   }
 
-  function clearUploadedImages() {
-    uploadedImages.forEach((img) => URL.revokeObjectURL(img.preview));
-    setUploadedImages([]);
+  function clearUploads() {
+    uploads.forEach((u) => URL.revokeObjectURL(u.previewUrl));
+    setUploads([]);
   }
 
-  function resetGeneration() {
-    setPrimaryTexts([]);
-    setHeadlines([]);
-    setDescriptions([]);
-    setStreamingText("");
+  // ── Generation ──────────────────────────────────────────────────────────
+  function requestBase() {
+    return {
+      selectedCreatives: selectedCreatives.map((c) => ({
+        adId: c.adId,
+        adName: c.adName,
+        imageUrl: c.imageUrl,
+        existingPrimaryText: c.existingPrimaryText,
+        existingHeadline: c.existingHeadline,
+        existingDescription: c.existingDescription,
+        spend: c.spend,
+        ctr: c.ctr,
+      })),
+      uploadedImages: uploads.map((u) => ({ name: u.name, base64: u.analysis.base64, mediaType: u.analysis.mediaType })),
+      campaignName: campaign?.name ?? "",
+      campaignObjective: campaign?.objective,
+      campaignSpend: campaign?.insights.spend,
+      campaignRoas: campaign?.insights.roas,
+      model,
+      settings,
+    };
+  }
+
+  function applyFull(result: AdCopyResult) {
+    setLists((prev) => mergeFullResult(prev, result));
+    if (result.detectedOffers.length) setOffers(result.detectedOffers);
+    setSelected(NO_SELECTION);
+  }
+
+  async function handleGenerate() {
+    if (!canGenerate || !campaign) return;
     setError(null);
-    setHasGenerated(false);
-    setPreviewPrimaryIdx(0);
-    setPreviewHeadlineIdx(0);
-    setPreviewDescriptionIdx(0);
+    setNotice(null);
+    const epoch = epochRef.current;
+    const outcome = await gen.run({ ...requestBase(), mode: { kind: "full", keep: pinnedCopy(lists) } }, { kind: "full" });
+    if (epoch !== epochRef.current) return;
+    if (outcome.ok) {
+      applyFull(outcome.result);
+      const notes: string[] = [];
+      if (outcome.imagesSkipped > 0) notes.push(`${outcome.imagesSkipped} creative image${outcome.imagesSkipped === 1 ? "" : "s"} couldn't be loaded — Claude used their copy and stats only.`);
+      if (outcome.fallback) notes.push(`Written by ${outcome.fallback.to} after ${outcome.fallback.from} declined part of the request.`);
+      setNotice(notes.join(" ") || null);
+      return;
+    }
+    // A partial is kept only when there's no copy to overwrite — Stop during "Regenerate all"
+    // leaves the existing (maybe hand-edited) variants alone — and is normalized like a full result.
+    const kept = outcome.partial && !hasCopy ? normalizeAdCopy(outcome.partial) : null;
+    if (outcome.code === "aborted") {
+      if (resultHasContent(kept)) {
+        applyFull(kept);
+        toast("Stopped — kept what was written so far.", "success");
+      }
+      return;
+    }
+    // A cut-off or dropped stream keeps what arrived; a refusal's partial output is discarded.
+    if ((outcome.code === "max_tokens" || outcome.code === "upstream") && resultHasContent(kept)) {
+      applyFull(kept);
+    }
+    setError(outcome.message);
   }
 
-  function handleStop() {
-    abortRef.current?.abort();
-  }
-
-  // Whether there's enough input to generate
-  const canGenerate =
-    (selectedCreativesData.length > 0 || uploadedImages.length > 0) && Boolean(selectedCampaign);
-
-  const handleGenerate = useCallback(async () => {
-    if (!selectedCampaign) return;
-    if (selectedCreativesData.length === 0 && uploadedImages.length === 0) return;
-
-    setIsGenerating(true);
-    setStreamingText("");
+  async function handleRegenerate(field: CopyField, id: string) {
+    if (running || !campaign || inputCount === 0) return;
+    const req = variantRequest(lists, field, id);
+    if (!req) return;
     setError(null);
-    setPrimaryTexts([]);
-    setHeadlines([]);
-    setDescriptions([]);
+    const epoch = epochRef.current;
+    const outcome = await gen.run(
+      { ...requestBase(), mode: { kind: "variant", field, index: req.index, current: req.current } },
+      { kind: "variant", field, id }
+    );
+    if (epoch !== epochRef.current) return;
+    if (!outcome.ok) {
+      if (outcome.code !== "aborted") setError(outcome.message);
+      return;
+    }
+    const r = outcome.result;
+    const item =
+      field === "primaryText"
+        ? r.primaryTexts[0]
+        : field === "headline"
+          ? r.headlines[0] && { text: r.headlines[0], angle: undefined }
+          : r.descriptions[0] && { text: r.descriptions[0], angle: undefined };
+    if (!item || !item.text) {
+      setError("Claude didn't return a replacement — try again.");
+      return;
+    }
+    setLists((prev) => ({ ...prev, [field]: replaceVariant(prev[field], id, item.text, item.angle) }));
+  }
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const res = await fetch("/api/ad-copy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          selectedCreatives: selectedCreativesData.map((c) => ({
-            adId: c.adId,
-            adName: c.adName,
-            imageUrl: c.imageUrl,
-            existingPrimaryText: c.existingPrimaryText,
-            existingHeadline: c.existingHeadline,
-            existingDescription: c.existingDescription,
-            spend: c.spend,
-            ctr: c.ctr,
-          })),
-          uploadedImages: uploadedImages.map((img) => ({
-            name: img.name,
-            base64: img.base64,
-            mediaType: img.mediaType,
-          })),
-          campaignName: selectedCampaign.name,
-          campaignObjective: selectedCampaign.objective,
-          campaignSpend: selectedCampaign.insights.spend,
-          campaignRoas: selectedCampaign.insights.roas,
-          model,
-          industry,
-          customIndustry: industry === "custom" ? customIndustry : undefined,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        throw new Error(body.error || `Generation failed (${res.status})`);
+  // Keyboard + paste — inert while the tab is hidden (the panel stays mounted).
+  const generateRef = useRef(handleGenerate);
+  generateRef.current = handleGenerate;
+  const regenerateRef = useRef(handleRegenerate);
+  regenerateRef.current = handleRegenerate;
+  const regenerate = useCallback((field: CopyField, id: string) => void regenerateRef.current(field, id), []);
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (draftOpen) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.repeat) {
+        e.preventDefault();
+        void generateRef.current();
       }
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (!campaignId || draftOpen) return;
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      if (files.length === 0) return;
+      e.preventDefault();
+      void addFiles(files);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, [active, campaignId, draftOpen, addFiles]);
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response stream");
+  // ── Editing ─────────────────────────────────────────────────────────────
+  const editVariant = useCallback((field: CopyField, id: string, patch: Partial<CopyVariant>) => {
+    setLists((prev) => ({ ...prev, [field]: prev[field].map((v) => (v.id === id ? { ...v, ...patch } : v)) }));
+  }, []);
+  const removeVariant = useCallback((field: CopyField, id: string) => {
+    setLists((prev) => ({ ...prev, [field]: prev[field].filter((v) => v.id !== id) }));
+    setSelected((s) => (s[field] === id ? { ...s, [field]: null } : s));
+  }, []);
+  const addVariant = useCallback((field: CopyField) => {
+    const v: CopyVariant = { id: newVariantId(), text: "", ...(field === "primaryText" ? { angle: "" } : {}) };
+    setLists((prev) => ({ ...prev, [field]: [...prev[field], v] }));
+  }, []);
+  const selectVariant = useCallback((field: CopyField, id: string) => {
+    setSelected((s) => ({ ...s, [field]: id }));
+  }, []);
+  const undoRewrite = useCallback((field: CopyField, id: string) => setLists((prev) => ({ ...prev, [field]: undoVariant(prev[field], id) })), []);
 
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        setStreamingText(accumulated);
+  const copyText = useCallback(
+    async (key: string, text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopiedKey(key);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopiedKey(null), 1500);
+      } catch {
+        toast("Couldn't copy — your browser blocked clipboard access.");
       }
+    },
+    [toast]
+  );
+  const copyVariant = useCallback((key: string, text: string) => void copyText(key, text), [copyText]);
 
-      // Parse completed text into structured fields
-      const parsed = parseGeneratedCopy(accumulated);
-      if (parsed.primaryTexts.length > 0) setPrimaryTexts(parsed.primaryTexts);
-      if (parsed.headlines.length > 0) setHeadlines(parsed.headlines);
-      if (parsed.descriptions.length > 0) setDescriptions(parsed.descriptions);
-      setHasGenerated(true);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") {
-        // User stopped — try to parse what we have
-        if (streamingText) {
-          const parsed = parseGeneratedCopy(streamingText);
-          if (parsed.primaryTexts.length > 0) setPrimaryTexts(parsed.primaryTexts);
-          if (parsed.headlines.length > 0) setHeadlines(parsed.headlines);
-          if (parsed.descriptions.length > 0) setDescriptions(parsed.descriptions);
-        }
-        setHasGenerated(true);
-      } else {
-        setError((err as Error).message);
-      }
-    } finally {
-      setIsGenerating(false);
-      abortRef.current = null;
-    }
-  }, [selectedCreativesData, selectedCampaign, uploadedImages, model, industry, customIndustry, streamingText]);
-
-  // ── Update individual fields ────────────────────────────────────────────
-  function updatePrimaryText(idx: number, val: string) {
-    setPrimaryTexts((prev) => prev.map((t, i) => (i === idx ? { ...t, body: val } : t)));
-  }
-  function removePrimaryText(idx: number) {
-    setPrimaryTexts((prev) => prev.filter((_, i) => i !== idx));
-  }
-  function addPrimaryText() {
-    setPrimaryTexts((prev) => [...prev, { title: "", body: "" }]);
+  function recordAttempt(a: DraftAttempt) {
+    setAttempts((prev) => [...prev.filter((p) => p.idempotencyKey !== a.idempotencyKey), a].slice(-30));
   }
 
-  function updateHeadline(idx: number, val: string) {
-    setHeadlines((prev) => prev.map((t, i) => (i === idx ? val : t)));
-  }
-  function removeHeadline(idx: number) {
-    setHeadlines((prev) => prev.filter((_, i) => i !== idx));
-  }
-  function addHeadline() {
-    setHeadlines((prev) => [...prev, ""]);
-  }
+  const preview = (
+    <AdPreview
+      images={previewImages}
+      imageKey={previewImageKey}
+      onImageChange={setPreviewImageKey}
+      primaryTexts={lists.primaryText}
+      headlines={lists.headline}
+      descriptions={lists.description}
+      selected={selected}
+      onSelect={selectVariant}
+      pageName={account?.name ?? "Your Page"}
+      websiteUrl={landingUrl || existingLink}
+    />
+  );
 
-  function updateDescription(idx: number, val: string) {
-    setDescriptions((prev) => prev.map((t, i) => (i === idx ? val : t)));
-  }
-  function removeDescription(idx: number) {
-    setDescriptions((prev) => prev.filter((_, i) => i !== idx));
-  }
+  const selector = (
+    <AdCopySelector
+      dateRange={dateRange}
+      selectedAccountId={accountId}
+      selectedCampaignId={campaignId}
+      onSelect={handleSelect}
+      onClear={handleClear}
+    />
+  );
 
-  // ── Copy all ────────────────────────────────────────────────────────────
-  const [copiedAll, setCopiedAll] = useState(false);
-  async function copyAll() {
-    const parts: string[] = [];
-    if (primaryTexts.length > 0) {
-      parts.push("PRIMARY TEXT OPTIONS:");
-      primaryTexts.forEach((t, i) => {
-        const header = t.title ? `${i + 1}. ${t.title}` : `${i + 1}.`;
-        parts.push(`\n${header}\n${t.body}`);
-      });
-    }
-    if (headlines.length > 0) {
-      parts.push("\n\nHEADLINES:");
-      headlines.forEach((t, i) => parts.push(`${i + 1}. ${t}`));
-    }
-    if (descriptions.length > 0) {
-      parts.push("\n\nDESCRIPTIONS:");
-      descriptions.forEach((t, i) => parts.push(`${i + 1}. ${t}`));
-    }
-    await navigator.clipboard.writeText(parts.join("\n"));
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 1500);
-  }
-
-  // ── Render ──────────────────────────────────────────────────────────────
-  const showForm = hasGenerated && !isGenerating && (primaryTexts.length > 0 || headlines.length > 0);
-  const hasCampaign = Boolean(selectedCampaignId);
+  const fullRunning = running && gen.state.target?.kind === "full";
+  const regeneratingId = running && gen.state.target?.kind === "variant" ? gen.state.target.id : null;
 
   return (
-    <div className="flex h-full w-full flex-col md:flex-row">
-      {/* ────────────────── LEFT: Selector Panel ────────────────── */}
-      <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto md:overflow-hidden flex flex-col max-h-[40vh] md:max-h-full">
-        <AdCopySelector
-          dateRange={dateRange}
-          selectedAccountId={selectedAccountId}
-          selectedCampaignId={selectedCampaignId}
-          onSelect={handleSelect}
-          onClear={handleClear}
-        />
-      </aside>
+    <TooltipProvider delayDuration={300}>
+      <div className="flex min-h-0 flex-1 gap-4 lg:gap-6">
+        {/* Left: campaign picker (lg+; a sheet below) */}
+        <Card className="hidden w-72 shrink-0 flex-col lg:flex">{selector}</Card>
 
-      {/* ────────────────── CENTER: Editor Panel ────────────────── */}
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Toolbar */}
-        <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-1.5">
-            <PenTool className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-medium text-foreground">Ad Copy Generator</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Industry selector */}
-            <div className="flex items-center gap-1.5">
-              <select
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value as IndustryId)}
-                className="h-7 rounded-full border bg-muted/40 px-2.5 text-[11px] font-medium text-muted-foreground outline-none focus:border-primary transition-colors"
-              >
-                {INDUSTRY_PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-              {industry === "custom" && (
-                <input
-                  type="text"
-                  value={customIndustry}
-                  onChange={(e) => setCustomIndustry(e.target.value)}
-                  placeholder="Industry..."
-                  maxLength={100}
-                  className="h-7 w-28 rounded-full border bg-muted/40 px-2.5 text-[11px] font-medium outline-none focus:border-primary transition-colors"
-                />
+        {/* Center: creatives, brief, copy */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {/* gap, not space-y: the hidden (display:none) toolbars would still offset the first card. */}
+          <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-6">
+            <div className="flex items-center gap-2 lg:hidden">
+              <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="min-w-0 flex-1 justify-start">
+                <ListFilter />
+                <span className="truncate">{campaign?.name ?? "Choose a campaign"}</span>
+              </Button>
+              {campaign && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setPreviewOpen(true)} className="xl:hidden">
+                  <Eye />
+                  Preview
+                </Button>
               )}
             </div>
-
-            <ModelPicker model={model} onChange={setModel} disabled={isGenerating} />
-          </div>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-2xl space-y-6 p-4 pb-8">
-
-            {/* ── Creative Grid ── */}
-            {hasCampaign && creatives && creatives.length > 0 && (
-              <div className="rounded-xl border bg-card/50 p-4">
-                <CreativeGrid
-                  creatives={creatives}
-                  selectedIds={selectedCreativeIds}
-                  onToggle={toggleCreative}
-                  onSelectAll={selectAllCreatives}
-                  onClearAll={clearAllCreatives}
-                />
+            {campaign && (
+              <div className="hidden justify-end lg:flex xl:hidden">
+                <Button type="button" variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+                  <Eye />
+                  Preview
+                </Button>
               </div>
             )}
 
-            {hasCampaign && creatives && creatives.length === 0 && !creativesLoading && (
-              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                <AlertCircle className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">No creatives found for this campaign</p>
-              </div>
-            )}
-
-            {hasCampaign && creativesLoading && (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading creatives...</span>
-              </div>
-            )}
-
-            {/* ── Upload Images ── */}
-            {hasCampaign && (
-              <div className="rounded-xl border bg-card/50 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Upload className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">
-                      Upload Creative Images
-                    </p>
-                  </div>
-                  {uploadedImages.length > 0 && (
-                    <button
-                      onClick={clearUploadedImages}
-                      className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  Upload high-quality creative images for AI to analyze promo codes, offers, and visual details.
+            {!campaignId ? (
+              <Card className="flex flex-col items-center px-6 py-14 text-center">
+                <PenTool className="size-8 text-muted-foreground" aria-hidden />
+                <p className="mt-3 text-base font-semibold tracking-tight">Write ad copy from your live creatives</p>
+                <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                  Pick a campaign, choose the creatives to learn from (or upload originals), and Claude writes primary text, headlines and
+                  descriptions you can edit, preview and publish as a paused draft.
                 </p>
-
-                {/* Uploaded image previews */}
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                    {uploadedImages.map((img) => (
-                      <div
-                        key={img.id}
-                        className="group relative aspect-square overflow-hidden rounded-lg border-2 border-primary ring-1 ring-primary/30"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.preview}
-                          alt={img.name}
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          onClick={() => removeUploadedImage(img.id)}
-                          className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5">
-                          <p className="text-[10px] text-white truncate leading-tight">
-                            {img.name}
-                          </p>
+                <Button type="button" className="mt-5 lg:hidden" onClick={() => setPickerOpen(true)}>
+                  Choose a campaign
+                </Button>
+              </Card>
+            ) : (
+              <>
+                <Card>
+                  <CardHeader className="pb-4 md:pb-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs text-muted-foreground">{account?.name}</p>
+                        <CardTitle className="truncate font-semibold tracking-tight" title={campaign?.name}>
+                          {campaign?.name ?? "Campaign"}
+                        </CardTitle>
+                      </div>
+                      {campaign && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge tone={campaign.status === "ACTIVE" ? "success" : "neutral"}>
+                            {campaign.status.charAt(0) + campaign.status.slice(1).toLowerCase()}
+                          </StatusBadge>
+                          <Badge variant="outline" className="tabular-nums">
+                            {formatCurrency(campaign.insights.spend)}
+                          </Badge>
+                          <Badge variant="outline" className="tabular-nums">
+                            {formatRoas(campaign.insights.roas)} ROAS
+                          </Badge>
                         </div>
+                      )}
+                    </div>
+                    <CardDescription>Choose up to {MAX_CREATIVES} creatives for Claude to read — their images, live copy and results.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {creativesLoading ? (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                        {Array.from({ length: 8 }, (_, i) => (
+                          <Skeleton key={i} className="aspect-[4/5] w-full" />
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Upload button */}
-                {uploadedImages.length < MAX_UPLOADS && (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className={cn(
-                      "flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed py-4 transition-colors",
-                      "text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5"
+                    ) : creativesError ? (
+                      <p className="rounded-2xl bg-muted/50 px-3 py-6 text-center text-sm text-muted-foreground">
+                        Couldn&apos;t load this campaign&apos;s creatives. Upload images instead, or try another campaign.
+                      </p>
+                    ) : creatives && creatives.length > 0 ? (
+                      <CreativeGrid
+                        creatives={creatives}
+                        selectedIds={selectedCreativeIds}
+                        onToggle={toggleCreative}
+                        onSelectMany={selectCreatives}
+                        onClearAll={clearCreatives}
+                        maxSelection={MAX_CREATIVES}
+                      />
+                    ) : (
+                      <p className="rounded-2xl bg-muted/50 px-3 py-6 text-center text-sm text-muted-foreground">
+                        No ads in this campaign for the selected period — upload images below.
+                      </p>
                     )}
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                    <span className="text-sm font-medium">
-                      {uploadedImages.length === 0
-                        ? "Click to upload images"
-                        : `Add more (${uploadedImages.length}/${MAX_UPLOADS})`}
-                    </span>
-                  </button>
-                )}
+                    <UploadZone
+                      uploads={uploads}
+                      processing={processing}
+                      max={MAX_UPLOADS}
+                      onAddFiles={(f) => void addFiles(f)}
+                      onRemove={removeUpload}
+                      onClear={clearUploads}
+                    />
+                  </CardContent>
+                </Card>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
+                <BriefCard
+                  settings={settings}
+                  onChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
+                  model={model}
+                  onModelChange={setModel}
+                  landingUrl={landingUrl}
+                  onLandingUrlChange={setLandingUrl}
+                  canGenerate={canGenerate}
+                  disabledReason={disabledReason}
+                  running={running}
+                  hasCopy={hasCopy}
+                  pinnedCount={pinnedCount}
+                  onGenerate={() => void handleGenerate()}
+                  onStop={gen.stop}
                 />
 
-                <p className="text-[10px] text-muted-foreground">
-                  JPEG, PNG, WebP, or GIF. Max 5 MB per image.
-                </p>
-              </div>
-            )}
-
-            {/* ── Generate button ── */}
-            {hasCampaign && (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleGenerate}
-                  disabled={!canGenerate || isGenerating}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all",
-                    "bg-primary text-primary-foreground hover:bg-primary/90",
-                    "disabled:opacity-40 disabled:cursor-not-allowed"
-                  )}
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4" />
-                      Generate with AI
-                    </>
-                  )}
-                </button>
-
-                {isGenerating && (
-                  <button
-                    onClick={handleStop}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Square className="h-3 w-3 fill-current" />
-                    Stop
-                  </button>
-                )}
-
-                {hasGenerated && !isGenerating && (
-                  <button
-                    onClick={handleGenerate}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Regenerate
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* ── Error ── */}
-            {error && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              </div>
-            )}
-
-            {/* ── Streaming indicator ── */}
-            {isGenerating && streamingText && (
-              <div className="rounded-xl border bg-card/50 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <span className="text-sm font-medium text-primary">Generating ad copy...</span>
-                </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap opacity-60">
-                  {streamingText.slice(-500)}
-                </div>
-              </div>
-            )}
-
-            {/* ── Generated form fields ── */}
-            {showForm && (
-              <div className="space-y-6">
-                {/* Copy all button */}
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-foreground">Generated Ad Copy</h3>
-                  <div className="flex items-center gap-2">
-                    {selectedAccountId && selectedCampaignId && (
-                      <button
-                        onClick={() => setDraftModalOpen(true)}
-                        className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Create Draft Ad
-                      </button>
-                    )}
-                    <button
-                      onClick={copyAll}
-                      className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {copiedAll ? (
-                        <><Check className="h-3 w-3 text-green-500" /> Copied!</>
-                      ) : (
-                        <><Copy className="h-3 w-3" /> Copy all</>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Primary Text section */}
-                {primaryTexts.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      Primary Text
-                    </h4>
-                    {primaryTexts.map((variation, i) => (
-                      <div key={i} className="space-y-1">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {variation.title || `Option ${i + 1}`}
-                        </p>
-                        <CopyableField
-                          value={variation.body}
-                          onChange={(val) => updatePrimaryText(i, val)}
-                          onRemove={primaryTexts.length > 1 ? () => removePrimaryText(i) : undefined}
-                          multiline
-                        />
-                      </div>
-                    ))}
-                    <button
-                      onClick={addPrimaryText}
-                      className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add text option
-                    </button>
+                {error && (
+                  <div className={cn("flex gap-2 rounded-2xl border p-3 text-sm", badgeTone.danger)} role="alert">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <p>{error}</p>
                   </div>
                 )}
+                {notice && !error && <p className="px-1 text-xs text-muted-foreground">{notice}</p>}
 
-                {/* Headlines section */}
-                {headlines.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      Headlines
-                    </h4>
-                    {headlines.map((text, i) => (
-                      <CopyableField
-                        key={i}
-                        value={text}
-                        onChange={(val) => updateHeadline(i, val)}
-                        onRemove={headlines.length > 1 ? () => removeHeadline(i) : undefined}
-                      />
-                    ))}
-                    <button
-                      onClick={addHeadline}
-                      className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add headline
-                    </button>
-                  </div>
+                {fullRunning && <StreamingCard state={gen.state} />}
+
+                {!fullRunning && hasCopy && (
+                  <>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => void copyText("all", formatCopyAll(lists))}>
+                        {copiedKey === "all" ? <Check /> : <Copy />}
+                        {copiedKey === "all" ? "Copied" : "Copy all"}
+                      </Button>
+                      <Button type="button" size="sm" onClick={() => setDraftOpen(true)} disabled={running}>
+                        <Plus />
+                        Create draft ad
+                      </Button>
+                    </div>
+                    <CopyEditor
+                      lists={lists}
+                      offers={offers}
+                      selected={selected}
+                      busy={running}
+                      regeneratingId={regeneratingId}
+                      copiedKey={copiedKey}
+                      onEdit={editVariant}
+                      onRemove={removeVariant}
+                      onAdd={addVariant}
+                      onSelect={selectVariant}
+                      onRegenerate={regenerate}
+                      onUndo={undoRewrite}
+                      onCopy={copyVariant}
+                    />
+                  </>
                 )}
-
-                {/* Descriptions section */}
-                {descriptions.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      Descriptions
-                    </h4>
-                    {descriptions.map((text, i) => (
-                      <CopyableField
-                        key={i}
-                        value={text}
-                        onChange={(val) => updateDescription(i, val)}
-                        onRemove={descriptions.length > 1 ? () => removeDescription(i) : undefined}
-                        multiline
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Empty state ── */}
-            {!hasCampaign && !hasGenerated && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 mb-4">
-                  <PenTool className="h-7 w-7 text-primary" />
-                </div>
-                <h3 className="text-base font-semibold mb-1.5">AI Ad Copy Generator</h3>
-                <p className="max-w-sm text-sm text-muted-foreground leading-relaxed">
-                  Select an account and campaign in the left panel, then pick creatives
-                  and let AI generate high-converting primary text, headlines, and descriptions.
-                </p>
-              </div>
+              </>
             )}
           </div>
         </div>
+
+        {/* Right: live preview (xl+; a sheet below) */}
+        <Card className="hidden w-[380px] shrink-0 flex-col xl:flex">{preview}</Card>
       </div>
 
-      {/* ────────────────── RIGHT: Ad Preview ────────────────── */}
-      <div className="hidden lg:flex w-[400px] shrink-0 flex-col border-l bg-muted/20">
-        <AdPreview
-          imageUrl={previewImageUrl}
-          primaryText={primaryTexts[previewPrimaryIdx]?.body ?? ""}
-          headline={headlines[previewHeadlineIdx] ?? ""}
-          description={descriptions[previewDescriptionIdx] ?? ""}
-          pageName={selectedAccount?.name ?? "Your Page"}
-          primaryTexts={primaryTexts}
-          headlines={headlines}
-          descriptions={descriptions}
-          previewPrimaryIdx={previewPrimaryIdx}
-          previewHeadlineIdx={previewHeadlineIdx}
-          previewDescriptionIdx={previewDescriptionIdx}
-          onPrimaryIdxChange={setPreviewPrimaryIdx}
-          onHeadlineIdxChange={setPreviewHeadlineIdx}
-          onDescriptionIdxChange={setPreviewDescriptionIdx}
-        />
-      </div>
-
-      {/* ────────────────── Draft Ad Modal ────────────────── */}
-      {selectedAccountId && selectedCampaignId && (
+      {pickerOpen && (
+        <PanelSheet open={pickerOpen} onOpenChange={setPickerOpen} side="left" title="Campaign" description="Pick an account and campaign">
+          {selector}
+        </PanelSheet>
+      )}
+      {previewOpen && (
+        <PanelSheet open={previewOpen} onOpenChange={setPreviewOpen} side="right" title="Ad preview" description="Preview the selected copy">
+          {preview}
+        </PanelSheet>
+      )}
+      {draftOpen && accountId && campaignId && (
         <CreateDraftModal
-          open={draftModalOpen}
-          onClose={() => setDraftModalOpen(false)}
-          accountId={selectedAccountId}
-          campaignId={selectedCampaignId}
-          campaignName={selectedCampaign?.name ?? ""}
-          primaryTexts={primaryTexts}
-          headlines={headlines}
-          descriptions={descriptions}
-          primaryIdx={previewPrimaryIdx}
-          headlineIdx={previewHeadlineIdx}
-          descriptionIdx={previewDescriptionIdx}
-          uploadedImages={uploadedImages}
-          selectedCreatives={selectedCreativesData}
-          allCreatives={creatives ?? []}
+          onClose={() => setDraftOpen(false)}
+          accountId={accountId}
+          campaignId={campaignId}
+          campaignName={campaign?.name ?? "Campaign"}
           dateRange={dateRange}
+          lists={lists}
+          initialSelected={selected}
+          images={imageOptions.filter((o) => o.src || o.imageHash)}
+          initialImageKey={previewImageKey}
+          detectedPageId={detectedPageId}
+          defaultWebsiteUrl={landingUrl || existingLink}
+          attempts={attempts}
+          onAttempt={recordAttempt}
         />
       )}
-    </div>
+      {confirmDialog}
+    </TooltipProvider>
   );
 }
 
-// ─── Model Picker (inline) ──────────────────────────────────────────────────
-function ModelPicker({
-  model,
-  onChange,
-  disabled,
-}: {
-  model: ChatModelId;
-  onChange: (id: ChatModelId) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = CHAT_MODELS.find((m) => m.id === model)!;
+const PHASE_LABEL: Record<GenState["phase"], string> = {
+  idle: "Starting…",
+  images: "Loading creative images…",
+  thinking: "Reading the creatives…",
+  writing: "Writing copy…",
+};
 
+/** Live view of a full generation: phase, Claude's thinking summary, and variants as they stream in. */
+function StreamingCard({ state }: { state: GenState }) {
+  const p = state.partial;
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => !disabled && setOpen((v) => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        disabled={disabled}
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-          open
-            ? "border-primary/50 bg-primary/10 text-primary"
-            : "border-border bg-muted/40 text-muted-foreground hover:border-border hover:text-foreground",
-          disabled && "cursor-not-allowed opacity-40"
-        )}
-      >
-        <current.icon className="h-3 w-3" />
-        {current.label}
-        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border border-border bg-popover shadow-lg">
-          <p className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Model
-          </p>
-          {CHAT_MODELS.map((m) => {
-            const Icon = m.icon;
-            const isActive = m.id === model;
-            return (
-              <button
-                key={m.id}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(m.id);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
-                  isActive && "text-primary"
-                )}
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" />
-                <div className="flex-1">
-                  <p className={cn("font-medium", isActive && "text-primary")}>{m.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{m.description}</p>
-                </div>
-                {isActive && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-              </button>
-            );
-          })}
+    <Card aria-busy="true">
+      <CardHeader className="pb-3 md:pb-3">
+        <div className="flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+          {/* Only the phase is announced — the streamed copy below changes every 120 ms. */}
+          <CardTitle aria-live="polite" className="text-sm font-semibold tracking-tight">
+            {PHASE_LABEL[state.phase]}
+          </CardTitle>
         </div>
-      )}
-    </div>
+        {state.fallback && (
+          <CardDescription>
+            Continuing on {state.fallback.to} — {state.fallback.from} declined part of the request.
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {state.thinking && !p && (
+          <p className="line-clamp-4 whitespace-pre-wrap text-xs italic text-muted-foreground">{state.thinking.trim()}</p>
+        )}
+        {p ? (
+          <div className="space-y-4">
+            {p.detectedOffers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {p.detectedOffers.map((o) => (
+                  <Badge key={o} variant="outline" className="font-mono">
+                    {o}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {p.primaryTexts.map((t, i) => (
+              <div key={i} className="space-y-1 rounded-2xl p-3 ring-1 ring-foreground/10">
+                {t.angle && <p className="text-xs font-medium text-muted-foreground">{t.angle}</p>}
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">{t.text}</p>
+              </div>
+            ))}
+            {p.headlines.length > 0 && (
+              <ul className="space-y-1 text-sm font-medium" role="list">
+                {p.headlines.map((h, i) => (
+                  <li key={i}>{h}</li>
+                ))}
+              </ul>
+            )}
+            {p.descriptions.length > 0 && (
+              <ul className="space-y-1 text-sm text-muted-foreground" role="list">
+                {p.descriptions.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

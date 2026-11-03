@@ -7,7 +7,7 @@ import cache, { CacheKeys, TTL } from "@/lib/cache";
 import { parseDateRangeFromParams, dateRangeCacheKey } from "@/lib/utils";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
 import type { ApiResponse } from "@/types/api";
-import type { CampaignCreative } from "@/types/dashboard";
+import type { AdCopyCreative } from "@/lib/adCopy/types";
 import type { MetaAdWithCreative, MetaCreativeDetail } from "@/lib/meta/types";
 
 /**
@@ -36,9 +36,10 @@ function resolveImageUrl(creative: MetaCreativeDetail | undefined): string | nul
   return creative.thumbnail_url ?? null;
 }
 
-function transformToCreative(ad: MetaAdWithCreative): CampaignCreative {
+function transformToCreative(ad: MetaAdWithCreative): AdCopyCreative {
   const c = ad.creative;
   const insights = ad.insights?.data?.[0] as Record<string, number | undefined> | undefined;
+  const link = (c?.object_story_spec?.link_data as { link?: unknown } | undefined)?.link;
 
   return {
     adId: ad.id,
@@ -56,6 +57,8 @@ function transformToCreative(ad: MetaAdWithCreative): CampaignCreative {
     impressions: (insights?.impressions ?? 0) as number,
     clicks: (insights?.clicks ?? 0) as number,
     ctr: (insights?.ctr ?? 0) as number,
+    existingLink: typeof link === "string" && /^https?:\/\//i.test(link) ? link : null,
+    isVideo: Boolean(c?.object_story_spec?.video_data || c?.video_data),
   };
 }
 
@@ -79,11 +82,13 @@ export async function GET(request: Request) {
 
     const dateRange = parseDateRangeFromParams(searchParams);
     const dateKey = dateRangeCacheKey(dateRange);
-    const cacheKey = CacheKeys.campaignCreatives(campaignId, dateKey);
+    // Account in the L1 key too: the Meta read is filtered by BOTH, so a
+    // mismatched pair must not cache an empty list for the real account.
+    const cacheKey = CacheKeys.campaignCreatives(`${accountId}:${campaignId}`, dateKey);
 
-    const cached = cache.get<CampaignCreative[]>(cacheKey);
+    const cached = cache.get<AdCopyCreative[]>(cacheKey);
     if (cached) {
-      const response: ApiResponse<CampaignCreative[]> = {
+      const response: ApiResponse<AdCopyCreative[]> = {
         data: cached,
         meta: { cached: true, timestamp: Date.now(), dateRange: dateKey },
       };
@@ -95,7 +100,7 @@ export async function GET(request: Request) {
 
     cache.set(cacheKey, creatives, TTL.CREATIVES);
 
-    const response: ApiResponse<CampaignCreative[]> = {
+    const response: ApiResponse<AdCopyCreative[]> = {
       data: creatives,
       meta: { cached: false, timestamp: Date.now(), dateRange: dateKey },
     };

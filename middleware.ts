@@ -66,11 +66,11 @@ function decodePayload(token: string): Record<string, unknown> | null {
 /** Map route patterns to required permission keys. */
 type PermKey = "dashboard" | "analyst" | "studio" | "jsoneditor" | "adcopy" | "invoice" | "users" | "closers" | "media" | "media_manage" | "admin" | "apitokens" | "meta_accounts";
 
-const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
-  { match: (p) => p === "/dashboard/chat", perm: "analyst" },
-  { match: (p) => p.startsWith("/dashboard/generate"), perm: "studio" },
-  { match: (p) => p.startsWith("/dashboard/json-editor"), perm: "jsoneditor" },
-  { match: (p) => p.startsWith("/dashboard/ad-copy"), perm: "adcopy" },
+/** A route needs `perm`, or ANY of the listed keys (Creative Studio holds four tools). */
+const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey | PermKey[] }[] = [
+  // Creative Studio: reachable with any of its tools; the page lists only the
+  // tabs an admin holds and each tool's /api route keeps its own key below.
+  { match: (p) => p === "/dashboard/creative" || p.startsWith("/dashboard/creative/"), perm: ["analyst", "studio", "jsoneditor", "adcopy"] },
   { match: (p) => p.startsWith("/dashboard/invoice"), perm: "invoice" },
   { match: (p) => p.startsWith("/dashboard/users"), perm: "users" },
   { match: (p) => p.startsWith("/dashboard/meta-accounts"), perm: "meta_accounts" },
@@ -85,7 +85,7 @@ const ROUTE_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
 ];
 
 /** Map API routes to required permissions (defense in depth). */
-const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
+const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey | PermKey[] }[] = [
   { match: (p) => p.startsWith("/api/chat"), perm: "analyst" },
   { match: (p) => p.startsWith("/api/generate"), perm: "studio" },
   { match: (p) => p.startsWith("/api/json-editor"), perm: "jsoneditor" },
@@ -110,10 +110,11 @@ const API_PERMISSIONS: { match: (p: string) => boolean; perm: PermKey }[] = [
   { match: (p) => p.startsWith("/api/admin/admins"), perm: "admin" },
   { match: (p) => p.startsWith("/api/admin/api-tokens"), perm: "apitokens" },
   { match: (p) => p.startsWith("/api/admin/projection"), perm: "dashboard" },
-  { match: (p) => p.startsWith("/api/accounts"), perm: "dashboard" },
-  { match: (p) => p.startsWith("/api/ads"), perm: "dashboard" },
-  { match: (p) => p.startsWith("/api/adsets"), perm: "dashboard" },
-  { match: (p) => p.startsWith("/api/campaigns"), perm: "dashboard" },
+  // Read-only (GET) Meta lists — the AI Analyst + Ad Copy pickers need them too.
+  { match: (p) => p.startsWith("/api/accounts"), perm: ["dashboard", "analyst", "adcopy"] },
+  { match: (p) => p === "/api/ads" || p.startsWith("/api/ads/"), perm: "dashboard" },
+  { match: (p) => p.startsWith("/api/adsets"), perm: ["dashboard", "analyst", "adcopy"] },
+  { match: (p) => p.startsWith("/api/campaigns"), perm: ["dashboard", "analyst", "adcopy"] },
   { match: (p) => p.startsWith("/api/insights"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/alerts"), perm: "dashboard" },
   { match: (p) => p.startsWith("/api/settings"), perm: "dashboard" },
@@ -132,6 +133,10 @@ function hasPerm(perms: Record<string, boolean>, key: PermKey): boolean {
   return false;
 }
 
+function hasRoutePerm(perms: Record<string, boolean>, need: PermKey | PermKey[]): boolean {
+  return Array.isArray(need) ? need.some((key) => hasPerm(perms, key)) : hasPerm(perms, need);
+}
+
 /**
  * Best landing page for an admin WITHOUT the `dashboard` permission (e.g. an
  * external partner admin holding only `users`). Login always sends to
@@ -144,12 +149,12 @@ const LANDING_FALLBACKS: { perm: PermKey; path: string }[] = [
   { perm: "users", path: "/dashboard/users" },
   { perm: "closers", path: "/dashboard/closers" },
   { perm: "media", path: "/dashboard/media-buyers" },
-  { perm: "analyst", path: "/dashboard/chat" },
+  { perm: "analyst", path: "/dashboard/creative?tab=analyst" },
   { perm: "invoice", path: "/dashboard/invoice" },
   { perm: "meta_accounts", path: "/dashboard/meta-accounts" },
-  { perm: "studio", path: "/dashboard/generate" },
-  { perm: "adcopy", path: "/dashboard/ad-copy" },
-  { perm: "jsoneditor", path: "/dashboard/json-editor" },
+  { perm: "studio", path: "/dashboard/creative?tab=image" },
+  { perm: "adcopy", path: "/dashboard/creative?tab=ad-copy" },
+  { perm: "jsoneditor", path: "/dashboard/creative?tab=json" },
   { perm: "admin", path: "/dashboard/admins" },
   { perm: "apitokens", path: "/dashboard/api-tokens" },
 ];
@@ -198,7 +203,7 @@ export async function middleware(request: NextRequest) {
       if (!isSuper) {
         const perms = (data.permissions ?? {}) as Record<string, boolean>;
         for (const route of ROUTE_PERMISSIONS) {
-          if (route.match(pathname) && !hasPerm(perms, route.perm)) {
+          if (route.match(pathname) && !hasRoutePerm(perms, route.perm)) {
             // The bare /dashboard is where login (and the sidebar logo) always
             // lands — an admin without the `dashboard` perm gets forwarded to
             // their first permitted page instead of an Access Denied screen.
@@ -223,7 +228,7 @@ export async function middleware(request: NextRequest) {
         if (data && !Boolean(data.isSuper)) {
           const perms = (data.permissions ?? {}) as Record<string, boolean>;
           for (const route of API_PERMISSIONS) {
-            if (route.match(pathname) && !hasPerm(perms, route.perm)) {
+            if (route.match(pathname) && !hasRoutePerm(perms, route.perm)) {
               return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
           }

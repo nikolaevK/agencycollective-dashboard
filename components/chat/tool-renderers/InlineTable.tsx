@@ -1,81 +1,107 @@
 "use client";
 
+import { memo, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatValue } from "@/lib/analyst/format";
 import type { DisplayTableInput } from "@/types/chat";
 
-function formatCell(value: unknown, format?: string): string {
-  if (value == null) return "—";
-  const num = typeof value === "number" ? value : parseFloat(String(value));
+const COLLAPSED_ROWS = 12;
 
-  switch (format) {
-    case "currency":
-      if (isNaN(num)) return String(value);
-      if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`;
-      if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
-      return `$${num.toFixed(2)}`;
-    case "percent":
-      if (isNaN(num)) return String(value);
-      return `${num.toFixed(2)}%`;
-    case "number":
-      if (isNaN(num)) return String(value);
-      return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-    default:
-      return String(value);
-  }
+function isNumeric(format?: string) {
+  return format === "currency" || format === "number" || format === "percent";
 }
 
-export function InlineTable({ input }: { input: DisplayTableInput }) {
-  const { title, columns, rows } = input;
+/** Memoized: a finished table doesn't re-render while the rest of the reply streams. */
+export const InlineTable = memo(function InlineTable({ input }: { input: DisplayTableInput }) {
+  const { title, columns = [], rows = [], currency } = input;
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  if (!rows || rows.length === 0) {
-    return (
-      <div className="my-3 p-4 bg-muted/30 rounded-xl border border-border/50 text-center text-xs text-muted-foreground">
-        No data available
-      </div>
-    );
+  if (rows.length === 0 || columns.length === 0) {
+    return <Card className="p-4 text-center text-xs text-muted-foreground shadow-none">No data available.</Card>;
+  }
+
+
+  async function copyTsv() {
+    // Tab-separated so it pastes straight into Sheets / Excel.
+    const clean = (v: string) => v.replace(/[\t\r\n]+/g, " ");
+    const lines = [
+      columns.map((c) => clean(c.label)).join("\t"),
+      ...rows.map((r) => columns.map((c) => clean(formatValue(r[c.key], c.format, currency))).join("\t")),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard blocked (permissions / insecure context) — nothing to do.
+    }
   }
 
   return (
-    <div className="my-3">
-      {title && (
-        <p className="text-xs font-semibold text-foreground mb-2">{title}</p>
-      )}
-      <div className="overflow-x-auto rounded-xl border border-border/50">
-        <table className="w-full border-collapse text-xs">
-          <thead className="bg-muted/60">
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn(
-                    "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap",
-                    (col.format === "currency" || col.format === "number" || col.format === "percent") && "text-right"
-                  )}
-                >
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {rows.map((row, i) => (
-              <tr key={i} className="even:bg-muted/20 hover:bg-muted/30 transition-colors">
+    <Card className="min-w-0 shadow-none">
+      <div className="flex items-center justify-between gap-2 px-4 pb-1 pt-3">
+        <p className="min-w-0 truncate text-sm font-medium tracking-tight">{title || "Table"}</p>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="-mr-2 shrink-0 text-muted-foreground"
+          onClick={copyTsv}
+          aria-label={copied ? "Copied" : "Copy table for a spreadsheet"}
+          title={copied ? "Copied" : "Copy table (paste into Sheets / Excel)"}
+          data-pdf-ignore=""
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      </div>
+      <Table className="text-xs">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {columns.map((col) => (
+              <TableHead
+                key={col.key}
+                className={cn("h-9 px-4 text-xs text-muted-foreground", isNumeric(col.format) && "text-right")}
+              >
+                {col.label}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {/* Collapsed rows stay in the DOM, hidden + marked, so the PDF export
+              (messagePdf) prints every row while "Show all" is left out. */}
+          {rows.map((row, i) => {
+            const collapsed = !expanded && i >= COLLAPSED_ROWS;
+            return (
+              <TableRow key={i} hidden={collapsed} data-collapsed={collapsed ? "" : undefined}>
                 {columns.map((col) => (
-                  <td
+                  <TableCell
                     key={col.key}
                     className={cn(
-                      "px-3 py-2 text-xs text-foreground/80 whitespace-nowrap",
-                      (col.format === "currency" || col.format === "number" || col.format === "percent") && "text-right tabular-nums"
+                      "px-4 py-2",
+                      isNumeric(col.format) ? "text-right tabular-nums" : "min-w-[8rem] max-w-[22rem] whitespace-normal"
                     )}
                   >
-                    {formatCell(row[col.key], col.format)}
-                  </td>
+                    {formatValue(row[col.key], col.format ?? "text", currency)}
+                  </TableCell>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {rows.length > COLLAPSED_ROWS && (
+        // Collapsed, the last shown row keeps its bottom border (it isn't :last-child).
+        <div className={cn("px-4 py-2", expanded && "border-t")} data-pdf-ignore="">
+          <Button variant="ghost" size="xs" onClick={() => setExpanded((v) => !v)} className="text-muted-foreground">
+            {expanded ? "Show fewer rows" : `Show all ${rows.length} rows`}
+          </Button>
+        </div>
+      )}
+    </Card>
   );
-}
+});

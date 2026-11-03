@@ -60,12 +60,23 @@ export class TokenExpiredError extends Error {
 export class MetaApiError extends Error {
   readonly metaCode: number;
   readonly metaSubcode?: number;
+  /** HTTP status of Meta's response, when there was one. */
+  readonly httpStatus?: number;
+  /** Meta's `is_transient` flag: a server-side hiccup — a write may still have landed. */
+  readonly isTransient?: boolean;
 
-  constructor(message: string, code: number, subcode?: number) {
+  constructor(
+    message: string,
+    code: number,
+    subcode?: number,
+    extra: { httpStatus?: number; isTransient?: boolean } = {}
+  ) {
     super(message);
     this.name = "MetaApiError";
     this.metaCode = code;
     this.metaSubcode = subcode;
+    this.httpStatus = extra.httpStatus;
+    this.isTransient = extra.isTransient;
   }
 }
 
@@ -250,14 +261,18 @@ async function fetchMetaJson(
  * Meta API POST function for mutations (create ads, upload images, etc.).
  * Uses application/x-www-form-urlencoded body (Meta Graph API standard for mutations).
  * Same auth, error handling, and retry logic as metaFetch().
+ *
+ * `timeoutMs` aborts each attempt (AbortSignal.timeout → a DOMException named
+ * "TimeoutError"). For a create, a timeout means the request may still have
+ * landed — callers must treat it as uncertain, never as "nothing was created".
  */
 export async function metaFetchPost<T>(
   path: string,
   schema: z.ZodType<T>,
   body: Record<string, string>,
-  options: { retries?: number } = {}
+  options: { retries?: number; timeoutMs?: number } = {}
 ): Promise<T> {
-  const { retries = 3 } = options;
+  const { retries = 3, timeoutMs } = options;
   const version = getApiVersion();
   const token = getAccessToken();
 
@@ -274,13 +289,14 @@ export async function metaFetchPost<T>(
         },
         body: formBody.toString(),
         cache: "no-store",
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       });
 
       const parsed = await response.json();
       console.log(`[metaFetchPost] ${path} response:`, JSON.stringify(parsed).slice(0, 500));
 
       if (parsed.error) {
-        const { code, message, error_subcode } = parsed.error;
+        const { code, message, error_subcode, is_transient } = parsed.error;
         console.error(`[metaFetchPost] ${path} error:`, parsed.error);
         if (code === 80000 || code === 17 || code === 4) {
           throw new RateLimitError(60);
@@ -288,7 +304,10 @@ export async function metaFetchPost<T>(
         if (code === 190 || code === 102 || code === 10) {
           throw new TokenExpiredError(message);
         }
-        throw new MetaApiError(message, code, error_subcode);
+        throw new MetaApiError(message, code, error_subcode, {
+          httpStatus: response.status,
+          isTransient: is_transient === true,
+        });
       }
 
       if (!response.ok) {
@@ -297,7 +316,9 @@ export async function metaFetchPost<T>(
           await sleep(delay);
           continue;
         }
-        throw new MetaApiError(`HTTP ${response.status}`, response.status);
+        throw new MetaApiError(`HTTP ${response.status}`, response.status, undefined, {
+          httpStatus: response.status,
+        });
       }
 
       const validated = schema.safeParse(parsed);
@@ -333,15 +354,15 @@ export async function metaFetchPost<T>(
 
 /**
  * Meta API POST with multipart/form-data body (for file uploads like adimages).
- * Same auth and error handling as metaFetchPost().
+ * Same auth, error handling and `timeoutMs` as metaFetchPost().
  */
 export async function metaFetchMultipart<T>(
   path: string,
   schema: z.ZodType<T>,
   formData: FormData,
-  options: { retries?: number } = {}
+  options: { retries?: number; timeoutMs?: number } = {}
 ): Promise<T> {
-  const { retries = 3 } = options;
+  const { retries = 3, timeoutMs } = options;
   const version = getApiVersion();
   const token = getAccessToken();
 
@@ -357,13 +378,14 @@ export async function metaFetchMultipart<T>(
         },
         body: formData,
         cache: "no-store",
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       });
 
       const parsed = await response.json();
       console.log(`[metaFetchMultipart] ${path} response:`, JSON.stringify(parsed).slice(0, 500));
 
       if (parsed.error) {
-        const { code, message, error_subcode } = parsed.error;
+        const { code, message, error_subcode, is_transient } = parsed.error;
         console.error(`[metaFetchMultipart] ${path} error:`, parsed.error);
         if (code === 80000 || code === 17 || code === 4) {
           throw new RateLimitError(60);
@@ -371,7 +393,10 @@ export async function metaFetchMultipart<T>(
         if (code === 190 || code === 102 || code === 10) {
           throw new TokenExpiredError(message);
         }
-        throw new MetaApiError(message, code, error_subcode);
+        throw new MetaApiError(message, code, error_subcode, {
+          httpStatus: response.status,
+          isTransient: is_transient === true,
+        });
       }
 
       if (!response.ok) {
@@ -380,7 +405,9 @@ export async function metaFetchMultipart<T>(
           await sleep(delay);
           continue;
         }
-        throw new MetaApiError(`HTTP ${response.status}`, response.status);
+        throw new MetaApiError(`HTTP ${response.status}`, response.status, undefined, {
+          httpStatus: response.status,
+        });
       }
 
       const validated = schema.safeParse(parsed);

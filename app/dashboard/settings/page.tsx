@@ -370,7 +370,7 @@ export default function AdminDocumentationPage() {
         <Section
           icon={Sparkles}
           title="AI Analyst"
-          subtitle="/dashboard/chat · permission: analyst"
+          subtitle="Creative Studio → AI Analyst (/dashboard/creative?tab=analyst) · permission: analyst"
         >
           <p>
             Streaming Claude-powered chat that has live tool access to your
@@ -418,7 +418,7 @@ export default function AdminDocumentationPage() {
         <Section
           icon={ImageIcon}
           title="Image Generator"
-          subtitle="/dashboard/generate · permission: studio"
+          subtitle="Creative Studio → Image Generator (/dashboard/creative?tab=image) · permission: studio"
         >
           <p>
             Google Gemini-powered image generation for creative ideation.
@@ -451,7 +451,7 @@ export default function AdminDocumentationPage() {
         <Section
           icon={Braces}
           title="JSON Editor"
-          subtitle="/dashboard/json-editor · permission: jsoneditor"
+          subtitle="Creative Studio → JSON Editor (/dashboard/creative?tab=json) · permission: jsoneditor"
         >
           <p>
             A scratchpad for crafting and validating Meta Ads API payloads
@@ -472,7 +472,7 @@ export default function AdminDocumentationPage() {
         <Section
           icon={PenTool}
           title="Ad Copy"
-          subtitle="/dashboard/ad-copy · permission: adcopy"
+          subtitle="Creative Studio → Ad Copy (/dashboard/creative?tab=ad-copy) · permission: adcopy"
         >
           <p>
             Draft, organize, and iterate on ad copy for each client account.

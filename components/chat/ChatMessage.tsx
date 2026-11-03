@@ -1,337 +1,433 @@
 "use client";
 
-import React, { useRef, useCallback } from "react";
-import ReactMarkdown from "react-markdown";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+import {
+  AlertCircle,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Copy,
+  FileDown,
+  Globe,
+  Info,
+  Loader2,
+  RotateCcw,
+  ShieldAlert,
+  Sparkles,
+  Square,
+  Wrench,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Sparkles, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { badgeTone, type BadgeTone } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/providers/ToastProvider";
+import { CHAT_MODELS, DEFAULT_MODEL } from "@/lib/chatModels";
+import { messageToMarkdown } from "@/lib/analyst/exportMarkdown";
+import type { PendingTool } from "@/lib/analyst/streamReducer";
+import type { ContentBlock, NoticeBlock, ToolResultBlock, ToolUseBlock } from "@/types/chat";
 import { ToolResultRenderer } from "./ToolResultRenderer";
-import type { ContentBlock } from "@/types/chat";
 
-const ListTypeContext = React.createContext<"ul" | "ol">("ul");
+const loadMarkdown = () => import("./Markdown");
+/** Start fetching the markdown renderer before the first reply arrives. */
+export function preloadChatRenderers() {
+  void loadMarkdown();
+}
+
+const Markdown = dynamic(loadMarkdown, {
+  loading: () => <Skeleton className="h-4 w-2/3 rounded-full" />,
+});
 
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   blocks?: ContentBlock[];
   isStreaming?: boolean;
+  // ── AI Analyst extras (the client-portal analyst passes none of these) ──
+  /** Set only when a fallback model answered (refusal fallback) — a note shows. */
+  servedBy?: string;
+  /** Tool calls the model is still writing (placeholders while streaming). */
+  pendingTools?: PendingTool[];
+  /** Server phase while streaming, e.g. "Loading account data…". */
+  status?: string | null;
+  /** Seconds since the reply started, shown next to the working line. */
+  elapsedSeconds?: number;
+  onRetry?: () => void;
+  onContinue?: () => void;
 }
 
-const markdownComponents = {
-  h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1 className="text-base font-bold text-foreground mt-1 mb-3">{children}</h1>
-  ),
-  h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border pb-1.5 mt-6 mb-3 first:mt-0">
-      {children}
-    </h2>
-  ),
-  h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="text-sm font-semibold text-foreground mt-4 mb-2">{children}</h3>
-  ),
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="text-sm leading-relaxed text-foreground/85 mb-3 last:mb-0">{children}</p>
-  ),
-  strong: ({ children }: { children?: React.ReactNode }) => (
-    <strong className="font-semibold text-foreground">{children}</strong>
-  ),
-  em: ({ children }: { children?: React.ReactNode }) => (
-    <em className="italic text-foreground/75">{children}</em>
-  ),
-  ul: ({ children }: { children?: React.ReactNode }) => (
-    <ListTypeContext.Provider value="ul">
-      <ul className="mb-3 space-y-1.5 list-none ml-0">{children}</ul>
-    </ListTypeContext.Provider>
-  ),
-  ol: ({ children }: { children?: React.ReactNode }) => (
-    <ListTypeContext.Provider value="ol">
-      <ol className="mb-4 space-y-2 list-none ml-0 [counter-reset:li-num]">{children}</ol>
-    </ListTypeContext.Provider>
-  ),
-  li: ({ children }: { children?: React.ReactNode }) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const listType = React.useContext(ListTypeContext);
-    if (listType === "ol") {
-      return (
-        <li className="flex items-start gap-3 [counter-increment:li-num] before:flex before:h-5 before:w-5 before:shrink-0 before:items-center before:justify-center before:rounded-full before:bg-primary/15 before:text-[10px] before:font-bold before:text-primary before:mt-0.5 before:[content:counter(li-num)]">
-          <span className="flex-1 text-sm text-foreground/85 leading-relaxed pt-0.5">{children}</span>
-        </li>
-      );
+// ─── Render model ────────────────────────────────────────────────────────────
+
+const OUTPUT_TOOLS = new Set(["display_metrics", "display_chart", "display_table", "generate_report"]);
+
+interface ActivityEntry {
+  key: string;
+  kind: "note" | "web" | "tool";
+  text: string;
+  /** "incomplete" = no result came back before the reply ended (stopped / failed). */
+  state: "done" | "running" | "error" | "incomplete";
+}
+
+type Item =
+  | { kind: "text"; key: string; text: string }
+  | { kind: "output"; key: string; tool: ToolUseBlock; result?: ToolResultBlock }
+  | { kind: "activity"; key: string; entries: ActivityEntry[] }
+  | { kind: "notice"; key: string; notice: NoticeBlock };
+
+function hostOf(url: unknown): string {
+  try {
+    return new URL(String(url)).host;
+  } catch {
+    return String(url ?? "the page");
+  }
+}
+
+function buildItems(blocks: ContentBlock[], streaming: boolean): Item[] {
+  const results = new Map<string, ToolResultBlock>();
+  for (const b of blocks) if (b.type === "tool_result") results.set(b.tool_use_id, b);
+
+  const items: Item[] = [];
+  const pushEntry = (entry: ActivityEntry) => {
+    const last = items[items.length - 1];
+    if (last?.kind === "activity") last.entries.push(entry);
+    else items.push({ kind: "activity", key: `a-${entry.key}`, entries: [entry] });
+  };
+
+  blocks.forEach((b, i) => {
+    if (b.type === "text") {
+      if (b.text.trim()) items.push({ kind: "text", key: `t-${i}`, text: b.text });
+    } else if (b.type === "progress") {
+      if (b.text.trim()) pushEntry({ key: `p-${b.key}`, kind: "note", text: b.text.trim(), state: "done" });
+    } else if (b.type === "notice") {
+      items.push({ kind: "notice", key: `n-${i}`, notice: b });
+    } else if (b.type === "tool_use") {
+      const result = results.get(b.id);
+      if (OUTPUT_TOOLS.has(b.name)) {
+        items.push({ kind: "output", key: `o-${b.id}`, tool: b, result });
+        return;
+      }
+      // No result once the reply ended: the call never finished (stopped, or the
+      // server didn't report back — the portal sends none on failure). No spinner.
+      const pending = streaming ? "running" : "incomplete";
+      if (b.name === "fetch_landing_page") {
+        const host = hostOf(b.input?.url);
+        pushEntry({
+          key: b.id,
+          kind: "web",
+          text: !result
+            ? streaming
+              ? `Reading ${host}…`
+              : `Couldn't read ${host}`
+            : result.isError
+              ? `Couldn't read ${host}: ${String(result.content)}`
+              : typeof result.content === "string"
+                ? result.content
+                : `Read ${host}`,
+          state: !result ? pending : result.isError ? "error" : "done",
+        });
+      } else {
+        pushEntry({ key: b.id, kind: "tool", text: `Used ${b.name}`, state: result?.isError ? "error" : result ? "done" : pending });
+      }
     }
-    return (
-      <li className="flex items-start gap-2.5">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60 mt-[7px]" />
-        <span className="flex-1 text-sm text-foreground/85 leading-relaxed">{children}</span>
-      </li>
-    );
-  },
-  table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-4 rounded-2xl border border-border">
-      <table className="w-full border-collapse text-xs">{children}</table>
+  });
+  return items;
+}
+
+// ─── Pieces ──────────────────────────────────────────────────────────────────
+
+function EntryIcon({ entry, live }: { entry: ActivityEntry; live: boolean }) {
+  if (entry.state === "running" || live) return <Loader2 className="size-3.5 animate-spin" />;
+  if (entry.state === "error") return <AlertCircle className="size-3.5 text-destructive" />;
+  if (entry.kind === "web") return <Globe className="size-3.5" />;
+  if (entry.kind === "tool") return <Wrench className="size-3.5" />;
+  return <span aria-hidden className="mx-[5px] size-1 rounded-full bg-muted-foreground/70" />;
+}
+
+function ActivityGroup({ entries, live }: { entries: ActivityEntry[]; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  const expanded = live || open || entries.length === 1;
+
+  const list = (
+    <ul className="space-y-1.5">
+      {entries.map((entry, i) => (
+        <li key={entry.key} className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+          <span className="mt-[3px] flex size-3.5 shrink-0 items-center justify-center">
+            <EntryIcon entry={entry} live={live && i === entries.length - 1 && entry.kind === "note"} />
+          </span>
+          <span className={cn("min-w-0 break-words", entry.state === "error" && "text-destructive")}>{entry.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
+  if (expanded && (live || entries.length === 1)) return <div data-pdf-ignore="">{list}</div>;
+
+  return (
+    <div data-pdf-ignore="">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="-ml-1 inline-flex items-center gap-1 rounded-full px-1 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      >
+        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+        {entries.length} steps
+      </button>
+      {open && <div className="mt-1.5 pl-1">{list}</div>}
     </div>
-  ),
-  thead: ({ children }: { children?: React.ReactNode }) => (
-    <thead className="bg-muted/60">{children}</thead>
-  ),
-  tbody: ({ children }: { children?: React.ReactNode }) => (
-    <tbody className="divide-y divide-border/50">{children}</tbody>
-  ),
-  tr: ({ children }: { children?: React.ReactNode }) => (
-    <tr className="even:bg-muted/20 hover:bg-muted/30 transition-colors">{children}</tr>
-  ),
-  th: ({ children }: { children?: React.ReactNode }) => (
-    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-      {children}
-    </th>
-  ),
-  td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="px-3 py-2 text-xs text-foreground/80 whitespace-nowrap">{children}</td>
-  ),
-  blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="flex gap-3 rounded-r-xl border-l-2 border-primary/50 bg-primary/5 px-4 py-3 my-3">
-      <div className="text-sm text-foreground/80 leading-relaxed [&>p]:mb-0">{children}</div>
-    </blockquote>
-  ),
-  code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
-    const isBlock = className?.startsWith("language-");
-    return isBlock ? (
-      <pre className="rounded-2xl bg-muted/70 p-4 overflow-x-auto my-3 border border-border/50">
-        <code className={cn("font-mono text-xs text-foreground", className)} {...props}>
-          {children}
-        </code>
-      </pre>
-    ) : (
-      <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground border border-border/40" {...props}>
-        {children}
-      </code>
-    );
-  },
-  hr: () => <hr className="my-4 border-border/50" />,
+  );
+}
+
+const NOTICE_TONE: Record<NoticeBlock["kind"], BadgeTone> = {
+  refusal: "warning",
+  error: "danger",
+  truncated: "warning",
+  limit: "warning",
+  fallback: "info",
+  stopped: "neutral",
 };
 
-/**
- * Fix inline markdown tables that are missing newlines between rows.
- * Claude sometimes outputs tables as: `| A | B | |---|---| | 1 | 2 |` all on one line.
- * This inserts newlines before each `|` that starts a new row.
- */
-function fixMarkdownTables(text: string): string {
-  // Match lines containing multiple pipe-delimited segments that should be table rows
-  // Pattern: `| ... | | ... |` (row boundary = `| |` which should be `|\n|`)
-  return text.replace(/\|\s*\|(?=\s*[^|\n])/g, "|\n|");
+function NoticeRow({
+  notice,
+  onRetry,
+  onContinue,
+}: {
+  notice: NoticeBlock;
+  onRetry?: () => void;
+  onContinue?: () => void;
+}) {
+  if (notice.kind === "stopped") {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Square className="size-3 fill-current" />
+        {notice.text}
+      </p>
+    );
+  }
+  const tone = NOTICE_TONE[notice.kind];
+  const Icon = notice.kind === "refusal" ? ShieldAlert : notice.kind === "error" ? AlertCircle : Info;
+  const action =
+    notice.action === "retry" && onRetry ? (
+      <Button variant="ghost" size="xs" onClick={onRetry} data-pdf-ignore="" className="shrink-0 text-current hover:bg-foreground/5 hover:text-current">
+        <RotateCcw />
+        Retry
+      </Button>
+    ) : notice.action === "continue" && onContinue ? (
+      <Button variant="ghost" size="xs" onClick={onContinue} data-pdf-ignore="" className="shrink-0 text-current hover:bg-foreground/5 hover:text-current">
+        Continue
+        <ArrowRight />
+      </Button>
+    ) : null;
+
+  return (
+    <div
+      role={notice.kind === "error" ? "alert" : "status"}
+      className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border px-3 py-2 text-sm", badgeTone[tone])}
+    >
+      <Icon className="size-4 shrink-0 self-start sm:self-center" />
+      <p className="min-w-0 flex-1 leading-snug">{notice.text}</p>
+      {action}
+    </div>
+  );
 }
 
-export function ChatMessage({ role, content, blocks, isStreaming }: ChatMessageProps) {
+const PENDING_LABEL: Record<string, string> = {
+  display_chart: "Building chart…",
+  display_table: "Building table…",
+  display_metrics: "Preparing metrics…",
+  generate_report: "Preparing report…",
+  fetch_landing_page: "Opening the page…",
+};
+
+function PendingTools({ tools }: { tools: PendingTool[] }) {
+  return (
+    <>
+      {tools.map((t) => (
+        <div key={t.id} className="space-y-2" aria-live="polite">
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            {PENDING_LABEL[t.name] ?? `Using ${t.name}…`}
+          </p>
+          {t.name === "display_chart" && <Skeleton className="h-48 w-full rounded-3xl" />}
+          {t.name === "display_table" && <Skeleton className="h-28 w-full rounded-3xl" />}
+          {t.name === "display_metrics" && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-[84px] rounded-3xl" />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function modelLabel(id: string): string {
+  const known = CHAT_MODELS.find((m) => m.id === id);
+  if (known) return known.label;
+  const parts = id.split("-");
+  const words = parts.filter((p) => !/^\d+$/.test(p)).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
+  const version = parts.filter((p) => /^\d{1,2}$/.test(p)).join(".");
+  return `${words.join(" ")} ${version}`.trim();
+}
+
+function IconAction({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button variant="ghost" size="icon-sm" onClick={onClick} aria-label={label} title={label} className="text-muted-foreground">
+      {children}
+    </Button>
+  );
+}
+
+// ─── Message ─────────────────────────────────────────────────────────────────
+
+function ChatMessageImpl({
+  role,
+  content,
+  blocks,
+  isStreaming,
+  servedBy,
+  pendingTools,
+  status,
+  elapsedSeconds,
+  onRetry,
+  onContinue,
+}: ChatMessageProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const { toastError } = useToast();
+  const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const handleDownload = useCallback(async () => {
-    const el = contentRef.current;
-    if (!el) return;
-
-    try {
-    const [html2canvas, { jsPDF }] = await Promise.all([
-      import("html2canvas").then((m) => m.default),
-      import("jspdf"),
-    ]);
-
-    // Temporarily widen element so tables have room, let browser auto-size columns
-    const captureWidth = 1400;
-    const origStyles = {
-      width: el.style.width,
-      maxWidth: el.style.maxWidth,
-      overflow: el.style.overflow,
-    };
-    el.style.width = `${captureWidth}px`;
-    el.style.maxWidth = `${captureWidth}px`;
-    el.style.overflow = "visible";
-
-    // Force all table cells to wrap text so nothing clips
-    const cells = el.querySelectorAll("td, th");
-    const origCellStyles: { el: HTMLElement; wordBreak: string; whiteSpace: string; maxWidth: string }[] = [];
-    cells.forEach((cell) => {
-      const c = cell as HTMLElement;
-      origCellStyles.push({ el: c, wordBreak: c.style.wordBreak, whiteSpace: c.style.whiteSpace, maxWidth: c.style.maxWidth });
-      c.style.wordBreak = "break-word";
-      c.style.whiteSpace = "normal";
-      c.style.maxWidth = "300px";
-    });
-
-    const tables = el.querySelectorAll("table");
-    const origTableStyles: { el: HTMLElement; width: string; fontSize: string; tableLayout: string }[] = [];
-    tables.forEach((table) => {
-      const t = table as HTMLElement;
-      origTableStyles.push({ el: t, width: t.style.width, fontSize: t.style.fontSize, tableLayout: t.style.tableLayout });
-      t.style.width = "100%";
-      t.style.fontSize = "11px";
-      t.style.tableLayout = "auto";
-    });
-
-    const canvas = await html2canvas(el, {
-      scale: 1.5,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-      width: captureWidth,
-      windowWidth: captureWidth,
-    });
-
-    // Restore all original styles
-    el.style.width = origStyles.width;
-    el.style.maxWidth = origStyles.maxWidth;
-    el.style.overflow = origStyles.overflow;
-    origCellStyles.forEach(({ el: c, wordBreak, whiteSpace, maxWidth }) => {
-      c.style.wordBreak = wordBreak;
-      c.style.whiteSpace = whiteSpace;
-      c.style.maxWidth = maxWidth;
-    });
-    origTableStyles.forEach(({ el: t, width, fontSize, tableLayout }) => {
-      t.style.width = width;
-      t.style.fontSize = fontSize;
-      t.style.tableLayout = tableLayout;
-    });
-
-    // A4 landscape — 1000px maps well to the printable area
-    const margin = 10;
-    const pdfWidth = 297;
-    const pageHeight = 210;
-    const contentWidth = pdfWidth - margin * 2;
-    const imgHeight = (canvas.height * contentWidth) / canvas.width;
-
-    const pdf = new jsPDF({ orientation: "l", unit: "mm", format: "a4", compress: true });
-
-    // Header
-    pdf.setFontSize(8);
-    pdf.setTextColor(124, 58, 237);
-    pdf.text("AGENCY COLLECTIVE", margin, 8);
-    pdf.setFontSize(14);
-    pdf.setTextColor(32, 48, 68);
-    pdf.text("AI Analyst Report", margin, 14);
-    pdf.setFontSize(8);
-    pdf.setTextColor(104, 120, 143);
-    pdf.text(`Generated ${new Date().toLocaleDateString()}`, margin, 19);
-    pdf.setDrawColor(124, 58, 237);
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, 21, contentWidth + margin, 21);
-
-    const headerHeight = 26;
-    const overlapMm = 8; // repeat 8mm of content on next page to avoid cutting text
-    let currentY = 0; // tracks position in the source image (in mm)
-    let isFirstPage = true;
-
-    // Paginate with overlap so text at page boundaries is never cut
-    while (currentY < imgHeight) {
-      const yOffset = isFirstPage ? headerHeight : margin;
-      const availableHeight = pageHeight - yOffset - margin;
-      const sliceHeight = Math.min(imgHeight - currentY, availableHeight);
-
-      const sourceY = currentY * (canvas.height / imgHeight);
-      const sourceH = sliceHeight * (canvas.height / imgHeight);
-
-      const pageCanvas = document.createElement("canvas");
-      pageCanvas.width = canvas.width;
-      pageCanvas.height = sourceH;
-      const ctx = pageCanvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceH, 0, 0, canvas.width, sourceH);
-        const pageImg = pageCanvas.toDataURL("image/jpeg", 0.85);
-        pdf.addImage(pageImg, "JPEG", margin, yOffset, contentWidth, sliceHeight);
-      }
-
-      // Advance by slice height minus overlap (so next page repeats the boundary area)
-      const advance = sliceHeight - (currentY + sliceHeight < imgHeight ? overlapMm : 0);
-      currentY += advance;
-      isFirstPage = false;
-
-      if (currentY < imgHeight) {
-        pdf.addPage();
-      }
-    }
-
-    // Footer on last page
-    const lastPageHeight = pdf.internal.pageSize.getHeight();
-    pdf.setFontSize(7);
-    pdf.setTextColor(104, 120, 143);
-    pdf.text("Generated by Agency Collective AI Analyst", margin, lastPageHeight - 6);
-    pdf.text(new Date().toLocaleDateString(), contentWidth + margin - 20, lastPageHeight - 6);
-
-    // Open preview in new tab — user can print or save from there
-    const pdfBlob = pdf.output("blob");
-    const previewUrl = URL.createObjectURL(pdfBlob);
-    window.open(previewUrl, "_blank");
-    // Clean up blob URL after a delay to allow the tab to load
-    setTimeout(() => URL.revokeObjectURL(previewUrl), 60000);
-    } catch (err) {
-      console.error("[PDF] Generation failed:", err);
-      alert("PDF generation failed. Please try again or use a smaller report.");
-    }
-  }, []);
+  const items = useMemo(() => (blocks && blocks.length > 0 ? buildItems(blocks, Boolean(isStreaming)) : []), [blocks, isStreaming]);
+  // The first message (usually the user's) starts loading the markdown chunk,
+  // so the reply's first tokens don't wait on it — on every chat surface.
+  useEffect(preloadChatRenderers, []);
 
   if (role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] md:max-w-[72%] rounded-3xl rounded-tr-md bg-primary px-4 py-3 text-sm text-primary-foreground leading-relaxed [overflow-wrap:anywhere]">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground [overflow-wrap:anywhere] md:max-w-[75%]">
           {content}
         </div>
       </div>
     );
   }
 
-  // Assistant message
-  const hasBlocks = blocks && blocks.length > 0;
-  const hasToolUse = blocks?.some((b) => b.type === "tool_use") ?? false;
-  const showDownload = hasToolUse && !isStreaming;
+  const hasBlocks = Boolean(blocks && blocks.length > 0);
+  const hasOutputs = items.some((i) => i.kind === "output");
+  const lastItem = items[items.length - 1];
+  const pending = isStreaming ? pendingTools ?? [] : [];
+  const showWorking = Boolean(isStreaming && (status || (pending.length === 0 && lastItem?.kind !== "text" && hasBlocks)));
+  const hasVisibleContent = items.some((i) => i.kind === "text" || i.kind === "output");
+  const fellBack = Boolean(servedBy);
+
+  async function copyReply() {
+    const text = messageToMarkdown({ id: "", role: "assistant", content, blocks });
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toastError("Couldn't copy to the clipboard.");
+    }
+  }
+
+  async function downloadPdf() {
+    const el = contentRef.current;
+    if (!el || exporting) return;
+    setExporting(true);
+    try {
+      const { exportMessagePdf } = await import("./messagePdf");
+      await exportMessagePdf(el);
+    } catch (err) {
+      console.error("[PDF] Generation failed:", err);
+      toastError("PDF generation failed. Try again, or copy the reply instead.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
-    <div className="flex gap-3 items-start">
-      {/* Avatar */}
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary mt-0.5 text-primary-foreground">
-        <Sparkles className="h-3.5 w-3.5" />
+    <div className="group/message flex items-start gap-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <Sparkles className="size-3.5" />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0 overflow-hidden max-w-[85%] md:max-w-none">
-        <div ref={contentRef} className="bg-card rounded-3xl rounded-tl-md p-4 border">
+      <div className="min-w-0 flex-1 space-y-2">
+        <div ref={contentRef} className="space-y-3">
           {hasBlocks ? (
-            blocks.map((block, i) => {
-              if (block.type === "text") {
-                if (!block.text) return null;
-                return (
-                  <ReactMarkdown key={i} components={markdownComponents}>
-                    {fixMarkdownTables(block.text)}
-                  </ReactMarkdown>
-                );
+            items.map((item, idx) => {
+              const isLast = idx === items.length - 1;
+              switch (item.kind) {
+                case "text":
+                  return (
+                    <div key={item.key}>
+                      <Markdown text={item.text} />
+                      {isStreaming && isLast && pending.length === 0 && !status && (
+                        <span aria-hidden className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-foreground/60 align-text-bottom" />
+                      )}
+                    </div>
+                  );
+                case "output":
+                  return (
+                    <div key={item.key} className="min-w-0">
+                      <ToolResultRenderer tool={item.tool} result={item.result} streaming={Boolean(isStreaming)} />
+                    </div>
+                  );
+                case "activity":
+                  return <ActivityGroup key={item.key} entries={item.entries} live={Boolean(isStreaming && isLast)} />;
+                case "notice":
+                  return <NoticeRow key={item.key} notice={item.notice} onRetry={onRetry} onContinue={onContinue} />;
               }
-              if (block.type === "tool_use") {
-                return (
-                  <ToolResultRenderer
-                    key={block.id}
-                    tool={block}
-                    allBlocks={blocks}
-                  />
-                );
-              }
-              return null;
             })
-          ) : (
-            <ReactMarkdown components={markdownComponents}>
-              {fixMarkdownTables(content)}
-            </ReactMarkdown>
-          )}
+          ) : content ? (
+            <Markdown text={content} />
+          ) : null}
 
-          {isStreaming && (
-            <span className="inline-block h-4 w-0.5 bg-primary animate-pulse ml-0.5 align-text-bottom" />
+          {pending.length > 0 && <PendingTools tools={pending} />}
+
+          {(showWorking || (isStreaming && !hasBlocks && status !== undefined)) && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+              <Loader2 className="size-3.5 animate-spin" />
+              <span>{status || "Thinking…"}</span>
+              {typeof elapsedSeconds === "number" && elapsedSeconds >= 3 && (
+                <span className="tabular-nums text-muted-foreground/70">{elapsedSeconds}s</span>
+              )}
+            </p>
           )}
         </div>
 
-        {/* Download button for responses with charts/metrics/tables */}
-        {showDownload && (
-          <div className="mt-2 flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleDownload} className="text-muted-foreground">
-              <Download />
-              Download Report
-            </Button>
+        {fellBack && !isStreaming && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Info className="size-3.5 shrink-0" />
+            Answered by {modelLabel(servedBy!)} after a safety check declined {modelLabel(DEFAULT_MODEL)}.
+          </p>
+        )}
+
+        {/* Revealed on hover / focus — only where the device can hover (always shown on touch, e.g. iPad). */}
+        {!isStreaming && hasVisibleContent && (
+          <div className="-ml-2 flex items-center gap-0.5 transition-opacity md:[@media(hover:hover)]:opacity-0 md:focus-within:opacity-100 md:group-hover/message:opacity-100">
+            <IconAction label={copied ? "Copied" : "Copy reply"} onClick={copyReply}>
+              {copied ? <Check /> : <Copy />}
+            </IconAction>
+            {hasOutputs && (
+              <IconAction label={exporting ? "Preparing PDF…" : "Download as PDF"} onClick={downloadPdf}>
+                {exporting ? <Loader2 className="animate-spin" /> : <FileDown />}
+              </IconAction>
+            )}
+            {onRetry && (
+              <IconAction label="Regenerate reply" onClick={onRetry}>
+                <RotateCcw />
+              </IconAction>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+
+/** Memoized: earlier messages don't re-render on every streamed token. */
+export const ChatMessage = memo(ChatMessageImpl);
