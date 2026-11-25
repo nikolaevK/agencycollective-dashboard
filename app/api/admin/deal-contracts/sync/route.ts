@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
 import { findDealContractByDealId, updateDealContract, type DealContractStatus } from "@/lib/dealContracts";
 import { findAdditionalContract, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
+import { scheduleDealGhlSync } from "@/lib/ghlDealSync";
 import { updateDeal, findDeal } from "@/lib/deals";
 import { docusealFetch } from "@/lib/docuseal/client";
 import { DocuSealSubmissionSchema } from "@/lib/docuseal/schemas";
@@ -130,6 +131,10 @@ export async function POST(req: NextRequest) {
         await updateDeal(contract.dealId, { status: "closed" });
       }
     }
+
+    // Always re-mirror onto the lead's GHL contact — the drawer's Sync button
+    // doubles as the manual heal for a missed / failed GHL write.
+    scheduleDealGhlSync(contract.dealId, "contract synced");
 
     return NextResponse.json({
       data: {

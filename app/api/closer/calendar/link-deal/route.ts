@@ -138,6 +138,7 @@ export async function POST(request: Request) {
           title: eventTitle,
           startTime: eventDate,
           leadName: eventTitle,
+          dealValueCents: Math.round(dealValue * 100),
         }),
       ]);
     }

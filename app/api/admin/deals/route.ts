@@ -1,10 +1,11 @@
 export const dynamic = "force-dynamic";
-// A status→closed or paid transition runs best-effort GHL syncs (attendance
-// push + CRM funnel: opportunity stage + tags), whose round-trips can take a
-// few seconds under rate limiting.
+// A status→closed transition runs a best-effort GHL attendance push, whose
+// round-trip can take a few seconds under rate limiting (the CRM funnel moves
+// run in the background after the write).
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { getAdminSession } from "@/lib/adminSession";
 import { findAdmin } from "@/lib/admins";
 import { readDeals, findDeal, updateDeal, deleteDeal, sanitizeCcEmails, type DealStatus } from "@/lib/deals";
@@ -25,6 +26,7 @@ import { parseDealDraftFields } from "@/lib/dealDraftFields";
 import { checkDealDraftReferences } from "@/lib/dealDraftApproval";
 import { createAdminDeal } from "@/lib/dealCreation";
 import { scheduleDealPrepSync, getDealPrepBadges } from "@/lib/dealPrep";
+import { snapshotDealForGhl, scheduleDeletedDealGhlSync, scheduleDealGhlSync } from "@/lib/ghlDealSync";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -128,8 +130,9 @@ export async function POST(request: Request) {
     if (!raw || typeof raw !== "object") {
       return NextResponse.json({ error: "fields must be an object" }, { status: 400 });
     }
-    // Not calendar-linked (no attendance/GHL side effects) and no portal
-    // client link; always closed (only closed deals get paperwork to send).
+    // Not calendar-linked (no attendance side effects; GHL finds the lead via a
+    // related deal or the client email) and no portal client link; always
+    // closed (only closed deals get paperwork to send).
     const parsed = parseDealDraftFields({
       ...(raw as Record<string, unknown>),
       status: "closed",
@@ -261,6 +264,17 @@ export async function PATCH(request: Request) {
       changes.setterOverride = true;
     }
 
+    // Who the lead is in GHL: the deal's own event, else (a deal recreated
+    // without one, or entered by an admin) a related deal's event or the
+    // client email — see resolveDealGhlContact.
+    const ghlLead = {
+      dealId: deal.id,
+      googleEventId: deal.googleEventId,
+      clientEmail: changes.clientEmail !== undefined ? changes.clientEmail : deal.clientEmail,
+      leadName: changes.clientName ?? deal.clientName,
+      dealValueCents: changes.dealValue ?? deal.dealValue,
+    };
+
     // Auto-show: if changing to closed and deal has a calendar link, mark as showed
     if (changes.status === "closed" && deal.googleEventId && !changes.showStatus) {
       changes.showStatus = "showed";
@@ -269,33 +283,32 @@ export async function PATCH(request: Request) {
         googleEventId: deal.googleEventId,
         dashboardStatus: "showed",
       });
-      // Advance the GHL lead to "Showed didn't close" (tag + pipeline stage) —
-      // unless this same request also marks the deal paid, in which case the
-      // "Active Client" promotion below supersedes it (and running both would
-      // race GHL's create→search consistency into a duplicate opportunity).
-      if (changes.paidStatus !== "paid") {
-        await bestEffortSyncShowedDidntClose({
-          googleEventId: deal.googleEventId,
-          leadName: deal.clientName,
-        });
-      }
     }
-
     await updateDeal(id, changes);
 
-    // Paid transition: a linked deal becoming paid promotes the GHL lead to
-    // "Active Client" (swaps showed_didnt_close → active_client + moves the
-    // opportunity stage). Only fire on the unpaid→paid edge for GHL-linked
-    // deals; re-saving an already-paid deal is a no-op.
+    // GHL funnel moves run AFTER the write and in the background: GHL latency
+    // (429 backoff) must never cost the admin their edit. Both never throw.
+    //  - "Showed didn't close" (tag + stage + value) on the transition INTO
+    //    closed only — the edit form re-sends status on every save, and a
+    //    re-save must not yank a lead back from wherever the team moved them.
+    //    Skipped when this same request also marks the deal paid: "Active
+    //    Client" supersedes it (running both would race GHL's create→search
+    //    consistency into a duplicate opportunity).
+    //  - Paid (unpaid→paid edge only) → "Active Client", Won with the value.
+    const becameClosed = changes.status === "closed" && deal.status !== "closed";
+    if (becameClosed && changes.paidStatus !== "paid") {
+      waitUntil(bestEffortSyncShowedDidntClose(ghlLead));
+    }
+    if (changes.paidStatus === "paid" && deal.paidStatus !== "paid") {
+      waitUntil(bestEffortSyncActiveClient(ghlLead));
+    }
+    // Value / email feed the lead's "Proposal Value" + which contact the deal
+    // binds to — re-mirror (a no-op for a deal whose proposal was never sent).
     if (
-      changes.paidStatus === "paid" &&
-      deal.paidStatus !== "paid" &&
-      deal.googleEventId
+      (changes.dealValue !== undefined && changes.dealValue !== deal.dealValue) ||
+      (changes.clientEmail !== undefined && changes.clientEmail !== deal.clientEmail)
     ) {
-      await bestEffortSyncActiveClient({
-        googleEventId: deal.googleEventId,
-        leadName: deal.clientName,
-      });
+      scheduleDealGhlSync(id, "deal changed");
     }
 
     // Sync email to linked invoice when clientEmail changes
@@ -338,8 +351,12 @@ export async function DELETE(request: Request) {
     if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
     const deal = await findDeal(id);
+    // Captured BEFORE the delete (contracts go with the deal): an open
+    // proposal must stop driving the lead's GHL follow-ups.
+    const ghlSnapshot = deal ? await snapshotDealForGhl(id) : null;
     const deleted = await deleteDeal(id);
     if (!deleted) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    scheduleDeletedDealGhlSync(ghlSnapshot);
 
     logAuditEvent({
       adminId: admin.id,

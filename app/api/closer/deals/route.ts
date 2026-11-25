@@ -9,6 +9,7 @@ import { readDealsByCloser, findDeal, deleteDeal, updateDeal, sanitizeCcEmails, 
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
+import { snapshotDealForGhl, scheduleDeletedDealGhlSync } from "@/lib/ghlDealSync";
 import { getDealInvoiceStatuses, syncDealInvoiceEmail } from "@/lib/dealInvoices";
 import { getDealContractStatuses } from "@/lib/dealContracts";
 import { ensureDealPaperwork } from "@/lib/dealPaperwork";
@@ -126,6 +127,7 @@ export async function PATCH(request: Request) {
         bestEffortSyncShowedDidntClose({
           googleEventId: deal.googleEventId,
           leadName: deal.clientName,
+          dealValueCents: changes.dealValue ?? deal.dealValue,
         }),
       ]);
     }
@@ -187,10 +189,12 @@ export async function DELETE(request: Request) {
     );
   }
 
+  const ghlSnapshot = await snapshotDealForGhl(id);
   const deleted = await deleteDeal(id);
   if (!deleted) {
     return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
   }
+  scheduleDeletedDealGhlSync(ghlSnapshot);
 
   return NextResponse.json({ ok: true });
 }

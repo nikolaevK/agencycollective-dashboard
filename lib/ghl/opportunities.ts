@@ -253,6 +253,8 @@ interface UpdateOpportunityInput {
   /** Preserve the existing status unless the caller wants to change it. */
   status?: string;
   name?: string;
+  /** Dollars. Omitted → GHL keeps the opportunity's current value. */
+  monetaryValue?: number;
 }
 
 /** Move an existing opportunity to a new stage (and optionally status/name).
@@ -269,6 +271,7 @@ export async function updateOpportunity(
   };
   if (input.status) body.status = input.status;
   if (input.name) body.name = input.name;
+  if (typeof input.monetaryValue === "number") body.monetaryValue = input.monetaryValue;
 
   const raw = await ghlRequest<unknown>(
     `/opportunities/${encodeURIComponent(opportunityId)}`,

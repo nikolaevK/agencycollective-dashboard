@@ -9,6 +9,7 @@ import type { DealStatus } from "@/lib/deals";
 import { setEventAttendance } from "@/lib/eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "@/lib/attendanceSync";
 import { bestEffortSyncShowedDidntClose } from "@/lib/ghlCrmSync";
+import { snapshotDealForGhl, scheduleDeletedDealGhlSync } from "@/lib/ghlDealSync";
 import { resolveSetterForEvent } from "@/lib/setterAttribution";
 import { generateInvoiceFromDeal } from "@/lib/dealInvoiceGenerator";
 import { insertDealInvoice, generateInvoiceNumber } from "@/lib/dealInvoices";
@@ -147,6 +148,7 @@ export async function createDealAction(formData: FormData): Promise<{ error?: st
       bestEffortSyncShowedDidntClose({
         googleEventId,
         leadName: clientName,
+        dealValueCents: dealValue,
       }),
     ]);
   }
@@ -311,8 +313,10 @@ export async function deleteDealAction(id: string): Promise<{ error?: string }> 
     return { error: "Deal not found" };
   }
 
+  const ghlSnapshot = await snapshotDealForGhl(id);
   const deleted = await deleteDeal(id);
   if (!deleted) return { error: "Failed to delete" };
+  scheduleDeletedDealGhlSync(ghlSnapshot);
 
   revalidatePath("/closer/dashboard");
   return {};

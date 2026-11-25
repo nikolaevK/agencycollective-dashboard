@@ -12,6 +12,7 @@ import {
 } from "@/lib/dealAdditionalContracts";
 import { findContractTemplate } from "@/lib/contractTemplates";
 import { docusealArchiveSubmission, DocuSealApiError } from "@/lib/docuseal/client";
+import { scheduleDealGhlSync } from "@/lib/ghlDealSync";
 import crypto from "crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,6 +132,10 @@ export async function PATCH(req: NextRequest) {
         sentAt: null,
         status: "pending",
       });
+      // The replaced proposal's link is dead — refresh the lead's GHL links/tags.
+      if (contract.status !== "pending") {
+        scheduleDealGhlSync(contract.dealId, "contract replaced", { clearIfNone: true });
+      }
       return NextResponse.json({ success: true, warning: archiveWarning });
     }
 
@@ -197,5 +202,8 @@ export async function DELETE(req: NextRequest) {
 
   const deleted = await deleteAdditionalContract(id);
   if (!deleted) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+  if (contract.status !== "pending") {
+    scheduleDealGhlSync(contract.dealId, "contract deleted", { clearIfNone: true });
+  }
   return NextResponse.json({ success: true });
 }

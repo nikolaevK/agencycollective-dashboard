@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { waitUntil } from "@vercel/functions";
 import { findDeal, insertDeal, type DealRecord } from "./deals";
 import { setEventAttendance } from "./eventAttendance";
 import { bestEffortPushAttendanceToGhl } from "./attendanceSync";
@@ -116,21 +117,37 @@ export async function finishDealCreation(
     warnings.push("Proposed invoice lines are only applied to closed deals — none was generated for this status.");
   }
 
-  if (closed && deal.googleEventId) {
-    try {
-      await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
-    } catch (err) {
-      console.error("[finishDealCreation] attendance write failed:", err);
+  if (closed) {
+    if (deal.googleEventId) {
+      try {
+        await setEventAttendance(deal.googleEventId, deal.closerId, "showed");
+      } catch (err) {
+        console.error("[finishDealCreation] attendance write failed:", err);
+      }
     }
     // Same GHL stage logic as the admin deal PATCH: a deal that's already paid
     // goes straight to "Active Client" — also running "Showed didn't close"
-    // would race GHL into a duplicate opportunity.
-    await Promise.allSettled([
-      bestEffortPushAttendanceToGhl({ googleEventId: deal.googleEventId, dashboardStatus: "showed" }),
-      deal.paidStatus === "paid"
-        ? bestEffortSyncActiveClient({ googleEventId: deal.googleEventId, leadName: deal.clientName })
-        : bestEffortSyncShowedDidntClose({ googleEventId: deal.googleEventId, leadName: deal.clientName }),
-    ]);
+    // would race GHL into a duplicate opportunity. A deal with no event still
+    // reaches its lead through a related deal / the client email.
+    const ghlLead = {
+      dealId: deal.id,
+      googleEventId: deal.googleEventId,
+      clientEmail: deal.clientEmail,
+      leadName: deal.clientName,
+      dealValueCents: deal.dealValue,
+    };
+    // Background: the deal + paperwork already exist, and GHL latency (429
+    // backoff) must not hold the admin's request open. Both never throw.
+    waitUntil(
+      Promise.allSettled([
+        deal.googleEventId
+          ? bestEffortPushAttendanceToGhl({ googleEventId: deal.googleEventId, dashboardStatus: "showed" })
+          : Promise.resolve(),
+        deal.paidStatus === "paid"
+          ? bestEffortSyncActiveClient(ghlLead)
+          : bestEffortSyncShowedDidntClose(ghlLead),
+      ])
+    );
   }
 
   scheduleDealPrepSync(deal.id, "closed");

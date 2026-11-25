@@ -14,6 +14,7 @@ import { archiveSupersededSubmission } from "@/lib/docuseal/client";
 import { findDeal, updateDeal, type DealRecord } from "@/lib/deals";
 import type { DocuSealTemplate } from "@/lib/docuseal/schemas";
 import { scheduleRecordDealSent } from "@/lib/dealPrep";
+import { scheduleDealGhlSync } from "@/lib/ghlDealSync";
 
 // One entry per contract to send: primary (deal_contracts row) or an
 // additional contract (deal_additional_contracts row). `id` is the row id in
@@ -143,6 +144,8 @@ async function sendContracts(
     } catch (err) {
       console.error("[deal-invoices/send] Deal status update failed:", err instanceof Error ? err.message : err);
     }
+    // Proposal links + proposal_sent tag onto the lead's GHL contact.
+    scheduleDealGhlSync(dealId, "proposal sent");
   }
 
   return { sent, failed, errors };

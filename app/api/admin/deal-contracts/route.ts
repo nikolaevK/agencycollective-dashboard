@@ -10,6 +10,7 @@ import { insertDealContract, updateDealContract } from "@/lib/dealContracts";
 import { updateDeal } from "@/lib/deals";
 import { parseServiceCategory } from "@/lib/serviceCategory";
 import { docusealArchiveSubmission, archiveSupersededSubmission, DocuSealApiError } from "@/lib/docuseal/client";
+import { scheduleDealGhlSync } from "@/lib/ghlDealSync";
 import crypto from "crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -98,6 +99,10 @@ export async function PATCH(req: NextRequest) {
         sentAt: null,
         status: "pending",
       });
+      // The replaced proposal's link is dead — refresh the lead's GHL links/tags.
+      if (contract.status !== "pending") {
+        scheduleDealGhlSync(contract.dealId, "contract replaced", { clearIfNone: true });
+      }
       return NextResponse.json({ success: true, warning: archiveWarning });
     }
 
@@ -218,6 +223,7 @@ export async function POST(req: NextRequest) {
     if (deal.status === "closed") {
       await updateDeal(dealId, { status: "pending_signature" });
     }
+    scheduleDealGhlSync(dealId, "proposal sent");
 
     return NextResponse.json({ success: true, data: { signingUrl: result.signingUrl } });
   } catch (err) {

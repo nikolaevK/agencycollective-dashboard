@@ -288,6 +288,28 @@ export async function getContactById(
 }
 
 /**
+ * Exact lookup of the contact holding `email` in one sub-account, via GHL's
+ * duplicate-contact search (the same rule GHL uses to de-dupe contacts).
+ * GET /contacts/search/duplicate → `{ contact: {...} | null }`. Uncached: used
+ * once per deal sync to bind a deal without a GHL calendar event to its lead.
+ */
+export async function findContactByEmail(
+  email: string,
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
+): Promise<GhlContact | null> {
+  const clean = email.trim();
+  if (!clean) return null;
+  const { locationId } = getGhlConfig(subAccountId);
+  const raw = await ghlRequest<{ contact?: unknown }>("/contacts/search/duplicate", {
+    query: { locationId, email: clean },
+    subAccountId,
+  });
+  if (!raw?.contact || typeof raw.contact !== "object") return null;
+  const contact = normContact(raw.contact as Record<string, unknown>);
+  return contact.id ? contact : null;
+}
+
+/**
  * Create a note on a contact. Busts the per-contact notes cache on success
  * so subsequent reads (notes list, page-level noteCount) reflect the write.
  */

@@ -6,6 +6,7 @@ import { findDealContractBySubmissionId, updateDealContract } from "@/lib/dealCo
 import type { DealContractStatus } from "@/lib/dealContracts";
 import { findAdditionalContractBySubmissionId, updateAdditionalContract } from "@/lib/dealAdditionalContracts";
 import { findDeal, updateDeal } from "@/lib/deals";
+import { scheduleDealGhlSync } from "@/lib/ghlDealSync";
 
 /** Health check — visit /api/webhooks/docuseal in a browser to verify the route is reachable. */
 export async function GET() {
@@ -119,6 +120,7 @@ export async function POST(req: NextRequest) {
         }
       }
       console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} signed`);
+      scheduleDealGhlSync(contract.dealId, "proposal signed");
     }
 
     if (eventType === "form.declined") {
@@ -135,6 +137,7 @@ export async function POST(req: NextRequest) {
         }
       }
       console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} declined`);
+      scheduleDealGhlSync(contract.dealId, "proposal declined");
     }
 
     if (eventType === "submission.expired") {
@@ -151,12 +154,14 @@ export async function POST(req: NextRequest) {
         }
       }
       console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} expired`);
+      scheduleDealGhlSync(contract.dealId, "proposal expired");
     }
 
     if (eventType === "form.started" || eventType === "form.viewed") {
       if (contract.status === "sent" || contract.status === "pending") {
         await applyStatus({ status: "viewed" });
         console.log(`[docuseal-webhook] ${isPrimary ? "Contract" : "Additional contract"} ${contract.id} viewed`);
+        scheduleDealGhlSync(contract.dealId, "proposal viewed");
       }
     }
 
