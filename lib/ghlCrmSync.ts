@@ -23,7 +23,8 @@
 //   2. dashboard deals only (`dealId` + `clientEmail` given): another deal for
 //      the same client email whose event IS linked — a deal recreated from an
 //      earlier one (revised contract) carries no event, and the original still
-//      holds it;
+//      holds it. The linked contact must carry that email OR the deal's client
+//      name (the contract email often isn't the one the lead booked with);
 //   3. GHL's exact duplicate-contact lookup by email across the configured
 //      sub-accounts — used only when exactly ONE sub-account has the contact.
 // Closer-portal call sites pass the event only, so a non-GHL event stays a
@@ -76,6 +77,9 @@ export interface DealGhlIdentity {
    *  fallbacks for a deal with no GHL-linked event. */
   dealId?: string | null;
   clientEmail?: string | null;
+  /** The deal's client name — also opportunity names. Lets a related deal's
+   *  contact that carries a DIFFERENT email still count when its name matches. */
+  leadName?: string | null;
 }
 
 export interface GhlLeadTarget {
@@ -113,7 +117,7 @@ export async function resolveDealGhlContact(id: DealGhlIdentity): Promise<GhlLea
   const email = (id.clientEmail ?? "").trim();
   if (!id.dealId || !email) return null;
 
-  const related = await relatedDealEventTarget(id.dealId, email);
+  const related = await relatedDealEventTarget(id.dealId, email, id.leadName);
   if (related === "stop") return null;
   if (related) return related;
 
@@ -125,14 +129,32 @@ function contactHasEmail(contact: { email?: string | null; additionalEmails?: st
   return [contact.email, ...(contact.additionalEmails ?? [])].some((e) => (e ?? "").trim().toLowerCase() === want);
 }
 
+const normName = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+function contactHasName(
+  contact: { firstName?: string | null; lastName?: string | null; contactName?: string | null },
+  name: string | null | undefined
+): boolean {
+  const want = normName(name);
+  if (!want) return false;
+  const full = normName(`${contact.firstName ?? ""} ${contact.lastName ?? ""}`);
+  return full === want || normName(contact.contactName) === want;
+}
+
 /**
  * A linked event on another deal for the same client email (newest first).
- * The linked GHL contact must itself carry that email — a shared / placeholder
- * address typed on two different leads' deals must not hand one lead's signing
- * link to the other. "stop" = the lead's home sub-account is known but
+ * The linked GHL contact must itself carry that email or this deal's client
+ * name — a shared / placeholder address typed on two different leads' deals
+ * must not hand one lead's signing link to the other. The name is compared
+ * with the GHL contact, never with the other deal: deal names can be
+ * placeholders too ("Client"). "stop" = the lead's home sub-account is known but
  * unusable (unconfigured / lookup failed): don't fall back to an email search.
  */
-async function relatedDealEventTarget(dealId: string, email: string): Promise<GhlLeadTarget | "stop" | null> {
+async function relatedDealEventTarget(
+  dealId: string,
+  email: string,
+  leadName: string | null | undefined
+): Promise<GhlLeadTarget | "stop" | null> {
   await ensureMigrated();
   const rows = await getDb().execute({
     sql: `SELECT google_event_id FROM deals
@@ -154,7 +176,7 @@ async function relatedDealEventTarget(dealId: string, email: string): Promise<Gh
       console.error(`[ghl-crm] related-deal contact lookup failed (sub=${link.subAccountId}):`, describeError(err));
       return "stop";
     }
-    if (contact && contactHasEmail(contact, email)) {
+    if (contact && (contactHasEmail(contact, email) || contactHasName(contact, leadName))) {
       return { contactId: link.ghlContactId, subAccountId: link.subAccountId, via: "related_deal" };
     }
   }
@@ -317,7 +339,7 @@ async function resolveOpportunityName(
   return fromContact || "Lead";
 }
 
-type LeadSyncInput = DealGhlIdentity & { leadName?: string | null; dealValueCents?: number | null };
+type LeadSyncInput = DealGhlIdentity & { dealValueCents?: number | null };
 
 async function syncIdentityToStage(input: LeadSyncInput, stage: Omit<StageSync, "leadName" | "dealValueCents">) {
   if (!isGhlConfigured()) return;

@@ -8,6 +8,7 @@ let relatedRows: Array<{ google_event_id: string }> = [];
 let relatedLinks: Record<string, { ghlContactId: string | null; subAccountId: string }> = {};
 let emailHits: Record<string, string | null | Error> = {};
 let contactEmails: Record<string, string> = {};
+let contactNames: Record<string, [string, string]> = {};
 let configured = ["agency", "peptide"];
 const sqlArgs: unknown[][] = [];
 type Opp = { id: string; status: string; pipelineId: string; pipelineStageId: string; name: string; monetaryValue: number | null };
@@ -34,7 +35,9 @@ vi.mock("@/lib/ghl/contacts", () => ({
   addContactTags: async (_c: string, tags: string[]) => { ghlCalls.push(["addTags", tags]); return []; },
   removeContactTags: async (_c: string, tags: string[]) => { ghlCalls.push(["removeTags", tags]); return []; },
   getContactById: async (id: string) =>
-    contactEmails[id] === undefined ? null : { id, email: contactEmails[id], additionalEmails: [] },
+    contactEmails[id] === undefined
+      ? null
+      : { id, email: contactEmails[id], additionalEmails: [], firstName: contactNames[id]?.[0] ?? null, lastName: contactNames[id]?.[1] ?? null },
 }));
 vi.mock("@/lib/ghl/pipelines", () => ({
   resolvePipelineStageByName: async (pipelineName: string, stageName: string) =>
@@ -64,6 +67,7 @@ beforeEach(() => {
   relatedLinks = {};
   emailHits = {};
   contactEmails = {};
+  contactNames = {};
   configured = ["agency", "peptide"];
   sqlArgs.length = 0;
   existingOpp = null;
@@ -121,6 +125,22 @@ describe("resolveDealGhlContact", () => {
     contactEmails = { "someone-else": "other@person.com" };
     emailHits = { agency: null, peptide: null };
     expect(await resolveDealGhlContact({ dealId: "d", clientEmail: "na@na.com" })).toBeNull();
+    contactNames = { "someone-else": ["Other", "Person"] };
+    for (const leadName of ["New Lead", "Client", "  ", null]) {
+      expect(await resolveDealGhlContact({ dealId: "d", clientEmail: "na@na.com", leadName })).toBeNull();
+    }
+  });
+
+  it("a related deal's contact with a different email but this deal's client name is the lead (contract email ≠ booking email)", async () => {
+    relatedRows = [{ google_event_id: "e1" }];
+    relatedLinks = { e1: { ghlContactId: "lead", subAccountId: "peptide" } };
+    contactEmails = { lead: "booking@x.com" };
+    contactNames = { lead: ["Lead", "Person"] };
+    expect(await resolveDealGhlContact({ dealId: "new", clientEmail: "contract@y.com", leadName: "  lead  PERSON " })).toEqual({
+      contactId: "lead",
+      subAccountId: "peptide",
+      via: "related_deal",
+    });
   });
 
   it("email: exactly one sub-account match binds", async () => {

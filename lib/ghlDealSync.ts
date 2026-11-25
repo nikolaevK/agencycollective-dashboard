@@ -114,7 +114,7 @@ async function drivingDealId(clientEmail: string, excludeDealId?: string): Promi
 }
 
 const resolveTarget = (deal: DealRecord) =>
-  resolveDealGhlContact({ dealId: deal.id, googleEventId: deal.googleEventId, clientEmail: deal.clientEmail });
+  resolveDealGhlContact({ dealId: deal.id, googleEventId: deal.googleEventId, clientEmail: deal.clientEmail, leadName: deal.clientName });
 
 const sameTarget = (a: GhlLeadTarget, b: GhlLeadTarget) =>
   a.contactId === b.contactId && a.subAccountId === b.subAccountId;
