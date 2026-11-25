@@ -21,13 +21,12 @@ export const PROPOSAL_TAGS = {
 /** Contact custom fields, by GHL field NAME (ids differ per sub-account, so
  *  they're resolved by name at sync time). Merge keys: {{contact.proposal_link}},
  *  {{contact.proposal_status}}, {{contact.proposal_value}},
- *  {{contact.proposal_sent_date}}. */
+ *  {{contact.proposal_sent_date}}. The 2nd, 3rd, … open contract's link goes
+ *  to "Proposal Link 2", "Proposal Link 3", … ({{contact.proposal_link_2}}, …)
+ *  — see proposalLinkFieldName. */
 export const PROPOSAL_FIELDS = {
   /** Single Line — signing link of the first open contract. */
   link: "Proposal Link",
-  /** Single Line, OPTIONAL — the second open contract (a deal with two
-   *  package options sends one contract per option). Skipped if absent. */
-  link2: "Proposal Link 2",
   /** Single Line — Sent | Viewed | Signed | Declined | Expired. */
   status: "Proposal Status",
   /** Monetary — the deal value in dollars. */
@@ -38,8 +37,22 @@ export const PROPOSAL_FIELDS = {
 
 export type ProposalFieldKey = keyof typeof PROPOSAL_FIELDS;
 
-/** Fields the sync warns about when missing in a sub-account. */
-export const OPTIONAL_PROPOSAL_FIELDS: ReadonlySet<ProposalFieldKey> = new Set(["link2"]);
+/** The field holding the n-th open contract's link (1-based): "Proposal Link",
+ *  "Proposal Link 2", "Proposal Link 3", … — as many as the lead has. */
+export function proposalLinkFieldName(n: number): string {
+  return n <= 1 ? PROPOSAL_FIELDS.link : `${PROPOSAL_FIELDS.link} ${n}`;
+}
+
+/** Which link slot a GHL field name is (case/space tolerant), else null. Only
+ *  the bare "Proposal Link" is slot 1 — templates merge {{contact.proposal_link}},
+ *  so a stray "Proposal Link 1" must never take the first link. */
+export function proposalLinkIndex(fieldName: string): number | null {
+  const m = /^proposal link(?: ([1-9]\d{0,2}))?$/.exec(fieldName.trim().toLowerCase().replace(/\s+/g, " "));
+  if (!m) return null;
+  if (!m[1]) return 1;
+  const n = Number(m[1]);
+  return n >= 2 ? n : null;
+}
 
 export const PROPOSAL_STATUS_LABEL: Record<Exclude<ProposalState, "none">, string> = {
   sent: "Sent",
@@ -124,29 +137,33 @@ export function proposalTagPlan(state: ProposalState): { add: string[]; remove: 
   }
 }
 
-export type ProposalFieldValues = Partial<Record<ProposalFieldKey, string | number>>;
+export interface ProposalFieldValues {
+  /** Status / value / sent date (keys left out are not touched). */
+  fields: Partial<Record<Exclude<ProposalFieldKey, "link">, string | number>>;
+  /** Every open contract's link, in contract order → Proposal Link,
+   *  Proposal Link 2, 3, …; any other existing "Proposal Link N" is cleared.
+   *  Null = leave the link fields alone. */
+  links: string[] | null;
+}
 
 /**
- * Which PROPOSAL_FIELDS to write, and with what (fields left out are not
- * touched). While a proposal is open: links (blank for a missing 2nd option),
- * status, value and sent date. After an outcome: status (+ value) only — the
- * links stay (a signed link shows the signed copy). When every sent contract
- * went back to a draft: links + status cleared.
+ * What to write onto the contact. While a proposal is open: every open
+ * contract's link (however many), status, value and sent date. After an
+ * outcome: status (+ value) only — the links stay (a signed link shows the
+ * signed copy). When every sent contract went back to a draft: links + status
+ * cleared.
  */
 export function proposalFieldValues(
   d: DerivedProposal,
   ctx: { dealValueCents: number | null | undefined; sentDateYmd: string | null }
 ): ProposalFieldValues {
-  if (d.state === "none") return { link: "", link2: "", status: "" };
-  const out: ProposalFieldValues = { status: PROPOSAL_STATUS_LABEL[d.state] };
+  if (d.state === "none") return { fields: { status: "" }, links: [] };
+  const fields: ProposalFieldValues["fields"] = { status: PROPOSAL_STATUS_LABEL[d.state] };
   const value = ghlMonetaryValue(ctx.dealValueCents);
-  if (value !== null) out.value = value;
-  if (d.state === "sent" || d.state === "viewed") {
-    out.link = d.links[0] ?? "";
-    out.link2 = d.links[1] ?? "";
-    if (ctx.sentDateYmd) out.sentDate = ctx.sentDateYmd;
-  }
-  return out;
+  if (value !== null) fields.value = value;
+  if (d.state !== "sent" && d.state !== "viewed") return { fields, links: null };
+  if (ctx.sentDateYmd) fields.sentDate = ctx.sentDateYmd;
+  return { fields, links: d.links };
 }
 
 /** Deal value (integer cents) → GHL opportunity monetaryValue (dollars).

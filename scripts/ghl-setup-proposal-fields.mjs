@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // One-time GHL setup for the deal → GHL proposal sync (lib/ghlDealSync.ts),
 // for EVERY configured sub-account: the contact custom fields the sync writes
-// (Proposal Link / Status / Value / Sent Date; "Proposal Link 2" is optional
-// and only reported) and the proposal_* tags (created up front so they show in
+// (Proposal Link / Status / Value / Sent Date, plus "Proposal Link 2" … "N"
+// for the 2nd…Nth open contract) and the proposal_* tags (created up front so they show in
 // the workflow "Contact Tag" trigger picker before the first proposal goes
 // out). Names come from lib/ghlDealRules.ts, the same source the sync uses.
 // Reads .env.local.
@@ -10,16 +10,19 @@
 // Additive only: creates what's missing, never renames / deletes anything.
 //
 // Usage (Node >= 23.6 for the .ts import):
-//   node scripts/ghl-setup-proposal-fields.mjs           # preview
-//   node scripts/ghl-setup-proposal-fields.mjs --apply   # create missing fields + tags
+//   node scripts/ghl-setup-proposal-fields.mjs                   # preview
+//   node scripts/ghl-setup-proposal-fields.mjs --apply           # create missing fields + tags
+//   node scripts/ghl-setup-proposal-fields.mjs --links 6 --apply # link fields up to "Proposal Link 6"
+// --links (default 4) only pre-creates fields so GHL templates can merge them:
+// the sync itself creates any "Proposal Link N" a lead needs.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PROPOSAL_FIELDS, OPTIONAL_PROPOSAL_FIELDS, PROPOSAL_TAGS } from "../lib/ghlDealRules.ts";
+import { PROPOSAL_FIELDS, PROPOSAL_TAGS, proposalLinkFieldName } from "../lib/ghlDealRules.ts";
 
 // GHL dataType per field (contact model).
-const FIELD_TYPES = { link: "TEXT", link2: "TEXT", status: "TEXT", value: "MONETORY", sentDate: "DATE" };
+const FIELD_TYPES = { link: "TEXT", status: "TEXT", value: "MONETORY", sentDate: "DATE" };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 for (const line of readFileSync(join(__dirname, "..", ".env.local"), "utf8").split("\n")) {
@@ -31,6 +34,16 @@ for (const line of readFileSync(join(__dirname, "..", ".env.local"), "utf8").spl
 }
 
 const apply = process.argv.includes("--apply");
+const linksArg = process.argv.indexOf("--links");
+const LINK_FIELDS = linksArg > -1 ? Number(process.argv[linksArg + 1]) : 4;
+if (!Number.isInteger(LINK_FIELDS) || LINK_FIELDS < 1 || LINK_FIELDS > 50) {
+  console.error("--links must be a whole number from 1 to 50");
+  process.exit(1);
+}
+const WANTED = [
+  ...Object.entries(PROPOSAL_FIELDS).map(([key, name]) => [name, FIELD_TYPES[key]]),
+  ...Array.from({ length: LINK_FIELDS - 1 }, (_, i) => [proposalLinkFieldName(i + 2), "TEXT"]),
+];
 const SUBS = [
   { id: "agency", pit: process.env.GHL_PIT_AGENCY, locationId: process.env.GHL_LOCATION_ID_AGENCY },
   { id: "peptide", pit: process.env.GHL_PIT, locationId: process.env.GHL_LOCATION_ID },
@@ -66,16 +79,11 @@ for (const sub of SUBS) {
   const fields = (await ghl(sub, "GET", `/locations/${sub.locationId}/customFields?model=contact`))?.customFields ?? [];
   const tags = (await ghl(sub, "GET", `/locations/${sub.locationId}/tags`))?.tags ?? [];
 
-  for (const [key, name] of Object.entries(PROPOSAL_FIELDS)) {
-    const dataType = FIELD_TYPES[key];
+  for (const [name, dataType] of WANTED) {
     const found = fields.find((f) => norm(f.name) === norm(name));
     if (found) {
       const note = found.dataType === dataType ? "" : `  ← expected ${dataType}`;
       console.log(`  field "${name}": exists (${found.fieldKey}, ${found.dataType})${note}`);
-      continue;
-    }
-    if (OPTIONAL_PROPOSAL_FIELDS.has(key)) {
-      console.log(`  field "${name}": not present (optional — add it as Single Line to receive a 2nd option's link)`);
       continue;
     }
     if (!apply) { console.log(`  field "${name}": MISSING — would create (${dataType}, contact)`); continue; }

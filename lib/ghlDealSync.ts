@@ -3,10 +3,11 @@
 // Whenever a deal's contracts change (sent, resent, viewed, signed, declined,
 // expired, replaced, deleted), the lead's GHL contact is brought in line with
 // the CURRENT proposal state (pure rules in lib/ghlDealRules.ts):
-//   1. Contact fields "Proposal Link" (+ optional "Proposal Link 2" for a 2nd
-//      package option), "Proposal Status", "Proposal Value", "Proposal Sent
-//      Date". Written FIRST, so a workflow fired by the tag below already
-//      merges the right link into its first email / SMS.
+//   1. Contact fields "Proposal Link", "Proposal Link 2", 3, … (one per open
+//      contract, however many — a missing "Proposal Link N" is created),
+//      "Proposal Status", "Proposal Value", "Proposal Sent Date". Written
+//      FIRST, so a workflow fired by the tag below already merges the right
+//      links into its first email / SMS.
 //   2. Signed → the funnel opportunity is marked Won with the deal value
 //      (paid → "Active Client" + Won, lib/ghlCrmSync.ts).
 //   3. proposal_* tags — one per status; GHL workflows trigger on "tag added":
@@ -30,7 +31,7 @@
 import { waitUntil } from "@vercel/functions";
 import { describeError } from "./ghl/client";
 import { isAnyGhlConfigured, type GhlSubAccountId } from "./ghl/subAccounts";
-import { resolveContactFieldIds, updateContactCustomFields } from "./ghl/customFields";
+import { listContactFields, createContactTextField, updateContactCustomFields } from "./ghl/customFields";
 import {
   resolveDealGhlContact,
   applyTags,
@@ -42,10 +43,10 @@ import {
   deriveProposal,
   proposalTagPlan,
   proposalFieldValues,
+  proposalLinkFieldName,
+  proposalLinkIndex,
   PROPOSAL_FIELDS,
-  OPTIONAL_PROPOSAL_FIELDS,
   type DerivedProposal,
-  type ProposalFieldKey,
   type ProposalFieldValues,
 } from "./ghlDealRules";
 import { businessTodayYmd } from "./businessTime";
@@ -122,37 +123,102 @@ const sameTarget = (a: GhlLeadTarget, b: GhlLeadTarget) =>
 // Field names already reported missing per sub-account (log once per process).
 const warnedMissing = new Set<string>();
 
+const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+// "Proposal Link N" creations in flight (concurrent syncs share one), and the
+// ones GHL refused recently (e.g. the token lacks customFields.write) — not
+// retried on every sync.
+const creatingLinkField = new Map<string, Promise<string | null>>();
+const linkFieldRefusedAt = new Map<string, number>();
+const LINK_FIELD_RETRY_MS = 10 * 60_000;
+
+/** The id of "Proposal Link N", creating it when the lead has more open
+ *  contracts than the sub-account has link fields. Null when GHL refuses —
+ *  that link is skipped (logged), the others still land. */
+function ensureLinkField(n: number, sub: GhlSubAccountId): Promise<string | null> {
+  const name = proposalLinkFieldName(n);
+  const key = `${sub}:${name}`;
+  const refusedAt = linkFieldRefusedAt.get(key);
+  if (refusedAt !== undefined && Date.now() - refusedAt < LINK_FIELD_RETRY_MS) return Promise.resolve(null);
+  const inflight = creatingLinkField.get(key);
+  if (inflight) return inflight;
+  const run = (async () => {
+    // Re-read first: another instance may have just created it.
+    const existing = (await listContactFields(sub, { fresh: true })).find((f) => proposalLinkIndex(f.name) === n);
+    if (existing) return existing.id;
+    const created = await createContactTextField(name, sub);
+    console.log(`[ghl-deal-sync] created contact field "${name}" (sub=${sub})`);
+    return created.id;
+  })()
+    .catch((err) => {
+      linkFieldRefusedAt.set(key, Date.now());
+      console.warn(
+        `[ghl-deal-sync] could not create contact field "${name}" (sub=${sub}): ${describeError(err)} — ` +
+          `add it in GHL as a single-line text field, or give the token locations/customFields.write`
+      );
+      return null;
+    })
+    .finally(() => creatingLinkField.delete(key));
+  creatingLinkField.set(key, run);
+  return run;
+}
+
+interface FieldWrite {
+  name: string;
+  id: string;
+  value: string | number;
+}
+
 /** Did GHL store what we sent? Numbers compare numerically; a date only has
  *  to come back non-empty (GHL may echo it as a timestamp). */
-function verified(key: ProposalFieldKey, sent: string | number, observed: string): boolean {
-  if (typeof sent === "number") return observed !== "" && Number(observed) === sent;
-  if (key === "sentDate") return sent === "" ? observed === "" : observed !== "";
-  return observed === sent;
+function verified(w: FieldWrite, observed: string): boolean {
+  if (typeof w.value === "number") return observed !== "" && Number(observed) === w.value;
+  if (w.name === PROPOSAL_FIELDS.sentDate) return w.value === "" ? observed === "" : observed !== "";
+  return observed === w.value;
 }
 
 async function writeProposalFields(target: GhlLeadTarget, values: ProposalFieldValues): Promise<void> {
   const sub: GhlSubAccountId = target.subAccountId;
-  const keys = (Object.keys(values) as ProposalFieldKey[]).filter((k) => values[k] !== undefined);
-  if (keys.length === 0) return;
-  const ids = await resolveContactFieldIds(keys.map((k) => PROPOSAL_FIELDS[k]), sub);
-  const entries: Array<{ key: ProposalFieldKey; id: string; value: string | number }> = [];
+  const keys = (Object.keys(values.fields) as Array<keyof ProposalFieldValues["fields"]>).filter(
+    (k) => values.fields[k] !== undefined
+  );
+  if (keys.length === 0 && values.links === null) return;
+  const fields = await listContactFields(sub);
+  const idByName = new Map(fields.map((f) => [normName(f.name), f.id]));
+  const writes: FieldWrite[] = [];
   for (const key of keys) {
     const name = PROPOSAL_FIELDS[key];
-    const id = ids.get(name);
+    const id = idByName.get(normName(name));
     if (id) {
-      entries.push({ key, id, value: values[key] as string | number });
-    } else if (!OPTIONAL_PROPOSAL_FIELDS.has(key) && !warnedMissing.has(`${sub}:${name}`)) {
+      writes.push({ name, id, value: values.fields[key] as string | number });
+    } else if (!warnedMissing.has(`${sub}:${name}`)) {
       warnedMissing.add(`${sub}:${name}`);
       console.warn(`[ghl-deal-sync] contact custom field "${name}" not found (sub=${sub}) — run scripts/ghl-setup-proposal-fields.mjs`);
     }
   }
-  if (entries.length === 0) return;
+  if (values.links) {
+    const linkIds = new Map<number, string>();
+    for (const f of fields) {
+      const n = proposalLinkIndex(f.name);
+      if (n !== null && !linkIds.has(n)) linkIds.set(n, f.id);
+    }
+    for (let n = 1; n <= values.links.length; n++) {
+      const id = linkIds.get(n) ?? (await ensureLinkField(n, sub));
+      if (id) writes.push({ name: proposalLinkFieldName(n), id, value: values.links[n - 1] });
+    }
+    // Slots this proposal doesn't use any more (fewer open contracts than a
+    // previous send) are cleared, so no follow-up carries a dead link.
+    for (const [n, id] of Array.from(linkIds)) {
+      if (n > values.links.length) writes.push({ name: proposalLinkFieldName(n), id, value: "" });
+    }
+  }
+  if (writes.length === 0) return;
   const observed = await updateContactCustomFields(
     target.contactId,
-    entries.map(({ id, value }) => ({ id, value })),
+    writes.map(({ id, value }) => ({ id, value })),
     sub
   );
-  const failed = entries.filter((e) => !verified(e.key, e.value, observed.get(e.id) ?? "")).map((e) => e.key);
+  const failed = writes.filter((w) => !verified(w, observed.get(w.id) ?? "")).map((w) => w.name);
   if (failed.length > 0) {
     // Field names only — the values are signing links / money.
     console.warn(`[ghl-deal-sync] proposal field(s) did not verify after the write (sub=${sub}): ${failed.join(", ")}`);

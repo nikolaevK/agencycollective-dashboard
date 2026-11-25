@@ -18,8 +18,18 @@ let targetByDeal: Record<string, { contactId: string; subAccountId: string; via:
 vi.mock("@vercel/functions", () => ({ waitUntil: () => {} }));
 vi.mock("@/lib/ghl/subAccounts", () => ({ isAnyGhlConfigured: () => true }));
 vi.mock("@/lib/ghl/client", () => ({ describeError: (e: unknown) => String(e) }));
+// The sub-account's contact fields (by name; id = "id:<name>"), as set up live.
+const SETUP_FIELDS = ["Proposal Link", "Proposal Link 2", "Proposal Status", "Proposal Value", "Proposal Sent Date"];
+let ghlFields: string[] = [];
+let refuseCreate = false;
 vi.mock("@/lib/ghl/customFields", () => ({
-  resolveContactFieldIds: async (names: string[]) => new Map(names.map((n) => [n, `id:${n}`])),
+  listContactFields: async () => ghlFields.map((name) => ({ id: `id:${name}`, name })),
+  createContactTextField: async (name: string, sub: string) => {
+    calls.push(["createField", `${sub}:${name}`]);
+    if (refuseCreate) throw new Error("403 scope");
+    ghlFields.push(name);
+    return { id: `id:${name}`, name };
+  },
   updateContactCustomFields: async (_c: string, values: Array<{ id: string; value: string | number }>) => {
     calls.push(["fields", Object.fromEntries(values.map((v) => [v.id.slice(3), v.value]))]);
     onFieldWrite?.();
@@ -79,6 +89,8 @@ beforeEach(() => {
   store.deals.clear();
   store.contracts.clear();
   calls = [];
+  ghlFields = [...SETUP_FIELDS];
+  refuseCreate = false;
   onFieldWrite = null;
   target = { contactId: "c1", subAccountId: "peptide", via: "event" };
   targetByDeal = {};
@@ -178,6 +190,58 @@ describe("syncDealToGhl", () => {
     await syncDealToGhl("d1", { clearIfNone: true });
     expect(calls[1]).toEqual(["fields", { "Proposal Link": "", "Proposal Link 2": "", "Proposal Status": "" }]);
     expect(tagCalls()[0]).toEqual({ add: [], remove: ["proposal_sent", "proposal_viewed"] });
+  });
+});
+
+describe("any number of contracts", () => {
+  const SENT = "2026-11-25T18:00:00.000Z";
+  const LINK_C = "https://docuseal.com/s/ccc";
+  const three = (status = "sent") => [
+    { status, signingUrl: LINK_A, sentAt: SENT },
+    { status: "sent", signingUrl: LINK_B, sentAt: SENT },
+    { status: "viewed", signingUrl: LINK_C, sentAt: SENT },
+  ];
+
+  it("three open contracts → Proposal Link, 2 and 3 (the missing field is created first)", async () => {
+    addDeal("d1", {}, three());
+    await syncDealToGhl("d1");
+    expect(kinds()).toEqual(["resolve", "createField", "fields", "tags"]);
+    expect(calls[1][1]).toBe("peptide:Proposal Link 3");
+    expect(calls[2][1]).toMatchObject({ "Proposal Link": LINK_A, "Proposal Link 2": LINK_B, "Proposal Link 3": LINK_C });
+  });
+
+  it("an existing link field is reused, and slots no longer used are cleared", async () => {
+    ghlFields.push("Proposal Link 3", "Proposal Link 4");
+    addDeal("d1", {}, [{ status: "sent", signingUrl: LINK_A, sentAt: SENT }, { status: "sent", signingUrl: LINK_B, sentAt: SENT }]);
+    await syncDealToGhl("d1");
+    expect(kinds()).not.toContain("createField");
+    expect(calls.find(([k]) => k === "fields")?.[1]).toMatchObject({
+      "Proposal Link": LINK_A,
+      "Proposal Link 2": LINK_B,
+      "Proposal Link 3": "",
+      "Proposal Link 4": "",
+    });
+  });
+
+  it("after an outcome no link field is touched (or created)", async () => {
+    addDeal("d1", {}, three("signed"));
+    await syncDealToGhl("d1");
+    expect(kinds()).not.toContain("createField");
+    const written = calls.find(([k]) => k === "fields")?.[1] as Record<string, unknown>;
+    expect(Object.keys(written).some((k) => k.startsWith("Proposal Link"))).toBe(false);
+  });
+
+  it("GHL refusing to create a field still writes the other links — and isn't retried on every sync", async () => {
+    target = { contactId: "c1", subAccountId: "agency", via: "event" };
+    refuseCreate = true;
+    addDeal("d1", {}, three());
+    await syncDealToGhl("d1");
+    expect(calls.find(([k]) => k === "fields")?.[1]).toMatchObject({ "Proposal Link": LINK_A, "Proposal Link 2": LINK_B });
+    expect(calls.find(([k]) => k === "fields")?.[1]).not.toHaveProperty("Proposal Link 3");
+    expect(tagCalls()).toHaveLength(1);
+    calls = [];
+    await syncDealToGhl("d1");
+    expect(kinds()).not.toContain("createField");
   });
 });
 

@@ -1,7 +1,7 @@
-// Contact custom fields — resolve by display NAME (ids differ per sub-account)
-// and write values onto a contact. Used by the deal → GHL proposal sync
-// (lib/ghlDealSync.ts) for the "Proposal Link" fields GHL workflows merge into
-// follow-up emails / SMS.
+// Contact custom fields — resolve by display NAME (ids differ per sub-account),
+// create a missing text field, and write values onto a contact. Used by the
+// deal → GHL proposal sync (lib/ghlDealSync.ts) for the "Proposal …" fields
+// GHL workflows merge into follow-up emails / SMS.
 
 import cache from "@/lib/cache";
 import { ghlRequest, getGhlConfig } from "./client";
@@ -10,18 +10,22 @@ import { pickStr, cachedSingleflight } from "./util";
 
 const TTL_FIELDS = 600;
 
-interface ContactField {
+export interface ContactField {
   id: string;
   name: string;
 }
 
-function normalizeName(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
+const fieldsKey = (subAccountId: GhlSubAccountId) =>
+  `ghl:contact-fields:${subAccountId}:${getGhlConfig(subAccountId).locationId}`;
 
-async function listContactFields(subAccountId: GhlSubAccountId): Promise<ContactField[]> {
+/** The sub-account's contact custom fields (cached; `fresh` re-reads GHL). */
+export async function listContactFields(
+  subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID,
+  opts: { fresh?: boolean } = {}
+): Promise<ContactField[]> {
   const { locationId } = getGhlConfig(subAccountId);
-  return cachedSingleflight(`ghl:contact-fields:${subAccountId}:${locationId}`, TTL_FIELDS, async () => {
+  if (opts.fresh) cache.delete(fieldsKey(subAccountId));
+  return cachedSingleflight(fieldsKey(subAccountId), TTL_FIELDS, async () => {
     const raw = await ghlRequest<{ customFields?: unknown[] }>(
       `/locations/${encodeURIComponent(locationId)}/customFields`,
       { query: { model: "contact" }, subAccountId }
@@ -33,21 +37,24 @@ async function listContactFields(subAccountId: GhlSubAccountId): Promise<Contact
 }
 
 /**
- * Map each wanted field name to its id in this sub-account (case/whitespace
- * tolerant). Missing names are absent from the map — the caller logs them.
+ * Create a single-line text contact field (POST /locations/:id/customFields —
+ * needs the token's locations/customFields.write scope). Returns the new
+ * field; the cached field list is dropped so the next read sees it.
  */
-export async function resolveContactFieldIds(
-  names: readonly string[],
+export async function createContactTextField(
+  name: string,
   subAccountId: GhlSubAccountId = DEFAULT_SUB_ACCOUNT_ID
-): Promise<Map<string, string>> {
-  const fields = await listContactFields(subAccountId);
-  const byName = new Map(fields.map((f) => [normalizeName(f.name), f.id]));
-  const out = new Map<string, string>();
-  for (const name of names) {
-    const id = byName.get(normalizeName(name));
-    if (id) out.set(name, id);
-  }
-  return out;
+): Promise<ContactField> {
+  const { locationId } = getGhlConfig(subAccountId);
+  const raw = await ghlRequest<{ customField?: unknown }>(`/locations/${encodeURIComponent(locationId)}/customFields`, {
+    method: "POST",
+    body: { name, dataType: "TEXT", model: "contact" },
+    subAccountId,
+  });
+  cache.delete(fieldsKey(subAccountId));
+  const id = pickStr(raw?.customField, "id");
+  if (!id) throw new Error(`GHL created no id for custom field "${name}"`);
+  return { id, name: pickStr(raw?.customField, "name") ?? name };
 }
 
 /**

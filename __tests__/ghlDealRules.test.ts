@@ -3,6 +3,8 @@ import {
   deriveProposal,
   proposalTagPlan,
   proposalFieldValues,
+  proposalLinkFieldName,
+  proposalLinkIndex,
   ghlMonetaryValue,
   PROPOSAL_TAGS as T,
 } from "@/lib/ghlDealRules";
@@ -95,36 +97,50 @@ describe("proposalTagPlan", () => {
 
 describe("proposalFieldValues", () => {
   const ctx = { dealValueCents: 1_100_000, sentDateYmd: "2026-11-25" };
+  const C = "https://docuseal.com/s/ccc";
 
-  it("fills links, status, value and sent date while open (blank 2nd link)", () => {
+  it("while open: EVERY open contract's link (however many), status, value and sent date", () => {
     expect(proposalFieldValues({ state: "sent", links: [A], sentAt: null }, ctx)).toEqual({
-      status: "Sent",
-      value: 11_000,
-      link: A,
-      link2: "",
-      sentDate: "2026-11-25",
+      fields: { status: "Sent", value: 11_000, sentDate: "2026-11-25" },
+      links: [A],
     });
-    expect(proposalFieldValues({ state: "viewed", links: [A, B], sentAt: null }, ctx)).toMatchObject({
-      status: "Viewed",
-      link: A,
-      link2: B,
+    expect(proposalFieldValues({ state: "viewed", links: [A, B, C], sentAt: null }, ctx)).toEqual({
+      fields: { status: "Viewed", value: 11_000, sentDate: "2026-11-25" },
+      links: [A, B, C],
     });
   });
 
   it("after an outcome writes only status + value — the links stay", () => {
-    expect(proposalFieldValues({ state: "signed", links: [], sentAt: null }, ctx)).toEqual({ status: "Signed", value: 11_000 });
-    expect(proposalFieldValues({ state: "declined", links: [], sentAt: null }, ctx)).toEqual({ status: "Declined", value: 11_000 });
-    expect(proposalFieldValues({ state: "expired", links: [], sentAt: null }, ctx)).toEqual({ status: "Expired", value: 11_000 });
+    expect(proposalFieldValues({ state: "signed", links: [], sentAt: null }, ctx)).toEqual({ fields: { status: "Signed", value: 11_000 }, links: null });
+    expect(proposalFieldValues({ state: "declined", links: [], sentAt: null }, ctx)).toEqual({ fields: { status: "Declined", value: 11_000 }, links: null });
+    expect(proposalFieldValues({ state: "expired", links: [], sentAt: null }, ctx)).toEqual({ fields: { status: "Expired", value: 11_000 }, links: null });
   });
 
-  it("clears links + status when every sent contract went back to a draft", () => {
-    expect(proposalFieldValues({ state: "none", links: [], sentAt: null }, ctx)).toEqual({ link: "", link2: "", status: "" });
+  it("clears every link + the status when every sent contract went back to a draft", () => {
+    expect(proposalFieldValues({ state: "none", links: [], sentAt: null }, ctx)).toEqual({ fields: { status: "" }, links: [] });
   });
 
   it("leaves value / sent date alone when unknown", () => {
     const v = proposalFieldValues({ state: "sent", links: [A], sentAt: null }, { dealValueCents: 0, sentDateYmd: null });
-    expect(v).not.toHaveProperty("value");
-    expect(v).not.toHaveProperty("sentDate");
+    expect(v.fields).toEqual({ status: "Sent" });
+  });
+});
+
+describe("proposal link fields", () => {
+  it("names the n-th link's field: Proposal Link, Proposal Link 2, 3, …", () => {
+    expect([1, 2, 3, 12].map(proposalLinkFieldName)).toEqual(["Proposal Link", "Proposal Link 2", "Proposal Link 3", "Proposal Link 12"]);
+  });
+
+  it("reads a GHL field name back to its slot (case / space tolerant), round-tripping the names", () => {
+    expect(proposalLinkIndex("Proposal Link")).toBe(1);
+    expect(proposalLinkIndex(" proposal  LINK 4 ")).toBe(4);
+    for (const n of [1, 2, 7, 25]) expect(proposalLinkIndex(proposalLinkFieldName(n))).toBe(n);
+  });
+
+  it("ignores other fields", () => {
+    for (const name of ["Proposal Links", "Proposal Link 0", "Proposal Link 1", "Proposal Link 02", "Proposal Link Old", "Proposal Closer", "Proposal Status", "My Proposal Link"]) {
+      expect(proposalLinkIndex(name)).toBeNull();
+    }
   });
 });
 
